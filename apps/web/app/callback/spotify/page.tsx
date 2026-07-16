@@ -13,16 +13,22 @@ export default function SpotifyCallback() {
     const code = params.get('code');
     const authErr = params.get('error');
     if (authErr) {
-      setError(authErr);
+      // Don't render the raw OAuth error param (attacker-controllable via the
+      // redirect); log details, show a generic message.
+      console.error('spotify_auth_error', authErr, params.get('error_description'));
+      setError('Authentication failed. Please try again.');
       return;
     }
     if (!code) {
-      setError('no authorization code returned');
+      setError('Authentication failed. Please try again.');
       return;
     }
     handleCallback(code)
       .then((returnPath) => router.replace(returnPath))
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        console.error('spotify_callback_error', e);
+        setError('Authentication failed. Please try again.');
+      });
   }, [router]);
 
   return (

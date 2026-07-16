@@ -50,11 +50,12 @@ export function QueuePanel({ roomId }: { roomId: string }) {
           {queue.map((track, index) => (
             <div
               key={track.id}
+              data-testid="queue-item"
               className="queue-item animate-fade-in-up flex items-start justify-between gap-3 p-3 rounded-lg group"
               style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
             >
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
+                <div data-testid="queue-title" className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
                   {track.title}
                 </div>
                 <div className="text-xs truncate mt-1 flex items-center gap-2" style={{ color: 'var(--color-text-muted)' }}>

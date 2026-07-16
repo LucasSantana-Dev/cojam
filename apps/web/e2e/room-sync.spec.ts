@@ -18,6 +18,9 @@ async function addTrack(page: Page, title: string, artist: string, videoId?: str
     await page.getByPlaceholder('YouTube Video ID (optional)').fill(videoId);
   }
   await page.getByRole('button', { name: 'Add to Queue' }).click();
+  // Wait for the add to land (queue shows the title) before returning, so a
+  // subsequent add doesn't race this submit's field-reset and lose its input.
+  await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
 }
 
 test('two users see each other\'s queue additions live', async ({ browser }) => {
@@ -48,4 +51,27 @@ test('two users see each other\'s queue additions live', async ({ browser }) => 
   // Remove propagates
   await ana.getByRole('button', { name: 'Remove' }).nth(1).click();
   await expect(lucas.getByText('Second Song')).not.toBeVisible();
+});
+
+test('queue reorder syncs to both clients', async ({ browser }) => {
+  const roomId = `e2er${Date.now().toString(36)}`;
+
+  const lucas = await (await browser.newContext()).newPage();
+  const ana = await (await browser.newContext()).newPage();
+
+  await join(lucas, roomId, 'Lucas');
+  await join(ana, roomId, 'Ana');
+
+  await addTrack(lucas, 'Alpha', 'A-One');
+  await addTrack(lucas, 'Beta', 'B-Two');
+
+  // Both clients see the queue in insertion order [Alpha, Beta].
+  await expect(ana.getByTestId('queue-title').nth(1)).toHaveText('Beta');
+  await expect(lucas.getByTestId('queue-title').first()).toHaveText('Alpha');
+
+  // Lucas moves Beta (2nd item) up; order becomes [Beta, Alpha] on BOTH clients.
+  await lucas.getByTestId('queue-item').nth(1).getByRole('button', { name: '↑' }).click();
+
+  await expect(lucas.getByTestId('queue-title').first()).toHaveText('Beta');
+  await expect(ana.getByTestId('queue-title').first()).toHaveText('Beta');
 });
