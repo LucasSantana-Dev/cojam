@@ -1,0 +1,10 @@
+{
+  "name": "music-jam",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:server": "cd apps/server && go run ./cmd/server",
+    "test:server": "cd apps/server && go test -race ./...",
+    "build": "pnpm --filter web build"
+  }
+}
