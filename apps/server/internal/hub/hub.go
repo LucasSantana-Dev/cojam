@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,9 @@ import (
 	"github.com/LucasSantana-Dev/music-jam/server/internal/obs"
 	"github.com/LucasSantana-Dev/music-jam/server/internal/queue"
 )
+
+// Matcher resolves a YouTube source for a track (nil result = no confident match).
+type Matcher func(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error)
 
 // Room holds the state for a music jam room
 type Room struct {
@@ -26,6 +30,13 @@ type Hub struct {
 	node    *centrifuge.Node
 	logger  *slog.Logger
 	metrics *obs.Metrics
+	matcher Matcher
+}
+
+// WithMatcher enables async YouTube-source enrichment on queue.add.
+func (h *Hub) WithMatcher(m Matcher) *Hub {
+	h.matcher = m
+	return h
 }
 
 // WithObservability attaches structured logging + metrics; nil-safe when omitted (tests).
@@ -168,10 +179,15 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("queue.add: roomId required")
 		}
-		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
-			s.Add(req.Track)
+		var addedID string
+		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			addedID = s.Add(req.Track).ID
 			return nil
 		})
+		if err == nil && h.matcher != nil && req.Track.Sources.YouTube == nil {
+			go h.enrichYouTube(req.RoomID, addedID, req.Track)
+		}
+		return res, err
 
 	case "queue.remove":
 		var req struct {
@@ -199,6 +215,34 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 
 	default:
 		return nil, centrifuge.ErrorMethodNotFound
+	}
+}
+
+// enrichYouTube resolves a YouTube source for a freshly added track and
+// republishes the room state (own mutation → version bump → clients accept).
+func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ref, err := h.matcher(ctx, track.Title, track.Artist, track.ISRC)
+	if err != nil || ref == nil {
+		if h.logger != nil {
+			h.logger.Info("match_miss", "room_id", roomID, "track_id", trackID, "err", fmt.Sprint(err))
+		}
+		return
+	}
+	if h.metrics != nil {
+		h.metrics.ObserveMatchConfidence(ref.Confidence)
+	}
+	if _, err := h.mutate(roomID, func(s *queue.RoomState) error {
+		return s.SetYouTubeSource(trackID, *ref)
+	}); err != nil && h.logger != nil {
+		// track may have been removed while resolving — log, don't crash
+		h.logger.Info("match_apply_failed", "room_id", roomID, "track_id", trackID, "err", err.Error())
+	}
+	if h.logger != nil {
+		h.logger.Info("match_applied", "room_id", roomID, "track_id", trackID,
+			"video_id", ref.VideoID, "confidence", ref.Confidence)
 	}
 }
 

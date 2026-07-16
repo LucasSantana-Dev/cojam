@@ -81,3 +81,16 @@ func (rs *RoomState) SetNowPlaying(trackID string) error {
 	}
 	return fmt.Errorf("track not found: %s", trackID)
 }
+
+// SetYouTubeSource attaches a resolved YouTube source to a queued track
+// (async match enrichment). Bumps Version so clients accept the publication.
+func (rs *RoomState) SetYouTubeSource(trackID string, ref SourceRef) error {
+	for i := range rs.Queue {
+		if rs.Queue[i].ID == trackID {
+			rs.Queue[i].Sources.YouTube = &ref
+			rs.Version++
+			return nil
+		}
+	}
+	return fmt.Errorf("track not found: %s", trackID)
+}

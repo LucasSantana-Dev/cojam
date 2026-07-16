@@ -18,6 +18,7 @@ import (
 
 	"github.com/LucasSantana-Dev/music-jam/server/internal/appletoken"
 	"github.com/LucasSantana-Dev/music-jam/server/internal/hub"
+	"github.com/LucasSantana-Dev/music-jam/server/internal/match"
 	"github.com/LucasSantana-Dev/music-jam/server/internal/obs"
 )
 
@@ -44,6 +45,12 @@ func main() {
 
 	// Create hub
 	h := hub.NewHub(node).WithObservability(logger, metrics)
+	if os.Getenv("YOUTUBE_API_KEY") != "" {
+		h.WithMatcher(match.ResolveYouTube)
+		logger.Info("matcher_enabled", "provider", "youtube")
+	} else {
+		logger.Info("matcher_disabled", "reason", "YOUTUBE_API_KEY unset")
+	}
 
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {

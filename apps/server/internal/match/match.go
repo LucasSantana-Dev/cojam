@@ -1,6 +1,7 @@
 package match
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/LucasSantana-Dev/music-jam/server/internal/queue"
 	"time"
 )
 
@@ -179,4 +182,27 @@ func init() {
 			// Just consume ticks to prevent channel backlog
 		}
 	}()
+}
+
+// MinConfidence gates auto-attach: below this, better no match than a wrong video.
+const MinConfidence = 0.4
+
+// ResolveYouTube is the hub.Matcher implementation: title+artist search,
+// best candidate above MinConfidence wins. Returns (nil, nil) on no confident
+// match, ErrNotConfigured when YOUTUBE_API_KEY is unset.
+func ResolveYouTube(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error) {
+	candidates, err := YouTubeSearch(title + " " + artist)
+	if err != nil {
+		return nil, err
+	}
+	var best *YouTubeCandidate
+	for i := range candidates {
+		if best == nil || candidates[i].Confidence > best.Confidence {
+			best = &candidates[i]
+		}
+	}
+	if best == nil || best.Confidence < MinConfidence {
+		return nil, nil
+	}
+	return &queue.SourceRef{VideoID: best.VideoID, Confidence: best.Confidence}, nil
 }
