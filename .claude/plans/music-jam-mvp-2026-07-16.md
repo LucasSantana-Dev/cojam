@@ -1,7 +1,7 @@
 # Plan: music-jam MVP — cross-platform group listening
 
 **Date:** 2026-07-16
-**Status:** active — stack decided (ADR-0001: Next.js 16 + Go/centrifuge + Postgres/sqlc + Fly.io); Phase 0 started 2026-07-16
+**Status:** active — stack decided (ADR-0001); Phase 0 tracer DONE 2026-07-16 (Go/centrifuge rooms + YouTube playback + 2-browser e2e green; observability shipped). **Apple Music DEFERRED 2026-07-16: operator declines $99/yr Developer Program fee; token path + web player fully wired and tested (PKCS#8), reactivates by setting APPLE_* env vars once enrolled. Platform order now: YouTube day-1 + Spotify dev-mode next (free dev account, 5-user cap), Apple when fee justifiable.**
 **Inputs:** /deep-research (5 parallel research agents) + /debate (5 lenses × 2 rounds + synthesis) + /research-and-decide (stack, ADR-0001 with CV-weight + tool-gap criteria)
 
 ## Goal
