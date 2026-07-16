@@ -24,10 +24,9 @@ async function loadMusicKit(): Promise<any> {
   return window.MusicKit;
 }
 
-// Proxied by next.config rewrite to the Go server (avoids CORS).
 async function fetchDeveloperToken(): Promise<string | null> {
   const res = await fetch('/api/apple/dev-token');
-  if (res.status === 501) return null; // server has no Apple credentials configured
+  if (res.status === 501) return null;
   if (!res.ok) throw new Error(`dev-token: ${res.status}`);
   const body = (await res.json()) as { token: string };
   return body.token;
@@ -79,7 +78,6 @@ export function ApplePlayer({
     };
   }, [onAuthorized]);
 
-  // Play the now-playing track when this client's pick is Apple
   useEffect(() => {
     const music = musicRef.current;
     if (!music || !authorized || !nowPlaying) return;
@@ -97,7 +95,11 @@ export function ApplePlayer({
 
   if (status === 'unconfigured' || status === 'idle') return null;
   if (status === 'error') {
-    return <div className="text-sm text-red-400">Apple Music unavailable</div>;
+    return (
+      <div className="text-sm" style={{ color: '#ef4444' }}>
+        Apple Music unavailable
+      </div>
+    );
   }
 
   if (!authorized) {
@@ -111,7 +113,9 @@ export function ApplePlayer({
             console.error('Apple authorize failed:', e);
           }
         }}
-        className="px-4 py-2 bg-pink-700 rounded hover:bg-pink-600 text-sm font-medium"
+        name="Connect Apple Music"
+        className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
+        style={{ backgroundColor: 'var(--color-info)', color: 'var(--color-surface-0)' }}
       >
         Connect Apple Music
       </button>
@@ -119,11 +123,14 @@ export function ApplePlayer({
   }
 
   return (
-    <div className="text-sm text-gray-400">
-      Apple Music connected
-      {nowPlaying && pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple' && (
-        <span className="text-pink-400"> — playing “{nowPlaying.title}”</span>
-      )}
+    <div className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
+      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-info)' }} />
+      <span>
+        Apple Music connected
+        {nowPlaying && pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple' && (
+          <span style={{ color: 'var(--color-info)' }}> playing "{nowPlaying.title}"</span>
+        )}
+      </span>
     </div>
   );
 }

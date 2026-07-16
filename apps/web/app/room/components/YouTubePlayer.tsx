@@ -30,7 +30,7 @@ function loadYouTubeAPI(onReady: () => void) {
 
 export function YouTubePlayer() {
   const playerRef = useRef<any>(null);
-  const playerUsable = useRef(false); // true only after the instance's onReady fired
+  const playerUsable = useRef(false);
   const pendingVideoId = useRef<string | null>(null);
   const [apiReady, setApiReady] = useState(false);
   const state = useStore((s) => s.state);
@@ -67,7 +67,6 @@ export function YouTubePlayer() {
     if (playerUsable.current) {
       playerRef.current.loadVideoById(videoId);
     } else {
-      // instance methods only exist after onReady — stash until then
       pendingVideoId.current = videoId;
     }
   }, [apiReady, nowPlayingId, queue]);
@@ -76,11 +75,15 @@ export function YouTubePlayer() {
 
   return (
     <div className="space-y-4">
-      <div id="youtube-player" className="w-full" />
+      <div id="youtube-player" className="w-full rounded-lg overflow-hidden" />
       {nowPlaying && (
-        <div className="text-sm">
-          <div className="font-semibold">{nowPlaying.title}</div>
-          <div className="text-gray-400">{nowPlaying.artist}</div>
+        <div className="text-sm space-y-1">
+          <div className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            {nowPlaying.title}
+          </div>
+          <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            by {nowPlaying.artist}
+          </div>
         </div>
       )}
     </div>

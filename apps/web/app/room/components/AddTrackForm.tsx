@@ -41,53 +41,66 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-2 p-4 bg-gray-900 rounded">
-      <h3 className="text-lg font-semibold">Add Track</h3>
-      <input
-        type="text"
-        placeholder="Title"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
-      />
-      <input
-        type="text"
-        placeholder="Artist"
-        value={artist}
-        onChange={(e) => setArtist(e.target.value)}
-        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
-      />
-      {features.youtube && (
+    <form onSubmit={handleSubmit} className="rounded-xl p-6 space-y-4" style={{ background: 'var(--color-surface-1)', border: '1px solid var(--color-border)' }}>
+      <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        Add Track
+      </h3>
+
+      <div className="space-y-3">
         <input
           type="text"
-          placeholder="YouTube Video ID (optional)"
-          value={videoId}
-          onChange={(e) => setVideoId(e.target.value)}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+          placeholder="Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+          style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
         />
-      )}
-      {features.apple && (
         <input
           type="text"
-          placeholder="Apple Music Song ID (optional)"
-          value={appleSongId}
-          onChange={(e) => setAppleSongId(e.target.value)}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+          placeholder="Artist"
+          value={artist}
+          onChange={(e) => setArtist(e.target.value)}
+          className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+          style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
         />
-      )}
-      {features.spotify && (
-        <input
-          type="text"
-          placeholder="Spotify Track URI (optional)"
-          value={spotifyUri}
-          onChange={(e) => setSpotifyUri(e.target.value)}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
-        />
-      )}
+
+        {features.youtube && (
+          <input
+            type="text"
+            placeholder="YouTube Video ID (optional)"
+            value={videoId}
+            onChange={(e) => setVideoId(e.target.value)}
+            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+          />
+        )}
+        {features.apple && (
+          <input
+            type="text"
+            placeholder="Apple Music Song ID (optional)"
+            value={appleSongId}
+            onChange={(e) => setAppleSongId(e.target.value)}
+            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+          />
+        )}
+        {features.spotify && (
+          <input
+            type="text"
+            placeholder="Spotify Track URI (optional)"
+            value={spotifyUri}
+            onChange={(e) => setSpotifyUri(e.target.value)}
+            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+          />
+        )}
+      </div>
+
       <button
         type="submit"
         disabled={loading || !title || !artist}
-        className="w-full px-4 py-2 bg-blue-900 rounded hover:bg-blue-800 disabled:opacity-50 text-sm font-medium"
+        className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 focus:outline-none"
+        style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
       >
         {loading ? 'Adding...' : 'Add to Queue'}
       </button>

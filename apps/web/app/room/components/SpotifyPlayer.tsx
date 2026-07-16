@@ -49,7 +49,6 @@ export function SpotifyPlayer({
     ? state.queue.find((t) => t.id === state.nowPlayingId)
     : undefined;
 
-  // Gated by feature flag, then by config (public client id present)
   useEffect(() => {
     if (!features.spotify || !process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID) {
       setStatus('unconfigured');
@@ -58,7 +57,6 @@ export function SpotifyPlayer({
     onAuthorized(isAuthed());
   }, [onAuthorized]);
 
-  // Init the Web Playback SDK once authorized
   useEffect(() => {
     if (status === 'unconfigured' || !authorized || deviceId.current) return;
     let cancelled = false;
@@ -79,7 +77,7 @@ export function SpotifyPlayer({
         });
         player.addListener('authentication_error', () => onAuthorized(false));
         player.addListener('initialization_error', () => setStatus('error'));
-        player.addListener('account_error', () => setStatus('error')); // non-Premium
+        player.addListener('account_error', () => setStatus('error'));
         await player.connect();
       } catch (e) {
         console.error('Spotify SDK init failed:', e);
@@ -91,7 +89,6 @@ export function SpotifyPlayer({
     };
   }, [authorized, status, onAuthorized]);
 
-  // Play now-playing when this client's pick is Spotify
   useEffect(() => {
     if (!authorized || !deviceId.current || !nowPlaying) return;
     if (pickSource(nowPlaying, { appleAuthorized: false, spotifyAuthorized: authorized }) !== 'spotify') return;
@@ -100,13 +97,21 @@ export function SpotifyPlayer({
   }, [authorized, nowPlaying]);
 
   if (status === 'unconfigured') return null;
-  if (status === 'error') return <div className="text-sm text-red-400">Spotify unavailable (Premium required)</div>;
+  if (status === 'error') {
+    return (
+      <div className="text-sm" style={{ color: '#ef4444' }}>
+        Spotify unavailable (Premium required)
+      </div>
+    );
+  }
 
   if (!authorized) {
     return (
       <button
         onClick={() => beginAuth(window.location.pathname)}
-        className="px-4 py-2 bg-green-700 rounded hover:bg-green-600 text-sm font-medium"
+        name="Connect Spotify"
+        className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
+        style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
       >
         Connect Spotify
       </button>
@@ -116,9 +121,12 @@ export function SpotifyPlayer({
   const playingHere =
     nowPlaying && pickSource(nowPlaying, { appleAuthorized: false, spotifyAuthorized: true }) === 'spotify';
   return (
-    <div className="text-sm text-gray-400">
-      Spotify connected{status === 'ready' ? '' : ' (starting…)'}
-      {playingHere && <span className="text-green-400"> — playing “{nowPlaying!.title}”</span>}
+    <div className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
+      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-accent)' }} />
+      <span>
+        Spotify connected{status === 'ready' ? '' : ' (starting...)'}
+        {playingHere && <span style={{ color: 'var(--color-accent)' }}> playing "{nowPlaying!.title}"</span>}
+      </span>
     </div>
   );
 }

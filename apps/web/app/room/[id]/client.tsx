@@ -41,27 +41,36 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   if (!joined) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-950">
+      <div className="flex items-center justify-center min-h-screen p-4" style={{ background: 'var(--color-surface-0)' }}>
         <form
           onSubmit={handleJoin}
-          className="p-8 bg-gray-900 rounded-lg space-y-4 w-96"
+          className="w-full max-w-sm rounded-xl space-y-6 p-8"
+          style={{ background: 'var(--color-surface-1)', border: '1px solid var(--color-border)' }}
         >
-          <h1 className="text-3xl font-bold text-center">music-jam</h1>
-          <div className="text-center text-gray-400 text-sm">
-            Room: {roomId}
+          <div className="space-y-2 text-center">
+            <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+              music-jam
+            </h1>
+            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              Room: {roomId}
+            </p>
           </div>
+
           <input
             type="text"
             placeholder="Your name"
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
-            className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded"
+            className="w-full px-4 py-3 rounded-lg focus:outline-none transition-all duration-150"
+            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             autoFocus
           />
+
           <button
             type="submit"
             disabled={loading || !nameInput.trim()}
-            className="w-full px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 font-medium"
+            className="w-full px-6 py-3 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 text-base"
+            style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
           >
             {loading ? 'Joining...' : 'Join & Play'}
           </button>
@@ -71,30 +80,33 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold">music-jam</h1>
-            <div className="text-gray-400 text-sm">
-              Room: {roomId} as {store.name}
+    <div className="min-h-screen" style={{ background: 'var(--color-surface-0)', color: 'var(--color-text-primary)' }}>
+      <div className="border-b" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface-1)' }}>
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h1 className="text-2xl font-bold">music-jam</h1>
+              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                Room: {roomId} as {store.name}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+              <div
+                className="w-2 h-2 rounded-full transition-colors duration-300"
+                style={{ backgroundColor: store.connected ? 'var(--color-accent)' : '#ef4444' }}
+              />
+              <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                {store.connected ? 'Connected' : 'Disconnected'}
+              </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div
-              className={`w-3 h-3 rounded-full ${
-                store.connected ? 'bg-green-500' : 'bg-red-500'
-              }`}
-            />
-            <span className="text-sm text-gray-400">
-              {store.connected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
         </div>
+      </div>
 
-        <div className="grid grid-cols-3 gap-6">
-          <div className="col-span-2 space-y-6">
-            <div className="p-4 bg-gray-900 rounded space-y-3">
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="rounded-xl p-6 space-y-4" style={{ background: 'var(--color-surface-1)', border: '1px solid var(--color-border)' }}>
               <div className="flex flex-wrap gap-2">
                 {features.spotify && (
                   <SpotifyPlayer authorized={spotifyAuthorized} onAuthorized={setSpotifyAuthorized} />
@@ -103,12 +115,18 @@ export function RoomClient({ roomId }: { roomId: string }) {
                   <ApplePlayer authorized={appleAuthorized} onAuthorized={setAppleAuthorized} />
                 )}
               </div>
-              {features.youtube && activeSource === 'youtube' && <YouTubePlayer />}
+
+              {features.youtube && activeSource === 'youtube' && (
+                <div className="pt-4" style={{ borderTop: '1px solid var(--color-border)' }}>
+                  <YouTubePlayer />
+                </div>
+              )}
             </div>
+
             <AddTrackForm roomId={roomId} />
           </div>
 
-          <div>
+          <div className="lg:col-span-1">
             <QueuePanel roomId={roomId} />
           </div>
         </div>

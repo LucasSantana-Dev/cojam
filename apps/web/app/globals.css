@@ -1,13 +1,50 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+/* Explicit source: v4 auto-detection scans nothing here (parent-monorepo lockfile
+   confuses the root inference), so utilities never generate. Scan the app tree. */
+@source "./**/*.{ts,tsx}";
+
+:root {
+  color-scheme: dark;
+  /* Color system: dark base + music warmth + green accent (OKLCH) */
+  --color-surface-0: oklch(0.08 0 0);         /* pure black for hero regions */
+  --color-surface-1: oklch(0.11 0.01 280);    /* deep bg, slight purple undertone */
+  --color-surface-2: oklch(0.14 0.01 280);    /* raised card bg */
+  --color-surface-3: oklch(0.18 0.01 280);    /* interactive hover bg */
+  --color-border: oklch(0.25 0.02 280);       /* subtle, not harsh */
+  --color-text-primary: oklch(0.96 0.01 280); /* off-white, not #fff */
+  --color-text-secondary: oklch(0.62 0.02 280); /* muted, readable */
+  --color-text-muted: oklch(0.48 0.01 280);   /* for hints/secondary text */
+  --color-accent: oklch(0.72 0.17 148);       /* Spotify green (~#1DB954), bright enough for dark text at AA */
+  --color-accent-hover: oklch(0.78 0.16 148); /* lighter for hover */
+}
 
 :root {
   color-scheme: dark;
 }
 
 body {
-  background: #0a0a0a;
-  color: #fff;
+  background: var(--color-surface-0);
+  color: var(--color-text-primary);
   font-family: system-ui, -apple-system, sans-serif;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+input, textarea, select {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--color-surface-3);
 }
