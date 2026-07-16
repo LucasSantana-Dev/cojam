@@ -305,16 +305,19 @@ input:focus, textarea:focus, select:focus {
   line-height: 0.98;
   font-weight: 800;
   letter-spacing: -0.03em;
+  color: var(--color-text-primary); /* fallback if background-clip:text unsupported */
+}
+
+/* Per-word rise-in; --i sets the stagger index from the component. The gradient
+   text treatment lives here (not on .hero-title) because each word is an
+   inline-block box: a parent-only clip would leave these children transparent. */
+.hero-title .word {
+  display: inline-block;
+  margin-right: 0.25em;
   background: linear-gradient(180deg, oklch(0.98 0.01 280), oklch(0.72 0.16 300));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-}
-
-/* Per-word rise-in; --i sets the stagger index from the component. */
-.hero-title .word {
-  display: inline-block;
-  margin-right: 0.25em;
   opacity: 0;
   transform: translateY(0.5em);
   animation: word-rise 0.7s cubic-bezier(0.2, 0.65, 0.2, 1) forwards;
