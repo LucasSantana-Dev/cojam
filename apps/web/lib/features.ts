@@ -5,6 +5,7 @@ export type Features = {
   youtube: boolean;
   spotify: boolean;
   apple: boolean;
+  presence: boolean;
 };
 
 const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
@@ -23,6 +24,7 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
     youtube: flag(env.NEXT_PUBLIC_FEATURE_YOUTUBE, true),
     spotify: flag(env.NEXT_PUBLIC_FEATURE_SPOTIFY, false),
     apple: flag(env.NEXT_PUBLIC_FEATURE_APPLE, false),
+    presence: flag(env.NEXT_PUBLIC_FEATURE_PRESENCE, true),
   };
 }
 
@@ -31,4 +33,5 @@ export const features: Features = resolveFeatures({
   NEXT_PUBLIC_FEATURE_YOUTUBE: process.env.NEXT_PUBLIC_FEATURE_YOUTUBE,
   NEXT_PUBLIC_FEATURE_SPOTIFY: process.env.NEXT_PUBLIC_FEATURE_SPOTIFY,
   NEXT_PUBLIC_FEATURE_APPLE: process.env.NEXT_PUBLIC_FEATURE_APPLE,
+  NEXT_PUBLIC_FEATURE_PRESENCE: process.env.NEXT_PUBLIC_FEATURE_PRESENCE,
 });

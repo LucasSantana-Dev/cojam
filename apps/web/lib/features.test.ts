@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { resolveFeatures } from './features';
 
 describe('resolveFeatures', () => {
-  it('youtube defaults on, spotify/apple default off (need setup)', () => {
+  it('youtube+presence default on, spotify/apple default off (need setup)', () => {
     const f = resolveFeatures({});
-    expect(f).toEqual({ youtube: true, spotify: false, apple: false });
+    expect(f).toEqual({ youtube: true, spotify: false, apple: false, presence: true });
   });
 
   it('reads truthy values case-insensitively', () => {
@@ -12,8 +12,9 @@ describe('resolveFeatures', () => {
       NEXT_PUBLIC_FEATURE_SPOTIFY: 'TRUE',
       NEXT_PUBLIC_FEATURE_APPLE: '1',
       NEXT_PUBLIC_FEATURE_YOUTUBE: 'off',
+      NEXT_PUBLIC_FEATURE_PRESENCE: 'no',
     });
-    expect(f).toEqual({ youtube: false, spotify: true, apple: true });
+    expect(f).toEqual({ youtube: false, spotify: true, apple: true, presence: false });
   });
 
   it('unknown value falls back to the flag default', () => {
