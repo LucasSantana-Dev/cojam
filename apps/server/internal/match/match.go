@@ -386,27 +386,31 @@ func ResolveSpotify(ctx context.Context, title, artist, isrc string) (*queue.Sou
 		return nil, fmt.Errorf("failed to decode search response: %w", err)
 	}
 
-	// Find best match above MinConfidence
 	if len(result.Tracks.Items) == 0 {
 		return nil, nil
 	}
 
+	// ISRC is an exact identifier: a track returned for an isrc: query IS the
+	// match, so trust it at full confidence. (Scoring it by token overlap would
+	// wrongly reject matches whose canonical Spotify title differs, e.g. a
+	// "- Remastered" suffix.)
+	if isrc != "" {
+		best := result.Tracks.Items[0]
+		return &queue.SourceRef{TrackURI: best.URI, Confidence: 1.0}, nil
+	}
+
+	// Title/artist fallback: score token overlap against the REAL title+artist
+	// the caller passed (not the raw query string), best above MinConfidence wins.
+	wantTokens := strings.Fields(strings.ToLower(title + " " + artist))
 	var best *SpotifyTrack
 	var bestConfidence float64
-
 	for i := range result.Tracks.Items {
 		track := &result.Tracks.Items[i]
-		// Build title for confidence scoring: track name + first artist
 		artistName := ""
 		if len(track.Artists) > 0 {
 			artistName = track.Artists[0].Name
 		}
-		scoreTitle := track.Name + " " + artistName
-
-		queryTokens := strings.Fields(strings.ToLower(query))
-		titleTokens := strings.Fields(strings.ToLower(scoreTitle))
-		confidence := calculateConfidence(queryTokens, titleTokens)
-
+		confidence := calculateConfidence(wantTokens, strings.Fields(strings.ToLower(track.Name+" "+artistName)))
 		if best == nil || confidence > bestConfidence {
 			best = track
 			bestConfidence = confidence

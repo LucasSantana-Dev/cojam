@@ -2,6 +2,8 @@ package match
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -9,6 +11,125 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
+
+// spotifyStub wires the package HTTP vars to a token server + a search handler,
+// returning a cleanup that restores them. tokenHits counts token fetches.
+func spotifyStub(t *testing.T, tokenHits *int32, searchJSON string, captureQuery *string) func() {
+	t.Helper()
+	oldID, oldSecret := spotifyClientID, spotifyClientSecret
+	oldTok, oldSearch, oldClient := spotifyTokenURL, spotifySearchURL, spotifyClient
+	oldCache := spotifyTokenCache
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(tokenHits, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"tok","expires_in":3600,"token_type":"Bearer"}`))
+	}))
+	searchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if captureQuery != nil {
+			*captureQuery = r.URL.Query().Get("q")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(searchJSON))
+	}))
+
+	spotifyClientID, spotifyClientSecret = "id", "secret"
+	spotifyTokenURL, spotifySearchURL = tokenSrv.URL, searchSrv.URL
+	spotifyClient = http.DefaultClient
+	spotifyTokenCache = &tokenCacheEntry{}
+
+	return func() {
+		tokenSrv.Close()
+		searchSrv.Close()
+		spotifyClientID, spotifyClientSecret = oldID, oldSecret
+		spotifyTokenURL, spotifySearchURL, spotifyClient = oldTok, oldSearch, oldClient
+		spotifyTokenCache = oldCache
+	}
+}
+
+const spotifyOneTrack = `{"tracks":{"items":[{"id":"abc","name":"Bohemian Rhapsody","uri":"spotify:track:abc","artists":[{"name":"Queen"}]}]}}`
+
+func TestResolveSpotify_ISRCAuthoritative(t *testing.T) {
+	var hits int32
+	var gotQuery string
+	defer spotifyStub(t, &hits, spotifyOneTrack, &gotQuery)()
+
+	ref, err := ResolveSpotify(context.Background(), "Bohemian Rhapsody", "Queen", "GBUM71029604")
+	if err != nil {
+		t.Fatalf("ResolveSpotify: %v", err)
+	}
+	if ref == nil || ref.TrackURI != "spotify:track:abc" {
+		t.Fatalf("ref = %+v, want TrackURI spotify:track:abc", ref)
+	}
+	if ref.Confidence != 1.0 {
+		t.Fatalf("ISRC match confidence = %v, want 1.0 (authoritative)", ref.Confidence)
+	}
+	if gotQuery != "isrc:GBUM71029604" {
+		t.Fatalf("search query = %q, want isrc:GBUM71029604", gotQuery)
+	}
+}
+
+func TestResolveSpotify_TitleArtistScored(t *testing.T) {
+	var hits int32
+	var gotQuery string
+	defer spotifyStub(t, &hits, spotifyOneTrack, &gotQuery)()
+
+	ref, err := ResolveSpotify(context.Background(), "Bohemian Rhapsody", "Queen", "")
+	if err != nil {
+		t.Fatalf("ResolveSpotify: %v", err)
+	}
+	if ref == nil || ref.TrackURI != "spotify:track:abc" {
+		t.Fatalf("ref = %+v, want spotify:track:abc", ref)
+	}
+	if ref.Confidence < MinConfidence {
+		t.Fatalf("confidence = %v, want >= %v", ref.Confidence, MinConfidence)
+	}
+	if gotQuery != "Bohemian Rhapsody Queen" {
+		t.Fatalf("search query = %q, want title+artist", gotQuery)
+	}
+}
+
+func TestResolveSpotify_NoResults(t *testing.T) {
+	var hits int32
+	defer spotifyStub(t, &hits, `{"tracks":{"items":[]}}`, nil)()
+
+	ref, err := ResolveSpotify(context.Background(), "Nope", "Nobody", "")
+	if err != nil {
+		t.Fatalf("ResolveSpotify: %v", err)
+	}
+	if ref != nil {
+		t.Fatalf("empty results should give nil ref, got %+v", ref)
+	}
+}
+
+func TestResolveSpotify_BelowThreshold(t *testing.T) {
+	var hits int32
+	// Search returns a totally unrelated track; token overlap with the wanted
+	// title+artist is 0, so it's rejected on the title/artist path.
+	defer spotifyStub(t, &hits, `{"tracks":{"items":[{"id":"z","name":"Zzz Unrelated","uri":"spotify:track:z","artists":[{"name":"Other"}]}]}}`, nil)()
+
+	ref, err := ResolveSpotify(context.Background(), "Bohemian Rhapsody", "Queen", "")
+	if err != nil {
+		t.Fatalf("ResolveSpotify: %v", err)
+	}
+	if ref != nil {
+		t.Fatalf("below-threshold match should be nil, got %+v", ref)
+	}
+}
+
+func TestResolveSpotify_TokenCached(t *testing.T) {
+	var hits int32
+	defer spotifyStub(t, &hits, spotifyOneTrack, nil)()
+
+	for i := 0; i < 3; i++ {
+		if _, err := ResolveSpotify(context.Background(), "Bohemian Rhapsody", "Queen", ""); err != nil {
+			t.Fatalf("call %d: %v", i, err)
+		}
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("token fetched %d times, want 1 (cached)", got)
+	}
+}
 
 func TestNewCachedMatcher_HitDoesNotReinvoke(t *testing.T) {
 	callCount := 0
@@ -244,13 +365,3 @@ func TestResolveSpotify_ErrNotConfigured(t *testing.T) {
 	}
 }
 
-func TestResolveSpotify_NoResults(t *testing.T) {
-	// This test verifies that empty search results return (nil, nil)
-	// Placeholder: will implement after stubbing the HTTP layer
-	t.Skip("TODO: implement with httptest stubs")
-}
-
-func TestResolveSpotify_ConfidenceBelowThreshold(t *testing.T) {
-	// This test verifies that results below MinConfidence return (nil, nil)
-	t.Skip("TODO: implement with httptest stubs")
-}
