@@ -1,0 +1,34 @@
+# Fly.io configuration for Cojam Go server
+app = "cojam-server"
+primary_region = "gig"
+
+[build]
+dockerfile = "Dockerfile"
+
+[env]
+# Node name for centrifuge (kept simple for single-node MVP)
+NODE_NAME = "cojam-server"
+
+[http_service]
+internal_port = 8080
+force_https = false
+
+[[http_service.checks]]
+grace_period = "10s"
+interval = 30000
+method = "GET"
+path = "/healthz"
+protocol = "http"
+timeout = 3000
+type = "http"
+
+[vm]
+size = "shared-cpu-1x"
+
+# Stop VMs when no traffic to reduce cost
+[[auto_stop_machines]]
+stops_after = { "days" = 0, "hours" = 1 }
+
+# Restart VMs with incoming traffic
+[[auto_start_machines]]
+min_machines_running = 0
