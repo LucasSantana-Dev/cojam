@@ -9,7 +9,9 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `room.join` | `{ roomId: string, name: string }` | `RoomState` |
 | `queue.add` | `{ roomId, track: TrackRef }` | `RoomState` |
 | `queue.remove` | `{ roomId, trackId: string }` | `RoomState` |
+| `queue.reorder` | `{ roomId, trackId: string, toIndex: number }` | `RoomState` |
 | `now_playing.set` | `{ roomId, trackId: string }` (host only, v0: anyone) | `RoomState` |
+| `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
 
 ## Server → channel publications
 
@@ -46,5 +48,10 @@ type RoomState = {
 ```
 
 Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; server replies with current `RoomState`; client replaces local state if `version` is newer.
+
+## Method Details
+
+- **`queue.reorder`**: Move a queued track to a new position. Index is clamped to `[0, len-1]`. Idempotent: re-ordering to the same position is a no-op. Does not change `nowPlayingId`.
+- **`now_playing.advance`**: Advance to the next track after the one specified by `afterId`. IDEMPOTENT: if `nowPlayingId != afterId`, it's a no-op (another client already advanced). If `afterId` is the last track in the queue, clears `nowPlayingId` (queue finished). Used by clients to auto-advance when the current track ends.
 
 Rules: state carries metadata only, never audio. Each client plays the head track through its own platform SDK on explicit user gesture.

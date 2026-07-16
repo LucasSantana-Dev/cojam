@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useStore } from '@/lib/realtime';
+import { useStore, nowPlayingAdvance } from '@/lib/realtime';
 
 declare global {
   interface Window {
@@ -28,10 +28,11 @@ function loadYouTubeAPI(onReady: () => void) {
   document.body.appendChild(script);
 }
 
-export function YouTubePlayer() {
+export function YouTubePlayer({ roomId }: { roomId: string }) {
   const playerRef = useRef<any>(null);
   const playerUsable = useRef(false);
   const pendingVideoId = useRef<string | null>(null);
+  const nowPlayingIdRef = useRef<string | null>(null);
   const [apiReady, setApiReady] = useState(false);
   const state = useStore((s) => s.state);
   const nowPlayingId = state?.nowPlayingId;
@@ -40,6 +41,10 @@ export function YouTubePlayer() {
   useEffect(() => {
     loadYouTubeAPI(() => setApiReady(true));
   }, []);
+
+  useEffect(() => {
+    nowPlayingIdRef.current = nowPlayingId ?? null;
+  }, [nowPlayingId]);
 
   useEffect(() => {
     if (!apiReady) return;
@@ -56,6 +61,12 @@ export function YouTubePlayer() {
               pendingVideoId.current = null;
             }
           },
+          onStateChange: (event: any) => {
+            // YT.PlayerState.ENDED = 0
+            if (event.data === 0 && nowPlayingIdRef.current) {
+              nowPlayingAdvance(roomId, nowPlayingIdRef.current);
+            }
+          },
         },
       });
     }
@@ -69,7 +80,7 @@ export function YouTubePlayer() {
     } else {
       pendingVideoId.current = videoId;
     }
-  }, [apiReady, nowPlayingId, queue]);
+  }, [apiReady, nowPlayingId, queue, roomId]);
 
   const nowPlaying = nowPlayingId ? queue.find((t) => t.id === nowPlayingId) : undefined;
 

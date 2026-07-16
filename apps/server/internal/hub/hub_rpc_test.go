@@ -72,3 +72,111 @@ func TestHandleRPC_RoomRouting(t *testing.T) {
 		t.Fatalf("unknown method should error")
 	}
 }
+
+func TestHandleRPC_AdvanceAfter(t *testing.T) {
+	h := NewHub(nil)
+
+	// Set up a room with 3 tracks
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"probe"}`))
+	st := &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+
+	// Add first track
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t1ID := st.Queue[0].ID
+
+	// Add second track
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 2","artist":"A2","sources":{},"addedBy":"u2"}}`))
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t2ID := st.Queue[1].ID
+
+	// Add third track
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 3","artist":"A3","sources":{},"addedBy":"u3"}}`))
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t3ID := st.Queue[2].ID
+
+	// Initial NowPlayingID should be t1
+	if st.NowPlayingID != t1ID {
+		t.Fatalf("initial NowPlayingID should be %s, got %s", t1ID, st.NowPlayingID)
+	}
+
+	// Advance from t1 -> t2
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t1ID+`"}`))
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	if st.NowPlayingID != t2ID {
+		t.Fatalf("after 1st advance, NowPlayingID should be %s, got %s", t2ID, st.NowPlayingID)
+	}
+
+	// Advance from t2 -> t3
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t2ID+`"}`))
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	if st.NowPlayingID != t3ID {
+		t.Fatalf("after 2nd advance, NowPlayingID should be %s, got %s", t3ID, st.NowPlayingID)
+	}
+
+	// Advance from t3 (last track) -> clears NowPlayingID
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t3ID+`"}`))
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	if st.NowPlayingID != "" {
+		t.Fatalf("advance past last track should clear NowPlayingID, got %s", st.NowPlayingID)
+	}
+}
+
+func TestHandleRPC_QueueReorder(t *testing.T) {
+	h := NewHub(nil)
+
+	// Set up a room with 3 tracks
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"probe"}`))
+	st := &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+
+	// Add first track
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t1ID := st.Queue[0].ID
+
+	// Add second track
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 2","artist":"A2","sources":{},"addedBy":"u2"}}`))
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t2ID := st.Queue[1].ID
+
+	// Add third track
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 3","artist":"A3","sources":{},"addedBy":"u3"}}`))
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t3ID := st.Queue[2].ID
+
+	// Move t3 to index 0
+	res, err := h.HandleRPC("queue.reorder", []byte(`{"roomId":"demo","trackId":"`+t3ID+`","toIndex":0}`))
+	if err != nil {
+		t.Fatalf("queue.reorder: %v", err)
+	}
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	if st.Queue[0].ID != t3ID {
+		t.Fatalf("after reorder, queue[0] should be %s, got %s", t3ID, st.Queue[0].ID)
+	}
+	if st.Queue[1].ID != t1ID {
+		t.Fatalf("after reorder, queue[1] should be %s, got %s", t1ID, st.Queue[1].ID)
+	}
+	if st.Queue[2].ID != t2ID {
+		t.Fatalf("after reorder, queue[2] should be %s, got %s", t2ID, st.Queue[2].ID)
+	}
+	if st.Version != 4 {
+		t.Fatalf("version should be 4, got %d", st.Version)
+	}
+
+	// NowPlayingID should not change (still t1)
+	if st.NowPlayingID != t1ID {
+		t.Fatalf("NowPlayingID should not change after reorder, got %s", st.NowPlayingID)
+	}
+}
