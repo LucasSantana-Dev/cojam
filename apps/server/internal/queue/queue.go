@@ -10,6 +10,7 @@ import (
 type SourceRef struct {
 	VideoID    string  `json:"videoId,omitempty"`
 	SongID     string  `json:"songId,omitempty"`
+	TrackURI   string  `json:"trackUri,omitempty"`
 	Confidence float64 `json:"confidence"`
 }
 
@@ -17,6 +18,7 @@ type SourceRef struct {
 type Sources struct {
 	YouTube *SourceRef `json:"youtube,omitempty"`
 	Apple   *SourceRef `json:"apple,omitempty"`
+	Spotify *SourceRef `json:"spotify,omitempty"`
 }
 
 // TrackRef represents a track in the queue

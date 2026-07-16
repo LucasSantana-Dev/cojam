@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { useStore, queueAdd } from '@/lib/realtime';
+import { features } from '@/lib/features';
 
 export function AddTrackForm({ roomId }: { roomId: string }) {
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [videoId, setVideoId] = useState('');
   const [appleSongId, setAppleSongId] = useState('');
+  const [spotifyUri, setSpotifyUri] = useState('');
   const [loading, setLoading] = useState(false);
   const name = useStore((s) => s.name);
 
@@ -24,6 +26,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
         sources: {
           ...(videoId ? { youtube: { videoId, confidence: 1 } } : {}),
           ...(appleSongId ? { apple: { songId: appleSongId, confidence: 1 } } : {}),
+          ...(spotifyUri ? { spotify: { trackUri: spotifyUri, confidence: 1 } } : {}),
         },
         addedBy: name,
       });
@@ -31,6 +34,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
       setArtist('');
       setVideoId('');
       setAppleSongId('');
+      setSpotifyUri('');
     } finally {
       setLoading(false);
     }
@@ -53,20 +57,33 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
         onChange={(e) => setArtist(e.target.value)}
         className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
       />
-      <input
-        type="text"
-        placeholder="YouTube Video ID (optional)"
-        value={videoId}
-        onChange={(e) => setVideoId(e.target.value)}
-        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
-      />
-      <input
-        type="text"
-        placeholder="Apple Music Song ID (optional)"
-        value={appleSongId}
-        onChange={(e) => setAppleSongId(e.target.value)}
-        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
-      />
+      {features.youtube && (
+        <input
+          type="text"
+          placeholder="YouTube Video ID (optional)"
+          value={videoId}
+          onChange={(e) => setVideoId(e.target.value)}
+          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+        />
+      )}
+      {features.apple && (
+        <input
+          type="text"
+          placeholder="Apple Music Song ID (optional)"
+          value={appleSongId}
+          onChange={(e) => setAppleSongId(e.target.value)}
+          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+        />
+      )}
+      {features.spotify && (
+        <input
+          type="text"
+          placeholder="Spotify Track URI (optional)"
+          value={spotifyUri}
+          onChange={(e) => setSpotifyUri(e.target.value)}
+          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+        />
+      )}
       <button
         type="submit"
         disabled={loading || !title || !artist}

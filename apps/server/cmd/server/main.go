@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +22,19 @@ import (
 	"github.com/LucasSantana-Dev/music-jam/server/internal/match"
 	"github.com/LucasSantana-Dev/music-jam/server/internal/obs"
 )
+
+// featureEnabled reads a FEATURE_* toggle (1/true/on/yes = on, 0/false/off/no = off,
+// unset/unrecognized = dflt). Mirrors the web lib/features.ts convention.
+func featureEnabled(key string, dflt bool) bool {
+	switch strings.ToLower(os.Getenv(key)) {
+	case "1", "true", "on", "yes":
+		return true
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return dflt
+	}
+}
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -45,11 +59,11 @@ func main() {
 
 	// Create hub
 	h := hub.NewHub(node).WithObservability(logger, metrics)
-	if os.Getenv("YOUTUBE_API_KEY") != "" {
+	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("YOUTUBE_API_KEY") != "" {
 		h.WithMatcher(match.ResolveYouTube)
 		logger.Info("matcher_enabled", "provider", "youtube")
 	} else {
-		logger.Info("matcher_disabled", "reason", "YOUTUBE_API_KEY unset")
+		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")
 	}
 
 	// Setup centrifuge connection handlers

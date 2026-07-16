@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
+import { features } from '@/lib/features';
 
 declare global {
   interface Window {
@@ -50,6 +51,10 @@ export function ApplePlayer({
     let cancelled = false;
     (async () => {
       try {
+        if (!features.apple) {
+          setStatus('unconfigured');
+          return;
+        }
         const token = await fetchDeveloperToken();
         if (cancelled) return;
         if (!token) {
@@ -78,7 +83,7 @@ export function ApplePlayer({
   useEffect(() => {
     const music = musicRef.current;
     if (!music || !authorized || !nowPlaying) return;
-    if (pickSource(nowPlaying, { appleAuthorized: authorized }) !== 'apple') return;
+    if (pickSource(nowPlaying, { appleAuthorized: authorized, spotifyAuthorized: false }) !== 'apple') return;
     const songId = nowPlaying.sources.apple!.songId!;
     (async () => {
       try {
@@ -116,7 +121,7 @@ export function ApplePlayer({
   return (
     <div className="text-sm text-gray-400">
       Apple Music connected
-      {nowPlaying && pickSource(nowPlaying, { appleAuthorized: true }) === 'apple' && (
+      {nowPlaying && pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple' && (
         <span className="text-pink-400"> — playing “{nowPlaying.title}”</span>
       )}
     </div>
