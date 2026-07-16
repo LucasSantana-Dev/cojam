@@ -36,6 +36,23 @@ func featureEnabled(key string, dflt bool) bool {
 	}
 }
 
+// parseOrigins turns a comma-separated CORS_ORIGINS value into a lookup set.
+// Empty input defaults to local dev origins so `pnpm dev` works out of the box.
+func parseOrigins(raw string) map[string]bool {
+	set := make(map[string]bool)
+	if strings.TrimSpace(raw) == "" {
+		set["http://localhost:3000"] = true
+		set["http://127.0.0.1:3000"] = true
+		return set
+	}
+	for _, o := range strings.Split(raw, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			set[o] = true
+		}
+	}
+	return set
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
@@ -164,11 +181,21 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"token": token})
 	})
 
-	// WebSocket handler for centrifuge
+	// WebSocket handler for centrifuge. Origin allowlist prevents cross-site
+	// WebSocket hijacking: without it any page could open a socket and mutate rooms.
+	// CORS_ORIGINS is a comma-separated allowlist; unset defaults to local dev;
+	// "*" explicitly opts into allow-all (dev/testing only, never production).
+	allowedOrigins := parseOrigins(os.Getenv("CORS_ORIGINS"))
 	wsHandler := centrifuge.NewWebsocketHandler(node, centrifuge.WebsocketConfig{
 		CheckOrigin: func(r *http.Request) bool {
-			// Allow all origins for now; restrict in production
-			return true
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true // non-browser client (native app, curl) — no Origin header
+			}
+			if allowedOrigins["*"] {
+				return true
+			}
+			return allowedOrigins[origin]
 		},
 	})
 	r.Handle("/connection/websocket", wsHandler)

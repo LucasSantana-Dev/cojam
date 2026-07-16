@@ -181,6 +181,9 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 		}
 		var addedID string
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			if len(s.Queue) >= queue.MaxQueueSize {
+				return fmt.Errorf("queue.add: queue full (max %d)", queue.MaxQueueSize)
+			}
 			addedID = s.Add(req.Track).ID
 			return nil
 		})

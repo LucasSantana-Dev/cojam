@@ -6,6 +6,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// MaxQueueSize bounds a room's queue so a malicious client can't OOM the server
+// by flooding queue.add. Enforced at the RPC boundary (hub) under the room lock.
+const MaxQueueSize = 500
+
 // SourceRef represents a reference to a music source (YouTube or Apple Music)
 type SourceRef struct {
 	VideoID    string  `json:"videoId,omitempty"`
