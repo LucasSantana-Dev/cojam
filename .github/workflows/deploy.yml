@@ -1,0 +1,33 @@
+name: Deploy
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  deploy-server:
+    name: Deploy server to Fly.io
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy server
+        run: flyctl deploy --remote-only
+        working-directory: apps/server
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  deploy-web:
+    name: Deploy web to Fly.io
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy web
+        run: flyctl deploy --remote-only
+        working-directory: apps/web
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
