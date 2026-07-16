@@ -1,0 +1,20 @@
+import { test, expect, type Page } from '@playwright/test';
+
+// With NEXT_PUBLIC_FEATURE_SPOTIFY on + a client id, a room shows the
+// "Connect Spotify" button. We never click it (that redirects to Spotify OAuth),
+// so no Premium account or real SDK is needed — this asserts the gated UI renders.
+
+async function join(page: Page, roomId: string, name: string) {
+  await page.goto(`/room/${roomId}`);
+  await expect(page.getByText(`Room: ${roomId}`)).toBeVisible();
+  await page.getByPlaceholder('Your name').fill(name);
+  await page.getByRole('button', { name: 'Join & Play' }).click();
+  await expect(page.getByText(`Room: ${roomId} as ${name}`)).toBeVisible();
+}
+
+test('Connect Spotify button renders when the feature flag is on', async ({ page }) => {
+  await join(page, `sp${Date.now().toString(36)}`, 'Lucas');
+  await expect(page.getByRole('button', { name: 'Connect Spotify' })).toBeVisible();
+  // gated add-track field also appears
+  await expect(page.getByPlaceholder('Spotify Track URI (optional)')).toBeVisible();
+});
