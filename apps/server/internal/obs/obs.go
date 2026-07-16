@@ -9,10 +9,12 @@ import (
 )
 
 type Metrics struct {
-	Registry          *prometheus.Registry
-	RPCDuration       *prometheus.HistogramVec
-	ConnectionsActive prometheus.Gauge
-	MatchConfidence   prometheus.Histogram
+	Registry           *prometheus.Registry
+	RPCDuration        *prometheus.HistogramVec
+	ConnectionsActive  prometheus.Gauge
+	MatchConfidence    prometheus.Histogram
+	MatchCacheHits     prometheus.Counter
+	MatchCacheMisses   prometheus.Counter
 }
 
 func New() *Metrics {
@@ -33,8 +35,16 @@ func New() *Metrics {
 			Help:    "Cross-catalog track match confidence (0..1).",
 			Buckets: prometheus.LinearBuckets(0, 0.1, 11),
 		}),
+		MatchCacheHits: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_match_cache_hits_total",
+			Help: "Total track matcher cache hits.",
+		}),
+		MatchCacheMisses: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_match_cache_misses_total",
+			Help: "Total track matcher cache misses.",
+		}),
 	}
-	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence)
+	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses)
 	return m
 }
 
@@ -58,3 +68,6 @@ func (m *Metrics) ConnInc() { m.ConnectionsActive.Inc() }
 func (m *Metrics) ConnDec() { m.ConnectionsActive.Dec() }
 
 func (m *Metrics) ObserveMatchConfidence(c float64) { m.MatchConfidence.Observe(c) }
+
+func (m *Metrics) MatchCacheHit() { m.MatchCacheHits.Inc() }
+func (m *Metrics) MatchCacheMiss() { m.MatchCacheMisses.Inc() }
