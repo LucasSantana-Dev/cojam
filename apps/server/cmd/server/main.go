@@ -60,7 +60,20 @@ func main() {
 	// Create hub
 	h := hub.NewHub(node).WithObservability(logger, metrics)
 	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("YOUTUBE_API_KEY") != "" {
-		h.WithMatcher(match.ResolveYouTube)
+		cachedMatcher := match.NewCachedMatcher(match.ResolveYouTube, func(hit bool) {
+			if hit {
+				if metrics != nil {
+					metrics.MatchCacheHit()
+				}
+				logger.Info("match_cache", "hit", true)
+			} else {
+				if metrics != nil {
+					metrics.MatchCacheMiss()
+				}
+				logger.Info("match_cache", "hit", false)
+			}
+		})
+		h.WithMatcher(cachedMatcher)
 		logger.Info("matcher_enabled", "provider", "youtube")
 	} else {
 		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")

@@ -10,8 +10,10 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"time"
 )
 
@@ -174,18 +176,10 @@ func calculateConfidence(queryTokens, titleTokens []string) float64 {
 	return float64(matches) / float64(len(queryTokens))
 }
 
-// init ensures rate limiter is running
-func init() {
-	// Ensure the ticker is consumed per second
-	go func() {
-		for range rateLimiter.C {
-			// Just consume ticks to prevent channel backlog
-		}
-	}()
-}
-
 // MinConfidence gates auto-attach: below this, better no match than a wrong video.
 const MinConfidence = 0.4
+
+// MatcherFunc is the signature for track matchers: resolves a SourceRef for a track.
 
 // ResolveYouTube is the hub.Matcher implementation: title+artist search,
 // best candidate above MinConfidence wins. Returns (nil, nil) on no confident
@@ -205,4 +199,50 @@ func ResolveYouTube(ctx context.Context, title, artist, isrc string) (*queue.Sou
 		return nil, nil
 	}
 	return &queue.SourceRef{VideoID: best.VideoID, Confidence: best.Confidence}, nil
+}
+
+// NewCachedMatcher returns a thread-safe in-memory cached matcher wrapping the inner matcher.
+// Cache key is normalized (title|artist|isrc) to catch repeated adds of the same track.
+// Hit/miss events are signaled via onEvent callback (hit=true for cache hit, hit=false for cache miss).
+// Caches nil results too: avoids re-querying dead tracks.
+func NewCachedMatcher(inner hub.Matcher, onEvent func(hit bool)) hub.Matcher {
+	var mu sync.Mutex
+	cache := make(map[string]*queue.SourceRef)
+
+	return func(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error) {
+		// Normalize cache key: lowercase, pipe-separated
+		key := strings.ToLower(title + "|" + artist + "|" + isrc)
+
+		mu.Lock()
+		if cached, ok := cache[key]; ok {
+			mu.Unlock()
+			onEvent(true) // cache hit
+			return cached, nil
+		}
+		mu.Unlock()
+
+		// Cache miss: call inner matcher
+		result, err := inner(ctx, title, artist, isrc)
+		if err != nil {
+			return nil, err
+		}
+
+		// Cache the result (including nil) for next time
+		mu.Lock()
+		cache[key] = result
+		mu.Unlock()
+
+		onEvent(false) // cache miss
+		return result, nil
+	}
+}
+
+// init ensures rate limiter is running
+func init() {
+	// Ensure the ticker is consumed per second
+	go func() {
+		for range rateLimiter.C {
+			// Just consume ticks to prevent channel backlog
+		}
+	}()
 }
