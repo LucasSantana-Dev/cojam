@@ -31,6 +31,7 @@ type Hub struct {
 	logger  *slog.Logger
 	metrics *obs.Metrics
 	matcher Matcher
+	spotifyMatcher Matcher
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
@@ -264,6 +265,9 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 		if err == nil && h.matcher != nil && req.Track.Sources.YouTube == nil {
 			go h.enrichYouTube(req.RoomID, addedID, req.Track)
 		}
+		if err == nil && h.spotifyMatcher != nil && req.Track.Sources.Spotify == nil {
+			go h.enrichSpotify(req.RoomID, addedID, req.Track)
+		}
 		return res, err
 
 	case "queue.remove":
@@ -365,4 +369,38 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 		reply, err := h.HandleRPC(e.Method, e.Data)
 		cb(centrifuge.RPCReply{Data: reply}, err)
 	})
+}
+
+// WithSpotifyMatcher enables async Spotify-source enrichment on queue.add.
+func (h *Hub) WithSpotifyMatcher(m Matcher) *Hub {
+	h.spotifyMatcher = m
+	return h
+}
+
+// enrichSpotify resolves a Spotify source for a freshly added track and
+// republishes the room state (own mutation -> version bump -> clients accept).
+func (h *Hub) enrichSpotify(roomID, trackID string, track queue.TrackRef) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ref, err := h.spotifyMatcher(ctx, track.Title, track.Artist, track.ISRC)
+	if err != nil || ref == nil {
+		if h.logger != nil {
+			h.logger.Info("spotify_match_miss", "room_id", roomID, "track_id", trackID, "err", fmt.Sprint(err))
+		}
+		return
+	}
+	if h.metrics != nil {
+		h.metrics.ObserveMatchConfidence(ref.Confidence)
+	}
+	if _, err := h.mutate(roomID, func(s *queue.RoomState) error {
+		return s.SetSpotifySource(trackID, *ref)
+	}); err != nil && h.logger != nil {
+		// track may have been removed while resolving - log, don't crash
+		h.logger.Info("spotify_match_apply_failed", "room_id", roomID, "track_id", trackID, "err", err.Error())
+	}
+	if h.logger != nil {
+		h.logger.Info("spotify_match_applied", "room_id", roomID, "track_id", trackID,
+			"track_uri", ref.TrackURI, "confidence", ref.Confidence)
+	}
 }

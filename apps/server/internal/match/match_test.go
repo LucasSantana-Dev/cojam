@@ -219,3 +219,38 @@ func TestCalculateConfidence(t *testing.T) {
 		})
 	}
 }
+
+// Spotify matcher tests below
+
+func TestResolveSpotify_ErrNotConfigured(t *testing.T) {
+	// Save old env state
+	oldID := spotifyClientID
+	oldSecret := spotifyClientSecret
+	defer func() {
+		spotifyClientID = oldID
+		spotifyClientSecret = oldSecret
+	}()
+
+	// Unset credentials
+	spotifyClientID = ""
+	spotifyClientSecret = ""
+
+	ref, err := ResolveSpotify(context.Background(), "Title", "Artist", "")
+	if err != ErrNotConfigured {
+		t.Errorf("expected ErrNotConfigured, got %v", err)
+	}
+	if ref != nil {
+		t.Errorf("expected nil ref, got %v", ref)
+	}
+}
+
+func TestResolveSpotify_NoResults(t *testing.T) {
+	// This test verifies that empty search results return (nil, nil)
+	// Placeholder: will implement after stubbing the HTTP layer
+	t.Skip("TODO: implement with httptest stubs")
+}
+
+func TestResolveSpotify_ConfidenceBelowThreshold(t *testing.T) {
+	// This test verifies that results below MinConfidence return (nil, nil)
+	t.Skip("TODO: implement with httptest stubs")
+}

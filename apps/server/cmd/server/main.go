@@ -93,6 +93,27 @@ func main() {
 		h.WithMatcher(cachedMatcher)
 		logger.Info("matcher_enabled", "provider", "youtube")
 	} else {
+
+	// Wire Spotify matcher if configured
+	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("SPOTIFY_CLIENT_ID") != "" && os.Getenv("SPOTIFY_CLIENT_SECRET") != "" {
+		spotifyCachedMatcher := match.NewCachedMatcher(match.ResolveSpotify, func(hit bool) {
+			if hit {
+				if metrics != nil {
+					metrics.MatchCacheHit()
+				}
+				logger.Info("spotify_match_cache", "hit", true)
+			} else {
+				if metrics != nil {
+					metrics.MatchCacheMiss()
+				}
+				logger.Info("spotify_match_cache", "hit", false)
+			}
+		})
+		h.WithSpotifyMatcher(spotifyCachedMatcher)
+		logger.Info("spotify_matcher_enabled", "provider", "spotify")
+	} else {
+		logger.Info("spotify_matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_id", os.Getenv("SPOTIFY_CLIENT_ID") != "", "has_secret", os.Getenv("SPOTIFY_CLIENT_SECRET") != "")
+	}
 		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")
 	}
 

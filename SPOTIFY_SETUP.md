@@ -56,3 +56,49 @@ everyone else falls back to YouTube. Source priority per client: spotify > apple
 - The Client ID is compiled into the client bundle (public by design for PKCE) — fine.
 - Tokens live in `sessionStorage`, refreshed 60s before expiry.
 - Extended access (past 5 users) is a later application to Spotify with the live app.
+
+## 5. Server-side Spotify track matching (optional)
+
+The server can automatically resolve Spotify track URIs for queued tracks by title/artist
+or ISRC, mirroring the YouTube matching feature. This requires **different** credentials
+from the web app (server uses client-credentials flow, not PKCE).
+
+### Create a second Spotify app for server (optional step)
+
+Spotify restricts the same app to one OAuth flow. If you want server-side matching:
+
+1. https://developer.spotify.com/dashboard → **Create app** (different from step 1).
+2. Name: e.g. `music-jam-server`.
+3. Accept terms (no redirect URI needed for client-credentials).
+4. In **Settings** → **Show Client Secret** (this is a secret; keep it safe).
+5. Copy both **Client ID** and **Client Secret**.
+
+### Configure server
+
+Create `.env` (or export to shell, gitignored):
+
+```sh
+FEATURE_MATCHING=on
+SPOTIFY_CLIENT_ID=<client id from new app>
+SPOTIFY_CLIENT_SECRET=<client secret from new app>
+```
+
+When both are set and `FEATURE_MATCHING=on`, the server will:
+- Attempt ISRC search first if a track has an ISRC code.
+- Fall back to title+artist search.
+- Return `(nil, nil)` if no match above MinConfidence (0.4).
+- Cache results in-memory to avoid re-hitting Spotify API.
+
+### Verify in logs
+
+```sh
+cd apps/server && go run ./cmd/server
+```
+
+Check logs for:
+- `"spotify_matcher_enabled"` if credentials are set and FEATURE_MATCHING is on.
+- `"spotify_match_applied"` when a track is successfully resolved.
+- `"spotify_match_miss"` when no confident match was found.
+
+All Spotify matcher cache hits/misses are logged as `"spotify_match_cache"`.
+
