@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/realtime';
 
 declare global {
@@ -10,65 +10,77 @@ declare global {
   }
 }
 
-let YT: any;
-let playerReady = false;
+const apiReadyCallbacks: Array<() => void> = [];
 
-function loadYouTubeAPI() {
-  if (document.querySelector('script[src*="youtube"]')) return;
+function loadYouTubeAPI(onReady: () => void) {
+  if (window.YT?.Player) {
+    onReady();
+    return;
+  }
+  apiReadyCallbacks.push(onReady);
+  if (document.querySelector('script[src*="youtube.com/iframe_api"]')) return;
 
   window.onYouTubeIframeAPIReady = () => {
-    playerReady = true;
+    apiReadyCallbacks.splice(0).forEach((cb) => cb());
   };
-
   const script = document.createElement('script');
   script.src = 'https://www.youtube.com/iframe_api';
   document.body.appendChild(script);
 }
 
 export function YouTubePlayer() {
-  const playerRef = useRef<ReturnType<typeof window.YT.Player> | null>(null);
+  const playerRef = useRef<any>(null);
+  const playerUsable = useRef(false); // true only after the instance's onReady fired
+  const pendingVideoId = useRef<string | null>(null);
+  const [apiReady, setApiReady] = useState(false);
   const state = useStore((s) => s.state);
   const nowPlayingId = state?.nowPlayingId;
   const queue = state?.queue ?? [];
 
   useEffect(() => {
-    loadYouTubeAPI();
+    loadYouTubeAPI(() => setApiReady(true));
   }, []);
 
   useEffect(() => {
-    if (!playerReady || !window.YT) return;
+    if (!apiReady) return;
 
     if (!playerRef.current) {
       playerRef.current = new window.YT.Player('youtube-player', {
         width: 480,
         height: 270,
-        videoId: '',
         events: {
-          onReady: () => {},
-          onStateChange: () => {},
+          onReady: () => {
+            playerUsable.current = true;
+            if (pendingVideoId.current) {
+              playerRef.current.loadVideoById(pendingVideoId.current);
+              pendingVideoId.current = null;
+            }
+          },
         },
       });
     }
 
-    if (nowPlayingId) {
-      const track = queue.find((t) => t.id === nowPlayingId);
-      if (track?.sources.youtube?.videoId) {
-        playerRef.current.loadVideoById(track.sources.youtube.videoId);
-      }
+    const track = nowPlayingId ? queue.find((t) => t.id === nowPlayingId) : undefined;
+    const videoId = track?.sources.youtube?.videoId;
+    if (!videoId) return;
+
+    if (playerUsable.current) {
+      playerRef.current.loadVideoById(videoId);
+    } else {
+      // instance methods only exist after onReady — stash until then
+      pendingVideoId.current = videoId;
     }
-  }, [nowPlayingId, queue]);
+  }, [apiReady, nowPlayingId, queue]);
+
+  const nowPlaying = nowPlayingId ? queue.find((t) => t.id === nowPlayingId) : undefined;
 
   return (
     <div className="space-y-4">
       <div id="youtube-player" className="w-full" />
-      {nowPlayingId && queue.find((t) => t.id === nowPlayingId) && (
+      {nowPlaying && (
         <div className="text-sm">
-          <div className="font-semibold">
-            {queue.find((t) => t.id === nowPlayingId)?.title}
-          </div>
-          <div className="text-gray-400">
-            {queue.find((t) => t.id === nowPlayingId)?.artist}
-          </div>
+          <div className="font-semibold">{nowPlaying.title}</div>
+          <div className="text-gray-400">{nowPlaying.artist}</div>
         </div>
       )}
     </div>

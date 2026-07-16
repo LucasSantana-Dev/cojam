@@ -1,5 +1,6 @@
 import { RoomClient } from './client';
 
-export default function RoomPage({ params }: { params: { id: string } }) {
-  return <RoomClient roomId={params.id} />;
+export default async function RoomPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return <RoomClient roomId={id} />;
 }

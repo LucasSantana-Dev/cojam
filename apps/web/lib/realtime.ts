@@ -44,7 +44,7 @@ export async function joinRoom(roomId: string, name: string) {
 
   const sub = centrifuge.newSubscription(`room:${roomId}`);
 
-  sub.on('publish' as any, (ctx: any) => {
+  sub.on('publication', (ctx) => {
     const pub = ctx.data as RoomStatePub;
     if (pub.type === 'room.state') {
       store.setState(pub.state);
@@ -59,10 +59,10 @@ export async function joinRoom(roomId: string, name: string) {
     centrifuge!.on('connected', () => resolve());
   });
 
+  // RPC result IS the RoomState (docs/protocol.md), not wrapped in {state}
   const joinResult = await centrifuge.rpc('room.join', { roomId, name });
   if (joinResult.data) {
-    const initialState = (joinResult.data as any).state as RoomState;
-    store.setState(initialState);
+    store.setState(joinResult.data as RoomState);
   }
 
   return sub;
