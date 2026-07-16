@@ -1,0 +1,7 @@
+{
+  "name": "@music-jam/shared",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/protocol.ts",
+  "files": ["src"]
+}
