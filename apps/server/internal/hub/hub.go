@@ -31,6 +31,23 @@ type Hub struct {
 	logger  *slog.Logger
 	metrics *obs.Metrics
 	matcher Matcher
+
+	// members gates mutating RPCs: a client may only mutate rooms it has joined
+	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
+	// disconnect. Separate mutex from rooms to avoid contention.
+	memberMu sync.RWMutex
+	members  map[string]map[string]struct{} // clientID -> set of roomIDs
+}
+
+// mutatingMethods are RPCs that change room state and therefore require the
+// caller to be a member of the target room. room.join enrolls (see Authorize);
+// reads and unknown methods fall through to dispatch.
+var mutatingMethods = map[string]bool{
+	"queue.add":           true,
+	"queue.remove":        true,
+	"queue.reorder":       true,
+	"now_playing.set":     true,
+	"now_playing.advance": true,
 }
 
 // WithMatcher enables async YouTube-source enrichment on queue.add.
@@ -56,9 +73,66 @@ func (h *Hub) WithObservability(logger *slog.Logger, m *obs.Metrics) *Hub {
 // NewHub creates a new hub with the given centrifuge node (nil in tests: publish is skipped)
 func NewHub(node *centrifuge.Node) *Hub {
 	return &Hub{
-		rooms: make(map[string]*Room),
-		node:  node,
+		rooms:   make(map[string]*Room),
+		node:    node,
+		members: make(map[string]map[string]struct{}),
 	}
+}
+
+// Join enrolls a client as a member of a room (called on room.join and on
+// channel subscribe, so membership survives centrifuge reconnects).
+func (h *Hub) Join(clientID, roomID string) {
+	if clientID == "" || roomID == "" {
+		return
+	}
+	h.memberMu.Lock()
+	defer h.memberMu.Unlock()
+	if h.members[clientID] == nil {
+		h.members[clientID] = make(map[string]struct{})
+	}
+	h.members[clientID][roomID] = struct{}{}
+}
+
+// Leave drops all of a client's memberships (called on disconnect).
+func (h *Hub) Leave(clientID string) {
+	h.memberMu.Lock()
+	defer h.memberMu.Unlock()
+	delete(h.members, clientID)
+}
+
+// IsMember reports whether a client has joined/subscribed to a room.
+func (h *Hub) IsMember(clientID, roomID string) bool {
+	h.memberMu.RLock()
+	defer h.memberMu.RUnlock()
+	_, ok := h.members[clientID][roomID]
+	return ok
+}
+
+// Authorize gates a client's RPC before dispatch. room.join enrolls the client
+// and is always allowed. Mutating methods require membership of the target room,
+// else ErrorPermissionDenied. Reads/unknown methods pass through (dispatch owns
+// unknown-method + roomId-required errors). Called at the transport boundary
+// where the clientID is known, keeping HandleRPC transport-independent.
+func (h *Hub) Authorize(clientID, method string, data []byte) error {
+	var probe struct {
+		RoomID string `json:"roomId"`
+	}
+	_ = json.Unmarshal(data, &probe)
+
+	if method == "room.join" {
+		h.Join(clientID, probe.RoomID)
+		return nil
+	}
+	if !mutatingMethods[method] {
+		return nil
+	}
+	if probe.RoomID == "" {
+		return nil // let dispatch return the roomId-required error
+	}
+	if !h.IsMember(clientID, probe.RoomID) {
+		return centrifuge.ErrorPermissionDenied
+	}
+	return nil
 }
 
 // GetOrCreateRoom retrieves or creates a room
@@ -283,6 +357,11 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) {
 // RegisterClient wires a connected client's RPCs to the hub dispatch.
 func (h *Hub) RegisterClient(client *centrifuge.Client) {
 	client.OnRPC(func(e centrifuge.RPCEvent, cb centrifuge.RPCCallback) {
+		// Trust boundary: reject mutations of rooms this client hasn't joined.
+		if err := h.Authorize(client.ID(), e.Method, e.Data); err != nil {
+			cb(centrifuge.RPCReply{}, err)
+			return
+		}
 		reply, err := h.HandleRPC(e.Method, e.Data)
 		cb(centrifuge.RPCReply{Data: reply}, err)
 	})
