@@ -9,6 +9,7 @@ import { ApplePlayer } from '../components/ApplePlayer';
 import { SpotifyPlayer } from '../components/SpotifyPlayer';
 import { QueuePanel } from '../components/QueuePanel';
 import { AddTrackForm } from '../components/AddTrackForm';
+import { PresenceBar } from '../components/PresenceBar';
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const [nameInput, setNameInput] = useState('');
@@ -83,16 +84,17 @@ export function RoomClient({ roomId }: { roomId: string }) {
     <div className="min-h-screen" style={{ background: 'var(--color-surface-0)', color: 'var(--color-text-primary)' }}>
       <div className="border-b" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface-1)' }}>
         <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1 flex-1">
               <h1 className="text-2xl font-bold">music-jam</h1>
               <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
                 Room: {roomId} as {store.name}
               </p>
             </div>
+            <PresenceBar />
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
               <div
-                className="w-2 h-2 rounded-full transition-colors duration-300"
+                className="w-2 h-2 rounded-full animate-pulse-breath"
                 style={{ backgroundColor: store.connected ? 'var(--color-accent)' : '#ef4444' }}
               />
               <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
@@ -119,6 +121,41 @@ export function RoomClient({ roomId }: { roomId: string }) {
               {features.youtube && activeSource === 'youtube' && (
                 <div className="pt-4" style={{ borderTop: '1px solid var(--color-border)' }}>
                   <YouTubePlayer />
+                </div>
+              )}
+            </div>
+
+            {/* Now-Playing Hero */}
+            <div className="hero-section">
+              {nowPlaying ? (
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <h2 className="text-xl font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
+                        {nowPlaying.title}
+                      </h2>
+                      <p className="text-sm mt-1 truncate" style={{ color: 'var(--color-text-secondary)' }}>
+                        {nowPlaying.artist}
+                      </p>
+                    </div>
+                    {activeSource === 'youtube' && (
+                      <span className="badge-source badge-youtube">YouTube</span>
+                    )}
+                    {activeSource === 'spotify' && (
+                      <span className="badge-source badge-spotify">Spotify</span>
+                    )}
+                    {activeSource === 'apple' && (
+                      <span className="badge-source badge-apple">Apple</span>
+                    )}
+                  </div>
+                  <div className="h-40 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }} />
+                </div>
+              ) : (
+                <div className="hero-empty">
+                  <p style={{ color: 'var(--color-text-secondary)' }}>Nothing playing</p>
+                  <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                    Add a track to get started
+                  </p>
                 </div>
               )}
             </div>

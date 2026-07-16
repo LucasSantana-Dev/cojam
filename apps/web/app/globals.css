@@ -14,8 +14,8 @@
   --color-text-primary: oklch(0.96 0.01 280); /* off-white, not #fff */
   --color-text-secondary: oklch(0.62 0.02 280); /* muted, readable */
   --color-text-muted: oklch(0.48 0.01 280);   /* for hints/secondary text */
-  --color-accent: oklch(0.72 0.17 148);       /* Spotify green (~#1DB954), bright enough for dark text at AA */
-  --color-accent-hover: oklch(0.78 0.16 148); /* lighter for hover */
+  --color-accent: oklch(0.66 0.20 300);       /* violet — bright enough for dark button text at AA */
+  --color-accent-hover: oklch(0.72 0.18 300); /* lighter for hover */
 }
 
 :root {
@@ -48,3 +48,153 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--color-accent);
   background: var(--color-surface-3);
 }
+
+/* Motion animations - respects prefers-reduced-motion */
+@keyframes pulse-breath {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Motion utilities */
+.animate-pulse-breath {
+  animation: pulse-breath 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-fade-in {
+  animation: fade-in 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-breath,
+  .animate-fade-in-up,
+  .animate-fade-in {
+    animation: none;
+  }
+}
+
+/* Avatar utilities */
+.avatar-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: var(--color-accent);
+  color: var(--color-surface-0);
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.avatar-chip-sm {
+  width: 24px;
+  height: 24px;
+  font-size: 0.65rem;
+}
+
+/* Avatar stack for presence */
+.presence-stack {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+}
+
+.presence-stack .avatar-chip {
+  margin-left: -8px;
+  border: 2px solid var(--color-surface-1);
+}
+
+.presence-stack .avatar-chip:first-child {
+  margin-left: 0;
+}
+
+/* Hero region polish */
+.hero-section {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  space-y: 1rem;
+}
+
+.hero-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+/* Queue item list polish */
+.queue-item {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.queue-item:hover {
+  border-color: var(--color-accent);
+  background: var(--color-surface-3);
+}
+
+/* Source badge polish */
+.badge-source {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.badge-youtube {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #ea580c;
+}
+
+.badge-apple {
+  background-color: rgba(30, 58, 138, 0.15);
+  color: #93c5fd;
+}
+
+.badge-spotify {
+  background-color: rgba(96, 165, 250, 0.15);
+  color: var(--color-accent);
+}
+
+/* Stagger animation for presence avatars */
+.presence-stack .avatar-chip:nth-child(1) { animation-delay: 0ms; }
+.presence-stack .avatar-chip:nth-child(2) { animation-delay: 50ms; }
+.presence-stack .avatar-chip:nth-child(3) { animation-delay: 100ms; }
+.presence-stack .avatar-chip:nth-child(4) { animation-delay: 150ms; }
+.presence-stack .avatar-chip:nth-child(5) { animation-delay: 200ms; }
+.presence-stack .avatar-chip:nth-child(6) { animation-delay: 250ms; }
+
+/* Stagger animation for queue items */
+.queue-item:nth-child(1) { animation-delay: 0ms; }
+.queue-item:nth-child(2) { animation-delay: 50ms; }
+.queue-item:nth-child(3) { animation-delay: 100ms; }
+.queue-item:nth-child(4) { animation-delay: 150ms; }
+.queue-item:nth-child(5) { animation-delay: 200ms; }
+.queue-item:nth-child(n+6) { animation-delay: 250ms; }

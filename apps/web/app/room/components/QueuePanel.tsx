@@ -14,6 +14,10 @@ export function QueuePanel({ roomId }: { roomId: string }) {
     await nowPlayingSet(roomId, trackId);
   };
 
+  const getInitial = (name: string): string => {
+    return name.charAt(0).toUpperCase();
+  };
+
   return (
     <div className="rounded-xl p-6 space-y-4 h-fit" style={{ background: 'var(--color-surface-1)', border: '1px solid var(--color-border)' }}>
       <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
@@ -34,29 +38,32 @@ export function QueuePanel({ roomId }: { roomId: string }) {
           {queue.map((track) => (
             <div
               key={track.id}
-              className="flex items-start justify-between gap-3 p-3 rounded-lg hover:border-2 transition-colors duration-150 group"
+              className="queue-item animate-fade-in-up flex items-start justify-between gap-3 p-3 rounded-lg group"
               style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
             >
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
                   {track.title}
                 </div>
-                <div className="text-xs truncate mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                <div className="text-xs truncate mt-1 flex items-center gap-2" style={{ color: 'var(--color-text-muted)' }}>
+                  <span className="avatar-chip-sm" style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}>
+                    {getInitial(track.addedBy)}
+                  </span>
                   {track.artist} by {track.addedBy}
                 </div>
                 <div className="flex flex-wrap gap-1 mt-2">
                   {track.sources.youtube && (
-                    <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#7c2d12', color: '#ea580c' }}>
+                    <span className="badge-source badge-youtube">
                       YT {Math.round(track.sources.youtube.confidence * 100)}%
                     </span>
                   )}
                   {track.sources.apple && (
-                    <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#1e3a8a', color: '#93c5fd' }}>
+                    <span className="badge-source badge-apple">
                       Apple {Math.round(track.sources.apple.confidence * 100)}%
                     </span>
                   )}
                   {track.sources.spotify && (
-                    <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(96, 165, 250, 0.2)', color: 'var(--color-accent)' }}>
+                    <span className="badge-source badge-spotify">
                       Spotify {Math.round(track.sources.spotify.confidence * 100)}%
                     </span>
                   )}
