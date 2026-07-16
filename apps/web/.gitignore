@@ -5,3 +5,7 @@ build
 *.log
 .DS_Store
 .env.local
+
+# Playwright output
+test-results/
+playwright-report/
