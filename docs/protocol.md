@@ -54,4 +54,8 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 - **`queue.reorder`**: Move a queued track to a new position. Index is clamped to `[0, len-1]`. Idempotent: re-ordering to the same position is a no-op. Does not change `nowPlayingId`.
 - **`now_playing.advance`**: Advance to the next track after the one specified by `afterId`. IDEMPOTENT: if `nowPlayingId != afterId`, it's a no-op (another client already advanced). If `afterId` is the last track in the queue, clears `nowPlayingId` (queue finished). Used by clients to auto-advance when the current track ends.
 
+## Authorization
+
+Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+
 Rules: state carries metadata only, never audio. Each client plays the head track through its own platform SDK on explicit user gesture.

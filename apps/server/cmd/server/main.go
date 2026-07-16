@@ -125,11 +125,17 @@ func main() {
 
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
 			metrics.ConnDec()
+			h.Leave(client.ID()) // revoke room memberships for this connection
 			logger.Info("client_disconnected", "client_id", client.ID(), "reason", e.Reason)
 		})
 
 		client.OnSubscribe(func(e centrifuge.SubscribeEvent, cb centrifuge.SubscribeCallback) {
 			logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
+			// Subscribing to room:<id> enrolls the client so it may mutate that room.
+			// centrifuge re-subscribes on reconnect, so membership survives reconnects.
+			if roomID, ok := strings.CutPrefix(e.Channel, "room:"); ok {
+				h.Join(client.ID(), roomID)
+			}
 			// Presence + join/leave so the room can show who is listening.
 			cb(centrifuge.SubscribeReply{
 				Options: centrifuge.SubscribeOptions{
