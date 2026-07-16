@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,17 +14,23 @@ import (
 	"github.com/centrifugal/centrifuge"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/LucasSantana-Dev/music-jam/server/internal/appletoken"
 	"github.com/LucasSantana-Dev/music-jam/server/internal/hub"
+	"github.com/LucasSantana-Dev/music-jam/server/internal/obs"
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+	metrics := obs.New()
+
 	// Create centrifuge node
 	node, err := centrifuge.New(centrifuge.Config{
-		LogLevel: centrifuge.LogLevelDebug,
+		LogLevel: centrifuge.LogLevelInfo,
 		LogHandler: func(e centrifuge.LogEntry) {
-			log.Printf("centrifuge %d: %s %v", e.Level, e.Message, e.Fields)
+			logger.Info("centrifuge", "level", int(e.Level), "msg", e.Message, "fields", e.Fields)
 		},
 	})
 	if err != nil {
@@ -36,7 +43,7 @@ func main() {
 	}
 
 	// Create hub
-	h := hub.NewHub(node)
+	h := hub.NewHub(node).WithObservability(logger, metrics)
 
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
@@ -48,19 +55,19 @@ func main() {
 	})
 
 	node.OnConnect(func(client *centrifuge.Client) {
-		log.Printf("client connected: %s via %s", client.ID(), client.Transport().Name())
+		metrics.ConnInc()
+		logger.Info("client_connected", "client_id", client.ID(), "transport", client.Transport().Name())
 
 		// Room routing happens per-RPC via params.roomId (docs/protocol.md)
 		h.RegisterClient(client)
 
-		// Handle disconnect
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
-			log.Printf("client disconnected: %s, reason: %v", client.ID(), e.Reason)
+			metrics.ConnDec()
+			logger.Info("client_disconnected", "client_id", client.ID(), "reason", e.Reason)
 		})
 
-		// Handle subscription
 		client.OnSubscribe(func(e centrifuge.SubscribeEvent, cb centrifuge.SubscribeCallback) {
-			log.Printf("client subscribes on channel %s", e.Channel)
+			logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
 			cb(centrifuge.SubscribeReply{}, nil)
 		})
 	})
@@ -108,6 +115,9 @@ func main() {
 		},
 	})
 	r.Handle("/connection/websocket", wsHandler)
+
+	// Prometheus metrics (custom registry from obs)
+	r.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
 
 	// HTTP server setup
 	server := &http.Server{

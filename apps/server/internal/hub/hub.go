@@ -3,10 +3,13 @@ package hub
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/centrifugal/centrifuge"
 
+	"github.com/LucasSantana-Dev/music-jam/server/internal/obs"
 	"github.com/LucasSantana-Dev/music-jam/server/internal/queue"
 )
 
@@ -18,9 +21,25 @@ type Room struct {
 
 // Hub manages all rooms
 type Hub struct {
-	mu    sync.RWMutex
-	rooms map[string]*Room
-	node  *centrifuge.Node
+	mu      sync.RWMutex
+	rooms   map[string]*Room
+	node    *centrifuge.Node
+	logger  *slog.Logger
+	metrics *obs.Metrics
+}
+
+// WithObservability attaches structured logging + metrics; nil-safe when omitted (tests).
+func (h *Hub) WithObservability(logger *slog.Logger, m *obs.Metrics) *Hub {
+	h.logger = logger
+	h.metrics = m
+	if m != nil {
+		m.RegisterRoomsGauge(func() float64 {
+			h.mu.RLock()
+			defer h.mu.RUnlock()
+			return float64(len(h.rooms))
+		})
+	}
+	return h
 }
 
 // NewHub creates a new hub with the given centrifuge node (nil in tests: publish is skipped)
@@ -95,7 +114,35 @@ func (h *Hub) publish(roomID string, state json.RawMessage) error {
 
 // HandleRPC is the transport-independent RPC dispatch per docs/protocol.md.
 // Every method takes roomId from params; every result is the full RoomState.
+// Instrumented: one slog record + one histogram observation per call.
 func (h *Hub) HandleRPC(method string, data []byte) (json.RawMessage, error) {
+	start := time.Now()
+	result, err := h.dispatch(method, data)
+	d := time.Since(start)
+
+	if h.metrics != nil {
+		h.metrics.ObserveRPC(method, err, d)
+	}
+	if h.logger != nil {
+		var probe struct {
+			RoomID string `json:"roomId"`
+		}
+		_ = json.Unmarshal(data, &probe)
+		attrs := []any{
+			"method", method,
+			"room_id", probe.RoomID,
+			"duration_ms", float64(d.Microseconds()) / 1000.0,
+		}
+		if err != nil {
+			h.logger.Error("rpc", append(attrs, "err", err.Error())...)
+		} else {
+			h.logger.Info("rpc", attrs...)
+		}
+	}
+	return result, err
+}
+
+func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 	switch method {
 	case "room.join":
 		var req struct {
