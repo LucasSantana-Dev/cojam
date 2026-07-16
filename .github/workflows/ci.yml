@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege: these jobs only build/test, so the token needs read-only
+# access to repo contents and nothing else.
+permissions:
+  contents: read
+
 jobs:
   server:
     name: Go server

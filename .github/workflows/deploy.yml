@@ -5,6 +5,11 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Least privilege: deploy uses FLY_API_TOKEN (not GITHUB_TOKEN); the job only
+# needs to check out the repo. No write scopes on the GitHub token.
+permissions:
+  contents: read
+
 jobs:
   deploy-server:
     name: Deploy server to Fly.io
