@@ -3,7 +3,9 @@ app = "cojam-web"
 primary_region = "gig"
 
 [build]
-dockerfile = "Dockerfile"
+# Build context is the repo root (monorepo); deploy with:
+#   flyctl deploy --config apps/web/fly.toml --dockerfile apps/web/Dockerfile
+dockerfile = "apps/web/Dockerfile"
 
 [http_service]
 internal_port = 3000
