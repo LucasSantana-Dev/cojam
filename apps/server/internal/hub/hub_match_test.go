@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LucasSantana-Dev/music-jam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
 // queue.add on a track WITHOUT a youtube source triggers async enrichment via

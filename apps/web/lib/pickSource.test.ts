@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { pickSource } from './pickSource';
-import type { TrackRef } from '@music-jam/shared';
+import type { TrackRef } from '@cojam/shared';
 
 const track = (sources: TrackRef['sources']): TrackRef => ({
   id: 't1',

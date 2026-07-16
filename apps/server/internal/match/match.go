@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/LucasSantana-Dev/music-jam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"time"
 )
 
@@ -56,7 +56,7 @@ func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "music-jam/0.1 (dev)")
+	req.Header.Set("User-Agent", "cojam/0.1 (dev)")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

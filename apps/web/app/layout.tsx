@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'music-jam',
+  title: 'Cojam',
   description: 'Collaborative music playback',
 };
 

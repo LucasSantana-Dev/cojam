@@ -10,8 +10,8 @@ import (
 
 	"github.com/centrifugal/centrifuge"
 
-	"github.com/LucasSantana-Dev/music-jam/server/internal/obs"
-	"github.com/LucasSantana-Dev/music-jam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
+	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
 // Matcher resolves a YouTube source for a track (nil result = no confident match).

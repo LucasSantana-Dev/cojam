@@ -1,5 +1,5 @@
 {
-  "name": "music-jam",
+  "name": "cojam",
   "private": true,
   "scripts": {
     "dev:web": "pnpm --filter web dev",

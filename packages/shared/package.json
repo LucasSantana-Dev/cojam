@@ -1,5 +1,5 @@
 {
-  "name": "@music-jam/shared",
+  "name": "@cojam/shared",
   "version": "0.1.0",
   "type": "module",
   "main": "src/protocol.ts",

@@ -65,7 +65,7 @@ export function SpotifyPlayer({
         await loadSDK();
         if (cancelled) return;
         const player = new window.Spotify.Player({
-          name: 'music-jam',
+          name: 'cojam',
           getOAuthToken: (cb: (t: string) => void) => {
             getAccessToken().then((t) => t && cb(t));
           },

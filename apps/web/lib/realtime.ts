@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Centrifuge } from 'centrifuge';
-import type { RoomState, RoomStatePub, TrackRef } from '@music-jam/shared';
+import type { RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = { clientId: string; name: string };
 

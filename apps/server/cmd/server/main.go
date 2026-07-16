@@ -17,10 +17,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/LucasSantana-Dev/music-jam/server/internal/appletoken"
-	"github.com/LucasSantana-Dev/music-jam/server/internal/hub"
-	"github.com/LucasSantana-Dev/music-jam/server/internal/match"
-	"github.com/LucasSantana-Dev/music-jam/server/internal/obs"
+	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
+	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
+	"github.com/LucasSantana-Dev/cojam/server/internal/match"
+	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 )
 
 // featureEnabled reads a FEATURE_* toggle (1/true/on/yes = on, 0/false/off/no = off,

@@ -1,4 +1,4 @@
-module github.com/LucasSantana-Dev/music-jam/server
+module github.com/LucasSantana-Dev/cojam/server
 
 go 1.26
 

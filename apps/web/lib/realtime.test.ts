@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useStore } from './realtime';
-import type { RoomState } from '@music-jam/shared';
+import type { RoomState } from '@cojam/shared';
 
 const state = (version: number, roomId = 'r1'): RoomState => ({
   roomId,

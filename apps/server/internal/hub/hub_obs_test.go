@@ -8,7 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/LucasSantana-Dev/music-jam/server/internal/obs"
+	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 )
 
 func TestHandleRPC_EmitsLogAndMetric(t *testing.T) {

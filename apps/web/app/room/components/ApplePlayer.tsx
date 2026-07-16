@@ -63,7 +63,7 @@ export function ApplePlayer({
         const MusicKit = await loadMusicKit();
         await MusicKit.configure({
           developerToken: token,
-          app: { name: 'music-jam', build: '0.1.0' },
+          app: { name: 'cojam', build: '0.1.0' },
         });
         musicRef.current = MusicKit.getInstance();
         onAuthorized(musicRef.current.isAuthorized);

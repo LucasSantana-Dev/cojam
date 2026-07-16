@@ -28,7 +28,7 @@ export default function Home() {
       <div className="max-w-sm w-full space-y-12">
         <div className="text-center space-y-3">
           <h1 className="text-5xl font-bold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
-            music-jam
+            Cojam
           </h1>
           <p className="text-lg" style={{ color: 'var(--color-text-secondary)' }}>
             Collaborative music playback

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/LucasSantana-Dev/music-jam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
 // HandleRPC is the transport-independent RPC dispatch (protocol.md): every method

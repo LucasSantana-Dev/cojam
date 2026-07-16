@@ -1,4 +1,4 @@
-import type { TrackRef } from '@music-jam/shared';
+import type { TrackRef } from '@cojam/shared';
 
 // Which platform adapter plays this track for THIS client.
 // Priority: an authorized full-track service (Spotify, then Apple) the track

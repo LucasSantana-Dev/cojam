@@ -50,7 +50,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         >
           <div className="space-y-2 text-center">
             <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-              music-jam
+              Cojam
             </h1>
             <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               Room: {roomId}
@@ -86,7 +86,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-1 flex-1">
-              <h1 className="text-2xl font-bold">music-jam</h1>
+              <h1 className="text-2xl font-bold">Cojam</h1>
               <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
                 Room: {roomId} as {store.name}
               </p>
