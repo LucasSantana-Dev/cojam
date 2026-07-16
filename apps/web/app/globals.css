@@ -198,3 +198,281 @@ input:focus, textarea:focus, select:focus {
 .queue-item:nth-child(4) { animation-delay: 150ms; }
 .queue-item:nth-child(5) { animation-delay: 200ms; }
 .queue-item:nth-child(n+6) { animation-delay: 250ms; }
+
+/* ============================================================
+   Landing page (marketing register) — Cyber / neon-violet.
+   CSS-first: no animation library. All motion is compositor-safe
+   (transform/opacity only) and gated on prefers-reduced-motion.
+   ============================================================ */
+
+.landing {
+  position: relative;
+  overflow-x: clip;
+}
+
+/* Fixed grain overlay to kill digital sterility (very subtle). */
+.landing::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.landing-content {
+  position: relative;
+  z-index: 2;
+}
+
+/* Hero -------------------------------------------------------- */
+.hero {
+  position: relative;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 6rem 1.5rem 4rem;
+  overflow: hidden;
+}
+
+/* Violet radial bloom behind the headline. */
+.hero-glow {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  width: min(90vw, 900px);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(circle, oklch(0.66 0.2 300 / 0.35), transparent 62%);
+  filter: blur(20px);
+  animation: glow-breathe 7s ease-in-out infinite;
+}
+
+@keyframes glow-breathe {
+  0%, 100% { opacity: 0.75; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+/* Faint technical grid, faded out toward the edges. */
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(oklch(0.66 0.2 300 / 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.66 0.2 300 / 0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 2;
+  max-width: 60rem;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  padding: 0.4rem 0.85rem;
+  border: 1px solid oklch(0.66 0.2 300 / 0.35);
+  border-radius: 999px;
+  background: oklch(0.66 0.2 300 / 0.06);
+}
+
+.eyebrow-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 10px 1px var(--color-accent);
+  animation: pulse-breath 1.6s ease-in-out infinite;
+}
+
+.hero-title {
+  margin: 1.5rem 0 1.25rem;
+  font-size: clamp(2.75rem, 9vw, 7rem);
+  line-height: 0.98;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(180deg, oklch(0.98 0.01 280), oklch(0.72 0.16 300));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Per-word rise-in; --i sets the stagger index from the component. */
+.hero-title .word {
+  display: inline-block;
+  margin-right: 0.25em;
+  opacity: 0;
+  transform: translateY(0.5em);
+  animation: word-rise 0.7s cubic-bezier(0.2, 0.65, 0.2, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 90ms + 150ms);
+}
+
+@keyframes word-rise {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hero-sub {
+  max-width: 34rem;
+  margin: 0 auto 2.25rem;
+  font-size: clamp(1rem, 1.6vw, 1.2rem);
+  color: var(--color-text-secondary);
+  opacity: 0;
+  animation: word-rise 0.7s ease forwards;
+  animation-delay: 0.6s;
+}
+
+.hero-cta {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  opacity: 0;
+  animation: word-rise 0.7s ease forwards;
+  animation-delay: 0.75s;
+}
+
+/* Buttons ----------------------------------------------------- */
+.btn-primary {
+  position: relative;
+  padding: 0.85rem 1.6rem;
+  border-radius: 0.7rem;
+  font-weight: 650;
+  color: var(--color-surface-0);
+  background: var(--color-accent);
+  box-shadow: 0 0 0 0 oklch(0.66 0.2 300 / 0.5), 0 8px 30px -8px oklch(0.66 0.2 300 / 0.7);
+  transition: transform 150ms ease, box-shadow 200ms ease, filter 150ms ease;
+}
+.btn-primary:hover { filter: brightness(1.08); box-shadow: 0 0 24px 2px oklch(0.66 0.2 300 / 0.5); }
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-ghost {
+  padding: 0.85rem 1.4rem;
+  border-radius: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+.btn-ghost:hover { border-color: var(--color-accent); background: var(--color-surface-3); }
+.btn-ghost:active { transform: scale(0.97); }
+
+/* Magnetic hover (JS translates via --mx/--my); pointer-only. */
+.magnetic { will-change: transform; }
+@media (hover: hover) and (pointer: fine) {
+  .magnetic {
+    transform: translate3d(var(--mx, 0), var(--my, 0), 0);
+    transition: transform 120ms ease-out;
+  }
+}
+
+/* Scroll reveal ---------------------------------------------- */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.65, 0.2, 1);
+}
+.reveal.in { opacity: 1; transform: none; }
+
+/* Sections ---------------------------------------------------- */
+.section {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 5rem 1.5rem;
+}
+.section-eyebrow {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.section-title {
+  margin: 0.6rem 0 2.5rem;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.step-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+.step-card {
+  position: relative;
+  padding: 1.5rem;
+  border-radius: 0.9rem;
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+}
+.step-card:hover {
+  transform: translateY(-4px);
+  border-color: oklch(0.66 0.2 300 / 0.5);
+  box-shadow: 0 20px 40px -24px oklch(0.66 0.2 300 / 0.8);
+}
+.step-num {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.8rem;
+  color: var(--color-accent);
+}
+.step-card h3 { margin: 0.6rem 0 0.4rem; font-size: 1.15rem; font-weight: 650; color: var(--color-text-primary); }
+.step-card p { font-size: 0.92rem; color: var(--color-text-secondary); }
+
+.platform-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+}
+.platform-chip {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  padding: 0.5rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-1);
+}
+.platform-chip[data-live="1"] { color: var(--color-text-primary); border-color: oklch(0.66 0.2 300 / 0.45); }
+
+.final-cta {
+  text-align: center;
+  padding: 6rem 1.5rem 7rem;
+}
+
+.landing-footer {
+  text-align: center;
+  padding: 2rem 1.5rem 3rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+}
+.landing-footer a { color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-glow { animation: none; }
+  .eyebrow-dot { animation: none; }
+  .hero-title .word,
+  .hero-sub,
+  .hero-cta { opacity: 1; transform: none; animation: none; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .magnetic { transform: none !important; }
+  .step-card:hover { transform: none; }
+}
