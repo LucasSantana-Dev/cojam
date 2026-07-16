@@ -213,6 +213,37 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 			return s.SetNowPlaying(req.TrackID)
 		})
 
+	case "now_playing.advance":
+		var req struct {
+			RoomID  string `json:"roomId"`
+			AfterID string `json:"afterId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("now_playing.advance: roomId required")
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			return s.AdvanceAfter(req.AfterID)
+		})
+
+	case "queue.reorder":
+		var req struct {
+			RoomID  string `json:"roomId"`
+			TrackID string `json:"trackId"`
+			ToIndex int    `json:"toIndex"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("queue.reorder: roomId required")
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			return s.Move(req.TrackID, req.ToIndex)
+		})
+
 	default:
 		return nil, centrifuge.ErrorMethodNotFound
 	}

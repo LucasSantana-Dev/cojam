@@ -96,3 +96,81 @@ func (rs *RoomState) SetYouTubeSource(trackID string, ref SourceRef) error {
 	}
 	return fmt.Errorf("track not found: %s", trackID)
 }
+
+// AdvanceAfter moves NowPlayingID to the next track after afterID.
+// IDEMPOTENT: if NowPlayingID != afterID, it's a no-op (another client advanced).
+// If afterID is the last track, sets NowPlayingID to empty (queue finished).
+// Bumps Version only if state actually changes.
+func (rs *RoomState) AdvanceAfter(afterID string) error {
+	// Idempotent check: if NowPlayingID != afterID, no-op
+	if rs.NowPlayingID != afterID {
+		return nil
+	}
+
+	// Find the index of afterID
+	var afterIndex int
+	found := false
+	for i, t := range rs.Queue {
+		if t.ID == afterID {
+			afterIndex = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("track not found: %s", afterID)
+	}
+
+	// If afterID is the last track, clear NowPlayingID
+	if afterIndex == len(rs.Queue)-1 {
+		rs.NowPlayingID = ""
+		rs.Version++
+		return nil
+	}
+
+	// Otherwise, advance to the next track
+	rs.NowPlayingID = rs.Queue[afterIndex+1].ID
+	rs.Version++
+	return nil
+}
+
+// Move relocates a track to a new position in the queue.
+// Index is clamped to [0, len-1]; NowPlayingID is unchanged.
+// Bumps Version when the move happens.
+func (rs *RoomState) Move(trackID string, toIndex int) error {
+	// Find the track to move
+	var currentIndex int
+	found := false
+	for i, t := range rs.Queue {
+		if t.ID == trackID {
+			currentIndex = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("track not found: %s", trackID)
+	}
+
+	// Clamp toIndex
+	if toIndex < 0 {
+		toIndex = 0
+	} else if toIndex >= len(rs.Queue) {
+		toIndex = len(rs.Queue) - 1
+	}
+
+	// If already at the target index, no-op
+	if currentIndex == toIndex {
+		return nil
+	}
+
+	// Remove the track from its current position
+	track := rs.Queue[currentIndex]
+	rs.Queue = append(rs.Queue[:currentIndex], rs.Queue[currentIndex+1:]...)
+
+	// Insert it at the new position
+	rs.Queue = append(rs.Queue[:toIndex], append([]TrackRef{track}, rs.Queue[toIndex:]...)...)
+
+	rs.Version++
+	return nil
+}

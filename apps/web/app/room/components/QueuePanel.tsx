@@ -1,6 +1,6 @@
 'use client';
 
-import { useStore, queueRemove, nowPlayingSet } from '@/lib/realtime';
+import { useStore, queueRemove, nowPlayingSet, queueReorder } from '@/lib/realtime';
 
 export function QueuePanel({ roomId }: { roomId: string }) {
   const state = useStore((s) => s.state);
@@ -12,6 +12,18 @@ export function QueuePanel({ roomId }: { roomId: string }) {
 
   const handlePlay = async (trackId: string) => {
     await nowPlayingSet(roomId, trackId);
+  };
+
+  const handleMoveUp = async (trackId: string, currentIndex: number) => {
+    if (currentIndex > 0) {
+      await queueReorder(roomId, trackId, currentIndex - 1);
+    }
+  };
+
+  const handleMoveDown = async (trackId: string, currentIndex: number) => {
+    if (currentIndex < queue.length - 1) {
+      await queueReorder(roomId, trackId, currentIndex + 1);
+    }
   };
 
   const getInitial = (name: string): string => {
@@ -35,7 +47,7 @@ export function QueuePanel({ roomId }: { roomId: string }) {
         </div>
       ) : (
         <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-          {queue.map((track) => (
+          {queue.map((track, index) => (
             <div
               key={track.id}
               className="queue-item animate-fade-in-up flex items-start justify-between gap-3 p-3 rounded-lg group"
@@ -78,6 +90,26 @@ export function QueuePanel({ roomId }: { roomId: string }) {
                 >
                   Play
                 </button>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => handleMoveUp(track.id, index)}
+                    disabled={index === 0}
+                    name="Up"
+                    className="flex-1 px-2 py-1 text-xs font-medium rounded border transition-all duration-150 hover:opacity-70 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: 'var(--color-surface-3)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    onClick={() => handleMoveDown(track.id, index)}
+                    disabled={index === queue.length - 1}
+                    name="Down"
+                    className="flex-1 px-2 py-1 text-xs font-medium rounded border transition-all duration-150 hover:opacity-70 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: 'var(--color-surface-3)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+                  >
+                    ↓
+                  </button>
+                </div>
                 <button
                   onClick={() => handleRemove(track.id)}
                   name="Remove"

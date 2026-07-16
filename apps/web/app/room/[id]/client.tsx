@@ -120,7 +120,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
               {features.youtube && activeSource === 'youtube' && (
                 <div className="pt-4" style={{ borderTop: '1px solid var(--color-border)' }}>
-                  <YouTubePlayer />
+                  <YouTubePlayer roomId={roomId} />
                 </div>
               )}
             </div>

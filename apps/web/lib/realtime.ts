@@ -123,3 +123,13 @@ export async function nowPlayingSet(roomId: string, trackId: string) {
   if (!centrifuge) throw new Error('Not connected');
   await centrifuge.rpc('now_playing.set', { roomId, trackId });
 }
+
+export async function nowPlayingAdvance(roomId: string, afterId: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('now_playing.advance', { roomId, afterId });
+}
+
+export async function queueReorder(roomId: string, trackId: string, toIndex: number) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('queue.reorder', { roomId, trackId, toIndex });
+}
