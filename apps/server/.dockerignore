@@ -1,0 +1,5 @@
+# Server image build context is apps/server. Exclude the compiled binary and
+# local noise so `COPY . .` only ships source + go.mod/go.sum.
+server
+*.log
+.git
