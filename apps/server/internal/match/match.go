@@ -246,3 +246,183 @@ func init() {
 		}
 	}()
 }
+
+// Spotify matcher implementation
+
+// Package-level vars for testability (can be overridden in tests)
+var (
+	spotifyClientID     = os.Getenv("SPOTIFY_CLIENT_ID")
+	spotifyClientSecret = os.Getenv("SPOTIFY_CLIENT_SECRET")
+	spotifyTokenURL     = "https://accounts.spotify.com/api/token"
+	spotifySearchURL    = "https://api.spotify.com/v1/search"
+	spotifyClient       = http.DefaultClient
+)
+
+// tokenCacheEntry holds a cached access token with expiry info
+type tokenCacheEntry struct {
+	mu        sync.Mutex
+	token     string
+	expiresAt time.Time
+}
+
+var spotifyTokenCache = &tokenCacheEntry{}
+
+// spotifyAccessToken fetches or returns a cached Spotify API token
+func spotifyAccessToken(ctx context.Context) (string, error) {
+	spotifyTokenCache.mu.Lock()
+	defer spotifyTokenCache.mu.Unlock()
+
+	// Return cached token if not expired
+	if spotifyTokenCache.token != "" && time.Now().Before(spotifyTokenCache.expiresAt) {
+		return spotifyTokenCache.token, nil
+	}
+
+	// Fetch new token
+	req, err := http.NewRequestWithContext(ctx, "POST", spotifyTokenURL, 
+		strings.NewReader("grant_type=client_credentials"))
+	if err != nil {
+		return "", fmt.Errorf("failed to create token request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(spotifyClientID, spotifyClientSecret)
+
+	resp, err := spotifyClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("token request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("unexpected token status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+		TokenType   string `json:"token_type"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("failed to decode token response: %w", err)
+	}
+
+	spotifyTokenCache.token = tokenResp.AccessToken
+	spotifyTokenCache.expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+
+	return spotifyTokenCache.token, nil
+}
+
+// SpotifyTrack represents a Spotify track from search results
+type SpotifyTrack struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	URI   string `json:"uri"`
+	Album struct {
+		Name string `json:"name"`
+	} `json:"album"`
+	Artists []struct {
+		Name string `json:"name"`
+	} `json:"artists"`
+}
+
+// SpotifySearchResult wraps Spotify search response
+type SpotifySearchResult struct {
+	Tracks struct {
+		Items []SpotifyTrack `json:"items"`
+	} `json:"tracks"`
+}
+
+// ResolveSpotify is the hub.Matcher implementation for Spotify:
+// searches Spotify for a track by ISRC (if provided) or title+artist.
+// Returns a SourceRef with TrackURI on confident match, (nil, nil) on no match.
+func ResolveSpotify(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error) {
+	// Check configuration
+	if spotifyClientID == "" || spotifyClientSecret == "" {
+		return nil, ErrNotConfigured
+	}
+
+	// Get access token
+	token, err := spotifyAccessToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get spotify token: %w", err)
+	}
+
+	// Build search query: ISRC-first, then title+artist
+	var query string
+	if isrc != "" {
+		query = fmt.Sprintf("isrc:%s", isrc)
+	} else {
+		query = title + " " + artist
+	}
+
+	// Search Spotify
+	searchReq, err := http.NewRequestWithContext(ctx, "GET", spotifySearchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create search request: %w", err)
+	}
+
+	q := searchReq.URL.Query()
+	q.Set("q", query)
+	q.Set("type", "track")
+	q.Set("limit", "5")
+	searchReq.URL.RawQuery = q.Encode()
+
+	searchReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	resp, err := spotifyClient.Do(searchReq)
+	if err != nil {
+		return nil, fmt.Errorf("search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected search status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result SpotifySearchResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode search response: %w", err)
+	}
+
+	if len(result.Tracks.Items) == 0 {
+		return nil, nil
+	}
+
+	// ISRC is an exact identifier: a track returned for an isrc: query IS the
+	// match, so trust it at full confidence. (Scoring it by token overlap would
+	// wrongly reject matches whose canonical Spotify title differs, e.g. a
+	// "- Remastered" suffix.)
+	if isrc != "" {
+		best := result.Tracks.Items[0]
+		return &queue.SourceRef{TrackURI: best.URI, Confidence: 1.0}, nil
+	}
+
+	// Title/artist fallback: score token overlap against the REAL title+artist
+	// the caller passed (not the raw query string), best above MinConfidence wins.
+	wantTokens := strings.Fields(strings.ToLower(title + " " + artist))
+	var best *SpotifyTrack
+	var bestConfidence float64
+	for i := range result.Tracks.Items {
+		track := &result.Tracks.Items[i]
+		artistName := ""
+		if len(track.Artists) > 0 {
+			artistName = track.Artists[0].Name
+		}
+		confidence := calculateConfidence(wantTokens, strings.Fields(strings.ToLower(track.Name+" "+artistName)))
+		if best == nil || confidence > bestConfidence {
+			best = track
+			bestConfidence = confidence
+		}
+	}
+
+	if best == nil || bestConfidence < MinConfidence {
+		return nil, nil
+	}
+
+	return &queue.SourceRef{
+		TrackURI:   best.URI,
+		Confidence: bestConfidence,
+	}, nil
+}

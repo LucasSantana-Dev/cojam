@@ -178,3 +178,16 @@ func (rs *RoomState) Move(trackID string, toIndex int) error {
 	rs.Version++
 	return nil
 }
+
+// SetSpotifySource attaches a resolved Spotify source to a queued track
+// (async match enrichment). Bumps Version so clients accept the publication.
+func (rs *RoomState) SetSpotifySource(trackID string, ref SourceRef) error {
+	for i := range rs.Queue {
+		if rs.Queue[i].ID == trackID {
+			rs.Queue[i].Sources.Spotify = &ref
+			rs.Version++
+			return nil
+		}
+	}
+	return fmt.Errorf("track not found: %s", trackID)
+}
