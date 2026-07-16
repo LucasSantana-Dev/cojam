@@ -70,8 +70,19 @@ func main() {
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
 		// Allow anonymous connections (no auth v0) — empty UserID marks the client anonymous,
 		// but Credentials must be present or centrifuge rejects the connect with "bad request".
+		// The display name arrives as connect data {name}; carry it as ConnInfo so presence
+		// entries show who is in the room (metadata only — no audio, no auth).
+		var info []byte
+		if len(e.Data) > 0 {
+			var d struct {
+				Name string `json:"name"`
+			}
+			if json.Unmarshal(e.Data, &d) == nil && d.Name != "" {
+				info, _ = json.Marshal(map[string]string{"name": d.Name})
+			}
+		}
 		return centrifuge.ConnectReply{
-			Credentials: &centrifuge.Credentials{UserID: ""},
+			Credentials: &centrifuge.Credentials{UserID: "", Info: info},
 		}, nil
 	})
 
@@ -89,7 +100,19 @@ func main() {
 
 		client.OnSubscribe(func(e centrifuge.SubscribeEvent, cb centrifuge.SubscribeCallback) {
 			logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
-			cb(centrifuge.SubscribeReply{}, nil)
+			// Presence + join/leave so the room can show who is listening.
+			cb(centrifuge.SubscribeReply{
+				Options: centrifuge.SubscribeOptions{
+					EmitPresence:  true,
+					EmitJoinLeave: true,
+					PushJoinLeave: true,
+				},
+			}, nil)
+		})
+
+		// Authorize presence queries (else client presence() returns code 108).
+		client.OnPresence(func(e centrifuge.PresenceEvent, cb centrifuge.PresenceCallback) {
+			cb(centrifuge.PresenceReply{}, nil)
 		})
 	})
 
