@@ -1,6 +1,7 @@
 package appletoken
 
 import (
+	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -34,9 +35,18 @@ func BuildToken() (string, error) {
 		return "", fmt.Errorf("failed to decode PEM block")
 	}
 
-	privKey, err := x509.ParseECPrivateKey(block.Bytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse EC private key: %w", err)
+	// Apple portal .p8 files are PKCS#8 ("BEGIN PRIVATE KEY"); SEC1 kept as fallback
+	var privKey *ecdsa.PrivateKey
+	if k, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		ec, ok := k.(*ecdsa.PrivateKey)
+		if !ok {
+			return "", fmt.Errorf("private key is %T, want *ecdsa.PrivateKey", k)
+		}
+		privKey = ec
+	} else if k, secErr := x509.ParseECPrivateKey(block.Bytes); secErr == nil {
+		privKey = k
+	} else {
+		return "", fmt.Errorf("failed to parse private key (PKCS#8: %v): %w", err, secErr)
 	}
 
 	// Create token with 12-hour expiration

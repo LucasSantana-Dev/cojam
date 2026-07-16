@@ -5,3 +5,6 @@ dist/
 *.log
 apps/server/server
 .DS_Store
+
+*.p8
+.env.local

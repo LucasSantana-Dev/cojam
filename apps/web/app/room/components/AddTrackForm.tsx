@@ -7,6 +7,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [videoId, setVideoId] = useState('');
+  const [appleSongId, setAppleSongId] = useState('');
   const [loading, setLoading] = useState(false);
   const name = useStore((s) => s.name);
 
@@ -20,12 +21,16 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
         title,
         artist,
         durationMs: undefined,
-        sources: videoId ? { youtube: { videoId, confidence: 1 } } : {},
+        sources: {
+          ...(videoId ? { youtube: { videoId, confidence: 1 } } : {}),
+          ...(appleSongId ? { apple: { songId: appleSongId, confidence: 1 } } : {}),
+        },
         addedBy: name,
       });
       setTitle('');
       setArtist('');
       setVideoId('');
+      setAppleSongId('');
     } finally {
       setLoading(false);
     }
@@ -53,6 +58,13 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
         placeholder="YouTube Video ID (optional)"
         value={videoId}
         onChange={(e) => setVideoId(e.target.value)}
+        className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+      />
+      <input
+        type="text"
+        placeholder="Apple Music Song ID (optional)"
+        value={appleSongId}
+        onChange={(e) => setAppleSongId(e.target.value)}
         className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
       />
       <button
