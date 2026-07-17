@@ -925,7 +925,7 @@ input:focus, textarea:focus, select:focus {
     box-shadow:
       0 0 0 2px var(--color-surface-0),
       0 0 0 4px var(--color-accent),
-      0 0 0 6px var(--color-accent) / 0.3;
+      0 0 0 6px color-mix(in oklab, var(--color-accent) 30%, transparent);
     transition: box-shadow var(--dur-micro) var(--ease-out-quart);
   }
 }
@@ -1008,12 +1008,23 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
-/* Undo affordance: 4s inline label */
+/* Undo affordance: prominent inline replacement row where the track was.
+   High contrast on accent tint so the 4s window is actually discoverable
+   (demo recording + review both flagged the 12px muted label as invisible). */
 .undo-affordance {
   opacity: 0;
   animation: fade-in var(--dur-micro) ease-in-out forwards;
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  background: color-mix(in oklab, var(--color-accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 35%, transparent);
 }
 
 /* Search skeleton shimmer while loading (replaces blank) */
@@ -1083,8 +1094,19 @@ input:focus, textarea:focus, select:focus {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-shake,
-  .import-error-shake {
+  .import-error-shake,
+  .animate-scale-in,
+  .animate-slide-up-fade-out,
+  .join-form,
+  .skeleton-shimmer,
+  .import-progress-bar,
+  .success-toast,
+  /* more specific than .status-banner.slide-up-exit so exit motion dies too */
+  .status-banner.slide-up-exit,
+  .status-banner {
     animation: none;
+    opacity: 1;
+    transform: none;
   }
 }
 /* Platform chips: dimensional hover lift (pointer-fine only, CSS-only) */

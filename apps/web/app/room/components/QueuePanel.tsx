@@ -20,19 +20,28 @@ export function QueuePanel({ roomId }: { roomId: string }) {
   const [undoTimers, setUndoTimers] = useState<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const handleRemove = async (trackId: string, title: string) => {
+    // Second click while an undo window is open would schedule a duplicate
+    // timer that bypasses Undo; ignore it.
+    if (removingIds.has(trackId)) return;
     setRemovingIds((prev) => new Set([...prev, trackId]));
     const timer = setTimeout(async () => {
-      await queueRemove(roomId, trackId);
-      setRemovingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(trackId);
-        return next;
-      });
-      setUndoTimers((prev) => {
-        const next = new Map(prev);
-        next.delete(trackId);
-        return next;
-      });
+      try {
+        await queueRemove(roomId, trackId);
+      } catch (error) {
+        // Disconnected/unauthorized: the track stays; just log and restore.
+        console.error('queue.remove failed:', error);
+      } finally {
+        setRemovingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(trackId);
+          return next;
+        });
+        setUndoTimers((prev) => {
+          const next = new Map(prev);
+          next.delete(trackId);
+          return next;
+        });
+      }
     }, 4000);
 
     setUndoTimers((prev) => new Map(prev).set(trackId, timer));

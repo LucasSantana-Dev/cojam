@@ -47,6 +47,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
 
     const seq = ++searchSeqRef.current;
     setIsSearching(true);
+    setSearchResults([]); // stale results must not render under the skeleton
     debounceTimerRef.current = setTimeout(async () => {
       try {
         const results = await searchTracks(searchQuery);
