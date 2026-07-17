@@ -611,7 +611,7 @@ func TestSearchAll_AggregatesDeezer(t *testing.T) {
 	}
 }
 
-func TestSearchAll_DedupesByISRC(t *testing.T) {
+func TestSearchAll_DedupesByNormalizedTitle(t *testing.T) {
 	oldDeezerURL := deezerSearchURL
 	oldSpotifyID, oldSpotifySecret := spotifyClientID, spotifyClientSecret
 	oldTokenURL, oldSearchURL := spotifyTokenURL, spotifySearchURL
@@ -626,15 +626,14 @@ func TestSearchAll_DedupesByISRC(t *testing.T) {
 		spotifyTokenCache = oldCache
 	}()
 
-	// Setup Deezer with ISRC (so it can be deduplicated)
+	// Setup Deezer with no ISRC (real API behavior)
 	deezerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		// Note: Real Deezer API doesn't return ISRC in basic search, but we're stubbing it for testing
-		_, _ = w.Write([]byte(`{"data":[{"title":"Bohemian","duration":354,"artist":{"name":"Queen"},"album":{"cover_medium":"https://example.com/d.jpg"}}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"title":"Bohemian Rhapsody","duration":354,"artist":{"name":"Queen"},"album":{"cover_medium":"https://example.com/d.jpg"}}]}`))
 	}))
 	defer deezerSrv.Close()
 
-	// Setup Spotify (same title+artist, with ISRC)
+	// Setup Spotify returning same track but WITHOUT ISRC (so both use title-based dedup key)
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"access_token":"tok","expires_in":3600,"token_type":"Bearer"}`))
@@ -643,7 +642,8 @@ func TestSearchAll_DedupesByISRC(t *testing.T) {
 
 	spotifySearchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tracks":{"items":[{"id":"abc","name":"Bohemian Rhapsody","uri":"spotify:track:abc","artists":[{"name":"Queen"}],"duration_ms":354000,"external_ids":{"isrc":"GBUM71029604"},"album":{"images":[{"url":"https://example.com/s.jpg"}]}}]}}`))
+		// Same track, same title+artist, but no ISRC
+		_, _ = w.Write([]byte(`{"tracks":{"items":[{"id":"abc","name":"Bohemian Rhapsody","uri":"spotify:track:abc","artists":[{"name":"Queen"}],"duration_ms":354000,"external_ids":{},"album":{"images":[{"url":"https://example.com/s.jpg"}]}}]}}`))
 	}))
 	defer spotifySearchSrv.Close()
 
@@ -660,21 +660,112 @@ func TestSearchAll_DedupesByISRC(t *testing.T) {
 		t.Fatalf("SearchAll: %v", err)
 	}
 
-	// Should dedupe by title+artist normalized (since Deezer has no ISRC)
-	if len(results) < 1 {
-		t.Fatalf("expected at least 1 result, got %d", len(results))
+	// Should dedupe to exactly 1 result (both use title-based key since neither has ISRC)
+	if len(results) != 1 {
+		t.Fatalf("expected exactly 1 deduplicated result, got %d", len(results))
 	}
 
-	// At least one should have SpotifyURI from Spotify
-	found := false
-	for _, r := range results {
-		if r.Source == "spotify" && r.SpotifyURI != "" {
-			found = true
-			break
-		}
+	// The surviving entry must have SpotifyURI from Spotify (merge prefers SpotifyURI)
+	if results[0].SpotifyURI != "spotify:track:abc" {
+		t.Errorf("expected SpotifyURI spotify:track:abc, got %q", results[0].SpotifyURI)
 	}
-	if !found {
-		t.Errorf("expected Spotify result with SpotifyURI in results")
+
+	// Should also preserve title and artist
+	if results[0].Title != "Bohemian Rhapsody" {
+		t.Errorf("title = %q, want Bohemian Rhapsody", results[0].Title)
+	}
+	if results[0].Artist != "Queen" {
+		t.Errorf("artist = %q, want Queen", results[0].Artist)
+	}
+}
+
+// SimilarTracks tests
+
+func lastfmStub(t *testing.T, responseJSON string) func() {
+	t.Helper()
+	oldAPIKey := lastfmAPIKey
+	oldURL := lastfmURL
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(responseJSON))
+	}))
+
+	lastfmAPIKey = "test-api-key"
+	lastfmURL = srv.URL
+
+	return func() {
+		srv.Close()
+		lastfmAPIKey = oldAPIKey
+		lastfmURL = oldURL
+	}
+}
+
+func TestSimilarTracks_MappedFromLastfm(t *testing.T) {
+	defer lastfmStub(t, `{"similartracks":{"track":[{"name":"Track 1","artist":{"name":"Artist A"}},{"name":"Track 2","artist":{"name":"Artist B"}}]}}`)()
+
+	refs, err := SimilarTracks(context.Background(), "Queen", "Bohemian Rhapsody", 10)
+	if err != nil {
+		t.Fatalf("SimilarTracks: %v", err)
+	}
+
+	if len(refs) != 2 {
+		t.Fatalf("expected 2 similar tracks, got %d", len(refs))
+	}
+
+	if refs[0].Title != "Track 1" || refs[0].Artist != "Artist A" {
+		t.Errorf("track 0: got %q/%q, want Track 1/Artist A", refs[0].Title, refs[0].Artist)
+	}
+	if refs[1].Title != "Track 2" || refs[1].Artist != "Artist B" {
+		t.Errorf("track 1: got %q/%q, want Track 2/Artist B", refs[1].Title, refs[1].Artist)
+	}
+}
+
+func TestSimilarTracks_ErrNotConfigured(t *testing.T) {
+	oldAPIKey := lastfmAPIKey
+	defer func() { lastfmAPIKey = oldAPIKey }()
+
+	lastfmAPIKey = ""
+
+	_, err := SimilarTracks(context.Background(), "Queen", "Bohemian Rhapsody", 10)
+	if err != ErrNotConfigured {
+		t.Errorf("expected ErrNotConfigured, got %v", err)
+	}
+}
+
+func TestSimilarTracks_EmptyOnZeroSimilar(t *testing.T) {
+	defer lastfmStub(t, `{"similartracks":{"track":[]}}`)()
+
+	refs, err := SimilarTracks(context.Background(), "Queen", "Bohemian Rhapsody", 10)
+	if err != nil {
+		t.Fatalf("SimilarTracks: %v", err)
+	}
+
+	if len(refs) != 0 {
+		t.Fatalf("expected empty slice, got %d tracks", len(refs))
+	}
+}
+
+func TestSimilarTracks_Non200Error(t *testing.T) {
+	oldAPIKey := lastfmAPIKey
+	oldURL := lastfmURL
+	defer func() {
+		lastfmAPIKey = oldAPIKey
+		lastfmURL = oldURL
+	}()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"Internal Server Error"}`))
+	}))
+	defer srv.Close()
+
+	lastfmAPIKey = "test-key"
+	lastfmURL = srv.URL
+
+	_, err := SimilarTracks(context.Background(), "Queen", "Bohemian Rhapsody", 10)
+	if err == nil {
+		t.Errorf("expected error on non-200 status, got nil")
 	}
 }
 

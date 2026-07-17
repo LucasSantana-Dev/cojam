@@ -26,6 +26,9 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
 
   const name = useStore((s) => s.name);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Monotonic request id: only the latest search may apply its result, so a slow
+  // stale query (the RPC is not abortable) cannot overwrite a newer one.
+  const searchSeqRef = useRef(0);
 
   // Debounced search
   useEffect(() => {
@@ -34,19 +37,22 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
     }
 
     if (!searchQuery.trim()) {
+      searchSeqRef.current++;
       setSearchResults([]);
+      setIsSearching(false);
       return;
     }
 
+    const seq = ++searchSeqRef.current;
     setIsSearching(true);
     debounceTimerRef.current = setTimeout(async () => {
       try {
         const results = await searchTracks(searchQuery);
-        setSearchResults(results);
+        if (searchSeqRef.current === seq) setSearchResults(results);
       } catch {
-        setSearchResults([]);
+        if (searchSeqRef.current === seq) setSearchResults([]);
       } finally {
-        setIsSearching(false);
+        if (searchSeqRef.current === seq) setIsSearching(false);
       }
     }, 300);
 

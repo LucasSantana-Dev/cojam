@@ -140,6 +140,86 @@ func TestFetchDeezerPlaylist(t *testing.T) {
 	}
 }
 
+func TestFetchDeezerPlaylist_HTTP404(t *testing.T) {
+	oldURL := deezerPlaylistURL
+	defer func() { deezerPlaylistURL = oldURL }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"not found"}`))
+	}))
+	defer server.Close()
+
+	deezerPlaylistURL = server.URL
+
+	_, err := FetchDeezerPlaylist(context.Background(), "invalid")
+	if err == nil {
+		t.Errorf("expected error on 404, got nil")
+	}
+}
+
+func TestFetchDeezerPlaylist_HTTP500(t *testing.T) {
+	oldURL := deezerPlaylistURL
+	defer func() { deezerPlaylistURL = oldURL }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"server error"}`))
+	}))
+	defer server.Close()
+
+	deezerPlaylistURL = server.URL
+
+	_, err := FetchDeezerPlaylist(context.Background(), "123")
+	if err == nil {
+		t.Errorf("expected error on 500, got nil")
+	}
+}
+
+func TestFetchDeezerPlaylist_MalformedJSON(t *testing.T) {
+	oldURL := deezerPlaylistURL
+	defer func() { deezerPlaylistURL = oldURL }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{invalid json`))
+	}))
+	defer server.Close()
+
+	deezerPlaylistURL = server.URL
+
+	_, err := FetchDeezerPlaylist(context.Background(), "123")
+	if err == nil {
+		t.Errorf("expected error on malformed JSON, got nil")
+	}
+}
+
+func TestFetchDeezerPlaylist_EmptyPlaylist(t *testing.T) {
+	oldURL := deezerPlaylistURL
+	defer func() { deezerPlaylistURL = oldURL }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"tracks": map[string]interface{}{
+				"data": []interface{}{},
+			},
+		})
+	}))
+	defer server.Close()
+
+	deezerPlaylistURL = server.URL
+
+	tracks, err := FetchDeezerPlaylist(context.Background(), "123")
+	if err != nil {
+		t.Fatalf("empty playlist should not error: %v", err)
+	}
+
+	if len(tracks) != 0 {
+		t.Fatalf("expected empty slice for empty playlist, got %d", len(tracks))
+	}
+}
+
 func TestFetchSpotifyPlaylistNotConfigured(t *testing.T) {
 	// Clear Spotify credentials
 	t.Setenv("SPOTIFY_CLIENT_ID", "")
@@ -152,6 +232,93 @@ func TestFetchSpotifyPlaylistNotConfigured(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not configured") {
 		t.Errorf("expected 'not configured' in error, got %v", err)
+	}
+}
+
+func TestFetchSpotifyPlaylist_HTTP404(t *testing.T) {
+	oldURL := spotifyPlaylistURL
+	defer func() { spotifyPlaylistURL = oldURL }()
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"access_token": "test-token",
+			"expires_in":   "3600",
+		})
+	}))
+	defer tokenSrv.Close()
+
+	playlistSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":{"message":"Not Found"}}`))
+	}))
+	defer playlistSrv.Close()
+
+	spotifyPlaylistURL = playlistSrv.URL
+	t.Setenv("SPOTIFY_CLIENT_ID", "id")
+	t.Setenv("SPOTIFY_CLIENT_SECRET", "secret")
+
+	_, err := FetchSpotifyPlaylist(context.Background(), "invalid")
+	if err == nil {
+		t.Errorf("expected error on 404, got nil")
+	}
+}
+
+func TestFetchSpotifyPlaylist_HTTP500(t *testing.T) {
+	oldURL := spotifyPlaylistURL
+	defer func() { spotifyPlaylistURL = oldURL }()
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"access_token": "test-token",
+			"expires_in":   "3600",
+		})
+	}))
+	defer tokenSrv.Close()
+
+	playlistSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":{"message":"Server Error"}}`))
+	}))
+	defer playlistSrv.Close()
+
+	spotifyPlaylistURL = playlistSrv.URL
+	t.Setenv("SPOTIFY_CLIENT_ID", "id")
+	t.Setenv("SPOTIFY_CLIENT_SECRET", "secret")
+
+	_, err := FetchSpotifyPlaylist(context.Background(), "123")
+	if err == nil {
+		t.Errorf("expected error on 500, got nil")
+	}
+}
+
+func TestFetchSpotifyPlaylist_MalformedJSON(t *testing.T) {
+	oldURL := spotifyPlaylistURL
+	defer func() { spotifyPlaylistURL = oldURL }()
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"access_token": "test-token",
+			"expires_in":   "3600",
+		})
+	}))
+	defer tokenSrv.Close()
+
+	playlistSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{invalid json`))
+	}))
+	defer playlistSrv.Close()
+
+	spotifyPlaylistURL = playlistSrv.URL
+	t.Setenv("SPOTIFY_CLIENT_ID", "id")
+	t.Setenv("SPOTIFY_CLIENT_SECRET", "secret")
+
+	_, err := FetchSpotifyPlaylist(context.Background(), "123")
+	if err == nil {
+		t.Errorf("expected error on malformed JSON, got nil")
 	}
 }
 
@@ -206,6 +373,88 @@ func TestFetchYouTubePlaylistNotConfigured(t *testing.T) {
 	_, err := FetchYouTubePlaylist(ctx, "playlistID")
 	if err != ErrNotConfigured {
 		t.Errorf("expected ErrNotConfigured, got %v", err)
+	}
+}
+
+func TestFetchYouTubePlaylist_HTTP404(t *testing.T) {
+	oldURL := youtubePlaylistURL
+	defer func() { youtubePlaylistURL = oldURL }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":{"message":"Not Found"}}`))
+	}))
+	defer server.Close()
+
+	youtubePlaylistURL = server.URL
+	t.Setenv("YOUTUBE_API_KEY", "test-key")
+
+	_, err := FetchYouTubePlaylist(context.Background(), "invalid")
+	if err == nil {
+		t.Errorf("expected error on 404, got nil")
+	}
+}
+
+func TestFetchYouTubePlaylist_HTTP500(t *testing.T) {
+	oldURL := youtubePlaylistURL
+	defer func() { youtubePlaylistURL = oldURL }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":{"message":"Server Error"}}`))
+	}))
+	defer server.Close()
+
+	youtubePlaylistURL = server.URL
+	t.Setenv("YOUTUBE_API_KEY", "test-key")
+
+	_, err := FetchYouTubePlaylist(context.Background(), "PLxyz")
+	if err == nil {
+		t.Errorf("expected error on 500, got nil")
+	}
+}
+
+func TestFetchYouTubePlaylist_MalformedJSON(t *testing.T) {
+	oldURL := youtubePlaylistURL
+	defer func() { youtubePlaylistURL = oldURL }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{invalid json`))
+	}))
+	defer server.Close()
+
+	youtubePlaylistURL = server.URL
+	t.Setenv("YOUTUBE_API_KEY", "test-key")
+
+	_, err := FetchYouTubePlaylist(context.Background(), "PLxyz")
+	if err == nil {
+		t.Errorf("expected error on malformed JSON, got nil")
+	}
+}
+
+func TestFetchYouTubePlaylist_EmptyPlaylist(t *testing.T) {
+	oldURL := youtubePlaylistURL
+	defer func() { youtubePlaylistURL = oldURL }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"items": []interface{}{},
+		})
+	}))
+	defer server.Close()
+
+	youtubePlaylistURL = server.URL
+	t.Setenv("YOUTUBE_API_KEY", "test-key")
+
+	tracks, err := FetchYouTubePlaylist(context.Background(), "PLxyz")
+	if err != nil {
+		t.Fatalf("empty playlist should not error: %v", err)
+	}
+
+	if len(tracks) != 0 {
+		t.Fatalf("expected empty slice for empty playlist, got %d", len(tracks))
 	}
 }
 
