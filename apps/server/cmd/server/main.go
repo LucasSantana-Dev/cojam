@@ -19,10 +19,11 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
+	"github.com/LucasSantana-Dev/cojam/server/internal/lyrics"
 	"github.com/LucasSantana-Dev/cojam/server/internal/match"
-	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
-	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
+	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
+	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
 // featureEnabled reads a FEATURE_* toggle (1/true/on/yes = on, 0/false/off/no = off,
@@ -96,26 +97,31 @@ func main() {
 		logger.Info("matcher_enabled", "provider", "youtube")
 	} else {
 
-	// Wire Spotify matcher if configured
-	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("SPOTIFY_CLIENT_ID") != "" && os.Getenv("SPOTIFY_CLIENT_SECRET") != "" {
-		spotifyCachedMatcher := match.NewCachedMatcher(match.ResolveSpotify, func(hit bool) {
-			if hit {
-				if metrics != nil {
-					metrics.MatchCacheHit()
+		// Wire Spotify matcher if configured
+		if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("SPOTIFY_CLIENT_ID") != "" && os.Getenv("SPOTIFY_CLIENT_SECRET") != "" {
+			spotifyCachedMatcher := match.NewCachedMatcher(match.ResolveSpotify, func(hit bool) {
+				if hit {
+					if metrics != nil {
+						metrics.MatchCacheHit()
+					}
+					logger.Info("spotify_match_cache", "hit", true)
+				} else {
+					if metrics != nil {
+						metrics.MatchCacheMiss()
+					}
+					logger.Info("spotify_match_cache", "hit", false)
 				}
-				logger.Info("spotify_match_cache", "hit", true)
-			} else {
-				if metrics != nil {
-					metrics.MatchCacheMiss()
-				}
-				logger.Info("spotify_match_cache", "hit", false)
-			}
-		})
-		h.WithSpotifyMatcher(spotifyCachedMatcher)
-		logger.Info("spotify_matcher_enabled", "provider", "spotify")
-	} else {
-		logger.Info("spotify_matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_id", os.Getenv("SPOTIFY_CLIENT_ID") != "", "has_secret", os.Getenv("SPOTIFY_CLIENT_SECRET") != "")
+			})
+			h.WithSpotifyMatcher(spotifyCachedMatcher)
+			logger.Info("spotify_matcher_enabled", "provider", "spotify")
+		} else {
+			logger.Info("spotify_matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_id", os.Getenv("SPOTIFY_CLIENT_ID") != "", "has_secret", os.Getenv("SPOTIFY_CLIENT_SECRET") != "")
+		}
+		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")
 	}
+
+	// Independent providers below are gated only by their own feature flags and
+	// wired regardless of which matcher (YouTube/Spotify/none) is configured above.
 
 	// Wire aggregated search (Deezer + Spotify) whenever FEATURE_MATCHING is on
 	// Deezer needs no credentials and is always available
@@ -140,6 +146,8 @@ func main() {
 			return results, nil
 		})
 		logger.Info("searcher_enabled", "provider", "aggregated(deezer+spotify)")
+	}
+
 	// Wire playlist fetcher for playlist import
 	if featureEnabled("FEATURE_PLAYLIST_IMPORT", true) {
 		h.WithPlaylistFetcher(func(ctx context.Context, url string) ([]queue.TrackRef, error) {
@@ -168,8 +176,13 @@ func main() {
 		logger.Info("track_depth_enabled", "provider", "musicbrainz")
 	}
 
-	}
-		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")
+	// Wire lyrics (LRCLIB) when feature is on
+	if featureEnabled("FEATURE_LYRICS", true) {
+		fetchLyrics := lyrics.NewCachedLyricsFetcher(lyrics.FetchLyrics)
+		h.WithLyricsProvider(func(ctx context.Context, artist, title, album string, durationMs int) (interface{}, error) {
+			return fetchLyrics(ctx, artist, title, album, durationMs)
+		})
+		logger.Info("lyrics_enabled", "provider", "lrclib")
 	}
 
 	// Setup centrifuge connection handlers

@@ -972,8 +972,39 @@ input:focus, textarea:focus, select:focus {
   background: rgba(0, 0, 0, 0.5);
   animation: fade-in 0.2s ease both;
 }
+/* Lyrics panel: same fixed positioning as track-depth (mobile sheet / desktop
+   right panel). Unlayered so it beats .panel's position:relative. */
+.lyrics-panel {
+  position: fixed;
+  z-index: 50;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 85vh;
+  animation: depth-sheet-in 0.32s var(--ease-out-quart) both;
+}
+@media (min-width: 1024px) {
+  .lyrics-panel {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: 0;
+    width: 26rem;
+    max-height: none;
+    border-radius: 0;
+    animation-name: depth-side-in;
+  }
+}
+.lyrics-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.5);
+  animation: fade-in 0.2s ease both;
+}
 @media (prefers-reduced-motion: reduce) {
-  .track-depth-panel, .track-depth-backdrop { animation: none; }
+  .track-depth-panel, .track-depth-backdrop,
+  .lyrics-panel, .lyrics-backdrop { animation: none; }
 }
 /* ============================================================
    ROOM UX SECTION: animations, gestures, connection states.

@@ -57,6 +57,10 @@ export async function joinRoom(roomId: string, name: string) {
   centrifuge = new Centrifuge(wsUrl, {
     token: '',
     data: { name }, // becomes presence ConnInfo server-side
+    // Read RPCs like track.lyrics (LRCLIB) and track.depth (MusicBrainz) hit
+    // slow crowd-sourced upstreams; the server caps them at ~10s and returns a
+    // graceful empty. The client must wait past that, so raise the default (5s).
+    timeout: 12000,
   });
 
   const store = useStore.getState();
@@ -187,4 +191,21 @@ export async function fetchTrackDepth(roomId: string, isrc: string, title: strin
   if (!centrifuge) throw new Error('Not connected');
   const result = await centrifuge.rpc('track.depth', { roomId, isrc, title, artist });
   return (result.data as TrackDepth) ?? { credits: [], tags: [], source: 'musicbrainz' };
+}
+
+export type LyricLine = {
+  timeMs: number;
+  text: string;
+};
+
+export type Lyrics = {
+  synced: LyricLine[];
+  plain: string;
+  source: string; // "lrclib"
+};
+
+export async function fetchLyrics(roomId: string, artist: string, title: string, album?: string, durationMs?: number): Promise<Lyrics> {
+  if (!centrifuge) throw new Error('Not connected');
+  const result = await centrifuge.rpc('track.lyrics', { roomId, artist, title, album, durationMs });
+  return (result.data as Lyrics) ?? { synced: [], plain: '', source: 'lrclib' };
 }
