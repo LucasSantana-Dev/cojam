@@ -2,10 +2,8 @@ package playlist
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 )
 
 var (
@@ -105,16 +104,6 @@ func FetchDeezerPlaylist(ctx context.Context, playlistID string) ([]queue.TrackR
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
-
 	var result struct {
 		Tracks struct {
 			Data []struct {
@@ -126,8 +115,8 @@ func FetchDeezerPlaylist(ctx context.Context, playlistID string) ([]queue.TrackR
 			} `json:"data"`
 		} `json:"tracks"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := httpx.DoJSON(req, &result); err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	tracks := make([]queue.TrackRef, 0, len(result.Tracks.Data))
@@ -143,46 +132,6 @@ func FetchDeezerPlaylist(ctx context.Context, playlistID string) ([]queue.TrackR
 	return tracks, nil
 }
 
-// spotifyAccessToken fetches or returns a cached Spotify API token (duplicated from match.go for simplicity)
-func spotifyAccessToken(ctx context.Context) (string, error) {
-	spotifyClientID := os.Getenv("SPOTIFY_CLIENT_ID")
-	spotifyClientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
-
-	if spotifyClientID == "" || spotifyClientSecret == "" {
-		return "", ErrNotConfigured
-	}
-
-	tokenURL := "https://accounts.spotify.com/api/token"
-	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL,
-		strings.NewReader("grant_type=client_credentials"))
-	if err != nil {
-		return "", fmt.Errorf("failed to create token request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth(spotifyClientID, spotifyClientSecret)
-
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("token request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected token status %d", resp.StatusCode)
-	}
-
-	var tokenResp struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("failed to decode token response: %w", err)
-	}
-
-	return tokenResp.AccessToken, nil
-}
-
 // FetchSpotifyPlaylist fetches tracks from a Spotify playlist.
 // Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET.
 func FetchSpotifyPlaylist(ctx context.Context, playlistID string) ([]queue.TrackRef, error) {
@@ -190,7 +139,10 @@ func FetchSpotifyPlaylist(ctx context.Context, playlistID string) ([]queue.Track
 		return nil, errors.New("empty playlist ID")
 	}
 
-	token, err := spotifyAccessToken(ctx)
+	token, err := spotifyauth.Token(ctx)
+	if errors.Is(err, spotifyauth.ErrNotConfigured) {
+		return nil, ErrNotConfigured
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spotify token: %w", err)
 	}
@@ -202,16 +154,6 @@ func FetchSpotifyPlaylist(ctx context.Context, playlistID string) ([]queue.Track
 	}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
 
 	var result struct {
 		Items []struct {
@@ -228,8 +170,8 @@ func FetchSpotifyPlaylist(ctx context.Context, playlistID string) ([]queue.Track
 			} `json:"track"`
 		} `json:"items"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := httpx.DoJSON(req, &result); err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	tracks := make([]queue.TrackRef, 0, len(result.Items))
@@ -279,16 +221,6 @@ func FetchYouTubePlaylist(ctx context.Context, playlistID string) ([]queue.Track
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
-
 	var result struct {
 		Items []struct {
 			Snippet struct {
@@ -300,8 +232,8 @@ func FetchYouTubePlaylist(ctx context.Context, playlistID string) ([]queue.Track
 			} `json:"contentDetails"`
 		} `json:"items"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := httpx.DoJSON(req, &result); err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	tracks := make([]queue.TrackRef, 0, len(result.Items))

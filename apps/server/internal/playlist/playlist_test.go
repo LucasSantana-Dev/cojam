@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 )
 
 func TestParsePlaylistURL(t *testing.T) {
@@ -221,9 +222,16 @@ func TestFetchDeezerPlaylist_EmptyPlaylist(t *testing.T) {
 }
 
 func TestFetchSpotifyPlaylistNotConfigured(t *testing.T) {
+	oldID, oldSecret := spotifyauth.ClientID, spotifyauth.ClientSecret
+	defer func() {
+		spotifyauth.ClientID, spotifyauth.ClientSecret = oldID, oldSecret
+		spotifyauth.ResetCache()
+	}()
+
 	// Clear Spotify credentials
-	t.Setenv("SPOTIFY_CLIENT_ID", "")
-	t.Setenv("SPOTIFY_CLIENT_SECRET", "")
+	spotifyauth.ClientID = ""
+	spotifyauth.ClientSecret = ""
+	spotifyauth.ResetCache()
 
 	ctx := context.Background()
 	_, err := FetchSpotifyPlaylist(ctx, "playlistID")
@@ -237,7 +245,14 @@ func TestFetchSpotifyPlaylistNotConfigured(t *testing.T) {
 
 func TestFetchSpotifyPlaylist_HTTP404(t *testing.T) {
 	oldURL := spotifyPlaylistURL
-	defer func() { spotifyPlaylistURL = oldURL }()
+	oldID, oldSecret := spotifyauth.ClientID, spotifyauth.ClientSecret
+	oldTokURL, oldClient := spotifyauth.TokenURL, spotifyauth.Client
+	defer func() {
+		spotifyPlaylistURL = oldURL
+		spotifyauth.ClientID, spotifyauth.ClientSecret = oldID, oldSecret
+		spotifyauth.TokenURL, spotifyauth.Client = oldTokURL, oldClient
+		spotifyauth.ResetCache()
+	}()
 
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -255,8 +270,11 @@ func TestFetchSpotifyPlaylist_HTTP404(t *testing.T) {
 	defer playlistSrv.Close()
 
 	spotifyPlaylistURL = playlistSrv.URL
-	t.Setenv("SPOTIFY_CLIENT_ID", "id")
-	t.Setenv("SPOTIFY_CLIENT_SECRET", "secret")
+	spotifyauth.ClientID = "id"
+	spotifyauth.ClientSecret = "secret"
+	spotifyauth.TokenURL = tokenSrv.URL
+	spotifyauth.Client = http.DefaultClient
+	spotifyauth.ResetCache()
 
 	_, err := FetchSpotifyPlaylist(context.Background(), "invalid")
 	if err == nil {
@@ -266,7 +284,14 @@ func TestFetchSpotifyPlaylist_HTTP404(t *testing.T) {
 
 func TestFetchSpotifyPlaylist_HTTP500(t *testing.T) {
 	oldURL := spotifyPlaylistURL
-	defer func() { spotifyPlaylistURL = oldURL }()
+	oldID, oldSecret := spotifyauth.ClientID, spotifyauth.ClientSecret
+	oldTokURL, oldClient := spotifyauth.TokenURL, spotifyauth.Client
+	defer func() {
+		spotifyPlaylistURL = oldURL
+		spotifyauth.ClientID, spotifyauth.ClientSecret = oldID, oldSecret
+		spotifyauth.TokenURL, spotifyauth.Client = oldTokURL, oldClient
+		spotifyauth.ResetCache()
+	}()
 
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -284,8 +309,11 @@ func TestFetchSpotifyPlaylist_HTTP500(t *testing.T) {
 	defer playlistSrv.Close()
 
 	spotifyPlaylistURL = playlistSrv.URL
-	t.Setenv("SPOTIFY_CLIENT_ID", "id")
-	t.Setenv("SPOTIFY_CLIENT_SECRET", "secret")
+	spotifyauth.ClientID = "id"
+	spotifyauth.ClientSecret = "secret"
+	spotifyauth.TokenURL = tokenSrv.URL
+	spotifyauth.Client = http.DefaultClient
+	spotifyauth.ResetCache()
 
 	_, err := FetchSpotifyPlaylist(context.Background(), "123")
 	if err == nil {
@@ -295,7 +323,14 @@ func TestFetchSpotifyPlaylist_HTTP500(t *testing.T) {
 
 func TestFetchSpotifyPlaylist_MalformedJSON(t *testing.T) {
 	oldURL := spotifyPlaylistURL
-	defer func() { spotifyPlaylistURL = oldURL }()
+	oldID, oldSecret := spotifyauth.ClientID, spotifyauth.ClientSecret
+	oldTokURL, oldClient := spotifyauth.TokenURL, spotifyauth.Client
+	defer func() {
+		spotifyPlaylistURL = oldURL
+		spotifyauth.ClientID, spotifyauth.ClientSecret = oldID, oldSecret
+		spotifyauth.TokenURL, spotifyauth.Client = oldTokURL, oldClient
+		spotifyauth.ResetCache()
+	}()
 
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -313,8 +348,11 @@ func TestFetchSpotifyPlaylist_MalformedJSON(t *testing.T) {
 	defer playlistSrv.Close()
 
 	spotifyPlaylistURL = playlistSrv.URL
-	t.Setenv("SPOTIFY_CLIENT_ID", "id")
-	t.Setenv("SPOTIFY_CLIENT_SECRET", "secret")
+	spotifyauth.ClientID = "id"
+	spotifyauth.ClientSecret = "secret"
+	spotifyauth.TokenURL = tokenSrv.URL
+	spotifyauth.Client = http.DefaultClient
+	spotifyauth.ResetCache()
 
 	_, err := FetchSpotifyPlaylist(context.Background(), "123")
 	if err == nil {

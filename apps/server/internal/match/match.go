@@ -11,11 +11,12 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
-	"time"
+	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 )
 
 var (
@@ -61,19 +62,9 @@ func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
 
 	req.Header.Set("User-Agent", "cojam/0.1 (dev)")
 
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
-
 	var mbResp MusicBrainzResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&mbResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := httpx.DoJSON(req, &mbResp); err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	if len(mbResp.IsRCs) == 0 || len(mbResp.IsRCs[0].Recordings) == 0 {
@@ -124,19 +115,9 @@ func YouTubeSearch(query string) ([]YouTubeCandidate, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
-
 	var result YouTubeSearchResult
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := httpx.DoJSON(req, &result); err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	candidates := make([]YouTubeCandidate, 0, len(result.Items))
@@ -250,11 +231,8 @@ func init() {
 
 // Package-level vars for testability (can be overridden in tests)
 var (
-	spotifyClientID     = os.Getenv("SPOTIFY_CLIENT_ID")
-	spotifyClientSecret = os.Getenv("SPOTIFY_CLIENT_SECRET")
-	spotifyTokenURL     = "https://accounts.spotify.com/api/token"
-	spotifySearchURL    = "https://api.spotify.com/v1/search"
-	spotifyClient       = httpx.Client
+	// Spotify search URL (token is now in spotifyauth package)
+	spotifySearchURL = "https://api.spotify.com/v1/search"
 
 	// Deezer vars (no auth needed, public API)
 	deezerSearchURL = "https://api.deezer.com/search"
@@ -279,54 +257,8 @@ type tokenCacheEntry struct {
 }
 
 var (
-	spotifyTokenCache = &tokenCacheEntry{}
-	tidalTokenCache   = &tokenCacheEntry{}
+	tidalTokenCache = &tokenCacheEntry{}
 )
-
-// spotifyAccessToken fetches or returns a cached Spotify API token
-func spotifyAccessToken(ctx context.Context) (string, error) {
-	spotifyTokenCache.mu.Lock()
-	defer spotifyTokenCache.mu.Unlock()
-
-	// Return cached token if not expired
-	if spotifyTokenCache.token != "" && time.Now().Before(spotifyTokenCache.expiresAt) {
-		return spotifyTokenCache.token, nil
-	}
-
-	// Fetch new token
-	req, err := http.NewRequestWithContext(ctx, "POST", spotifyTokenURL,
-		strings.NewReader("grant_type=client_credentials"))
-	if err != nil {
-		return "", fmt.Errorf("failed to create token request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth(spotifyClientID, spotifyClientSecret)
-
-	resp, err := spotifyClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("token request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected token status %d", resp.StatusCode)
-	}
-
-	var tokenResp struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-		TokenType   string `json:"token_type"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("failed to decode token response: %w", err)
-	}
-
-	spotifyTokenCache.token = tokenResp.AccessToken
-	spotifyTokenCache.expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-
-	return spotifyTokenCache.token, nil
-}
 
 // SpotifyTrack represents a Spotify track from search results
 type SpotifyTrack struct {
@@ -359,13 +291,11 @@ type SpotifySearchResult struct {
 // searches Spotify for a track by ISRC (if provided) or title+artist.
 // Returns a SourceRef with TrackURI on confident match, (nil, nil) on no match.
 func ResolveSpotify(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error) {
-	// Check configuration
-	if spotifyClientID == "" || spotifyClientSecret == "" {
+	// Get access token
+	token, err := spotifyauth.Token(ctx)
+	if errors.Is(err, spotifyauth.ErrNotConfigured) {
 		return nil, ErrNotConfigured
 	}
-
-	// Get access token
-	token, err := spotifyAccessToken(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spotify token: %w", err)
 	}
@@ -392,19 +322,9 @@ func ResolveSpotify(ctx context.Context, title, artist, isrc string) (*queue.Sou
 
 	searchReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
-	resp, err := spotifyClient.Do(searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected search status %d", resp.StatusCode)
-	}
-
 	var result SpotifySearchResult
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode search response: %w", err)
+	if err := httpx.DoJSON(searchReq, &result); err != nil {
+		return nil, fmt.Errorf("search request failed: %w", err)
 	}
 
 	if len(result.Tracks.Items) == 0 {
@@ -470,13 +390,11 @@ func SearchSpotify(ctx context.Context, query string, limit int) ([]SearchCandid
 		limit = 10
 	}
 
-	// Check configuration
-	if spotifyClientID == "" || spotifyClientSecret == "" {
+	// Get access token
+	token, err := spotifyauth.Token(ctx)
+	if errors.Is(err, spotifyauth.ErrNotConfigured) {
 		return []SearchCandidate{}, nil
 	}
-
-	// Get access token
-	token, err := spotifyAccessToken(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spotify token: %w", err)
 	}
@@ -495,19 +413,9 @@ func SearchSpotify(ctx context.Context, query string, limit int) ([]SearchCandid
 
 	searchReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
-	resp, err := spotifyClient.Do(searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected search status %d", resp.StatusCode)
-	}
-
 	var result SpotifySearchResult
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode search response: %w", err)
+	if err := httpx.DoJSON(searchReq, &result); err != nil {
+		return nil, fmt.Errorf("search request failed: %w", err)
 	}
 
 	candidates := make([]SearchCandidate, 0, len(result.Tracks.Items))
@@ -557,16 +465,6 @@ func SearchDeezer(ctx context.Context, query string, limit int) ([]SearchCandida
 	q.Set("limit", fmt.Sprintf("%d", limit))
 	searchReq.URL.RawQuery = q.Encode()
 
-	resp, err := httpx.Client.Do(searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
-
 	var result struct {
 		Data []struct {
 			Title    string `json:"title"`
@@ -579,8 +477,8 @@ func SearchDeezer(ctx context.Context, query string, limit int) ([]SearchCandida
 			} `json:"album"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := httpx.DoJSON(searchReq, &result); err != nil {
+		return nil, fmt.Errorf("search request failed: %w", err)
 	}
 
 	candidates := make([]SearchCandidate, 0, len(result.Data))
@@ -682,16 +580,6 @@ func SearchTidal(ctx context.Context, query string, limit int) ([]SearchCandidat
 
 	searchReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
-	resp, err := httpx.Client.Do(searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected search status %d", resp.StatusCode)
-	}
-
 	var result struct {
 		Data []struct {
 			ID       string `json:"id"`
@@ -706,8 +594,8 @@ func SearchTidal(ctx context.Context, query string, limit int) ([]SearchCandidat
 			} `json:"album"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := httpx.DoJSON(searchReq, &result); err != nil {
+		return nil, fmt.Errorf("search request failed: %w", err)
 	}
 
 	candidates := make([]SearchCandidate, 0, len(result.Data))
@@ -772,7 +660,7 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 	}()
 
 	// Spotify (if configured)
-	if spotifyClientID != "" && spotifyClientSecret != "" {
+	if spotifyauth.ClientID != "" && spotifyauth.ClientSecret != "" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -901,19 +789,9 @@ func SimilarTracks(ctx context.Context, artist, title string, limit int) ([]queu
 
 	req.Header.Set("User-Agent", "cojam/0.1")
 
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
-
 	var result LastfmSimilarResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := httpx.DoJSON(req, &result); err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	// Map Last.fm results to TrackRef (no source; enrichment will resolve playback)
