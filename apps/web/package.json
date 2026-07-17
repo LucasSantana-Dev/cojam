@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "lsof -ti:3000 | xargs kill -9 2>/dev/null; playwright test"
   },
   "dependencies": {
     "@cojam/shared": "workspace:*",
