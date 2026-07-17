@@ -127,6 +127,18 @@ input:focus, textarea:focus, select:focus {
   will-change: transform, opacity;
 }
 
+/* Staggered rise-in for search-result rows (--i = row index). */
+.search-result-enter {
+  animation: track-change 0.32s var(--ease-out-quart) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+/* Orchestrated room arrival: columns rise in on mount (--i = column order). */
+.room-arrival {
+  animation: track-change 0.42s var(--ease-out-quart) both;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+
 /* Respect prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   .animate-pulse-breath,
@@ -817,5 +829,7 @@ input:focus, textarea:focus, select:focus {
   .step-card:hover { transform: none; }
   .site-header { transition: none; }
   .eq span { animation: none; }
-  .track-change-enter { animation: none; opacity: 1; transform: none; }
+  .track-change-enter,
+  .search-result-enter,
+  .room-arrival { animation: none; opacity: 1; transform: none; }
 }
