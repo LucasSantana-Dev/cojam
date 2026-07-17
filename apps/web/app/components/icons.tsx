@@ -40,6 +40,10 @@ export const TidalIcon = svg(
 
 // --- UI glyphs ---------------------------------------------------------------
 export const PlayIcon = svg('M8 5v14l11-7z');
+export const LinkIcon = svg(
+  'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z',
+);
+export const CheckIcon = svg('M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z');
 export const ArrowUpIcon = svg('M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8L6.4 13.4 5 12z');
 export const ArrowDownIcon = svg('M12 19l-7-7 1.4-1.4L11 15.2V4h2v11.2l4.6-4.6L19 12z');
 export const TrashIcon = svg(

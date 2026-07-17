@@ -15,6 +15,7 @@ import { SpotifyPlayer } from '../components/SpotifyPlayer';
 import { QueuePanel } from '../components/QueuePanel';
 import { AddTrackForm } from '../components/AddTrackForm';
 import { PresenceBar } from '../components/PresenceBar';
+import { ShareRoomButton } from '../components/ShareRoomButton';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 
 export function RoomClient({ roomId }: { roomId: string }) {
@@ -112,6 +113,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
               </p>
             </div>
             <PresenceBar />
+            <ShareRoomButton />
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
               <div
                 className="w-2 h-2 rounded-full animate-pulse-breath"
