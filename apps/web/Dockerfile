@@ -8,33 +8,42 @@ WORKDIR /build
 # install below cannot fail on a version mismatch).
 RUN npm install -g pnpm@11.11.0
 
-# Copy root package files + workspace manifest (build context is the REPO ROOT;
-# see .github/workflows/deploy.yml which builds web with --dockerfile from root).
+# Copy MANIFESTS ONLY first (build context is the REPO ROOT; see
+# .github/workflows/deploy.yml). Source is copied after `pnpm install` so a
+# code-only change re-uses the cached dependency layer instead of busting it.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
 
-# Copy the workspace members pnpm-workspace.yaml declares (apps/web + packages/*).
+# Install dependencies (only re-runs when a manifest or the lockfile changes)
+RUN pnpm install --frozen-lockfile
+
+# Now copy the workspace member sources (apps/web + packages/*).
 # apps/server is a separate Go module and is NOT needed for the web build.
 COPY packages ./packages
 COPY apps/web ./apps/web
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
-
 # Build web app (generates standalone output)
 RUN pnpm --filter web build
 
-# Stage 2: Runtime (minimal Node image)
+# Stage 2: Runtime (minimal Node image; major-pinned to match CI's node 22)
 FROM node:22-alpine
 
 WORKDIR /app
-ENV NODE_ENV=production
+# Bind on all interfaces inside the container; Next standalone reads these.
+ENV NODE_ENV=production \
+    HOSTNAME=0.0.0.0 \
+    PORT=3000
 
 # Next standalone in a pnpm monorepo with outputFileTracingRoot=repo root nests
 # the server + traced deps under apps/web/. Copy the whole standalone tree, then
 # the static assets into their nested location (standalone omits them). There is
-# no public/ dir in this app, so it is not copied.
-COPY --from=builder /build/apps/web/.next/standalone ./
-COPY --from=builder /build/apps/web/.next/static ./apps/web/.next/static
+# no public/ dir in this app, so it is not copied. Owned by the non-root `node`
+# user that ships with the official image.
+COPY --from=builder --chown=node:node /build/apps/web/.next/standalone ./
+COPY --from=builder --chown=node:node /build/apps/web/.next/static ./apps/web/.next/static
+
+USER node
 
 EXPOSE 3000
 
