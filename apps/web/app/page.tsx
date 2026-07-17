@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, TidalIcon } from '@/app/components/icons';
+import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
 
 const HeroCanvas = dynamic(() => import('@/app/components/HeroCanvas'), {
@@ -218,14 +218,12 @@ export default function Home() {
     'YouTube': YouTubeIcon,
     'Spotify': SpotifyIcon,
     'Apple Music': AppleMusicIcon,
-    'Tidal · soon': TidalIcon,
   };
 
   const platforms: Array<[string, boolean]> = [
     ['YouTube', true],
     ['Spotify', true],
     ['Apple Music', false],
-    ['Tidal · soon', false],
   ];
 
   return (

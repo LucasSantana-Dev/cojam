@@ -1,6 +1,6 @@
 # Cojam
 
-Cross-platform group music listening app: friends on different streaming services (Spotify, Apple Music, YouTube, Tidal; Deezer/YT Music constrained, see below) listen together in shared rooms.
+Cross-platform group music listening app: friends on different streaming services (Spotify, Apple Music, YouTube; Deezer/YT Music constrained, see below) listen together in shared rooms.
 
 ## Status
 
@@ -14,9 +14,8 @@ Greenfield (2026-07-16). No code yet. Plan: `.claude/plans/` (see latest). Resea
 - YouTube: visible IFrame embed only. No audio extraction, no background playback (TOS).
 - YouTube Music: no official API. Do not integrate via ytmusicapi (cookie-based, TOS-violating).
 - Deezer: API closed to new apps since ~2024. Unsupportable until reopened.
-- Tidal: SDK Player exists; full catalog needs license agreement, access uncertain.
 - Cross-service masters differ: ±500ms baseline offset is physics, not a bug.
-- Track identity across services: ISRC (Spotify/Apple/Tidal expose it), MusicBrainz fallback, fuzzy match for YouTube.
+- Track identity across services: ISRC (Spotify/Apple expose it), MusicBrainz fallback, fuzzy match for YouTube.
 
 ## Working agreements (XP + TDD + observability)
 
