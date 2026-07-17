@@ -16,7 +16,12 @@
   --color-text-muted: oklch(0.48 0.01 280);   /* for hints/secondary text */
   --color-accent: oklch(0.66 0.20 300);       /* violet — bright enough for dark button text at AA */
   --color-accent-hover: oklch(0.72 0.18 300); /* lighter for hover */
+  --color-status-warn: oklch(0.70 0.20 55);  /* amber-ish for reconnecting state */
+  --color-status-error: oklch(0.60 0.20 25); /* red-ish for connection lost state */
   /* Motion tokens (premium timing band). Enter = decelerate; never linear for UI. */
+  --dur-micro: 160ms;
+  --dur-base: 320ms;
+  --dur-expressive: 640ms;
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -109,6 +114,43 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up-fade-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
 /* Motion utilities */
 .animate-pulse-breath {
   animation: pulse-breath 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -120,6 +162,22 @@ input:focus, textarea:focus, select:focus {
 
 .animate-fade-in {
   animation: fade-in 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in var(--dur-expressive) var(--ease-out-quart) forwards;
+}
+
+.animate-shake {
+  animation: shake var(--dur-base) cubic-bezier(0.36, 0, 0.66, 1) 1;
+}
+
+.animate-slide-down {
+  animation: slide-down var(--dur-base) var(--ease-out-quart) forwards;
+}
+
+.animate-slide-up-fade-out {
+  animation: slide-up-fade-out var(--dur-base) var(--ease-out-quart) forwards;
 }
 
 .track-change-enter {
@@ -846,5 +904,186 @@ input:focus, textarea:focus, select:focus {
     border-color: color-mix(in oklab, var(--color-accent) 40%, transparent) !important;
     transform: translateY(-2px);
     box-shadow: 0 8px 16px -4px color-mix(in oklab, var(--color-accent) 25%, transparent);
+  }
+}
+
+/* ============================================================
+   ROOM UX SECTION: animations, gestures, connection states.
+   These rules augment the core room register with high-impact
+   micro-interactions and state feedback.
+   ============================================================ */
+
+/* Join gate card: scale-in on mount */
+.join-form {
+  animation: scale-in var(--dur-expressive) var(--ease-out-quart) forwards;
+}
+
+/* Input focus ring grows over --dur-micro; pointer-fine only to avoid
+   tap-expand bloom on mobile */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .focus-ring-grow:focus {
+    box-shadow:
+      0 0 0 2px var(--color-surface-0),
+      0 0 0 4px var(--color-accent),
+      0 0 0 6px var(--color-accent) / 0.3;
+    transition: box-shadow var(--dur-micro) var(--ease-out-quart);
+  }
+}
+
+/* "Joining..." label crossfade animate */
+.join-label-crossfade {
+  transition: opacity var(--dur-micro) ease-in-out;
+}
+
+/* Error state feedback: calm, inline, no flashing */
+.join-error {
+  color: var(--color-status-error);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  opacity: 0;
+  animation: fade-in var(--dur-base) var(--ease-out-quart) forwards;
+}
+
+/* Connection state dot: 3 states with semantic colors */
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connection-dot.connected {
+  background-color: var(--color-accent);
+  animation: pulse-breath 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.connection-dot.reconnecting {
+  background-color: var(--color-status-warn);
+  animation: pulse-breath 0.7s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.connection-dot.lost {
+  background-color: var(--color-status-error);
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connection-dot.connected,
+  .connection-dot.reconnecting {
+    animation: none;
+    opacity: 0.8;
+  }
+}
+
+/* Reconnecting + lost connection banner: slide down on entry */
+.status-banner {
+  animation: slide-down var(--dur-base) var(--ease-out-quart) forwards;
+}
+
+.status-banner.slide-up-exit {
+  animation: slide-up-fade-out var(--dur-base) var(--ease-out-quart) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-banner {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Queue reorder: FLIP animation via CSS transforms. Rows transition
+   to new positions when reorder RPC completes; removed rows collapse. */
+@media (prefers-reduced-motion: no-preference) {
+  .queue-item {
+    transition: all var(--dur-base) var(--ease-out-quart);
+  }
+
+  .queue-item.removing {
+    opacity: 0;
+    transform: scale(0.95);
+    height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+}
+
+/* Undo affordance: 4s inline label */
+.undo-affordance {
+  opacity: 0;
+  animation: fade-in var(--dur-micro) ease-in-out forwards;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* Search skeleton shimmer while loading (replaces blank) */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2) 0%,
+    color-mix(in oklab, var(--color-surface-2) 50%, var(--color-border)) 50%,
+    var(--color-surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+    background: var(--color-surface-2);
+  }
+}
+
+/* Playlist import progress bar: indeterminate */
+.import-progress {
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.import-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  animation: shimmer 1.2s infinite;
+}
+
+/* Success toast: slides up + auto-dismiss */
+.success-toast {
+  animation: slide-up-fade-out var(--dur-expressive) var(--ease-out-quart) forwards;
+  animation-delay: 2.5s;
+  color: #86efac;
+}
+
+/* Radio toggle thumb: spring feel */
+.radio-toggle-thumb {
+  transition: transform var(--dur-micro) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.radio-toggle:checked .radio-toggle-thumb {
+  transform: translateX(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radio-toggle-thumb {
+    transition: none;
+  }
+}
+
+/* Input error shake on playlist import */
+.import-error-shake {
+  animation: shake var(--dur-base) cubic-bezier(0.36, 0, 0.66, 1) 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shake,
+  .import-error-shake {
+    animation: none;
   }
 }

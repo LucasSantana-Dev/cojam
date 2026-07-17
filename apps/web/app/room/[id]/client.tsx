@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useStore, joinRoom, setRadio } from '@/lib/realtime';
+import { StatusBanner } from '../components/StatusBanner';
 
 // Persist the chosen name for the session so a full-page redirect (Spotify OAuth
 // returns to /callback/spotify then back here) auto-rejoins instead of dropping
@@ -23,6 +24,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [nameInput, setNameInput] = useState('');
   const [joined, setJoined] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [joinError, setJoinError] = useState('');
   const [appleAuthorized, setAppleAuthorized] = useState(false);
   const [spotifyAuthorized, setSpotifyAuthorized] = useState(false);
   const store = useStore();
@@ -37,12 +39,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const doJoin = useCallback(
     async (name: string) => {
       setLoading(true);
+      setJoinError('');
       try {
         await joinRoom(roomId, name);
         sessionStorage.setItem(NAME_KEY, name);
         setJoined(true);
       } catch (error) {
         console.error('Failed to join:', error);
+        setJoinError(
+          error instanceof Error ? error.message : 'Couldn\'t join. Check the room code and try again.'
+        );
       } finally {
         setLoading(false);
       }
@@ -68,7 +74,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       <main id="main" className="room flex items-center justify-center min-h-screen p-4">
         <form
           onSubmit={handleJoin}
-          className="panel w-full max-w-sm space-y-6 p-8"
+          className="join-form panel w-full max-w-sm space-y-6 p-8"
         >
           <div className="space-y-2 text-center">
             <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
@@ -85,7 +91,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             aria-label="Your name"
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg focus:outline-none transition-all duration-150"
+            className="focus-ring-grow w-full px-4 py-3 rounded-lg focus:outline-none transition-all duration-150"
             style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             autoFocus
           />
@@ -96,8 +102,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
             className="w-full px-6 py-3 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 text-base"
             style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
           >
-            {loading ? 'Joining...' : 'Join & Play'}
+            <span className="join-label-crossfade">
+              {loading ? 'Joining...' : 'Join & Play'}
+            </span>
           </button>
+
+          {joinError && (
+            <p className="join-error" role="alert">
+              {joinError}
+            </p>
+          )}
         </form>
       </main>
     );
@@ -105,6 +119,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   return (
     <div className="room min-h-screen" style={{ color: 'var(--color-text-primary)' }}>
+      <StatusBanner />
       <header className="room-header">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
@@ -119,11 +134,25 @@ export function RoomClient({ roomId }: { roomId: string }) {
               <ShareRoomButton />
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
                 <div
-                  className="w-2 h-2 rounded-full animate-pulse-breath"
-                  style={{ backgroundColor: store.connected ? 'var(--color-accent)' : '#ef4444' }}
+                  className="connection-dot"
+                  data-state={store.reconnecting ? 'reconnecting' : store.connected ? 'connected' : 'lost'}
+                  style={{
+                    backgroundColor: store.reconnecting
+                      ? 'var(--color-status-warn)'
+                      : store.connected
+                        ? 'var(--color-accent)'
+                        : 'var(--color-status-error)',
+                    animation: (store.reconnecting || store.connected)
+                      ? 'pulse-breath 1s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                      : 'none',
+                  }}
                 />
                 <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                  {store.connected ? 'Connected' : 'Disconnected'}
+                  {store.reconnecting
+                    ? 'Reconnecting...'
+                    : store.connected
+                      ? 'Connected'
+                      : 'Disconnected'}
                 </span>
               </div>
             </div>
@@ -155,19 +184,36 @@ export function RoomClient({ roomId }: { roomId: string }) {
             {/* Now-Playing Hero */}
             <div className={`panel now-playing p-6 space-y-3${nowPlaying ? ' is-live' : ''}`}>
               <div className="flex items-center justify-end">
-                <button
-                  onClick={() => setRadio(roomId, !(store.state?.radioEnabled ?? false))}
-                  aria-pressed={store.state?.radioEnabled ?? false}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
-                  style={{
-                    background: (store.state?.radioEnabled ?? false) ? 'var(--color-accent)' : 'var(--color-surface-2)',
-                    border: '1px solid var(--color-border)',
-                    color: (store.state?.radioEnabled ?? false) ? 'var(--color-surface-1)' : 'var(--color-text-primary)',
-                  }}
-                  title="Auto-plays related songs when the queue runs out"
-                >
-                  Radio {(store.state?.radioEnabled ?? false) ? 'on' : 'off'}
-                </button>
+                <div className="inline-flex items-center gap-3 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+                  <label className="text-sm font-medium cursor-pointer flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
+                    <input
+                      type="checkbox"
+                      checked={store.state?.radioEnabled ?? false}
+                      onChange={(e) => setRadio(roomId, e.target.checked)}
+                      className="sr-only"
+                      title="Auto-plays related songs when the queue runs out"
+                    />
+                    <span>Radio</span>
+                    <div
+                      className="radio-toggle relative w-8 h-4 rounded-full transition-colors duration-150"
+                      style={{
+                        background: (store.state?.radioEnabled ?? false) ? 'var(--color-accent)' : 'var(--color-surface-3)',
+                      }}
+                    >
+                      <div
+                        className="radio-toggle-thumb absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white"
+                        style={{
+                          transform: (store.state?.radioEnabled ?? false) ? 'translateX(100%)' : 'translateX(0)',
+                        }}
+                      />
+                    </div>
+                  </label>
+                  {(store.state?.radioEnabled ?? false) && (
+                    <span className="text-xs" style={{ color: 'var(--color-text-secondary)', opacity: 0.8 }}>
+                      Auto-plays related songs when the queue runs out
+                    </span>
+                  )}
+                </div>
               </div>
               {nowPlaying ? (
                 <>
