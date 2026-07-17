@@ -10,14 +10,19 @@ on:
 permissions:
   contents: read
 
+# Deploys queue rather than cancel: never kill an in-flight rollout.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy-server:
     name: Deploy server to Fly.io
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master HEAD
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5 (release, not master HEAD)
       - name: Deploy server
         run: flyctl deploy --remote-only
         working-directory: apps/server
@@ -29,8 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master HEAD
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5 (release, not master HEAD)
       # Build from the repo root so the Dockerfile's workspace COPYs resolve
       # (pnpm-workspace.yaml, packages/, apps/web live at the root).
       - name: Deploy web

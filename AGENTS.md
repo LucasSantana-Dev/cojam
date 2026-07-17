@@ -19,12 +19,15 @@ the failure modes that have actually bitten agents here.
 - Web unit: `cd apps/web && npx vitest run`
 - Web e2e: `pnpm --filter web e2e` (this frees port 3000 first — see gotcha below). **Do NOT run raw `npx playwright test` while a dev server occupies :3000.**
 - Full build: `pnpm --filter web build` (Next standalone output).
+- Web drift checks: `./scripts/check_web_drift.sh` (orphaned keyframes + off-palette colors; also runs in CI).
 
 ## Gotchas that have caused real failures (see `docs/failures/`)
 
 1. **e2e "0 tests" / 120s webServer timeout = port 3000 not free**, NOT "no tests". `playwright.config.ts` starts its own web server with `reuseExistingServer: false` on :3000 so the feature-flag env applies; a stale `next dev` on :3000 makes it hang. Always run `pnpm --filter web e2e` (frees the port) or free :3000 first. A "0 passed" e2e result is a config failure, never a green.
 2. **Every `RoomState` mutation published to clients MUST bump `RoomState.Version`.** The web store's `setState` accepts a publication only if `state.version > current.version`; a mutation that forgets `Version++` silently fails to update clients live (looks fine until reload). Assert the version bump in a test for any new mutating RPC.
 3. **Spotify OAuth uses `http://127.0.0.1:3000`, not `localhost`.** Spotify (2025) rejects `localhost` redirect URIs; the registered URI is `http://127.0.0.1:3000/callback/spotify`. Browse the app at 127.0.0.1 for auth to work.
+4. **Removing a feature is not done until a repo-wide grep for the term comes back justified.** Deleting symbols and chasing compile errors misses comments, log-message strings, doc rows, and UI labels (the Tidal removal left both a comment and a structured-log field behind). Run `grep -rniE "<term>"` across the repo; the only acceptable survivors are historical records (ADRs).
+5. **CSS renames need a grep too: animations fail silently.** Referencing a deleted/renamed `@keyframes` is not an error; elements whose base state is `opacity: 0` just stay invisible while every gate stays green. `./scripts/check_web_drift.sh` catches this; run it after any motion/CSS refactor.
 
 ## Adding a music provider or server RPC (the established pattern)
 

@@ -87,7 +87,10 @@ flyctl secrets set SPOTIFY_CLIENT_ID="<id>" SPOTIFY_CLIENT_SECRET="<secret>" --a
 flyctl secrets set CORS_ORIGINS="http://localhost:3000" --app cojam-server
 
 # Feature flags (optional, defaults to true for critical features)
-flyctl secrets set FEATURE_MATCHING=true FEATURE_YOUTUBE=true FEATURE_SPOTIFY=true FEATURE_APPLE=true --app cojam-server
+flyctl secrets set FEATURE_MATCHING=true FEATURE_YOUTUBE=true FEATURE_SPOTIFY=true FEATURE_APPLE=true FEATURE_PLAYLIST_IMPORT=true FEATURE_RADIO=true --app cojam-server
+
+# Last.fm (optional; powers the radio auto-refill similar-tracks provider)
+flyctl secrets set LASTFM_API_KEY="<key>" --app cojam-server
 ```
 
 View current secrets:
@@ -174,6 +177,9 @@ flyctl ssh console --app cojam-server
 | `SPOTIFY_CLIENT_SECRET` | No | `secret...` (for Spotify OAuth token) |
 | `CORS_ORIGINS` | No | `http://localhost:3000,https://cojam.fly.dev` (default: localhost:3000 + 127.0.0.1:3000) |
 | `FEATURE_MATCHING` | No | `true/false` (default: true) |
+| `FEATURE_PLAYLIST_IMPORT` | No | `true/false` (default: true; playlist URL import) |
+| `FEATURE_RADIO` | No | `true/false` (default: true; auto-refill via Last.fm) |
+| `LASTFM_API_KEY` | No | `abc123...` (radio similar-tracks provider; radio stays off without it) |
 
 ### Web (Next.js)
 
