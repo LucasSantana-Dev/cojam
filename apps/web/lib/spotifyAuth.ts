@@ -26,8 +26,26 @@ function clientId(): string {
   return id;
 }
 
+// Spotify banned `localhost` redirect URIs (April 2025) — only the loopback IP
+// `127.0.0.1` is accepted. In local dev the app is usually opened at
+// `localhost:3000`, so window.location.origin would build a redirect_uri Spotify
+// rejects ("redirect_uri: Not matching configuration"). Return the origin Spotify
+// accepts: swap a `localhost` hostname for `127.0.0.1`, keeping protocol + port.
+// Production hosts (e.g. https://cojam.fly.dev) pass through untouched.
+export function canonicalOrigin(loc: {
+  protocol: string;
+  hostname: string;
+  port: string;
+  origin: string;
+}): string {
+  if (loc.hostname === 'localhost') {
+    return `${loc.protocol}//127.0.0.1${loc.port ? `:${loc.port}` : ''}`;
+  }
+  return loc.origin;
+}
+
 function redirectUri(): string {
-  return `${window.location.origin}/callback/spotify`;
+  return `${canonicalOrigin(window.location)}/callback/spotify`;
 }
 
 function loadStored(): StoredToken | null {
@@ -59,6 +77,14 @@ async function pkce(): Promise<{ verifier: string; challenge: string }> {
 
 // Redirect to Spotify's consent screen. `returnPath` is where we come back to.
 export async function beginAuth(returnPath: string): Promise<void> {
+  // Run the whole OAuth flow on the Spotify-registered origin. On localhost we
+  // relocate to 127.0.0.1 first: the verifier stored below is origin-scoped and
+  // must live on the same origin the /callback/spotify page will read it from.
+  const canonical = canonicalOrigin(window.location);
+  if (canonical !== window.location.origin) {
+    window.location.assign(`${canonical}${window.location.pathname}${window.location.search}`);
+    return;
+  }
   const { verifier, challenge } = await pkce();
   sessionStorage.setItem(VERIFIER_KEY, verifier);
   sessionStorage.setItem(RETURN_KEY, returnPath);

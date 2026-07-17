@@ -837,6 +837,31 @@ input:focus, textarea:focus, select:focus {
   border-bottom: 1px solid oklch(0.66 0.2 300 / 0.12);
 }
 
+/* Shareable room code, rendered as a distinct monospace chip in the header. */
+.room-code-chip {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.375rem;
+  background: oklch(0.66 0.2 300 / 0.12);
+  border: 1px solid oklch(0.66 0.2 300 / 0.28);
+  color: var(--color-text-primary);
+}
+
+/* Radio auto-refill toggle, anchored to the now-playing header row. */
+.radio-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 0.5rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
 /* Now-playing: live accent ring + animated equalizer. */
 .now-playing.is-live {
   border-color: oklch(0.66 0.2 300 / 0.5);
