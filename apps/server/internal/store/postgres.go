@@ -67,7 +67,15 @@ func (p *Postgres) Save(ctx context.Context, state *queue.RoomState) error {
 		return fmt.Errorf("failed to marshal copied room state for %s: %w", state.RoomID, err)
 	}
 
-	// Version-guarded upsert: only update if new version > old version
+	// Version-guarded upsert: apply only when the incoming version is newer.
+	// A stale write (incoming version <= stored) affects zero rows and returns
+	// nil ON PURPOSE, not as an error. This is the intended optimistic-concurrency
+	// semantics (RFC-0001): the hub persists after releasing the room lock, so
+	// out-of-order saves from concurrent mutations are expected, and the older one
+	// must be dropped silently rather than surfaced as a failure. Correctness does
+	// not depend on which save wins; the row always converges to the highest
+	// version, so no data is lost. If a caller ever needs to observe a rejection,
+	// the command tag's RowsAffected is the seam to expose it.
 	_, err = p.pool.Exec(ctx, `
 		INSERT INTO rooms (room_id, state, version, updated_at)
 		VALUES ($1, $2, $3, now())

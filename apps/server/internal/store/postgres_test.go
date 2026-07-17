@@ -152,15 +152,14 @@ func testSaveLoadWithQueue(t *testing.T, store Store) {
 		Version:      0,
 	}
 
-	track := queue.TrackRef{
-		ID:      "track1",
-		Title:   "Test Song",
-		Artist:  "Test Artist",
-		Sources: queue.Sources{},
-		AddedBy: "user1",
-	}
-
-	original.Queue = append(original.Queue, track)
+	// Two distinct tracks so ordering is provable, plus now-playing + radio so
+	// the full playback state round-trips (not just a single-item queue).
+	original.Queue = append(original.Queue,
+		queue.TrackRef{ID: "track1", Title: "First Song", Artist: "Artist A", Sources: queue.Sources{}, AddedBy: "user1"},
+		queue.TrackRef{ID: "track2", Title: "Second Song", Artist: "Artist B", Sources: queue.Sources{}, AddedBy: "user2"},
+	)
+	original.NowPlayingID = "track2"
+	original.RadioEnabled = true
 	original.Version = 1
 
 	if err := store.Save(ctx, original); err != nil {
@@ -172,8 +171,20 @@ func testSaveLoadWithQueue(t *testing.T, store Store) {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if len(loaded.Queue) != 1 || loaded.Queue[0].Title != "Test Song" {
-		t.Fatalf("queue not preserved: %+v", loaded.Queue)
+	if len(loaded.Queue) != 2 {
+		t.Fatalf("queue length not preserved: got %d, want 2 (%+v)", len(loaded.Queue), loaded.Queue)
+	}
+	if loaded.Queue[0].ID != "track1" || loaded.Queue[1].ID != "track2" {
+		t.Fatalf("queue ordering not preserved: got [%s, %s], want [track1, track2]", loaded.Queue[0].ID, loaded.Queue[1].ID)
+	}
+	if loaded.Queue[0].Title != "First Song" || loaded.Queue[1].Title != "Second Song" {
+		t.Fatalf("track fields not preserved: %+v", loaded.Queue)
+	}
+	if loaded.NowPlayingID != "track2" {
+		t.Fatalf("now-playing not preserved: got %q, want track2", loaded.NowPlayingID)
+	}
+	if !loaded.RadioEnabled {
+		t.Fatalf("radio flag not preserved: got false, want true")
 	}
 }
 
