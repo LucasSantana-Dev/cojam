@@ -1,6 +1,6 @@
 # Design references
 
-Curated design inspiration for Cojam (dark, Spotify + Linear product-app anchor).
+Curated design inspiration for CoJam (dark, Spotify + Linear product-app anchor).
 Gathered 2026-07-16 via a 4-stream research sweep (Dribbble, Pinterest, motion/AI
 galleries, real group-listening products). Dribbble/Pinterest are auth/JS-walled, so
 those pattern notes are inferred from shot metadata and cross-source commonalities.

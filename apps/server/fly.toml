@@ -1,4 +1,4 @@
-# Fly.io configuration for Cojam Go server
+# Fly.io configuration for CoJam Go server
 app = "cojam-server"
 primary_region = "gig"
 

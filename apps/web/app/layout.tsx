@@ -3,30 +3,30 @@ import './globals.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
 const description =
-  'Friends on different streaming services listen together in one room. Everyone plays on their own account; Cojam keeps the queue in sync on metadata alone.';
+  'Friends on different streaming services listen together in one room. Everyone plays on their own account; CoJam keeps the queue in sync on metadata alone.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: 'Cojam — listen together, across services', template: '%s · Cojam' },
+  title: { default: 'CoJam · listen together, across services', template: '%s · CoJam' },
   description,
-  applicationName: 'Cojam',
+  applicationName: 'CoJam',
   alternates: { canonical: '/' },
   openGraph: {
     type: 'website',
-    siteName: 'Cojam',
-    title: 'Cojam — listen together, across services',
+    siteName: 'CoJam',
+    title: 'CoJam · listen together, across services',
     description,
     url: siteUrl,
   },
-  twitter: { card: 'summary', title: 'Cojam', description },
+  twitter: { card: 'summary', title: 'CoJam', description },
 };
 
-// Minimal WebSite structured data for the public landing. No og:image yet —
+// Minimal WebSite structured data for the public landing. No og:image yet;
 // omitted deliberately rather than pointing at a missing asset.
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',
-  name: 'Cojam',
+  name: 'CoJam',
   url: siteUrl,
   description,
 };

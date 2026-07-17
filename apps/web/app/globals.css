@@ -14,8 +14,16 @@
   --color-text-primary: oklch(0.96 0.01 280); /* off-white, not #fff */
   --color-text-secondary: oklch(0.62 0.02 280); /* muted, readable */
   --color-text-muted: oklch(0.48 0.01 280);   /* for hints/secondary text */
-  --color-accent: oklch(0.66 0.20 300);       /* violet — bright enough for dark button text at AA */
+  --color-accent: oklch(0.66 0.20 300);       /* violet — the identity accent */
   --color-accent-hover: oklch(0.72 0.18 300); /* lighter for hover */
+  /* Second brand accent: music green (ADR-0004). This is the representative
+     SOLID for non-logo uses; the logo core is the --logo-core-* gradient below,
+     and --color-accent-2 sits between its lime and emerald endpoints. */
+  --color-accent-2: #4ade80;
+  /* Logo mark gradients (frame = violet sweep, core = lime -> emerald). The core
+     endpoints are the gradient form of --color-accent-2. */
+  --logo-frame-from: #6d5cff; --logo-frame-to: #c661ff;
+  --logo-core-from: #a3e635;  --logo-core-to: #10b981;
   --color-status-warn: oklch(0.70 0.20 55);  /* amber-ish for reconnecting state */
   --color-status-error: oklch(0.60 0.20 25); /* red-ish for connection lost state */
   /* Motion tokens (premium timing band). Enter = decelerate; never linear for UI. */
@@ -755,16 +763,9 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: -0.02em;
   font-size: 1.05rem;
   color: var(--color-text-primary);
-}
-.site-header .brand::before {
-  content: "";
-  display: inline-block;
-  width: 8px; height: 8px;
-  margin-right: 0.5rem;
-  border-radius: 50%;
-  background: var(--color-accent);
-  box-shadow: 0 0 10px 1px var(--color-accent);
-  vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .site-header .btn-primary { padding: 0.55rem 1.1rem; font-size: 0.9rem; }
 @media (max-width: 480px) {

@@ -20,6 +20,7 @@ import { ShareRoomButton } from '../components/ShareRoomButton';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
+import { LogoMark } from '@/app/components/Logo';
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const [nameInput, setNameInput] = useState('');
@@ -79,8 +80,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
           className="join-form panel w-full max-w-sm space-y-6 p-8"
         >
           <div className="space-y-2 text-center">
-            <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
-              Cojam
+            <h1 className="text-3xl font-bold inline-flex items-center justify-center gap-2.5" style={{ color: 'var(--color-text-primary)' }}>
+              <LogoMark size={26} glow animated />
+              CoJam
             </h1>
             <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               Room: {roomId}
@@ -126,7 +128,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
             <div className="space-y-1 min-w-0">
-              <h1 className="text-2xl font-bold">Cojam</h1>
+              <h1 className="text-2xl font-bold inline-flex items-center gap-2">
+                {/* Flows only while (re)connecting: colors moving = syncing. */}
+                <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
+              </h1>
               <p className="text-sm truncate" style={{ color: 'var(--color-text-secondary)' }}>
                 Room: {roomId} as {store.name}
               </p>

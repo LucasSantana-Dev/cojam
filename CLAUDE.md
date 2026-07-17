@@ -1,4 +1,4 @@
-# Cojam
+# CoJam
 
 Cross-platform group music listening app: friends on different streaming services (Spotify, Apple Music, YouTube; Deezer/YT Music constrained, see below) listen together in shared rooms.
 

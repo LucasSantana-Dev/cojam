@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
+import { LogoMark } from '@/app/components/Logo';
 
 
 function generateRoomId() {
@@ -242,7 +243,7 @@ export default function Home() {
   return (
     <div ref={rootRef} className="landing">
       <header className="site-header">
-        <span className="brand">Cojam</span>
+        <span className="brand"><LogoMark size={18} /> CoJam</span>
         <button onClick={createRoom} className="btn-primary magnetic">
           Start a room
         </button>
@@ -270,7 +271,7 @@ export default function Home() {
               </span>
             </h1>
             <p className="hero-sub">
-              Cojam keeps a shared queue in sync while everyone plays on their own streaming
+              CoJam keeps a shared queue in sync while everyone plays on their own streaming
               account. Per-user streams, metadata only, never a rebroadcast.
             </p>
             <div className="hero-cta">
@@ -314,7 +315,7 @@ export default function Home() {
           <p className="section-eyebrow reveal">In the room right now</p>
           <h2 className="section-title reveal">See it in sync.</h2>
           <p className="max-w-2xl mx-auto text-center reveal" style={{ color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
-            Watch how Cojam keeps everyone's queue in perfect sync while each person plays on their own service.
+            Watch how CoJam keeps everyone's queue in perfect sync while each person plays on their own service.
           </p>
           <RoomShowcase />
         </section>
