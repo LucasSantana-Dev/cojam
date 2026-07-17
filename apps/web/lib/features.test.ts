@@ -4,7 +4,7 @@ import { resolveFeatures } from './features';
 describe('resolveFeatures', () => {
   it('youtube+presence default on, spotify/apple default off (need setup)', () => {
     const f = resolveFeatures({});
-    expect(f).toEqual({ youtube: true, spotify: false, apple: false, presence: true });
+    expect(f).toEqual({ youtube: true, spotify: false, apple: false, presence: true, trackDepth: true });
   });
 
   it('reads truthy values case-insensitively', () => {
@@ -14,12 +14,17 @@ describe('resolveFeatures', () => {
       NEXT_PUBLIC_FEATURE_YOUTUBE: 'off',
       NEXT_PUBLIC_FEATURE_PRESENCE: 'no',
     });
-    expect(f).toEqual({ youtube: false, spotify: true, apple: true, presence: false });
+    expect(f).toEqual({ youtube: false, spotify: true, apple: true, presence: false, trackDepth: true });
   });
 
   it('unknown value falls back to the flag default', () => {
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_SPOTIFY: 'maybe' }).spotify).toBe(false);
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_YOUTUBE: 'maybe' }).youtube).toBe(true);
+  });
+
+  it('trackDepth defaults on and can be disabled', () => {
+    expect(resolveFeatures({}).trackDepth).toBe(true);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_TRACK_DEPTH: 'off' }).trackDepth).toBe(false);
   });
 
   it('accepts on/yes as enabled', () => {

@@ -160,6 +160,14 @@ func main() {
 		logger.Info("radio_feature_enabled_but_lastfm_unconfigured", "hint", "set LASTFM_API_KEY to enable")
 	}
 
+	// Wire track depth (MusicBrainz) when feature is on
+	if featureEnabled("FEATURE_TRACK_DEPTH", true) {
+		h.WithTrackDepthProvider(func(ctx context.Context, isrc, title, artist string) (interface{}, error) {
+			return match.FetchTrackDepth(ctx, isrc, title, artist)
+		})
+		logger.Info("track_depth_enabled", "provider", "musicbrainz")
+	}
+
 	}
 		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")
 	}

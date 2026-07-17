@@ -694,3 +694,132 @@ func TestSimilarTracks_Non200Error(t *testing.T) {
 	}
 }
 
+// Track Depth tests (MusicBrainz)
+
+func musicbrainzStub(t *testing.T, recordingJSON string) func() {
+	t.Helper()
+	oldURL := musicbrainzURL
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(recordingJSON))
+	}))
+	musicbrainzURL = srv.URL
+	return func() {
+		srv.Close()
+		musicbrainzURL = oldURL
+	}
+}
+
+func TestTrackDepth_FullDataWithCredits(t *testing.T) {
+	defer musicbrainzStub(t, `{
+		"isrcs": [{
+			"recordings": [{
+				"id": "rec-123",
+				"title": "Bohemian Rhapsody",
+				"release-credit": [{
+					"release": {
+						"title": "A Night at the Opera",
+						"date": "1975-10-31",
+						"label-info": [{
+							"label": {
+								"name": "EMI"
+							}
+						}]
+					}
+				}],
+				"relationships": [
+					{"type": "engineer", "artist": {"name": "John Deacon"}},
+					{"type": "producer", "artist": {"name": "Roy Thomas Baker"}}
+				],
+				"tags": [
+					{"count": 100, "name": "rock"},
+					{"count": 80, "name": "progressive rock"}
+				]
+			}]
+		}]
+	}`)()
+
+	depth, err := FetchTrackDepth(context.Background(), "GBUM71029604", "Bohemian Rhapsody", "Queen")
+	if err != nil {
+		t.Fatalf("TrackDepth: %v", err)
+	}
+	if depth == nil {
+		t.Fatalf("TrackDepth: returned nil")
+	}
+
+	if len(depth.Credits) < 2 {
+		t.Errorf("expected at least 2 credits, got %d", len(depth.Credits))
+	}
+
+	if depth.ReleaseYear != 1975 {
+		t.Errorf("ReleaseYear = %d, want 1975", depth.ReleaseYear)
+	}
+
+	if depth.Label != "EMI" {
+		t.Errorf("Label = %q, want EMI", depth.Label)
+	}
+
+	if len(depth.Tags) == 0 {
+		t.Errorf("expected tags, got empty")
+	}
+
+	if depth.Source != "musicbrainz" {
+		t.Errorf("Source = %q, want musicbrainz", depth.Source)
+	}
+}
+
+func TestTrackDepth_NoDataFound(t *testing.T) {
+	defer musicbrainzStub(t, `{
+		"count": 1,
+		"recordings": [{
+			"id": "rec-123",
+			"title": "Bohemian Rhapsody",
+			"release-credit": [],
+			"relationships": [],
+			"tags": []
+		}]
+	}`)()
+
+	depth, err := FetchTrackDepth(context.Background(), "", "Bohemian Rhapsody", "Queen")
+	if err != nil {
+		t.Fatalf("TrackDepth: %v", err)
+	}
+
+	if depth == nil {
+		t.Fatalf("TrackDepth: returned nil on sparse data")
+	}
+
+	// Should return empty result with source
+	if depth.Source != "musicbrainz" {
+		t.Errorf("Source = %q, want musicbrainz", depth.Source)
+	}
+}
+
+func TestTrackDepth_EmptyISRC(t *testing.T) {
+	// Without ISRC, should try title/artist fallback (returns empty result gracefully)
+	defer musicbrainzStub(t, `{
+		"count": 1,
+		"recordings": [{
+			"id": "rec-123",
+			"title": "Song",
+			"release-credit": [],
+			"relationships": [],
+			"tags": []
+		}]
+	}`)()
+
+	depth, err := FetchTrackDepth(context.Background(), "", "Title", "Artist")
+	if err != nil {
+		t.Fatalf("TrackDepth: %v", err)
+	}
+
+	if depth == nil {
+		t.Fatalf("TrackDepth: returned nil on no ISRC")
+	}
+
+	// Should have source even with no data
+	if depth.Source != "musicbrainz" {
+		t.Errorf("Source = %q, want musicbrainz", depth.Source)
+	}
+}
+
