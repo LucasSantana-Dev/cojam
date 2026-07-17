@@ -154,7 +154,7 @@ export function RoomShowcase() {
 
           {/* Now-playing panel (large album art + equalizer) */}
           <div
-            className="p-4 rounded-lg"
+            className="p-4 rounded-lg showcase-now-playing"
             style={{
               background: 'color-mix(in oklab, var(--color-surface-3) 50%, transparent)',
               border: '1px solid color-mix(in oklab, var(--color-accent) 40%, transparent)',
@@ -196,16 +196,16 @@ export function RoomShowcase() {
                   {roomData.nowPlaying.artist}
                 </p>
 
-                {/* Progress bar (faint) */}
+                {/* Progress bar (scrubbed by scroll; controlled via --progress) */}
                 <div
                   className="mt-3 h-1 rounded-full overflow-hidden"
                   style={{ background: 'var(--color-border)' }}
                 >
                   <div
-                    className="h-full rounded-full"
+                    className="h-full rounded-full transition-none"
                     style={{
                       background: 'var(--color-accent)',
-                      width: '35%',
+                      width: 'var(--progress, 35%)',
                     }}
                   />
                 </div>
@@ -242,13 +242,14 @@ export function RoomShowcase() {
               Queue
             </h5>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 showcase-queue-list">
               {roomData.queue.map((item, idx) => {
                 const cfg = sourceConfig[item.source];
                 return (
                   <div
                     key={item.title}
                     className="group queue-row p-3 rounded-lg"
+                    data-queue-index={idx}
                     style={{
                       background: 'color-mix(in oklab, var(--color-surface-2) 60%, transparent)',
                       border: '1px solid var(--color-border)',

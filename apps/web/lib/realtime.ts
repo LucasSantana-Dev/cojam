@@ -7,11 +7,13 @@ export type Member = { clientId: string; name: string };
 export interface AppStore {
   state: RoomState | null;
   connected: boolean;
+  reconnecting: boolean;
   name: string;
   members: Member[];
   setName: (name: string) => void;
   setState: (state: RoomState) => void;
   setConnected: (connected: boolean) => void;
+  setReconnecting: (reconnecting: boolean) => void;
   setMembers: (members: Member[]) => void;
   addMember: (m: Member) => void;
   removeMember: (clientId: string) => void;
@@ -20,6 +22,7 @@ export interface AppStore {
 export const useStore = create<AppStore>((set) => ({
   state: null,
   connected: false,
+  reconnecting: false,
   name: '',
   members: [],
   setName: (name) => set({ name }),
@@ -27,6 +30,7 @@ export const useStore = create<AppStore>((set) => ({
     state: !s.state || state.version > s.state.version ? state : s.state,
   })),
   setConnected: (connected) => set({ connected }),
+  setReconnecting: (reconnecting) => set({ reconnecting }),
   setMembers: (members) => set({ members }),
   addMember: (m) => set((s) =>
     s.members.some((x) => x.clientId === m.clientId) ? s : { members: [...s.members, m] }),
@@ -60,10 +64,16 @@ export async function joinRoom(roomId: string, name: string) {
 
   centrifuge.on('connected', () => {
     store.setConnected(true);
+    store.setReconnecting(false);
+  });
+
+  centrifuge.on('connecting', () => {
+    store.setReconnecting(true);
   });
 
   centrifuge.on('disconnected', () => {
     store.setConnected(false);
+    store.setReconnecting(false);
   });
 
   const sub = centrifuge.newSubscription(`room:${roomId}`);

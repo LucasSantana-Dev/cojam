@@ -10,6 +10,8 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
   const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
+  const [playlistInputRef, setPlaylistInputRef] = useState<HTMLInputElement | null>(null);
+  const [importErrorShake, setImportErrorShake] = useState(false);
 
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
@@ -45,6 +47,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
 
     const seq = ++searchSeqRef.current;
     setIsSearching(true);
+    setSearchResults([]); // stale results must not render under the skeleton
     debounceTimerRef.current = setTimeout(async () => {
       try {
         const results = await searchTracks(searchQuery);
@@ -138,6 +141,8 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to import playlist';
       setPlaylistError(message);
+      setImportErrorShake(true);
+      setTimeout(() => setImportErrorShake(false), 600);
     } finally {
       setPlaylistLoading(false);
     }
@@ -166,6 +171,18 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
             </div>
           )}
         </div>
+
+        {isSearching && searchQuery && (
+          <div className="border rounded-lg p-3 space-y-2" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-1)' }}>
+            {[...Array(3)].map((_, idx) => (
+              <div
+                key={idx}
+                className="skeleton-shimmer h-12 rounded-lg"
+                style={{ ['--i' as string]: idx }}
+              />
+            ))}
+          </div>
+        )}
 
         {searchResults.length > 0 && (
           <ul className="space-y-2 border rounded-lg p-3" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-1)' }}>
@@ -225,16 +242,24 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
             Import a playlist
           </label>
           <div className="flex gap-2">
-            <input
-              type="url"
-              placeholder="Paste playlist link"
-              aria-label="Playlist URL"
-              value={playlistUrl}
-              onChange={(e) => setPlaylistUrl(e.target.value)}
-              className="flex-1 px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
-              style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-              disabled={playlistLoading}
-            />
+            <div className="flex-1 relative">
+              <input
+                ref={setPlaylistInputRef}
+                type="url"
+                placeholder="Paste playlist link"
+                aria-label="Playlist URL"
+                value={playlistUrl}
+                onChange={(e) => setPlaylistUrl(e.target.value)}
+                className={`w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150${importErrorShake ? ' import-error-shake' : ''}`}
+                style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+                disabled={playlistLoading}
+              />
+              {playlistLoading && (
+                <div className="import-progress absolute bottom-0 left-0 right-0 rounded-b-lg overflow-hidden">
+                  <div className="import-progress-bar" />
+                </div>
+              )}
+            </div>
             <button
               type="submit"
               disabled={playlistLoading || !playlistUrl.trim()}
@@ -245,12 +270,12 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
             </button>
           </div>
           {playlistError && (
-            <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171' }}>
+            <p role="alert" aria-live="polite" className="text-sm" style={{ color: 'var(--color-status-error)' }}>
               {playlistError}
             </p>
           )}
           {playlistSuccess && (
-            <p role="status" aria-live="polite" className="text-sm" style={{ color: '#86efac' }}>
+            <p role="status" aria-live="polite" className="success-toast text-sm" style={{ color: '#86efac' }}>
               {playlistSuccess}
             </p>
           )}
