@@ -15,7 +15,7 @@ async function addTrack(page: Page, title: string, artist: string, videoId?: str
   await page.getByPlaceholder('Title').fill(title);
   await page.getByPlaceholder('Artist').fill(artist);
   if (videoId) {
-    await page.getByPlaceholder('YouTube Video ID (optional)').fill(videoId);
+    await page.getByPlaceholder('YouTube link or video ID (optional)').fill(videoId);
   }
   await page.getByRole('button', { name: 'Add to Queue' }).click();
   // Wait for the add to land (queue shows the title) before returning, so a
@@ -70,7 +70,7 @@ test('queue reorder syncs to both clients', async ({ browser }) => {
   await expect(lucas.getByTestId('queue-title').first()).toHaveText('Alpha');
 
   // Lucas moves Beta (2nd item) up; order becomes [Beta, Alpha] on BOTH clients.
-  await lucas.getByTestId('queue-item').nth(1).getByRole('button', { name: '↑' }).click();
+  await lucas.getByTestId('queue-item').nth(1).getByRole('button', { name: 'Move up' }).click();
 
   await expect(lucas.getByTestId('queue-title').first()).toHaveText('Beta');
   await expect(ana.getByTestId('queue-title').first()).toHaveText('Beta');

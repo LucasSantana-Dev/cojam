@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
 import { features } from '@/lib/features';
+import { AppleMusicIcon } from '@/app/components/icons';
 
 declare global {
   interface Window {
@@ -113,10 +114,10 @@ export function ApplePlayer({
             console.error('Apple authorize failed:', e);
           }
         }}
-        name="Connect Apple Music"
-        className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
+        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
         style={{ backgroundColor: 'var(--color-info)', color: 'var(--color-surface-0)' }}
       >
+        <AppleMusicIcon size={16} />
         Connect Apple Music
       </button>
     );

@@ -16,5 +16,5 @@ test('Connect Spotify button renders when the feature flag is on', async ({ page
   await join(page, `sp${Date.now().toString(36)}`, 'Lucas');
   await expect(page.getByRole('button', { name: 'Connect Spotify' })).toBeVisible();
   // gated add-track field also appears
-  await expect(page.getByPlaceholder('Spotify Track URI (optional)')).toBeVisible();
+  await expect(page.getByPlaceholder('Spotify link or track URI (optional)')).toBeVisible();
 });

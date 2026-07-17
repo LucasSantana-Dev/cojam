@@ -9,3 +9,6 @@ build
 # Playwright output
 test-results/
 playwright-report/
+
+# TS incremental build cache
+tsconfig.tsbuildinfo
