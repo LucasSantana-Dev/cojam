@@ -15,6 +15,7 @@ async function join(page: Page, roomId: string, name: string) {
 test('Connect Spotify button renders when the feature flag is on', async ({ page }) => {
   await join(page, `sp${Date.now().toString(36)}`, 'Lucas');
   await expect(page.getByRole('button', { name: 'Connect Spotify' })).toBeVisible();
-  // gated add-track field also appears
+  // gated add-track field also appears (manual fields live behind the "Add manually" toggle)
+  await page.locator('details').first().evaluate((d) => ((d as HTMLDetailsElement).open = true));
   await expect(page.getByPlaceholder('Spotify link or track URI (optional)')).toBeVisible();
 });
