@@ -147,7 +147,7 @@ export async function setRadio(roomId: string, enabled: boolean) {
 export type SearchCandidate = {
   title: string;
   artist: string;
-  source: string; // "spotify"|"deezer"|"tidal"
+  source: string; // "spotify"|"deezer"
   spotifyUri?: string;
   isrc: string;
   durationMs: number;

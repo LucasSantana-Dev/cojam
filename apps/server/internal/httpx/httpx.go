@@ -1,5 +1,5 @@
 // Package httpx provides the shared outbound HTTP client for third-party music
-// APIs (Spotify, Deezer, YouTube, Tidal, Last.fm, MusicBrainz). It exists so a
+// APIs (Spotify, Deezer, YouTube, Last.fm, MusicBrainz). It exists so a
 // slow or hostile upstream cannot hang a request goroutine indefinitely and so
 // a malicious response cannot exhaust memory during decode.
 package httpx

@@ -21,7 +21,7 @@ type Matcher func(ctx context.Context, title, artist, isrc string) (*queue.Sourc
 type SearchResult struct {
 	Title      string `json:"title"`
 	Artist     string `json:"artist"`
-	Source     string `json:"source"` // "spotify"|"deezer"|"tidal"
+	Source     string `json:"source"` // "spotify"|"deezer"
 	SpotifyURI string `json:"spotifyUri,omitempty"`
 	ISRC       string `json:"isrc"`
 	DurationMs int    `json:"durationMs"`

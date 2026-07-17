@@ -32,7 +32,7 @@ the failure modes that have actually bitten agents here.
 - Keep the third-party base URLs in package-level vars so `*_test.go` can point them at `httptest` servers. Follow the `spotifyStub` pattern in `internal/match/match_test.go`.
 - Gate optional providers on env and return `ErrNotConfigured` when unset (degrade gracefully, never crash). Wire behind a `FEATURE_*` flag in `cmd/server/main.go`. Deezer needs no credentials and is the default that works locally.
 - New RPC method: add a `case` in `hub.dispatch`. If it mutates room state, add it to `mutatingMethods` (membership-gated) AND bump `Version` in the mutate closure. Reads return whatever JSON they need (not required to be `RoomState`).
-- Playback is per-user streams synced by metadata only (Stationhead/Vertigo model) — never rebroadcast audio. Deezer/Tidal are search/identity sources, not players. See `CLAUDE.md` for the full platform constraints.
+- Playback is per-user streams synced by metadata only (Stationhead/Vertigo model) — never rebroadcast audio. Deezer is a search/identity source, not a player. See `CLAUDE.md` for the full platform constraints.
 
 ## Recording new failures
 
