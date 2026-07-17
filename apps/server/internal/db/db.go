@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -27,6 +28,14 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
+
+	// Avoid server-side NAMED prepared statements: they break behind a
+	// PgBouncer-style pooler in transaction mode, which is what most hosted
+	// Postgres (Fly MPG, Neon, Supabase) front the pooled URL with. CacheDescribe
+	// still learns parameter/result types (so jsonb/bigint encode correctly) but
+	// executes via the unnamed statement, which transaction-mode pooling allows.
+	// (Plain Exec mode does NOT learn types and mis-encodes our jsonb column.)
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {

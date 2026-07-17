@@ -89,12 +89,30 @@ func main() {
 	// scope so the /readyz check can ping it; nil in in-memory mode.
 	var dbPool *pgxpool.Pool
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-		pool, err := db.Open(context.Background(), dbURL)
+		ctx := context.Background()
+
+		// Runtime pool uses DATABASE_URL (typically the hosted provider's pooled URL).
+		pool, err := db.Open(ctx, dbURL)
 		if err != nil {
 			log.Fatalf("failed to open database: %v", err)
 		}
 
-		if err := db.Migrate(context.Background(), pool); err != nil {
+		// Migrate via DIRECT_DATABASE_URL when provided: hosted Postgres poolers can
+		// restrict DDL, and the direct connection sidesteps that. Falls back to the
+		// runtime pool when no direct URL is set.
+		if direct := os.Getenv("DIRECT_DATABASE_URL"); direct != "" {
+			migratePool, err := db.Open(ctx, direct)
+			if err != nil {
+				pool.Close()
+				log.Fatalf("failed to open DIRECT_DATABASE_URL for migration: %v", err)
+			}
+			err = db.Migrate(ctx, migratePool)
+			migratePool.Close()
+			if err != nil {
+				pool.Close()
+				log.Fatalf("failed to migrate database: %v", err)
+			}
+		} else if err := db.Migrate(ctx, pool); err != nil {
 			pool.Close()
 			log.Fatalf("failed to migrate database: %v", err)
 		}
