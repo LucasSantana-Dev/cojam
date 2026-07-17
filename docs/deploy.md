@@ -47,14 +47,24 @@ Fly will ask to select a region; choose the one closest to your users (default `
 
 The server persists room state (queue, now-playing, radio flag) to Postgres when
 `DATABASE_URL` is set. Without it, the server runs with in-memory rooms that are
-lost on restart, which is fine for local dev but not production.
+lost on restart, which is fine for local dev but not production. Any Postgres
+works; the server does not care where it lives.
 
-```bash
-# Provision a Postgres cluster and attach it to the server app. Attaching sets
-# the DATABASE_URL secret on cojam-server automatically.
-flyctl postgres create --name cojam-db
-flyctl postgres attach cojam-db --app cojam-server
-```
+Provider options:
+
+- **Fly Managed Postgres** (`fly mpg create --region gru --plan basic` then
+  `fly mpg attach <clusterID> -a cojam-server`, which sets `DATABASE_URL`).
+  Requires a payment method on the org, and `gig` is not an MPG region (use
+  `gru`). The legacy `flyctl postgres create` is deprecated.
+- **A free external provider** (e.g. Neon or Supabase — no card, generous free
+  tier). Create a database, copy its connection string, and set it as a secret:
+  `flyctl secrets set DATABASE_URL="postgres://..." --app cojam-server`.
+
+Optional: set `DIRECT_DATABASE_URL` to the provider's direct (non-pooled)
+connection string. The server runs migrations through it when present, since
+some poolers restrict DDL; runtime queries always use `DATABASE_URL`. The pool
+is configured for pooled/PgBouncer endpoints (unnamed prepared statements), so a
+pooled `DATABASE_URL` works without extra flags.
 
 Notes:
 
@@ -189,6 +199,8 @@ flyctl ssh console --app cojam-server
 
 | Variable | Required | Example |
 |----------|----------|---------|
+| `DATABASE_URL` | No | `postgres://user:pass@host:5432/db` (room persistence; in-memory if unset. Pooled URLs work as-is) |
+| `DIRECT_DATABASE_URL` | No | `postgres://user:pass@direct-host:5432/db` (direct URL used only for migrations; falls back to `DATABASE_URL`) |
 | `YOUTUBE_API_KEY` | No | `AIzaSy...` (for YouTube track matching) |
 | `SPOTIFY_CLIENT_ID` | No | `abc123...` (for Spotify track matching) |
 | `SPOTIFY_CLIENT_SECRET` | No | `secret...` (for Spotify OAuth token) |
