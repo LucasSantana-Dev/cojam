@@ -79,7 +79,7 @@ flowchart TB
 | Frontend | Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · zustand · centrifuge-js |
 | Backend | Go · chi router · centrifuge realtime hub (rooms, presence, reconnect recovery) · golang-jwt |
 | Matching | ISRC-first · YouTube Data API · Spotify Client Credentials · MusicBrainz fallback |
-| Persistence | In-memory rooms (MVP) · PostgreSQL + sqlc/pgx planned |
+| Persistence | Postgres (pgx) when `DATABASE_URL` is set, rooms survive restart · in-memory fallback for local dev |
 | Monorepo | pnpm workspaces (`apps/web`, `packages/shared`) + colocated Go module (`apps/server`) |
 | Deploy | Fly.io via Docker ([`docs/deploy.md`](docs/deploy.md)) |
 

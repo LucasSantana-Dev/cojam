@@ -43,16 +43,33 @@ flyctl apps create cojam-web
 
 Fly will ask to select a region; choose the one closest to your users (default `gig` is fine for MVP).
 
-### 4. Set Up Database (Deferred)
+### 4. Set Up Database (Room Persistence)
 
-Postgres is required for production but deferred until Phase 2. For now, the server uses ephemeral in-memory room state with synchronous writes to a placeholder. When ready:
+The server persists room state (queue, now-playing, radio flag) to Postgres when
+`DATABASE_URL` is set. Without it, the server runs with in-memory rooms that are
+lost on restart, which is fine for local dev but not production.
 
 ```bash
-# Add Postgres to server app
-flyctl postgres create --app cojam-server
+# Provision a Postgres cluster and attach it to the server app. Attaching sets
+# the DATABASE_URL secret on cojam-server automatically.
+flyctl postgres create --name cojam-db
+flyctl postgres attach cojam-db --app cojam-server
 ```
 
-Store the connection string and share with team securely.
+Notes:
+
+- **Migrations run automatically on boot.** The server applies pending migrations
+  (currently `0001_rooms.sql`) at startup before serving; no separate release
+  command is needed. A migration failure is fatal, so the deploy fails loudly
+  rather than serving on a bad schema.
+- **Fail-fast:** if `DATABASE_URL` is set but the database is unreachable, the
+  server exits instead of silently falling back to in-memory (which would be
+  surprise data loss). If you intend to run without persistence, leave
+  `DATABASE_URL` unset.
+- **Readiness:** point the Fly health check at `GET /readyz`. It returns `200`
+  when the process is up and (in Postgres mode) the database answers a ping, and
+  `503` if the database is configured but unreachable. `GET /healthz` remains a
+  plain liveness check.
 
 ### 5. Add GitHub Actions Secret
 

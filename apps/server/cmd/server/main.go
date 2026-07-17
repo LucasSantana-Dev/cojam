@@ -15,6 +15,7 @@ import (
 	"github.com/centrifugal/centrifuge"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
@@ -84,7 +85,9 @@ func main() {
 	// Create hub
 	h := hub.NewHub(node).WithObservability(logger, metrics)
 
-	// Wire persistent store if DATABASE_URL is configured
+	// Wire persistent store if DATABASE_URL is configured. dbPool is held at this
+	// scope so the /readyz check can ping it; nil in in-memory mode.
+	var dbPool *pgxpool.Pool
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 		pool, err := db.Open(context.Background(), dbURL)
 		if err != nil {
@@ -96,6 +99,7 @@ func main() {
 			log.Fatalf("failed to migrate database: %v", err)
 		}
 
+		dbPool = pool
 		pgStore := store.NewPostgres(pool)
 		h.WithStore(pgStore)
 		logger.Info("persistence_enabled", "store", "postgres")
@@ -276,12 +280,15 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	// Health check endpoint
+	// Liveness: the process is up. Readiness (/readyz) additionally gates on the
+	// database when one is configured, so a deploy does not take traffic until the
+	// store it needs is reachable.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	r.Get("/readyz", readyzHandler(dbPool))
 
 	// Apple token endpoint
 	r.Get("/api/apple/dev-token", func(w http.ResponseWriter, r *http.Request) {
@@ -366,4 +373,25 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+// readyzHandler reports readiness. In memory mode (nil pool) the server is always
+// ready. In Postgres mode it is ready only when the pool answers a ping within a
+// short deadline, so a load balancer stops routing to an instance that has lost
+// its database.
+func readyzHandler(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if pool != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := pool.Ping(ctx); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				json.NewEncoder(w).Encode(map[string]string{"status": "not ready", "db": "unreachable"})
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	}
 }
