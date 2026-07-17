@@ -848,3 +848,46 @@ input:focus, textarea:focus, select:focus {
     box-shadow: 0 8px 16px -4px color-mix(in oklab, var(--color-accent) 25%, transparent);
   }
 }
+
+/* ============ TRACK DEPTH panel (mount-gated enter animation) ============ */
+@keyframes depth-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes depth-side-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+/* Positioning lives HERE (unlayered), because .panel's unlayered
+   position:relative beats Tailwind's layered 'fixed' utility. */
+.track-depth-panel {
+  position: fixed;
+  z-index: 50;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 85vh;
+  animation: depth-sheet-in 0.32s var(--ease-out-quart) both;
+}
+@media (min-width: 1024px) {
+  .track-depth-panel {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: 0;
+    width: 24rem;
+    max-height: none;
+    border-radius: 0;
+    animation-name: depth-side-in;
+  }
+}
+.track-depth-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.5);
+  animation: fade-in 0.2s ease both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .track-depth-panel, .track-depth-backdrop { animation: none; }
+}

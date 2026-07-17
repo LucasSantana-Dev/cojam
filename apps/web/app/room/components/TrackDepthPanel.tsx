@@ -59,26 +59,19 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
     <>
       {/* Backdrop (mobile + close on click) */}
       <div
-        className="track-depth-backdrop fixed inset-0 bg-black/50 opacity-0 pointer-events-none transition-opacity duration-200 lg:hidden"
-        style={{
-          opacity: open ? 1 : 0,
-          pointerEvents: open ? 'auto' : 'none',
-          zIndex: open ? 40 : -1,
-        }}
+        className="track-depth-backdrop lg:hidden"
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Panel */}
+      {/* Mount-gated: enter animation lives in globals.css (sheet-up on mobile,
+          side-in on desktop); breakpoint owns the direction, not inline style. */}
       <div
-        className="track-depth-panel fixed bottom-0 left-0 right-0 lg:fixed lg:bottom-auto lg:right-0 lg:top-0 lg:max-w-sm h-screen lg:h-auto max-h-[90vh] lg:max-h-screen panel flex flex-col bg-clip-padding border border-solid transition-all duration-200"
+        className="track-depth-panel panel flex flex-col"
         style={{
           backgroundColor: 'var(--color-surface-1)',
           borderColor: 'var(--color-border)',
-          transform: open
-            ? 'translateX(0) translateY(0)'
-            : 'translateY(100%) translateX(0)',
-          zIndex: open ? 50 : -1,
         }}
       >
         {/* Header */}
