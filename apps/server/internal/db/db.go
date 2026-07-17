@@ -45,15 +45,15 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 // Uses a schema_migrations tracking table and applies each embedded *.sql file
 // whose version is not yet recorded, in filename order, each inside a transaction.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	// Create schema_migrations table if it doesn't exist.
-	if err := pool.QueryRow(ctx, `
+	// Create schema_migrations table if it doesn't exist. DDL returns no rows, so
+	// use Exec (not QueryRow) and surface a real failure instead of swallowing it.
+	if _, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version text PRIMARY KEY,
 			applied_at timestamptz NOT NULL DEFAULT now()
 		)
-	`).Scan(); err != nil {
-		// QueryRow.Scan expects a row, but CREATE TABLE returns none.
-		// The error will be nil if the statement executes; we ignore the Scan error.
+	`); err != nil {
+		return fmt.Errorf("failed to create schema_migrations table: %w", err)
 	}
 
 	// Read all migration files from the embedded filesystem.
