@@ -29,12 +29,13 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
 
-	// Avoid server-side NAMED prepared statements: they break behind a
-	// PgBouncer-style pooler in transaction mode, which is what most hosted
-	// Postgres (Fly MPG, Neon, Supabase) front the pooled URL with. CacheDescribe
-	// still learns parameter/result types (so jsonb/bigint encode correctly) but
-	// executes via the unnamed statement, which transaction-mode pooling allows.
-	// (Plain Exec mode does NOT learn types and mis-encodes our jsonb column.)
+	// Deliberately target pooled hosted Postgres (Fly MPG, Neon, Supabase), whose
+	// pooled URL sits behind a PgBouncer-style pooler. CacheDescribe caches the
+	// parameter/result metadata and executes via an unnamed extended-protocol
+	// statement, i.e. no persistent server-side named prepared statement, so it is
+	// safe even under transaction-mode pooling while still encoding jsonb/bigint
+	// correctly. (Plain Exec mode skips the describe, cannot infer the jsonb
+	// parameter type, and silently mis-encodes the state column.)
 	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)

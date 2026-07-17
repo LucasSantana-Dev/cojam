@@ -89,7 +89,10 @@ func main() {
 	// scope so the /readyz check can ping it; nil in in-memory mode.
 	var dbPool *pgxpool.Pool
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-		ctx := context.Background()
+		// Bound all startup DB work (connect, ping, migrate) with a deadline so a
+		// hung or locked database fails the deploy fast instead of blocking forever.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 
 		// Runtime pool uses DATABASE_URL (typically the hosted provider's pooled URL).
 		pool, err := db.Open(ctx, dbURL)
