@@ -13,13 +13,16 @@ NODE_NAME = "cojam-server"
 internal_port = 8080
 force_https = false
 
+# Readiness check: /readyz is 200 when the process is up and (when DATABASE_URL
+# is set) the Postgres pool answers a ping, else 503. Fly stops routing to an
+# instance whose database is unreachable, then resumes when it recovers.
 [[http_service.checks]]
 grace_period = "10s"
-interval = 30000
+interval = "30s"
 method = "GET"
-path = "/healthz"
+path = "/readyz"
 protocol = "http"
-timeout = 3000
+timeout = "3s"
 type = "http"
 
 [vm]
