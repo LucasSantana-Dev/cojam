@@ -10,15 +10,15 @@ import (
 	"testing"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 )
 
-// spotifyStub wires the package HTTP vars to a token server + a search handler,
+// spotifyStub wires the spotifyauth package HTTP vars to a token server + a search handler,
 // returning a cleanup that restores them. tokenHits counts token fetches.
 func spotifyStub(t *testing.T, tokenHits *int32, searchJSON string, captureQuery *string) func() {
 	t.Helper()
-	oldID, oldSecret := spotifyClientID, spotifyClientSecret
-	oldTok, oldSearch, oldClient := spotifyTokenURL, spotifySearchURL, spotifyClient
-	oldCache := spotifyTokenCache
+	oldID, oldSecret := spotifyauth.ClientID, spotifyauth.ClientSecret
+	oldTok, oldClient := spotifyauth.TokenURL, spotifyauth.Client
 
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(tokenHits, 1)
@@ -33,17 +33,18 @@ func spotifyStub(t *testing.T, tokenHits *int32, searchJSON string, captureQuery
 		_, _ = w.Write([]byte(searchJSON))
 	}))
 
-	spotifyClientID, spotifyClientSecret = "id", "secret"
-	spotifyTokenURL, spotifySearchURL = tokenSrv.URL, searchSrv.URL
-	spotifyClient = http.DefaultClient
-	spotifyTokenCache = &tokenCacheEntry{}
+	spotifyauth.ClientID, spotifyauth.ClientSecret = "id", "secret"
+	spotifyauth.TokenURL = tokenSrv.URL
+	spotifyauth.Client = http.DefaultClient
+	spotifySearchURL = searchSrv.URL
+	spotifyauth.ResetCache()
 
 	return func() {
 		tokenSrv.Close()
 		searchSrv.Close()
-		spotifyClientID, spotifyClientSecret = oldID, oldSecret
-		spotifyTokenURL, spotifySearchURL, spotifyClient = oldTok, oldSearch, oldClient
-		spotifyTokenCache = oldCache
+		spotifyauth.ClientID, spotifyauth.ClientSecret = oldID, oldSecret
+		spotifyauth.TokenURL, spotifyauth.Client = oldTok, oldClient
+		spotifyauth.ResetCache()
 	}
 }
 
@@ -345,16 +346,18 @@ func TestCalculateConfidence(t *testing.T) {
 
 func TestResolveSpotify_ErrNotConfigured(t *testing.T) {
 	// Save old env state
-	oldID := spotifyClientID
-	oldSecret := spotifyClientSecret
+	oldID := spotifyauth.ClientID
+	oldSecret := spotifyauth.ClientSecret
 	defer func() {
-		spotifyClientID = oldID
-		spotifyClientSecret = oldSecret
+		spotifyauth.ClientID = oldID
+		spotifyauth.ClientSecret = oldSecret
+		spotifyauth.ResetCache()
 	}()
 
 	// Unset credentials
-	spotifyClientID = ""
-	spotifyClientSecret = ""
+	spotifyauth.ClientID = ""
+	spotifyauth.ClientSecret = ""
+	spotifyauth.ResetCache()
 
 	ref, err := ResolveSpotify(context.Background(), "Title", "Artist", "")
 	if err != ErrNotConfigured {
@@ -402,15 +405,17 @@ func TestSearchSpotify_ReturnsMappedCandidates(t *testing.T) {
 }
 
 func TestSearchSpotify_EmptyOnNotConfigured(t *testing.T) {
-	oldID := spotifyClientID
-	oldSecret := spotifyClientSecret
+	oldID := spotifyauth.ClientID
+	oldSecret := spotifyauth.ClientSecret
 	defer func() {
-		spotifyClientID = oldID
-		spotifyClientSecret = oldSecret
+		spotifyauth.ClientID = oldID
+		spotifyauth.ClientSecret = oldSecret
+		spotifyauth.ResetCache()
 	}()
 
-	spotifyClientID = ""
-	spotifyClientSecret = ""
+	spotifyauth.ClientID = ""
+	spotifyauth.ClientSecret = ""
+	spotifyauth.ResetCache()
 
 	results, err := SearchSpotify(context.Background(), "query", 8)
 	if err != nil {
@@ -613,17 +618,16 @@ func TestSearchAll_AggregatesDeezer(t *testing.T) {
 
 func TestSearchAll_DedupesByNormalizedTitle(t *testing.T) {
 	oldDeezerURL := deezerSearchURL
-	oldSpotifyID, oldSpotifySecret := spotifyClientID, spotifyClientSecret
-	oldTokenURL, oldSearchURL := spotifyTokenURL, spotifySearchURL
-	oldClient := spotifyClient
-	oldCache := spotifyTokenCache
+	oldSpotifyID, oldSpotifySecret := spotifyauth.ClientID, spotifyauth.ClientSecret
+	oldTokenURL, oldSearchURL := spotifyauth.TokenURL, spotifySearchURL
+	oldClient := spotifyauth.Client
 
 	defer func() {
 		deezerSearchURL = oldDeezerURL
-		spotifyClientID, spotifyClientSecret = oldSpotifyID, oldSpotifySecret
-		spotifyTokenURL, spotifySearchURL = oldTokenURL, oldSearchURL
-		spotifyClient = oldClient
-		spotifyTokenCache = oldCache
+		spotifyauth.ClientID, spotifyauth.ClientSecret = oldSpotifyID, oldSpotifySecret
+		spotifyauth.TokenURL, spotifySearchURL = oldTokenURL, oldSearchURL
+		spotifyauth.Client = oldClient
+		spotifyauth.ResetCache()
 	}()
 
 	// Setup Deezer with no ISRC (real API behavior)
@@ -648,12 +652,12 @@ func TestSearchAll_DedupesByNormalizedTitle(t *testing.T) {
 	defer spotifySearchSrv.Close()
 
 	deezerSearchURL = deezerSrv.URL
-	spotifyClientID = "id"
-	spotifyClientSecret = "secret"
-	spotifyTokenURL = tokenSrv.URL
+	spotifyauth.ClientID = "id"
+	spotifyauth.ClientSecret = "secret"
+	spotifyauth.TokenURL = tokenSrv.URL
 	spotifySearchURL = spotifySearchSrv.URL
-	spotifyClient = http.DefaultClient
-	spotifyTokenCache = &tokenCacheEntry{}
+	spotifyauth.Client = http.DefaultClient
+	spotifyauth.ResetCache()
 
 	results, err := SearchAll(context.Background(), "bohemian", 8)
 	if err != nil {

@@ -5,6 +5,9 @@
 package httpx
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -29,3 +32,22 @@ var Client = &http.Client{
 // MaxResponseBytes caps how much of an upstream response body we read or decode,
 // so a giant (or hostile) response cannot exhaust server memory.
 const MaxResponseBytes int64 = 10 << 20 // 10 MiB
+
+// DoJSON sends an HTTP request using Client.Do and decodes the response body
+// as JSON into v. On any error, returns an error without leaking the response body.
+// Status codes outside the 2xx range return a generic error without exposing the body.
+func DoJSON(req *http.Request, v any) error {
+	resp, err := Client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		// Drain body to avoid leaks; don't include body in error message
+		io.Copy(io.Discard, io.LimitReader(resp.Body, MaxResponseBytes))
+		return fmt.Errorf("upstream status %d", resp.StatusCode)
+	}
+
+	return json.NewDecoder(io.LimitReader(resp.Body, MaxResponseBytes)).Decode(v)
+}
