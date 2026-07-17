@@ -37,6 +37,9 @@ type PlaylistFetcher func(ctx context.Context, url string) ([]queue.TrackRef, er
 // SimilarProvider fetches tracks similar to a given track (used for radio auto-refill)
 type SimilarProvider func(ctx context.Context, artist, title string, limit int) ([]queue.TrackRef, error)
 
+// TrackDepthProvider fetches deep metadata for a track (credits, release year, label, tags)
+type TrackDepthProvider func(ctx context.Context, isrc, title, artist string) (interface{}, error)
+
 // Room holds the state for a music jam room
 type Room struct {
 	mu    sync.Mutex
@@ -55,6 +58,7 @@ type Hub struct {
 	searcher Searcher
 	playlistFetcher PlaylistFetcher
 	similar SimilarProvider
+	trackDepth TrackDepthProvider
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
@@ -402,6 +406,45 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 
 		return json.Marshal(results)
 
+	case "track.depth":
+		var req struct {
+			RoomID string `json:"roomId"`
+			ISRC   string `json:"isrc"`
+			Title  string `json:"title"`
+			Artist string `json:"artist"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+
+		// If track depth provider not configured, return empty result
+		if h.trackDepth == nil {
+			return json.Marshal(map[string]interface{}{
+				"credits": []interface{}{},
+				"tags":    []string{},
+				"source":  "musicbrainz",
+			})
+		}
+
+		// Use a short timeout for depth lookup
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		result, err := h.trackDepth(ctx, req.ISRC, req.Title, req.Artist)
+		if err != nil {
+			// Log error but return empty result instead of failing the RPC
+			if h.logger != nil {
+				h.logger.Error("track_depth_failed", "title", req.Title, "artist", req.Artist, "err", err.Error())
+			}
+			return json.Marshal(map[string]interface{}{
+				"credits": []interface{}{},
+				"tags":    []string{},
+				"source":  "musicbrainz",
+			})
+		}
+
+		return json.Marshal(result)
+
 	case "playlist.import":
 		var req struct {
 			RoomID string `json:"roomId"`
@@ -564,6 +607,12 @@ func (h *Hub) WithPlaylistFetcher(pf PlaylistFetcher) *Hub {
 // WithSimilarProvider enables radio auto-refill via similar-track lookup.
 func (h *Hub) WithSimilarProvider(sp SimilarProvider) *Hub {
 	h.similar = sp
+	return h
+}
+
+// WithTrackDepthProvider enables track.depth RPC for fetching deep metadata.
+func (h *Hub) WithTrackDepthProvider(tdp TrackDepthProvider) *Hub {
+	h.trackDepth = tdp
 	return h
 }
 

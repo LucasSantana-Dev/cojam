@@ -154,8 +154,27 @@ export type SearchCandidate = {
   artworkUrl: string;
 };
 
+export type TrackDepthCredit = {
+  role: string;
+  name: string;
+};
+
+export type TrackDepth = {
+  credits: TrackDepthCredit[];
+  releaseYear?: number;
+  label?: string;
+  tags: string[];
+  source: string; // "musicbrainz"
+};
+
 export async function searchTracks(query: string): Promise<SearchCandidate[]> {
   if (!centrifuge) throw new Error('Not connected');
   const result = await centrifuge.rpc('track.search', { query });
   return (result.data as SearchCandidate[]) ?? [];
+}
+
+export async function fetchTrackDepth(roomId: string, isrc: string, title: string, artist: string): Promise<TrackDepth> {
+  if (!centrifuge) throw new Error('Not connected');
+  const result = await centrifuge.rpc('track.depth', { roomId, isrc, title, artist });
+  return (result.data as TrackDepth) ?? { credits: [], tags: [], source: 'musicbrainz' };
 }

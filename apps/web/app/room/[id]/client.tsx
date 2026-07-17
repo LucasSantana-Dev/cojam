@@ -17,6 +17,7 @@ import { AddTrackForm } from '../components/AddTrackForm';
 import { PresenceBar } from '../components/PresenceBar';
 import { ShareRoomButton } from '../components/ShareRoomButton';
 import { OnboardingCard } from '../components/OnboardingCard';
+import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 
 export function RoomClient({ roomId }: { roomId: string }) {
@@ -25,6 +26,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [loading, setLoading] = useState(false);
   const [appleAuthorized, setAppleAuthorized] = useState(false);
   const [spotifyAuthorized, setSpotifyAuthorized] = useState(false);
+  const [trackDepthOpen, setTrackDepthOpen] = useState(false);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId
     ? store.state.queue.find((t) => t.id === store.state!.nowPlayingId)
@@ -188,7 +190,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                         {nowPlaying.artist}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       {activeSource === 'youtube' && (
                         <span className="badge-source badge-youtube inline-flex items-center gap-1">
                           <YouTubeIcon size={14} />
@@ -206,6 +208,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
                           <AppleMusicIcon size={14} />
                           Apple
                         </span>
+                      )}
+                      {features.trackDepth && nowPlaying && (
+                        <button
+                          onClick={() => setTrackDepthOpen(true)}
+                          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
+                          style={{
+                            background: 'var(--color-surface-2)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-primary)',
+                          }}
+                          title="View track details from MusicBrainz"
+                        >
+                          Details
+                        </button>
                       )}
                     </div>
                   </div>
@@ -228,6 +244,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
           </div>
         </div>
       </main>
+
+      {/* Track Depth Panel */}
+      <TrackDepthPanel
+        roomId={roomId}
+        track={nowPlaying || null}
+        open={trackDepthOpen}
+        onClose={() => setTrackDepthOpen(false)}
+      />
     </div>
   );
 }

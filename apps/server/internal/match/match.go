@@ -20,6 +20,9 @@ import (
 var (
 	ErrNotConfigured = errors.New("service not configured")
 	rateLimiter      = time.NewTicker(time.Second)
+
+	// MusicBrainz base URL (package-level for testability)
+	musicbrainzURL = "https://musicbrainz.org/ws/2"
 )
 
 // MusicBrainzRecording represents a recording from MusicBrainz API
@@ -40,6 +43,48 @@ type MusicBrainzResponse struct {
 	} `json:"isrcs"`
 }
 
+// TrackDepthCredit represents a person involved in the track (role + name)
+type TrackDepthCredit struct {
+	Role string `json:"role"`
+	Name string `json:"name"`
+}
+
+// TrackDepth represents deep metadata about a track from MusicBrainz
+type TrackDepth struct {
+	Credits     []TrackDepthCredit `json:"credits"`
+	ReleaseYear int                `json:"releaseYear,omitempty"`
+	Label       string             `json:"label,omitempty"`
+	Tags        []string           `json:"tags"`
+	Source      string             `json:"source"` // Always "musicbrainz"
+}
+
+// MusicBrainzRecordingResponse is the full response for recording lookups
+type MusicBrainzRecordingResponse struct {
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	ReleaseCredit []struct {
+		Release struct {
+			Title     string `json:"title"`
+			Date      string `json:"date"` // YYYY-MM-DD format
+			LabelInfo []struct {
+				Label struct {
+					Name string `json:"name"`
+				} `json:"label"`
+			} `json:"label-info"`
+		} `json:"release"`
+	} `json:"release-credit"`
+	Relationships []struct {
+		Type   string `json:"type"` // "engineer", "producer", etc.
+		Artist struct {
+			Name string `json:"name"`
+		} `json:"artist"`
+	} `json:"relationships"`
+	Tags []struct {
+		Count int    `json:"count"`
+		Name  string `json:"name"`
+	} `json:"tags"`
+}
+
 // MusicBrainzLookupISRC looks up a track by ISRC code
 // Uses a package-level rate limiter (1 req/s)
 func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
@@ -58,7 +103,7 @@ func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "cojam/0.1 (dev)")
+	req.Header.Set("User-Agent", "cojam/0.1 (https://github.com/LucasSantana-Dev/cojam)")
 
 	var mbResp MusicBrainzResponse
 	if err := httpx.DoJSON(req, &mbResp); err != nil {
@@ -70,6 +115,117 @@ func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
 	}
 
 	return &mbResp.IsRCs[0].Recordings[0], nil
+}
+
+// FetchTrackDepth fetches deep metadata for a track from MusicBrainz.
+// Uses ISRC if provided (authoritative lookup), falls back to title/artist search.
+// Returns a result (possibly with empty credits/year/label) for valid input,
+// or an empty result if MusicBrainz has no data.
+func FetchTrackDepth(ctx context.Context, isrc, title, artist string) (*TrackDepth, error) {
+	// Rate limit to respect MusicBrainz TOS (~1 req/s)
+	<-rateLimiter.C
+
+	result := &TrackDepth{
+		Credits: []TrackDepthCredit{},
+		Tags:    []string{},
+		Source:  "musicbrainz",
+	}
+
+	// Try ISRC-based lookup first if available
+	if isrc != "" {
+		isrc = strings.ToUpper(isrc)
+		mbURL := fmt.Sprintf("%s/isrc/%s?fmt=json&inc=releases+relationships+tags",
+			musicbrainzURL, url.QueryEscape(isrc))
+
+		req, err := http.NewRequestWithContext(ctx, "GET", mbURL, nil)
+		if err != nil {
+			return result, nil // Graceful return on request creation error
+		}
+		req.Header.Set("User-Agent", "cojam/0.1 (https://github.com/LucasSantana-Dev/cojam)")
+
+		var mbResp struct {
+			IsRCs []struct {
+				Recordings []MusicBrainzRecordingResponse `json:"recordings"`
+			} `json:"isrcs"`
+		}
+		if err := httpx.DoJSON(req, &mbResp); err == nil && len(mbResp.IsRCs) > 0 && len(mbResp.IsRCs[0].Recordings) > 0 {
+			return extractTrackDepth(&mbResp.IsRCs[0].Recordings[0]), nil
+		}
+	}
+
+	// Fallback: title+artist search (if ISRC failed or was empty)
+	if title != "" && artist != "" {
+		query := fmt.Sprintf("%s %s", title, artist)
+		mbURL := fmt.Sprintf("%s/recording?query=%s&fmt=json&inc=releases+relationships+tags",
+			musicbrainzURL, url.QueryEscape(query))
+
+		req, err := http.NewRequestWithContext(ctx, "GET", mbURL, nil)
+		if err != nil {
+			return result, nil // Graceful return on request creation error
+		}
+		req.Header.Set("User-Agent", "cojam/0.1 (https://github.com/LucasSantana-Dev/cojam)")
+
+		var mbResp struct {
+			Count       int `json:"count"`
+			Recordings  []MusicBrainzRecordingResponse `json:"recordings"`
+		}
+		if err := httpx.DoJSON(req, &mbResp); err == nil && len(mbResp.Recordings) > 0 {
+			return extractTrackDepth(&mbResp.Recordings[0]), nil
+		}
+	}
+
+	// No data found, return empty result with source
+	return result, nil
+}
+
+// extractTrackDepth extracts TrackDepth from a MusicBrainz recording response
+func extractTrackDepth(rec *MusicBrainzRecordingResponse) *TrackDepth {
+	result := &TrackDepth{
+		Credits: []TrackDepthCredit{},
+		Tags:    []string{},
+		Source:  "musicbrainz",
+	}
+
+	// Extract credits from relationships (engineer, producer, etc.)
+	if rec.Relationships != nil {
+		for _, rel := range rec.Relationships {
+			if rel.Artist.Name != "" {
+				result.Credits = append(result.Credits, TrackDepthCredit{
+					Role: rel.Type,
+					Name: rel.Artist.Name,
+				})
+			}
+		}
+	}
+
+	// Extract release year and label from first release
+	if len(rec.ReleaseCredit) > 0 {
+		release := rec.ReleaseCredit[0].Release
+		if release.Date != "" {
+			// Parse YYYY-MM-DD format, extract year
+			parts := strings.Split(release.Date, "-")
+			if len(parts) > 0 {
+				if year, err := time.Parse("2006", parts[0]); err == nil {
+					result.ReleaseYear = year.Year()
+				}
+			}
+		}
+		// Extract label from first label info
+		if len(release.LabelInfo) > 0 {
+			result.Label = release.LabelInfo[0].Label.Name
+		}
+	}
+
+	// Extract top tags
+	if rec.Tags != nil {
+		for _, tag := range rec.Tags {
+			if tag.Name != "" {
+				result.Tags = append(result.Tags, tag.Name)
+			}
+		}
+	}
+
+	return result
 }
 
 // YouTubeCandidate represents a YouTube search result
