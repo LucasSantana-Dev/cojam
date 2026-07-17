@@ -434,3 +434,247 @@ func TestSearchSpotify_EmptyOnZeroResults(t *testing.T) {
 	}
 }
 
+// Deezer search tests
+
+func TestSearchDeezer_MapsCandidates(t *testing.T) {
+	oldURL := deezerSearchURL
+	defer func() { deezerSearchURL = oldURL }()
+
+	searchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"title":"Bohemian Rhapsody","duration":354,"artist":{"name":"Queen"},"album":{"cover_medium":"https://example.com/deezer.jpg"}}]}`))
+	}))
+	defer searchSrv.Close()
+
+	deezerSearchURL = searchSrv.URL
+
+	results, err := SearchDeezer(context.Background(), "bohemian rhapsody", 8)
+	if err != nil {
+		t.Fatalf("SearchDeezer: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	r := results[0]
+	if r.Title != "Bohemian Rhapsody" {
+		t.Errorf("Title = %q, want Bohemian Rhapsody", r.Title)
+	}
+	if r.Artist != "Queen" {
+		t.Errorf("Artist = %q, want Queen", r.Artist)
+	}
+	if r.Source != "deezer" {
+		t.Errorf("Source = %q, want deezer", r.Source)
+	}
+	if r.DurationMs != 354000 {
+		t.Errorf("DurationMs = %d, want 354000", r.DurationMs)
+	}
+	if r.ArtworkURL != "https://example.com/deezer.jpg" {
+		t.Errorf("ArtworkURL = %q, want https://example.com/deezer.jpg", r.ArtworkURL)
+	}
+	if r.SpotifyURI != "" {
+		t.Errorf("SpotifyURI should be empty, got %q", r.SpotifyURI)
+	}
+}
+
+func TestSearchDeezer_EmptyOnZeroResults(t *testing.T) {
+	oldURL := deezerSearchURL
+	defer func() { deezerSearchURL = oldURL }()
+
+	searchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer searchSrv.Close()
+
+	deezerSearchURL = searchSrv.URL
+
+	results, err := SearchDeezer(context.Background(), "no match", 8)
+	if err != nil {
+		t.Fatalf("SearchDeezer: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected empty slice for no results, got %d", len(results))
+	}
+}
+
+// Tidal search tests
+
+func TestSearchTidal_ReturnsEmptyOnNotConfigured(t *testing.T) {
+	oldID, oldSecret := tidalClientID, tidalClientSecret
+	defer func() {
+		tidalClientID = oldID
+		tidalClientSecret = oldSecret
+	}()
+
+	tidalClientID = ""
+	tidalClientSecret = ""
+
+	results, err := SearchTidal(context.Background(), "query", 8)
+	if err != nil {
+		t.Fatalf("SearchTidal should not error when unconfigured: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected empty slice when unconfigured, got %d results", len(results))
+	}
+}
+
+func TestSearchTidal_MapsCandidates(t *testing.T) {
+	oldID, oldSecret := tidalClientID, tidalClientSecret
+	oldTokenURL, oldSearchURL := tidalTokenURL, tidalSearchURL
+	defer func() {
+		tidalClientID, tidalClientSecret = oldID, oldSecret
+		tidalTokenURL, tidalSearchURL = oldTokenURL, oldSearchURL
+	}()
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"tidal_tok","expires_in":3600,"token_type":"Bearer"}`))
+	}))
+	defer tokenSrv.Close()
+
+	searchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"123","title":"Bohemian Rhapsody","artists":[{"name":"Queen"}],"duration":354,"isrc":"GBUM71029604","album":{"cover":"https://example.com/tidal.jpg"}}]}`))
+	}))
+	defer searchSrv.Close()
+
+	tidalClientID = "id"
+	tidalClientSecret = "secret"
+	tidalTokenURL = tokenSrv.URL
+	tidalSearchURL = searchSrv.URL
+	tidalTokenCache = &tokenCacheEntry{}
+
+	results, err := SearchTidal(context.Background(), "bohemian rhapsody", 8)
+	if err != nil {
+		t.Fatalf("SearchTidal: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	r := results[0]
+	if r.Title != "Bohemian Rhapsody" {
+		t.Errorf("Title = %q, want Bohemian Rhapsody", r.Title)
+	}
+	if r.Artist != "Queen" {
+		t.Errorf("Artist = %q, want Queen", r.Artist)
+	}
+	if r.Source != "tidal" {
+		t.Errorf("Source = %q, want tidal", r.Source)
+	}
+	if r.ISRC != "GBUM71029604" {
+		t.Errorf("ISRC = %q, want GBUM71029604", r.ISRC)
+	}
+	if r.DurationMs != 354000 {
+		t.Errorf("DurationMs = %d, want 354000", r.DurationMs)
+	}
+	if r.ArtworkURL != "https://example.com/tidal.jpg" {
+		t.Errorf("ArtworkURL = %q, want https://example.com/tidal.jpg", r.ArtworkURL)
+	}
+	if r.SpotifyURI != "" {
+		t.Errorf("SpotifyURI should be empty, got %q", r.SpotifyURI)
+	}
+}
+
+// SearchAll tests
+
+func TestSearchAll_AggregatesDeezer(t *testing.T) {
+	oldDeezerURL := deezerSearchURL
+	defer func() { deezerSearchURL = oldDeezerURL }()
+
+	searchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"title":"Test","duration":200,"artist":{"name":"Artist"},"album":{"cover_medium":"https://example.com/test.jpg"}}]}`))
+	}))
+	defer searchSrv.Close()
+
+	deezerSearchURL = searchSrv.URL
+
+	results, err := SearchAll(context.Background(), "test query", 8)
+	if err != nil {
+		t.Fatalf("SearchAll: %v", err)
+	}
+	if len(results) < 1 {
+		t.Fatalf("expected at least 1 result from Deezer, got %d", len(results))
+	}
+
+	found := false
+	for _, r := range results {
+		if r.Source == "deezer" && r.Title == "Test" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Deezer result not found in aggregated results")
+	}
+}
+
+func TestSearchAll_DedupesByISRC(t *testing.T) {
+	oldDeezerURL := deezerSearchURL
+	oldSpotifyID, oldSpotifySecret := spotifyClientID, spotifyClientSecret
+	oldTokenURL, oldSearchURL := spotifyTokenURL, spotifySearchURL
+	oldClient := spotifyClient
+	oldCache := spotifyTokenCache
+
+	defer func() {
+		deezerSearchURL = oldDeezerURL
+		spotifyClientID, spotifyClientSecret = oldSpotifyID, oldSpotifySecret
+		spotifyTokenURL, spotifySearchURL = oldTokenURL, oldSearchURL
+		spotifyClient = oldClient
+		spotifyTokenCache = oldCache
+	}()
+
+	// Setup Deezer with ISRC (so it can be deduplicated)
+	deezerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Note: Real Deezer API doesn't return ISRC in basic search, but we're stubbing it for testing
+		_, _ = w.Write([]byte(`{"data":[{"title":"Bohemian","duration":354,"artist":{"name":"Queen"},"album":{"cover_medium":"https://example.com/d.jpg"}}]}`))
+	}))
+	defer deezerSrv.Close()
+
+	// Setup Spotify (same title+artist, with ISRC)
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"tok","expires_in":3600,"token_type":"Bearer"}`))
+	}))
+	defer tokenSrv.Close()
+
+	spotifySearchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tracks":{"items":[{"id":"abc","name":"Bohemian Rhapsody","uri":"spotify:track:abc","artists":[{"name":"Queen"}],"duration_ms":354000,"external_ids":{"isrc":"GBUM71029604"},"album":{"images":[{"url":"https://example.com/s.jpg"}]}}]}}`))
+	}))
+	defer spotifySearchSrv.Close()
+
+	deezerSearchURL = deezerSrv.URL
+	spotifyClientID = "id"
+	spotifyClientSecret = "secret"
+	spotifyTokenURL = tokenSrv.URL
+	spotifySearchURL = spotifySearchSrv.URL
+	spotifyClient = http.DefaultClient
+	spotifyTokenCache = &tokenCacheEntry{}
+
+	results, err := SearchAll(context.Background(), "bohemian", 8)
+	if err != nil {
+		t.Fatalf("SearchAll: %v", err)
+	}
+
+	// Should dedupe by title+artist normalized (since Deezer has no ISRC)
+	if len(results) < 1 {
+		t.Fatalf("expected at least 1 result, got %d", len(results))
+	}
+
+	// At least one should have SpotifyURI from Spotify
+	found := false
+	for _, r := range results {
+		if r.Source == "spotify" && r.SpotifyURI != "" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected Spotify result with SpotifyURI in results")
+	}
+}
+

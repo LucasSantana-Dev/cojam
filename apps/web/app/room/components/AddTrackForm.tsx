@@ -56,11 +56,9 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
         title: result.title,
         artist: result.artist,
         durationMs: result.durationMs,
+        isrc: result.isrc,
         sources: {
-          spotify: {
-            trackUri: result.spotifyUri,
-            confidence: 1,
-          },
+          ...(result.spotifyUri ? { spotify: { trackUri: result.spotifyUri, confidence: 1 } } : {}),
         },
         addedBy: name,
       });
@@ -161,7 +159,12 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
                     />
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{result.title}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{result.title}</span>
+                      <span className="inline-block px-2 py-0.5 text-xs rounded" style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-secondary)', flexShrink: 0 }}>
+                        {result.source}
+                      </span>
+                    </div>
                     <div className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
                       {result.artist}
                     </div>

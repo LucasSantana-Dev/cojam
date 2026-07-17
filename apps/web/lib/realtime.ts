@@ -137,7 +137,8 @@ export async function queueReorder(roomId: string, trackId: string, toIndex: num
 export type SearchCandidate = {
   title: string;
   artist: string;
-  spotifyUri: string;
+  source: string; // "spotify"|"deezer"|"tidal"
+  spotifyUri?: string;
   isrc: string;
   durationMs: number;
   artworkUrl: string;

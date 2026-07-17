@@ -94,7 +94,7 @@ func main() {
 		logger.Info("matcher_enabled", "provider", "youtube")
 	} else {
 
-	// Wire Spotify matcher and searcher if configured
+	// Wire Spotify matcher if configured
 	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("SPOTIFY_CLIENT_ID") != "" && os.Getenv("SPOTIFY_CLIENT_SECRET") != "" {
 		spotifyCachedMatcher := match.NewCachedMatcher(match.ResolveSpotify, func(hit bool) {
 			if hit {
@@ -111,10 +111,15 @@ func main() {
 		})
 		h.WithSpotifyMatcher(spotifyCachedMatcher)
 		logger.Info("spotify_matcher_enabled", "provider", "spotify")
+	} else {
+		logger.Info("spotify_matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_id", os.Getenv("SPOTIFY_CLIENT_ID") != "", "has_secret", os.Getenv("SPOTIFY_CLIENT_SECRET") != "")
+	}
 
-		// Wire searcher adapter
+	// Wire aggregated search (Deezer + Spotify + Tidal) whenever FEATURE_MATCHING is on
+	// Deezer needs no credentials and is always available
+	if featureEnabled("FEATURE_MATCHING", true) {
 		h.WithSearcher(func(ctx context.Context, query string, limit int) ([]hub.SearchResult, error) {
-			candidates, err := match.SearchSpotify(ctx, query, limit)
+			candidates, err := match.SearchAll(ctx, query, limit)
 			if err != nil {
 				return nil, err
 			}
@@ -123,6 +128,7 @@ func main() {
 				results[i] = hub.SearchResult{
 					Title:      c.Title,
 					Artist:     c.Artist,
+					Source:     c.Source,
 					SpotifyURI: c.SpotifyURI,
 					ISRC:       c.ISRC,
 					DurationMs: c.DurationMs,
@@ -131,9 +137,7 @@ func main() {
 			}
 			return results, nil
 		})
-		logger.Info("searcher_enabled", "provider", "spotify")
-	} else {
-		logger.Info("spotify_matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_id", os.Getenv("SPOTIFY_CLIENT_ID") != "", "has_secret", os.Getenv("SPOTIFY_CLIENT_SECRET") != "")
+		logger.Info("searcher_enabled", "provider", "aggregated(deezer+spotify+tidal)")
 	}
 		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")
 	}
