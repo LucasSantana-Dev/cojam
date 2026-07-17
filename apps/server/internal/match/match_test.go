@@ -822,4 +822,3 @@ func TestTrackDepth_EmptyISRC(t *testing.T) {
 		t.Errorf("Source = %q, want musicbrainz", depth.Source)
 	}
 }
-

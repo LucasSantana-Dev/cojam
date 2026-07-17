@@ -14,11 +14,11 @@ import (
 
 func TestParsePlaylistURL(t *testing.T) {
 	tests := []struct {
-		name      string
-		url       string
-		wantSrc   string
-		wantID    string
-		wantOK    bool
+		name    string
+		url     string
+		wantSrc string
+		wantID  string
+		wantOK  bool
 	}{
 		{
 			name:    "deezer url",
@@ -368,8 +368,8 @@ func TestFetchYouTubePlaylist(t *testing.T) {
 			"items": []map[string]interface{}{
 				{
 					"snippet": map[string]string{
-						"title":                     "YouTube Video 1",
-						"videoOwnerChannelTitle":    "YouTube Channel 1",
+						"title":                  "YouTube Video 1",
+						"videoOwnerChannelTitle": "YouTube Channel 1",
 					},
 					"contentDetails": map[string]string{
 						"videoId": "dQw4w9WgXcQ",
