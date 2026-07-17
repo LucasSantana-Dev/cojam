@@ -4,33 +4,33 @@ FROM golang:1.26-alpine AS builder
 
 WORKDIR /build
 
-# Install build dependencies
-RUN apk add --no-cache git
-
-# Copy go mod files
+# Copy go mod files first so the dependency layer caches independently of source.
 COPY go.mod go.sum ./
 
-# Download dependencies
+# Download dependencies (module proxy; no git needed for public modules)
 RUN go mod download
 
 # Copy source code
 COPY . .
 
-# Build static binary (no CGO, statically linked)
+# Build static binary: no CGO, reproducible paths stripped, symbols stripped.
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -a -installsuffix cgo \
+    -trimpath -ldflags="-s -w" \
     -o server ./cmd/server
 
-# Stage 2: Runtime (minimal image)
-FROM alpine:latest
+# Stage 2: Runtime (minimal, pinned; never `latest`)
+FROM alpine:3.23
 
 WORKDIR /app
 
-# Install runtime dependencies (ca-certificates for HTTPS)
-RUN apk add --no-cache ca-certificates
+# Runtime deps (ca-certificates for outbound HTTPS) + non-root user.
+RUN apk add --no-cache ca-certificates \
+    && adduser -D -H -u 10001 app
 
 # Copy binary from builder
-COPY --from=builder /build/server .
+COPY --from=builder --chown=app:app /build/server .
+
+USER app
 
 # Expose port
 EXPOSE 8080
