@@ -4,8 +4,9 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, TidalIcon } from '@/app/components/icons';
+import { RoomShowcase } from '@/app/components/RoomShowcase';
 
-const HeroCanvas = dynamic(() => import('@/app/components/HeroCanvas'), { 
+const HeroCanvas = dynamic(() => import('@/app/components/HeroCanvas'), {
   ssr: false,
   loading: () => null,
 });
@@ -298,6 +299,16 @@ export default function Home() {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* Room Showcase */}
+        <section className="section">
+          <p className="section-eyebrow reveal">In the room right now</p>
+          <h2 className="section-title reveal">See it in sync.</h2>
+          <p className="max-w-2xl mx-auto text-center reveal" style={{ color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
+            Watch how Cojam keeps everyone's queue in perfect sync while each person plays on their own service.
+          </p>
+          <RoomShowcase />
         </section>
 
         {/* Platforms */}

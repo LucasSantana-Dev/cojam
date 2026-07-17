@@ -832,4 +832,6 @@ input:focus, textarea:focus, select:focus {
   .track-change-enter,
   .search-result-enter,
   .room-arrival { animation: none; opacity: 1; transform: none; }
+  .room-showcase .group:hover { transform: none; }
+  .room-showcase .group { transition: none; }
 }
