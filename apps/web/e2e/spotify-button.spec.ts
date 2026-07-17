@@ -9,7 +9,8 @@ async function join(page: Page, roomId: string, name: string) {
   await expect(page.getByText(`Room: ${roomId}`)).toBeVisible();
   await page.getByPlaceholder('Your name').fill(name);
   await page.getByRole('button', { name: 'Join & Play' }).click();
-  await expect(page.getByText(`Room: ${roomId} as ${name}`)).toBeVisible();
+  // Joined header shows the room-code chip + "you're <name>" (see RoomClient header).
+  await expect(page.getByText(`you're ${name}`)).toBeVisible();
 }
 
 test('Connect Spotify button renders when the feature flag is on', async ({ page }) => {

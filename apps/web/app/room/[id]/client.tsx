@@ -132,8 +132,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 {/* Flows only while (re)connecting: colors moving = syncing. */}
                 <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
               </h1>
-              <p className="text-sm truncate" style={{ color: 'var(--color-text-secondary)' }}>
-                Room: {roomId} as {store.name}
+              <p className="text-sm flex items-center gap-2 flex-wrap" style={{ color: 'var(--color-text-secondary)' }}>
+                <span>Room</span>
+                <span className="room-code-chip">{roomId}</span>
+                <span aria-hidden style={{ opacity: 0.5 }}>·</span>
+                <span className="truncate">you&apos;re {store.name}</span>
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
@@ -189,49 +192,51 @@ export function RoomClient({ roomId }: { roomId: string }) {
             </div>
 
             {/* Now-Playing Hero */}
-            <div className={`panel now-playing p-6 space-y-3${nowPlaying ? ' is-live' : ''}`}>
-              <div className="flex items-center justify-end">
-                <div className="inline-flex items-center gap-3 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
-                  <label className="text-sm font-medium cursor-pointer flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
-                    <input
-                      type="checkbox"
-                      checked={store.state?.radioEnabled ?? false}
-                      onChange={(e) => setRadio(roomId, e.target.checked)}
-                      className="sr-only"
-                      title="Auto-plays related songs when the queue runs out"
-                    />
-                    <span>Radio</span>
-                    <div
-                      className="radio-toggle relative w-8 h-4 rounded-full transition-colors duration-150"
-                      style={{
-                        background: (store.state?.radioEnabled ?? false) ? 'var(--color-accent)' : 'var(--color-surface-3)',
-                      }}
-                    >
-                      <div
-                        className="radio-toggle-thumb absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white"
-                        style={{
-                          transform: (store.state?.radioEnabled ?? false) ? 'translateX(100%)' : 'translateX(0)',
-                        }}
-                      />
-                    </div>
-                  </label>
-                  {(store.state?.radioEnabled ?? false) && (
-                    <span className="text-xs" style={{ color: 'var(--color-text-secondary)', opacity: 0.8 }}>
-                      Auto-plays related songs when the queue runs out
-                    </span>
-                  )}
-                </div>
-              </div>
-              {nowPlaying ? (
-                <>
-                  <div className="flex items-center gap-2">
+            <div className={`panel now-playing p-6 space-y-4${nowPlaying ? ' is-live' : ''}`}>
+              {/* Header row: section label anchors the left, Radio control the right,
+                  so the toggle never floats alone above an empty panel. */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  {nowPlaying && (
                     <span className="eq" aria-hidden>
                       <span /><span /><span /><span />
                     </span>
-                    <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-accent)', letterSpacing: '0.15em' }}>
-                      Now playing
-                    </span>
+                  )}
+                  <span
+                    className="text-xs font-medium uppercase tracking-wider"
+                    style={{
+                      color: nowPlaying ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                      letterSpacing: '0.15em',
+                    }}
+                  >
+                    Now playing
+                  </span>
+                </div>
+                <label className="radio-control cursor-pointer" title="Auto-plays related songs when the queue runs out">
+                  <input
+                    type="checkbox"
+                    checked={store.state?.radioEnabled ?? false}
+                    onChange={(e) => setRadio(roomId, e.target.checked)}
+                    className="sr-only"
+                  />
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Radio</span>
+                  <div
+                    className="radio-toggle relative w-8 h-4 rounded-full transition-colors duration-150"
+                    style={{
+                      background: (store.state?.radioEnabled ?? false) ? 'var(--color-accent)' : 'var(--color-surface-3)',
+                    }}
+                  >
+                    <div
+                      className="radio-toggle-thumb absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white"
+                      style={{
+                        transform: (store.state?.radioEnabled ?? false) ? 'translateX(100%)' : 'translateX(0)',
+                      }}
+                    />
                   </div>
+                </label>
+              </div>
+              {nowPlaying ? (
+                <>
                   <div className="flex items-start justify-between gap-4">
                     <div key={nowPlaying.id} className="flex-1 min-w-0 track-change-enter">
                       <h2 className="text-2xl font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
@@ -279,9 +284,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 </>
               ) : (
                 <div className="hero-empty">
-                  <p style={{ color: 'var(--color-text-secondary)' }}>Nothing playing</p>
-                  <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>
-                    Add a track to get started
+                  <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>Nothing playing yet</p>
+                  <p className="text-sm mt-2" style={{ color: 'var(--color-text-secondary)' }}>
+                    Add a track below to start the session.
                   </p>
                 </div>
               )}
@@ -290,7 +295,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <AddTrackForm roomId={roomId} />
           </div>
 
-          <div className="lg:col-span-1 room-arrival" style={{ ['--i' as string]: 1 }}>
+          <div className="lg:col-span-1 room-arrival lg:sticky lg:top-24 lg:self-start" style={{ ['--i' as string]: 1 }}>
             <QueuePanel roomId={roomId} />
           </div>
         </div>

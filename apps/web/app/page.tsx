@@ -77,10 +77,34 @@ export default function Home() {
             );
           }
 
+          // Platform chips: stagger in individually (springy) instead of the whole
+          // row appearing as one flat block — the one spot that read less crafted.
+          const chips = root.querySelectorAll('.platform-chip');
+          if (chips.length > 0 && !prefersReduced) {
+            gsap.default.fromTo(
+              chips,
+              { opacity: 0, y: 20, scale: 0.94 },
+              {
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                duration: 0.6,
+                stagger: 0.08,
+                ease: 'back.out(1.6)',
+                scrollTrigger: {
+                  trigger: root.querySelector('.platform-row'),
+                  start: 'top center+=120',
+                  toggleActions: 'play none none none',
+                  markers: false,
+                },
+              },
+            );
+          }
+
           // Individual reveals (section titles, eyebrows, platform row, final CTA).
           revealElements.forEach((el) => {
-            // Skip step-cards (already animated above).
-            if (el.classList.contains('step-card')) return;
+            // Skip step-cards + platform chips (already animated above).
+            if (el.classList.contains('step-card') || el.classList.contains('platform-chip')) return;
 
             gsap.default.fromTo(
               el,
@@ -324,11 +348,11 @@ export default function Home() {
         <section className="section" style={{ textAlign: 'center' }}>
           <p className="section-eyebrow reveal">Works with</p>
           <h2 className="section-title reveal">Bring the service you already pay for.</h2>
-          <div className="platform-row reveal">
+          <div className="platform-row">
             {platforms.map(([name, live]) => {
               const Icon = platformIcons[name];
               return (
-                <span key={name} className="platform-chip inline-flex items-center gap-2" data-live={live ? '1' : '0'}>
+                <span key={name} className="platform-chip reveal inline-flex items-center gap-2" data-live={live ? '1' : '0'}>
                   <Icon size={16} />
                   {name}
                 </span>
