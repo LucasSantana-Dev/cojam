@@ -4,8 +4,9 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
+import { RoomShowcase } from '@/app/components/RoomShowcase';
 
-const HeroCanvas = dynamic(() => import('@/app/components/HeroCanvas'), { 
+const HeroCanvas = dynamic(() => import('@/app/components/HeroCanvas'), {
   ssr: false,
   loading: () => null,
 });
@@ -14,13 +15,13 @@ function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
-// Split a headline into per-word spans so CSS can stagger their entrance.
+// Split a headline into per-word spans wrapped in overflow:hidden masks for reveal animation.
 function Words({ text, start = 0 }: { text: string; start?: number }) {
   return (
     <>
       {text.split(' ').map((w, i) => (
-        <span key={`${w}-${i}`} className="word" style={{ ['--i' as string]: start + i }}>
-          {w}
+        <span key={`${w}-${i}`} className="word-mask" style={{ ['--i' as string]: start + i }}>
+          <span className="word">{w}</span>
         </span>
       ))}
     </>
@@ -253,9 +254,9 @@ export default function Home() {
               <Words text="Your platforms." start={2} />
               <br />
               <Words text="One" start={4} />
-              {/* Signature payoff word: italic + brighter glow. */}
-              <span className="word word-accent" style={{ ['--i' as string]: 5 }}>
-                room.
+              {/* Signature payoff word: italic + brighter glow, wrapped in mask. */}
+              <span className="word-mask word-accent" style={{ ['--i' as string]: 5 }}>
+                <span className="word">room.</span>
               </span>
             </h1>
             <p className="hero-sub">
@@ -296,6 +297,16 @@ export default function Home() {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* Room Showcase */}
+        <section className="section">
+          <p className="section-eyebrow reveal">In the room right now</p>
+          <h2 className="section-title reveal">See it in sync.</h2>
+          <p className="max-w-2xl mx-auto text-center reveal" style={{ color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
+            Watch how Cojam keeps everyone's queue in perfect sync while each person plays on their own service.
+          </p>
+          <RoomShowcase />
         </section>
 
         {/* Platforms */}

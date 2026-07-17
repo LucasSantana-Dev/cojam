@@ -133,7 +133,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
       <main id="main" className="max-w-7xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-6 room-arrival" style={{ ['--i' as string]: 0 }}>
             {queueEmpty && <OnboardingCard />}
             <div className="panel p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
@@ -180,7 +180,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     </span>
                   </div>
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
+                    <div key={nowPlaying.id} className="flex-1 min-w-0 track-change-enter">
                       <h2 className="text-2xl font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
                         {nowPlaying.title}
                       </h2>
@@ -223,7 +223,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <AddTrackForm roomId={roomId} />
           </div>
 
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 room-arrival" style={{ ['--i' as string]: 1 }}>
             <QueuePanel roomId={roomId} />
           </div>
         </div>

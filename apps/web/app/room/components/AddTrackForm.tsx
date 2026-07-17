@@ -170,7 +170,11 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
         {searchResults.length > 0 && (
           <ul className="space-y-2 border rounded-lg p-3" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-1)' }}>
             {searchResults.map((result, idx) => (
-              <li key={idx}>
+              <li
+                key={`${result.source}-${result.title}-${idx}`}
+                className="search-result-enter"
+                style={{ ['--i' as string]: idx }}
+              >
                 <button
                   type="button"
                   onClick={() => handleSearchResultClick(result)}
