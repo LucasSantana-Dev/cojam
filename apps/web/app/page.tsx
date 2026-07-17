@@ -1,15 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
 
-const HeroCanvas = dynamic(() => import('@/app/components/HeroCanvas'), {
-  ssr: false,
-  loading: () => null,
-});
 
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -104,6 +99,24 @@ export default function Home() {
               },
             );
           });
+
+          // Scroll scrub: RoomShowcase progress bar animates as user scrolls through showcase.
+          // One subtle, scrubbed beat: progress bar fills from 35% to 90% over the showcase scroll.
+          if (!prefersReduced) {
+            const showcase = root.querySelector<HTMLElement>('.room-showcase');
+            if (showcase) {
+              gsap.default.to(showcase, {
+                '--progress': '90%' as any,
+                scrollTrigger: {
+                  trigger: showcase,
+                  start: 'top center+=100',
+                  end: 'bottom center',
+                  scrub: 1.2,
+                  markers: false,
+                },
+              });
+            }
+          }
 
           // Scroll parallax: multi-layer depth for hero + sections (compositor-safe, vestibular-safe).
           if (!prefersReduced) {
@@ -237,9 +250,6 @@ export default function Home() {
       <main id="main" className="landing-content">
         {/* Hero */}
         <header className="hero">
-          <Suspense fallback={null}>
-            <HeroCanvas />
-          </Suspense>
           <div className="hero-aurora" aria-hidden />
           <div className="hero-glow" aria-hidden />
           <div className="hero-grid" aria-hidden />

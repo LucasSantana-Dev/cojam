@@ -848,3 +848,58 @@ input:focus, textarea:focus, select:focus {
     box-shadow: 0 8px 16px -4px color-mix(in oklab, var(--color-accent) 25%, transparent);
   }
 }
+
+/* Platform chips: dimensional hover lift (pointer-fine only, CSS-only) */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .platform-chip {
+    transition: transform 0.2s var(--ease-out-quart), border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .platform-chip:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--color-accent) 50%, transparent);
+    box-shadow: 0 12px 24px -8px color-mix(in oklab, var(--color-accent) 30%, transparent);
+  }
+}
+
+/* Final CTA aurora: soft violet radial drift behind the section. Sits outside
+   overflow clip as a pseudo-element on the parent to ensure visibility. */
+.final-cta {
+  position: relative;
+}
+.final-cta::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 60% 80% at 50% 35%, color-mix(in oklab, var(--color-accent) 8%, transparent), transparent 68%);
+  filter: blur(50px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .final-cta::before {
+    opacity: 0;
+  }
+}
+
+/* RoomShowcase scroll scrub support: initialize --progress variable for smooth scrub. */
+.room-showcase {
+  --progress: 35%;
+}
+
+/* Ensure reveal and final-cta children have position relative so pseudo z-index works. */
+.final-cta .section-title,
+.final-cta .btn-primary {
+  position: relative;
+  z-index: 1;
+}
+
+/* Callback page spinner (referenced inline from callback/spotify). */
+@keyframes callback-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="callback-spin"] { animation: none !important; }
+}
+
+
