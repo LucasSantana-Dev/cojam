@@ -117,7 +117,7 @@ func main() {
 		logger.Info("spotify_matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_id", os.Getenv("SPOTIFY_CLIENT_ID") != "", "has_secret", os.Getenv("SPOTIFY_CLIENT_SECRET") != "")
 	}
 
-	// Wire aggregated search (Deezer + Spotify + Tidal) whenever FEATURE_MATCHING is on
+	// Wire aggregated search (Deezer + Spotify) whenever FEATURE_MATCHING is on
 	// Deezer needs no credentials and is always available
 	if featureEnabled("FEATURE_MATCHING", true) {
 		h.WithSearcher(func(ctx context.Context, query string, limit int) ([]hub.SearchResult, error) {
@@ -139,7 +139,7 @@ func main() {
 			}
 			return results, nil
 		})
-		logger.Info("searcher_enabled", "provider", "aggregated(deezer+spotify+tidal)")
+		logger.Info("searcher_enabled", "provider", "aggregated(deezer+spotify)")
 	// Wire playlist fetcher for playlist import
 	if featureEnabled("FEATURE_PLAYLIST_IMPORT", true) {
 		h.WithPlaylistFetcher(func(ctx context.Context, url string) ([]queue.TrackRef, error) {

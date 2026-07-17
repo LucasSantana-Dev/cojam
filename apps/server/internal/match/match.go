@@ -2,10 +2,8 @@ package match
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -237,13 +235,6 @@ var (
 	// Deezer vars (no auth needed, public API)
 	deezerSearchURL = "https://api.deezer.com/search"
 
-	// Tidal vars
-	tidalClientID     = os.Getenv("TIDAL_CLIENT_ID")
-	tidalClientSecret = os.Getenv("TIDAL_CLIENT_SECRET")
-	tidalTokenURL     = "https://auth.tidal.com/v1/oauth2/token"
-	tidalSearchURL    = "https://openapi.tidal.com/v2/search"
-	tidalCountryCode  = "US" // Default country code for search
-
 	// Last.fm vars
 	lastfmAPIKey = os.Getenv("LASTFM_API_KEY")
 	lastfmURL    = "http://ws.audioscrobbler.com/2.0/"
@@ -256,9 +247,6 @@ type tokenCacheEntry struct {
 	expiresAt time.Time
 }
 
-var (
-	tidalTokenCache = &tokenCacheEntry{}
-)
 
 // SpotifyTrack represents a Spotify track from search results
 type SpotifyTrack struct {
@@ -372,7 +360,7 @@ func ResolveSpotify(ctx context.Context, title, artist, isrc string) (*queue.Sou
 type SearchCandidate struct {
 	Title      string `json:"title"`
 	Artist     string `json:"artist"`
-	Source     string `json:"source"` // "spotify"|"deezer"|"tidal"
+	Source     string `json:"source"` // "spotify"|"deezer"
 	SpotifyURI string `json:"spotifyUri,omitempty"`
 	ISRC       string `json:"isrc"`
 	DurationMs int    `json:"durationMs"`
@@ -497,133 +485,11 @@ func SearchDeezer(ctx context.Context, query string, limit int) ([]SearchCandida
 	return candidates, nil
 }
 
-// tidalAccessToken fetches or returns a cached Tidal API token via client credentials flow
-func tidalAccessToken(ctx context.Context) (string, error) {
-	tidalTokenCache.mu.Lock()
-	defer tidalTokenCache.mu.Unlock()
-
-	// Return cached token if not expired
-	if tidalTokenCache.token != "" && time.Now().Before(tidalTokenCache.expiresAt) {
-		return tidalTokenCache.token, nil
-	}
-
-	// Fetch new token via client credentials
-	req, err := http.NewRequestWithContext(ctx, "POST", tidalTokenURL,
-		strings.NewReader("grant_type=client_credentials"))
-	if err != nil {
-		return "", fmt.Errorf("failed to create token request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth(tidalClientID, tidalClientSecret)
-
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("token request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected token status %d", resp.StatusCode)
-	}
-
-	var tokenResp struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-		TokenType   string `json:"token_type"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("failed to decode token response: %w", err)
-	}
-
-	tidalTokenCache.token = tokenResp.AccessToken
-	tidalTokenCache.expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-
-	return tidalTokenCache.token, nil
-}
-
-// SearchTidal searches Tidal for tracks by query string and returns up to limit results.
-// Requires TIDAL_CLIENT_ID and TIDAL_CLIENT_SECRET environment variables.
-// Returns empty slice when unconfigured.
-func SearchTidal(ctx context.Context, query string, limit int) ([]SearchCandidate, error) {
-	// Check configuration
-	if tidalClientID == "" || tidalClientSecret == "" {
-		return []SearchCandidate{}, nil
-	}
-
-	// Clamp limit to 1..10
-	if limit < 1 {
-		limit = 1
-	}
-	if limit > 10 {
-		limit = 10
-	}
-
-	// Get access token
-	token, err := tidalAccessToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get tidal token: %w", err)
-	}
-
-	// Search Tidal
-	searchReq, err := http.NewRequestWithContext(ctx, "GET", tidalSearchURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create search request: %w", err)
-	}
-
-	q := searchReq.URL.Query()
-	q.Set("q", query)
-	q.Set("type", "TRACK")
-	q.Set("limit", fmt.Sprintf("%d", limit))
-	q.Set("countryCode", tidalCountryCode)
-	searchReq.URL.RawQuery = q.Encode()
-
-	searchReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-
-	var result struct {
-		Data []struct {
-			ID       string `json:"id"`
-			Title    string `json:"title"`
-			Duration int    `json:"duration"` // In seconds
-			ISRC     string `json:"isrc"`
-			Artists  []struct {
-				Name string `json:"name"`
-			} `json:"artists"`
-			Album struct {
-				Cover string `json:"cover"`
-			} `json:"album"`
-		} `json:"data"`
-	}
-	if err := httpx.DoJSON(searchReq, &result); err != nil {
-		return nil, fmt.Errorf("search request failed: %w", err)
-	}
-
-	candidates := make([]SearchCandidate, 0, len(result.Data))
-	for _, track := range result.Data {
-		artist := ""
-		if len(track.Artists) > 0 {
-			artist = track.Artists[0].Name
-		}
-
-		candidates = append(candidates, SearchCandidate{
-			Title:      track.Title,
-			Artist:     artist,
-			Source:     "tidal",
-			SpotifyURI: "",
-			ISRC:       track.ISRC,
-			DurationMs: track.Duration * 1000,
-			ArtworkURL: track.Album.Cover,
-		})
-	}
-
-	return candidates, nil
-}
-
-// SearchAll aggregates search results from available sources: Deezer (always),
-// Spotify (if configured), and Tidal (if configured). Each source is queried
-// with a short timeout; timeouts or errors are logged and skipped.
-// Results are deduplicated by ISRC when both sources have it, preferring
-// results with SpotifyURI for playback. Final list is capped at limit.
+// SearchAll aggregates search results from available sources: Deezer (always)
+// and Spotify (if configured). Each source is queried with a short timeout;
+// timeouts or errors are logged and skipped. Results are deduplicated by ISRC
+// when both sources have it, preferring results with SpotifyURI for playback.
+// Final list is capped at limit.
 func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate, error) {
 	// Clamp limit
 	if limit < 1 {
@@ -669,24 +535,6 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 			results, err := SearchSpotify(ctx, query, limit)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "SearchSpotify error: %v\n", err)
-				return
-			}
-			mu.Lock()
-			allCandidates = append(allCandidates, results...)
-			mu.Unlock()
-		}()
-	}
-
-	// Tidal (if configured)
-	if tidalClientID != "" && tidalClientSecret != "" {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(ctx, sourceTimeout)
-			defer cancel()
-			results, err := SearchTidal(ctx, query, limit)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "SearchTidal error: %v\n", err)
 				return
 			}
 			mu.Lock()
