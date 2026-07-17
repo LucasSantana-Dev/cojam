@@ -8,3 +8,7 @@ apps/server/server
 
 *.p8
 .env.local
+
+# Knowledge-graph output: symlink into the external knowledge-brain, not repo content
+graphify-out
+graphify-out/
