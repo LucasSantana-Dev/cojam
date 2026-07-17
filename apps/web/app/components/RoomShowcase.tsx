@@ -62,13 +62,28 @@ const sourceConfig = {
   youtube: { Icon: YouTubeIcon, label: 'YouTube', color: '#ef4444' },
 };
 
+// Intentionally standalone promo mockup: static data, self-contained styles.
+// It previews the room UI for the landing page and is NOT wired to the real
+// room components; keep divergence deliberate, not accidental.
 export function RoomShowcase() {
   return (
     <div
       className="room-showcase relative w-full max-w-2xl mx-auto px-4 py-12 reveal"
       style={{ ['--i' as string]: 0 }}
     >
-      {/* Frosted glass card container with premium lighting */}
+      {/* Soft violet glow behind the card. Sits OUTSIDE the overflow-hidden card,
+          as a sibling, or the clip would swallow it entirely. */}
+      <div
+        aria-hidden
+        className="absolute -inset-10 pointer-events-none"
+        style={{
+          background: 'radial-gradient(circle, color-mix(in oklab, var(--color-accent) 15%, transparent), transparent 65%)',
+          filter: 'blur(40px)',
+        }}
+      />
+
+      {/* Frosted glass card container with premium lighting.
+          Glass gradient + shadow stops are deliberate one-offs (no token equivalents). */}
       <div
         className="relative rounded-2xl p-6 overflow-hidden"
         style={{
@@ -92,20 +107,11 @@ export function RoomShowcase() {
           }}
         />
 
-        {/* Soft violet glow (behind the card, creates depth) */}
-        <div
-          className="absolute -inset-32 pointer-events-none -z-10"
-          style={{
-            background: 'radial-gradient(circle, oklch(0.66 0.2 300 / 0.15), transparent 65%)',
-            filter: 'blur(40px)',
-          }}
-        />
-
         <div className="relative z-10 space-y-6">
           {/* Header: Room label + Presence + Status */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-[oklch(0.66_0.2_300)]/10">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-[var(--color-accent)]/10">
             <div>
-              <h3 className="text-sm font-mono uppercase tracking-widest text-[oklch(0.66_0.2_300)]">
+              <h3 className="text-sm font-mono uppercase tracking-widest text-[var(--color-accent)]">
                 Room: {roomData.roomId}
               </h3>
             </div>
@@ -119,7 +125,7 @@ export function RoomShowcase() {
                     className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-black border-2"
                     style={{
                       backgroundColor: p.color,
-                      borderColor: 'oklch(0.11 0.01 280)',
+                      borderColor: 'var(--color-surface-1)',
                     }}
                     title={p.name}
                   >
@@ -132,14 +138,14 @@ export function RoomShowcase() {
               <div
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
                 style={{
-                  background: 'oklch(0.66 0.2 300 / 0.1)',
-                  border: '1px solid oklch(0.66 0.2 300 / 0.3)',
-                  color: 'oklch(0.96 0.01 280)',
+                  background: 'color-mix(in oklab, var(--color-accent) 10%, transparent)',
+                  border: '1px solid color-mix(in oklab, var(--color-accent) 30%, transparent)',
+                  color: 'var(--color-text-primary)',
                 }}
               >
                 <div
                   className="w-2 h-2 rounded-full animate-pulse-breath"
-                  style={{ backgroundColor: 'oklch(0.66 0.2 300)' }}
+                  style={{ backgroundColor: 'var(--color-accent)' }}
                 />
                 Connected
               </div>
@@ -150,9 +156,9 @@ export function RoomShowcase() {
           <div
             className="p-4 rounded-lg"
             style={{
-              background: 'oklch(0.18 0.01 280 / 0.5)',
-              border: '1px solid oklch(0.66 0.2 300 / 0.4)',
-              boxShadow: '0 0 0 1px oklch(0.66 0.2 300 / 0.2)',
+              background: 'color-mix(in oklab, var(--color-surface-3) 50%, transparent)',
+              border: '1px solid color-mix(in oklab, var(--color-accent) 40%, transparent)',
+              boxShadow: '0 0 0 1px color-mix(in oklab, var(--color-accent) 20%, transparent)',
             }}
           >
             <div className="flex flex-col sm:flex-row items-center gap-4">
@@ -163,12 +169,13 @@ export function RoomShowcase() {
                 className="w-24 h-24 rounded-lg object-cover flex-shrink-0"
                 loading="lazy"
                 decoding="async"
+                referrerPolicy="no-referrer"
               />
 
               {/* Now-playing info + equalizer */}
               <div className="flex-1 min-w-0 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2 mb-2">
-                  <span className="text-xs font-mono uppercase tracking-widest text-[oklch(0.66_0.2_300)]">
+                  <span className="text-xs font-mono uppercase tracking-widest text-[var(--color-accent)]">
                     Now Playing
                   </span>
                   <div className="eq">
@@ -184,7 +191,7 @@ export function RoomShowcase() {
                 </h4>
                 <p
                   className="text-sm truncate"
-                  style={{ color: 'oklch(0.62 0.02 280)' }}
+                  style={{ color: 'var(--color-text-secondary)' }}
                 >
                   {roomData.nowPlaying.artist}
                 </p>
@@ -192,12 +199,12 @@ export function RoomShowcase() {
                 {/* Progress bar (faint) */}
                 <div
                   className="mt-3 h-1 rounded-full overflow-hidden"
-                  style={{ background: 'oklch(0.25 0.02 280)' }}
+                  style={{ background: 'var(--color-border)' }}
                 >
                   <div
                     className="h-full rounded-full"
                     style={{
-                      background: 'oklch(0.66 0.2 300)',
+                      background: 'var(--color-accent)',
                       width: '35%',
                     }}
                   />
@@ -230,7 +237,7 @@ export function RoomShowcase() {
           <div className="space-y-2">
             <h5
               className="text-xs font-mono uppercase tracking-widest px-2"
-              style={{ color: 'oklch(0.48 0.01 280)' }}
+              style={{ color: 'var(--color-text-muted)' }}
             >
               Queue
             </h5>
@@ -240,27 +247,11 @@ export function RoomShowcase() {
                 const cfg = sourceConfig[item.source];
                 return (
                   <div
-                    key={idx}
-                    className="group p-3 rounded-lg transition-all duration-200"
+                    key={item.title}
+                    className="group queue-row p-3 rounded-lg"
                     style={{
-                      background: 'oklch(0.14 0.01 280 / 0.6)',
-                      border: '1px solid oklch(0.25 0.02 280)',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (window.matchMedia('(hover: hover)').matches) {
-                        const el = e.currentTarget as HTMLElement;
-                        el.style.borderColor = 'oklch(0.66 0.2 300 / 0.4)';
-                        el.style.transform = 'translateY(-2px)';
-                        el.style.boxShadow = '0 8px 16px -4px oklch(0.66 0.2 300 / 0.25)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (window.matchMedia('(hover: hover)').matches) {
-                        const el = e.currentTarget as HTMLElement;
-                        el.style.borderColor = 'oklch(0.25 0.02 280)';
-                        el.style.transform = 'none';
-                        el.style.boxShadow = 'none';
-                      }
+                      background: 'color-mix(in oklab, var(--color-surface-2) 60%, transparent)',
+                      border: '1px solid var(--color-border)',
                     }}
                   >
                     <div className="flex items-center gap-3">
@@ -268,7 +259,7 @@ export function RoomShowcase() {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span
                           className="text-xs font-mono"
-                          style={{ color: 'oklch(0.48 0.01 280)' }}
+                          style={{ color: 'var(--color-text-muted)' }}
                         >
                           {idx + 1}
                         </span>
@@ -278,6 +269,7 @@ export function RoomShowcase() {
                           className="w-10 h-10 rounded object-cover"
                           loading="lazy"
                           decoding="async"
+                          referrerPolicy="no-referrer"
                         />
                       </div>
 
@@ -288,7 +280,7 @@ export function RoomShowcase() {
                         </div>
                         <div
                           className="text-xs truncate"
-                          style={{ color: 'oklch(0.48 0.01 280)' }}
+                          style={{ color: 'var(--color-text-muted)' }}
                         >
                           {item.artist} · added by {item.addedBy}
                         </div>
@@ -300,8 +292,8 @@ export function RoomShowcase() {
                         <span
                           className="inline-flex items-center justify-center px-2 py-1 rounded text-xs font-mono font-semibold"
                           style={{
-                            background: 'oklch(0.66 0.2 300 / 0.1)',
-                            color: 'oklch(0.66 0.2 300)',
+                            background: 'color-mix(in oklab, var(--color-accent) 10%, transparent)',
+                            color: 'var(--color-accent)',
                             minWidth: '2.5rem',
                           }}
                         >
@@ -323,33 +315,26 @@ export function RoomShowcase() {
                       </div>
 
                       {/* Action buttons (hover-revealed on desktop) */}
-                      <div
-                        className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0"
-                        style={{
-                          '@media (hover: hover)': {
-                            visibility: 'visible',
-                          },
-                        } as any}
-                      >
+                      <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
                         <button
-                          className="p-1.5 rounded transition-colors duration-150 hover:bg-[oklch(0.66_0.2_300)]/10"
-                          style={{ color: 'oklch(0.62 0.02 280)' }}
+                          className="p-1.5 rounded transition-colors duration-150 hover:bg-[var(--color-accent)]/10"
+                          style={{ color: 'var(--color-text-secondary)' }}
                           aria-label="Play"
                           type="button"
                         >
                           <PlayIcon size={16} />
                         </button>
                         <button
-                          className="p-1.5 rounded transition-colors duration-150 hover:bg-[oklch(0.66_0.2_300)]/10"
-                          style={{ color: 'oklch(0.62 0.02 280)' }}
+                          className="p-1.5 rounded transition-colors duration-150 hover:bg-[var(--color-accent)]/10"
+                          style={{ color: 'var(--color-text-secondary)' }}
                           aria-label="Move up"
                           type="button"
                         >
                           <ArrowUpIcon size={16} />
                         </button>
                         <button
-                          className="p-1.5 rounded transition-colors duration-150 hover:bg-[oklch(0.66_0.2_300)]/10"
-                          style={{ color: 'oklch(0.62 0.02 280)' }}
+                          className="p-1.5 rounded transition-colors duration-150 hover:bg-[var(--color-accent)]/10"
+                          style={{ color: 'var(--color-text-secondary)' }}
                           aria-label="Move down"
                           type="button"
                         >

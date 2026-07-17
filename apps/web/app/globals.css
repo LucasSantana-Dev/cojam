@@ -472,7 +472,7 @@ input:focus, textarea:focus, select:focus {
   font-size: clamp(1rem, 1.6vw, 1.2rem);
   color: var(--color-text-secondary);
   opacity: 0;
-  animation: word-rise 0.7s ease forwards;
+  animation: fade-in-up 0.7s var(--ease-out-quart) forwards;
   animation-delay: 0.6s;
 }
 
@@ -482,7 +482,7 @@ input:focus, textarea:focus, select:focus {
   justify-content: center;
   flex-wrap: wrap;
   opacity: 0;
-  animation: word-rise 0.7s ease forwards;
+  animation: fade-in-up 0.7s var(--ease-out-quart) forwards;
   animation-delay: 0.75s;
   max-width: 100%;
 }
@@ -832,6 +832,19 @@ input:focus, textarea:focus, select:focus {
   .track-change-enter,
   .search-result-enter,
   .room-arrival { animation: none; opacity: 1; transform: none; }
-  .room-showcase .group:hover { transform: none; }
-  .room-showcase .group { transition: none; }
+  .queue-row,
+  .queue-row:hover { transition: none; transform: none; }
+}
+
+/* Showcase queue rows: hover lift via CSS (no JS style mutation), pointer-fine only.
+   Self-guarded on reduced-motion so rule order vs the block above cannot regress it. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .queue-row {
+    transition: transform 0.2s var(--ease-out-quart), border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .queue-row:hover {
+    border-color: color-mix(in oklab, var(--color-accent) 40%, transparent) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px -4px color-mix(in oklab, var(--color-accent) 25%, transparent);
+  }
 }
