@@ -134,6 +134,11 @@ export async function queueReorder(roomId: string, trackId: string, toIndex: num
   await centrifuge.rpc('queue.reorder', { roomId, trackId, toIndex });
 }
 
+export async function importPlaylist(roomId: string, url: string, addedBy: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('playlist.import', { roomId, url, addedBy });
+}
+
 export type SearchCandidate = {
   title: string;
   artist: string;

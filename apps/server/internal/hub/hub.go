@@ -31,6 +31,9 @@ type SearchResult struct {
 // Searcher finds tracks by query
 type Searcher func(ctx context.Context, query string, limit int) ([]SearchResult, error)
 
+// PlaylistFetcher fetches tracks from a playlist URL
+type PlaylistFetcher func(ctx context.Context, url string) ([]queue.TrackRef, error)
+
 // Room holds the state for a music jam room
 type Room struct {
 	mu    sync.Mutex
@@ -47,6 +50,7 @@ type Hub struct {
 	matcher Matcher
 	spotifyMatcher Matcher
 	searcher Searcher
+	playlistFetcher PlaylistFetcher
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
@@ -64,6 +68,7 @@ var mutatingMethods = map[string]bool{
 	"queue.reorder":       true,
 	"now_playing.set":     true,
 	"now_playing.advance": true,
+	"playlist.import":     true,
 }
 
 // WithMatcher enables async YouTube-source enrichment on queue.add.
@@ -368,6 +373,85 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 
 		return json.Marshal(results)
 
+	case "playlist.import":
+		var req struct {
+			RoomID string `json:"roomId"`
+			URL    string `json:"url"`
+			AddedBy string `json:"addedBy"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("playlist.import: roomId required")
+		}
+		if req.URL == "" {
+			return nil, fmt.Errorf("playlist.import: url required")
+		}
+
+		// If playlist fetcher not configured, return error
+		if h.playlistFetcher == nil {
+			return nil, fmt.Errorf("playlist.import: not configured")
+		}
+
+		// Fetch playlist tracks (short timeout to not block the RPC too long)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		tracks, err := h.playlistFetcher(ctx, req.URL)
+		if err != nil {
+			return nil, fmt.Errorf("playlist.import: %w", err)
+		}
+
+		// Add tracks to queue up to capacity, set AddedBy on each
+		res, mutErr := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			remaining := queue.MaxQueueSize - len(s.Queue)
+			if remaining <= 0 {
+				return fmt.Errorf("queue full")
+			}
+
+			toAdd := tracks
+			if len(tracks) > remaining {
+				toAdd = tracks[:remaining]
+			}
+
+			for _, track := range toAdd {
+				track.AddedBy = req.AddedBy
+				s.Add(track)
+			}
+			return nil
+		})
+
+		// After successful mutate, enrich tracks that were added
+		if mutErr == nil && len(tracks) > 0 {
+			// Get the updated room state to find the newly added tracks
+			room := h.GetOrCreateRoom(req.RoomID)
+			room.mu.Lock()
+			addedCount := len(tracks)
+			if len(tracks) > queue.MaxQueueSize {
+				addedCount = queue.MaxQueueSize
+			}
+			// Get the last N tracks added (they're at the end of the queue)
+			startIdx := len(room.State.Queue) - addedCount
+			if startIdx < 0 {
+				startIdx = 0
+			}
+			newTracks := room.State.Queue[startIdx:]
+			room.mu.Unlock()
+
+			// Launch enrichment for tracks lacking sources
+			for _, track := range newTracks {
+				if h.matcher != nil && track.Sources.YouTube == nil {
+					go h.enrichYouTube(req.RoomID, track.ID, track)
+				}
+				if h.spotifyMatcher != nil && track.Sources.Spotify == nil {
+					go h.enrichSpotify(req.RoomID, track.ID, track)
+				}
+			}
+		}
+
+		return res, mutErr
+
 	default:
 		return nil, centrifuge.ErrorMethodNotFound
 	}
@@ -425,6 +509,12 @@ func (h *Hub) WithSearcher(s Searcher) *Hub {
 	h.searcher = s
 	return h
 }
+// WithPlaylistFetcher enables playlist import via playlist.import RPC.
+func (h *Hub) WithPlaylistFetcher(pf PlaylistFetcher) *Hub {
+	h.playlistFetcher = pf
+	return h
+}
+
 
 // enrichSpotify resolves a Spotify source for a freshly added track and
 // republishes the room state (own mutation -> version bump -> clients accept).

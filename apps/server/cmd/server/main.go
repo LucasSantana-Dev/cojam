@@ -20,6 +20,8 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/match"
+	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 )
 
@@ -138,6 +140,16 @@ func main() {
 			return results, nil
 		})
 		logger.Info("searcher_enabled", "provider", "aggregated(deezer+spotify+tidal)")
+	// Wire playlist fetcher for playlist import
+	if featureEnabled("FEATURE_PLAYLIST_IMPORT", true) {
+		h.WithPlaylistFetcher(func(ctx context.Context, url string) ([]queue.TrackRef, error) {
+			return playlist.FetchPlaylist(ctx, url)
+		})
+		logger.Info("playlist_fetcher_enabled")
+	} else {
+		logger.Info("playlist_fetcher_disabled")
+	}
+
 	}
 		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")
 	}
