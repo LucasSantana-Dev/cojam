@@ -365,3 +365,72 @@ func TestResolveSpotify_ErrNotConfigured(t *testing.T) {
 	}
 }
 
+// SearchSpotify tests
+
+func TestSearchSpotify_ReturnsMappedCandidates(t *testing.T) {
+	var hits int32
+	searchJSON := `{"tracks":{"items":[{"id":"abc","name":"Bohemian Rhapsody","uri":"spotify:track:abc","artists":[{"name":"Queen"}],"duration_ms":354400,"external_ids":{"isrc":"GBUM71029604"},"album":{"name":"A Night at the Opera","images":[{"url":"https://example.com/image.jpg"}]}}]}}`
+	defer spotifyStub(t, &hits, searchJSON, nil)()
+
+	results, err := SearchSpotify(context.Background(), "Bohemian Rhapsody Queen", 8)
+	if err != nil {
+		t.Fatalf("SearchSpotify: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	r := results[0]
+	if r.Title != "Bohemian Rhapsody" {
+		t.Errorf("Title = %q, want Bohemian Rhapsody", r.Title)
+	}
+	if r.Artist != "Queen" {
+		t.Errorf("Artist = %q, want Queen", r.Artist)
+	}
+	if r.SpotifyURI != "spotify:track:abc" {
+		t.Errorf("SpotifyURI = %q, want spotify:track:abc", r.SpotifyURI)
+	}
+	if r.ISRC != "GBUM71029604" {
+		t.Errorf("ISRC = %q, want GBUM71029604", r.ISRC)
+	}
+	if r.DurationMs != 354400 {
+		t.Errorf("DurationMs = %d, want 354400", r.DurationMs)
+	}
+	if r.ArtworkURL != "https://example.com/image.jpg" {
+		t.Errorf("ArtworkURL = %q, want https://example.com/image.jpg", r.ArtworkURL)
+	}
+}
+
+func TestSearchSpotify_EmptyOnNotConfigured(t *testing.T) {
+	oldID := spotifyClientID
+	oldSecret := spotifyClientSecret
+	defer func() {
+		spotifyClientID = oldID
+		spotifyClientSecret = oldSecret
+	}()
+
+	spotifyClientID = ""
+	spotifyClientSecret = ""
+
+	results, err := SearchSpotify(context.Background(), "query", 8)
+	if err != nil {
+		t.Fatalf("SearchSpotify should not error when unconfigured: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected empty slice when unconfigured, got %d results", len(results))
+	}
+}
+
+func TestSearchSpotify_EmptyOnZeroResults(t *testing.T) {
+	var hits int32
+	defer spotifyStub(t, &hits, `{"tracks":{"items":[]}}`, nil)()
+
+	results, err := SearchSpotify(context.Background(), "no match", 8)
+	if err != nil {
+		t.Fatalf("SearchSpotify: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected empty slice for no results, got %d", len(results))
+	}
+}
+

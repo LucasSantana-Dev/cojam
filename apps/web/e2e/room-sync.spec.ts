@@ -12,6 +12,11 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 async function addTrack(page: Page, title: string, artist: string, videoId?: string) {
+  // Open the "Add manually" details element using JavaScript to ensure it opens
+  await page.evaluate(() => {
+    const details = document.querySelector('details');
+    if (details) details.open = true;
+  });
   await page.getByPlaceholder('Title').fill(title);
   await page.getByPlaceholder('Artist').fill(artist);
   if (videoId) {

@@ -1,11 +1,16 @@
 'use client';
 
-import { useState } from 'react';
-import { useStore, queueAdd } from '@/lib/realtime';
+import { useState, useEffect, useRef } from 'react';
+import { useStore, queueAdd, searchTracks, type SearchCandidate } from '@/lib/realtime';
 import { features } from '@/lib/features';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
 
 export function AddTrackForm({ roomId }: { roomId: string }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(false);
+
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [videoId, setVideoId] = useState('');
@@ -14,6 +19,57 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const name = useStore((s) => s.name);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Debounced search
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        const results = await searchTracks(searchQuery);
+        setSearchResults(results);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, [searchQuery]);
+
+  const handleSearchResultClick = async (result: SearchCandidate) => {
+    setLoading(true);
+    try {
+      await queueAdd(roomId, {
+        title: result.title,
+        artist: result.artist,
+        durationMs: result.durationMs,
+        sources: {
+          spotify: {
+            trackUri: result.spotifyUri,
+            confidence: 1,
+          },
+        },
+        addedBy: name,
+      });
+      setSearchQuery('');
+      setSearchResults([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,12 +79,12 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
     // surfaced inline, not silently dropped.
     const ytId = videoId.trim() ? parseYouTube(videoId) : null;
     if (videoId.trim() && !ytId) {
-      setError("Couldn't read that YouTube link — paste a YouTube link or 11-character video ID.");
+      setError("Couldn't read that YouTube link - paste a YouTube link or 11-character video ID.");
       return;
     }
     const spUri = spotifyUri.trim() ? parseSpotify(spotifyUri) : null;
     if (spotifyUri.trim() && !spUri) {
-      setError("Couldn't read that Spotify link — paste a Spotify track link or URI.");
+      setError("Couldn't read that Spotify link - paste a Spotify track link or URI.");
       return;
     }
     setError('');
@@ -57,78 +113,144 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="panel p-6 space-y-4">
+    <div className="panel p-6 space-y-4">
       <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
         Add Track
       </h3>
 
       <div className="space-y-3">
-        <input
-          type="text"
-          placeholder="Title"
-          aria-label="Title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
-          style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-        />
-        <input
-          type="text"
-          placeholder="Artist"
-          aria-label="Artist"
-          value={artist}
-          onChange={(e) => setArtist(e.target.value)}
-          className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
-          style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-        />
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search for a song"
+            aria-label="Search for a song"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+          />
+          {isSearching && (
+            <div className="absolute right-3 top-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              Searching...
+            </div>
+          )}
+        </div>
 
-        {features.youtube && (
-          <input
-            type="text"
-            placeholder="YouTube link or video ID (optional)"
-            aria-label="YouTube link or video ID (optional)"
-            value={videoId}
-            onChange={(e) => setVideoId(e.target.value)}
-            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
-            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-          />
+        {searchResults.length > 0 && (
+          <ul className="space-y-2 border rounded-lg p-3" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-1)' }}>
+            {searchResults.map((result, idx) => (
+              <li key={idx}>
+                <button
+                  type="button"
+                  onClick={() => handleSearchResultClick(result)}
+                  disabled={loading}
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm hover:brightness-110 active:scale-95 disabled:opacity-50 focus:outline-none transition-all duration-150 flex items-center gap-3"
+                  style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSearchResultClick(result);
+                    }
+                  }}
+                >
+                  {result.artworkUrl && (
+                    <img
+                      src={result.artworkUrl}
+                      alt=""
+                      className="w-10 h-10 rounded object-cover flex-shrink-0"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{result.title}</div>
+                    <div className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
+                      {result.artist}
+                    </div>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
-        {features.apple && (
-          <input
-            type="text"
-            placeholder="Apple Music Song ID (optional)"
-          aria-label="Apple Music Song ID (optional)"
-            value={appleSongId}
-            onChange={(e) => setAppleSongId(e.target.value)}
-            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
-            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-          />
-        )}
-        {features.spotify && (
-          <input
-            type="text"
-            placeholder="Spotify link or track URI (optional)"
-            aria-label="Spotify link or track URI (optional)"
-            value={spotifyUri}
-            onChange={(e) => setSpotifyUri(e.target.value)}
-            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
-            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-          />
+
+        {searchQuery && searchResults.length === 0 && !isSearching && (
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            No matches. Try a different search, or add manually.
+          </p>
         )}
       </div>
 
-      <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171', minHeight: error ? undefined : 0 }}>
-        {error}
-      </p>
+      <details className="cursor-pointer">
+        <summary className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+          Add manually
+        </summary>
+        <form onSubmit={handleSubmit} className="space-y-3 mt-3 pt-3 border-t" style={{ borderColor: 'var(--color-border)' }}>
+          <input
+            type="text"
+            placeholder="Title"
+            aria-label="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+          />
+          <input
+            type="text"
+            placeholder="Artist"
+            aria-label="Artist"
+            value={artist}
+            onChange={(e) => setArtist(e.target.value)}
+            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+          />
 
-      <button
-        type="submit"
-        disabled={loading || !title || !artist}
-        className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 focus:outline-none"
-        style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
-      >
-        {loading ? 'Adding...' : 'Add to Queue'}
-      </button>
-    </form>
+          {features.youtube && (
+            <input
+              type="text"
+              placeholder="YouTube link or video ID (optional)"
+              aria-label="YouTube link or video ID (optional)"
+              value={videoId}
+              onChange={(e) => setVideoId(e.target.value)}
+              className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+              style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+            />
+          )}
+          {features.apple && (
+            <input
+              type="text"
+              placeholder="Apple Music Song ID (optional)"
+              aria-label="Apple Music Song ID (optional)"
+              value={appleSongId}
+              onChange={(e) => setAppleSongId(e.target.value)}
+              className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+              style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+            />
+          )}
+          {features.spotify && (
+            <input
+              type="text"
+              placeholder="Spotify link or track URI (optional)"
+              aria-label="Spotify link or track URI (optional)"
+              value={spotifyUri}
+              onChange={(e) => setSpotifyUri(e.target.value)}
+              className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+              style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+            />
+          )}
+
+          <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171', minHeight: error ? undefined : 0 }}>
+            {error}
+          </p>
+
+          <button
+            type="submit"
+            disabled={loading || !title || !artist}
+            className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 focus:outline-none"
+            style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+          >
+            {loading ? 'Adding...' : 'Add to Queue'}
+          </button>
+        </form>
+      </details>
+    </div>
   );
 }

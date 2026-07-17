@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -178,5 +179,64 @@ func TestHandleRPC_QueueReorder(t *testing.T) {
 	// NowPlayingID should not change (still t1)
 	if st.NowPlayingID != t1ID {
 		t.Fatalf("NowPlayingID should not change after reorder, got %s", st.NowPlayingID)
+	}
+}
+
+func TestHandleRPC_TrackSearchNoSearcher(t *testing.T) {
+	h := NewHub(nil) // no searcher configured
+
+	res, err := h.HandleRPC("track.search", []byte(`{"query":"bohemian rhapsody"}`))
+	if err != nil {
+		t.Fatalf("track.search with no searcher should not error: %v", err)
+	}
+
+	var results []SearchResult
+	if err := json.Unmarshal(res, &results); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("no searcher should return empty array, got %d results", len(results))
+	}
+}
+
+func TestHandleRPC_TrackSearchWithSearcher(t *testing.T) {
+	h := NewHub(nil)
+
+	// Mock searcher that returns fixed results
+	h.WithSearcher(func(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+		return []SearchResult{
+			{
+				Title:      "Bohemian Rhapsody",
+				Artist:     "Queen",
+				SpotifyURI: "spotify:track:abc123",
+				ISRC:       "GBUM71029604",
+				DurationMs: 354400,
+				ArtworkURL: "https://example.com/image.jpg",
+			},
+		}, nil
+	})
+
+	res, err := h.HandleRPC("track.search", []byte(`{"query":"bohemian rhapsody"}`))
+	if err != nil {
+		t.Fatalf("track.search: %v", err)
+	}
+
+	var results []SearchResult
+	if err := json.Unmarshal(res, &results); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	r := results[0]
+	if r.Title != "Bohemian Rhapsody" {
+		t.Errorf("Title = %q, want Bohemian Rhapsody", r.Title)
+	}
+	if r.Artist != "Queen" {
+		t.Errorf("Artist = %q, want Queen", r.Artist)
+	}
+	if r.SpotifyURI != "spotify:track:abc123" {
+		t.Errorf("SpotifyURI = %q, want spotify:track:abc123", r.SpotifyURI)
 	}
 }

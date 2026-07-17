@@ -319,11 +319,18 @@ type SpotifyTrack struct {
 	Name  string `json:"name"`
 	URI   string `json:"uri"`
 	Album struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		Images []struct {
+			URL string `json:"url"`
+		} `json:"images"`
 	} `json:"album"`
 	Artists []struct {
 		Name string `json:"name"`
 	} `json:"artists"`
+	ExternalIDs struct {
+		ISRC string `json:"isrc"`
+	} `json:"external_ids"`
+	DurationMs int `json:"duration_ms"`
 }
 
 // SpotifySearchResult wraps Spotify search response
@@ -425,4 +432,90 @@ func ResolveSpotify(ctx context.Context, title, artist, isrc string) (*queue.Sou
 		TrackURI:   best.URI,
 		Confidence: bestConfidence,
 	}, nil
+}
+
+// SearchCandidate represents a search result ready for the client
+type SearchCandidate struct {
+	Title       string `json:"title"`
+	Artist      string `json:"artist"`
+	SpotifyURI  string `json:"spotifyUri"`
+	ISRC        string `json:"isrc"`
+	DurationMs  int    `json:"durationMs"`
+	ArtworkURL  string `json:"artworkUrl"`
+}
+
+// SearchSpotify searches Spotify for tracks by query string and returns up to limit results.
+// Returns an empty slice if not configured or no results found.
+func SearchSpotify(ctx context.Context, query string, limit int) ([]SearchCandidate, error) {
+	// Clamp limit to 1..10
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 10 {
+		limit = 10
+	}
+
+	// Check configuration
+	if spotifyClientID == "" || spotifyClientSecret == "" {
+		return []SearchCandidate{}, nil
+	}
+
+	// Get access token
+	token, err := spotifyAccessToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get spotify token: %w", err)
+	}
+
+	// Search Spotify
+	searchReq, err := http.NewRequestWithContext(ctx, "GET", spotifySearchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create search request: %w", err)
+	}
+
+	q := searchReq.URL.Query()
+	q.Set("q", query)
+	q.Set("type", "track")
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	searchReq.URL.RawQuery = q.Encode()
+
+	searchReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	resp, err := spotifyClient.Do(searchReq)
+	if err != nil {
+		return nil, fmt.Errorf("search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected search status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result SpotifySearchResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode search response: %w", err)
+	}
+
+	candidates := make([]SearchCandidate, 0, len(result.Tracks.Items))
+	for _, track := range result.Tracks.Items {
+		artist := ""
+		if len(track.Artists) > 0 {
+			artist = track.Artists[0].Name
+		}
+		artwork := ""
+		if len(track.Album.Images) > 0 {
+			artwork = track.Album.Images[0].URL
+		}
+
+		candidates = append(candidates, SearchCandidate{
+			Title:       track.Name,
+			Artist:      artist,
+			SpotifyURI:  track.URI,
+			ISRC:        track.ExternalIDs.ISRC,
+			DurationMs:  track.DurationMs,
+			ArtworkURL:  artwork,
+		})
+	}
+
+	return candidates, nil
 }

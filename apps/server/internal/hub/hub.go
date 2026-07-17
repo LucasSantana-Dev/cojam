@@ -17,6 +17,19 @@ import (
 // Matcher resolves a YouTube source for a track (nil result = no confident match).
 type Matcher func(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error)
 
+// SearchResult represents a track search result for the client
+type SearchResult struct {
+	Title      string `json:"title"`
+	Artist     string `json:"artist"`
+	SpotifyURI string `json:"spotifyUri"`
+	ISRC       string `json:"isrc"`
+	DurationMs int    `json:"durationMs"`
+	ArtworkURL string `json:"artworkUrl"`
+}
+
+// Searcher finds tracks by query
+type Searcher func(ctx context.Context, query string, limit int) ([]SearchResult, error)
+
 // Room holds the state for a music jam room
 type Room struct {
 	mu    sync.Mutex
@@ -32,6 +45,7 @@ type Hub struct {
 	metrics *obs.Metrics
 	matcher Matcher
 	spotifyMatcher Matcher
+	searcher Searcher
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
@@ -325,6 +339,34 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 			return s.Move(req.TrackID, req.ToIndex)
 		})
 
+	case "track.search":
+		var req struct {
+			Query string `json:"query"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+
+		// If searcher not configured, return empty array
+		if h.searcher == nil {
+			return json.Marshal([]SearchResult{})
+		}
+
+		// Use a short timeout for search
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		results, err := h.searcher(ctx, req.Query, 8)
+		if err != nil {
+			// Log error but return empty array instead of failing the RPC
+			if h.logger != nil {
+				h.logger.Error("search_failed", "query", req.Query, "err", err.Error())
+			}
+			return json.Marshal([]SearchResult{})
+		}
+
+		return json.Marshal(results)
+
 	default:
 		return nil, centrifuge.ErrorMethodNotFound
 	}
@@ -374,6 +416,12 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 // WithSpotifyMatcher enables async Spotify-source enrichment on queue.add.
 func (h *Hub) WithSpotifyMatcher(m Matcher) *Hub {
 	h.spotifyMatcher = m
+	return h
+}
+
+// WithSearcher enables track search via track.search RPC.
+func (h *Hub) WithSearcher(s Searcher) *Hub {
+	h.searcher = s
 	return h
 }
 
