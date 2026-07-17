@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"fmt"
 	"encoding/json"
 	"testing"
 
@@ -238,5 +239,118 @@ func TestHandleRPC_TrackSearchWithSearcher(t *testing.T) {
 	}
 	if r.SpotifyURI != "spotify:track:abc123" {
 		t.Errorf("SpotifyURI = %q, want spotify:track:abc123", r.SpotifyURI)
+	}
+}
+
+
+func TestHandleRPC_PlaylistImport(t *testing.T) {
+	h := NewHub(nil)
+
+	// Set up room membership
+	h.Join("client1", "demo")
+
+	// Mock playlist fetcher
+	h.WithPlaylistFetcher(func(ctx context.Context, url string) ([]queue.TrackRef, error) {
+		return []queue.TrackRef{
+			{
+				Title:      "Imported Track 1",
+				Artist:     "Imported Artist 1",
+				DurationMs: 180000,
+				Sources:    queue.Sources{},
+			},
+			{
+				Title:      "Imported Track 2",
+				Artist:     "Imported Artist 2",
+				DurationMs: 240000,
+				Sources:    queue.Sources{},
+			},
+		}, nil
+	})
+
+	// Import a playlist
+	res, err := h.HandleRPC("playlist.import", []byte(`{
+		"roomId": "demo",
+		"url": "https://www.deezer.com/en/playlist/123456",
+		"addedBy": "testuser"
+	}`))
+	if err != nil {
+		t.Fatalf("playlist.import: %v", err)
+	}
+
+	var st queue.RoomState
+	if err := json.Unmarshal(res, &st); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(st.Queue) != 2 {
+		t.Fatalf("expected 2 tracks in queue, got %d", len(st.Queue))
+	}
+
+	if st.Queue[0].Title != "Imported Track 1" {
+		t.Errorf("track 0 title: got %q, want Imported Track 1", st.Queue[0].Title)
+	}
+	if st.Queue[0].AddedBy != "testuser" {
+		t.Errorf("track 0 addedBy: got %q, want testuser", st.Queue[0].AddedBy)
+	}
+
+	if st.Queue[1].Title != "Imported Track 2" {
+		t.Errorf("track 1 title: got %q, want Imported Track 2", st.Queue[1].Title)
+	}
+
+	if st.NowPlayingID != st.Queue[0].ID {
+		t.Errorf("first track should be now playing")
+	}
+}
+
+func TestHandleRPC_PlaylistImportQueueFull(t *testing.T) {
+	h := NewHub(nil)
+	h.Join("client1", "demo")
+
+	// Mock fetcher returns many tracks
+	h.WithPlaylistFetcher(func(ctx context.Context, url string) ([]queue.TrackRef, error) {
+		tracks := make([]queue.TrackRef, 600)
+		for i := range tracks {
+			tracks[i] = queue.TrackRef{
+				Title:   fmt.Sprintf("Track %d", i),
+				Artist:  "Artist",
+				Sources: queue.Sources{},
+			}
+		}
+		return tracks, nil
+	})
+
+	res, err := h.HandleRPC("playlist.import", []byte(`{
+		"roomId": "demo",
+		"url": "https://example.com/playlist",
+		"addedBy": "user"
+	}`))
+	if err != nil {
+		t.Fatalf("playlist.import should not error when adding up to capacity: %v", err)
+	}
+
+	var st queue.RoomState
+	if err := json.Unmarshal(res, &st); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(st.Queue) != queue.MaxQueueSize {
+		t.Errorf("queue size: got %d, want %d", len(st.Queue), queue.MaxQueueSize)
+	}
+}
+
+func TestAuthorize_PlaylistImport(t *testing.T) {
+	h := NewHub(nil)
+
+	// Case 1: member can mutate
+	h.Join("client1", "room1")
+	err := h.Authorize("client1", "playlist.import", []byte(`{"roomId":"room1"}`))
+	if err != nil {
+		t.Errorf("member should be authorized for playlist.import, got %v", err)
+	}
+
+	// Case 2: non-member cannot mutate
+	err = h.Authorize("client2", "playlist.import", []byte(`{"roomId":"room1"}`))
+	if err == nil {
+		t.Errorf("non-member should not be authorized for playlist.import")
 	}
 }

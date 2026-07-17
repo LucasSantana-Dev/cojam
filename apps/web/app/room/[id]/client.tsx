@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useStore, joinRoom } from '@/lib/realtime';
+import { useStore, joinRoom, setRadio } from '@/lib/realtime';
 
 // Persist the chosen name for the session so a full-page redirect (Spotify OAuth
 // returns to /callback/spotify then back here) auto-rejoins instead of dropping
@@ -154,6 +154,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
             {/* Now-Playing Hero */}
             <div className={`panel now-playing p-6 space-y-3${nowPlaying ? ' is-live' : ''}`}>
+              <div className="flex items-center justify-end">
+                <button
+                  onClick={() => setRadio(roomId, !(store.state?.radioEnabled ?? false))}
+                  aria-pressed={store.state?.radioEnabled ?? false}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
+                  style={{
+                    background: (store.state?.radioEnabled ?? false) ? 'var(--color-accent)' : 'var(--color-surface-2)',
+                    border: '1px solid var(--color-border)',
+                    color: (store.state?.radioEnabled ?? false) ? 'var(--color-surface-1)' : 'var(--color-text-primary)',
+                  }}
+                  title="Auto-plays related songs when the queue runs out"
+                >
+                  Radio {(store.state?.radioEnabled ?? false) ? 'on' : 'off'}
+                </button>
+              </div>
               {nowPlaying ? (
                 <>
                   <div className="flex items-center gap-2">
@@ -173,24 +188,26 @@ export function RoomClient({ roomId }: { roomId: string }) {
                         {nowPlaying.artist}
                       </p>
                     </div>
-                    {activeSource === 'youtube' && (
-                      <span className="badge-source badge-youtube inline-flex items-center gap-1">
-                        <YouTubeIcon size={14} />
-                        YouTube
-                      </span>
-                    )}
-                    {activeSource === 'spotify' && (
-                      <span className="badge-source badge-spotify inline-flex items-center gap-1">
-                        <SpotifyIcon size={14} />
-                        Spotify
-                      </span>
-                    )}
-                    {activeSource === 'apple' && (
-                      <span className="badge-source badge-apple inline-flex items-center gap-1">
-                        <AppleMusicIcon size={14} />
-                        Apple
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {activeSource === 'youtube' && (
+                        <span className="badge-source badge-youtube inline-flex items-center gap-1">
+                          <YouTubeIcon size={14} />
+                          YouTube
+                        </span>
+                      )}
+                      {activeSource === 'spotify' && (
+                        <span className="badge-source badge-spotify inline-flex items-center gap-1">
+                          <SpotifyIcon size={14} />
+                          Spotify
+                        </span>
+                      )}
+                      {activeSource === 'apple' && (
+                        <span className="badge-source badge-apple inline-flex items-center gap-1">
+                          <AppleMusicIcon size={14} />
+                          Apple
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </>
               ) : (

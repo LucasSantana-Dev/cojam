@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useStore, queueAdd, searchTracks, type SearchCandidate } from '@/lib/realtime';
+import { useStore, queueAdd, searchTracks, importPlaylist, type SearchCandidate } from '@/lib/realtime';
 import { features } from '@/lib/features';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
 
@@ -18,6 +18,12 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
   const [spotifyUri, setSpotifyUri] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const [playlistUrl, setPlaylistUrl] = useState('');
+  const [playlistError, setPlaylistError] = useState('');
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [playlistSuccess, setPlaylistSuccess] = useState('');
+
   const name = useStore((s) => s.name);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -110,6 +116,27 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
     }
   };
 
+  const handlePlaylistImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!playlistUrl.trim()) return;
+
+    setPlaylistError('');
+    setPlaylistSuccess('');
+    setPlaylistLoading(true);
+
+    try {
+      await importPlaylist(roomId, playlistUrl, name);
+      setPlaylistUrl('');
+      setPlaylistSuccess('Playlist tracks added to queue');
+      setTimeout(() => setPlaylistSuccess(''), 3000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to import playlist';
+      setPlaylistError(message);
+    } finally {
+      setPlaylistLoading(false);
+    }
+  };
+
   return (
     <div className="panel p-6 space-y-4">
       <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
@@ -180,6 +207,44 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
             No matches. Try a different search, or add manually.
           </p>
         )}
+      </div>
+
+      <div className="pt-3 border-t" style={{ borderColor: 'var(--color-border)' }}>
+        <form onSubmit={handlePlaylistImport} className="space-y-2">
+          <label className="block text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+            Import a playlist
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              placeholder="Paste playlist link"
+              aria-label="Playlist URL"
+              value={playlistUrl}
+              onChange={(e) => setPlaylistUrl(e.target.value)}
+              className="flex-1 px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
+              style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+              disabled={playlistLoading}
+            />
+            <button
+              type="submit"
+              disabled={playlistLoading || !playlistUrl.trim()}
+              className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 focus:outline-none whitespace-nowrap"
+              style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+            >
+              {playlistLoading ? 'Importing...' : 'Import'}
+            </button>
+          </div>
+          {playlistError && (
+            <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171' }}>
+              {playlistError}
+            </p>
+          )}
+          {playlistSuccess && (
+            <p role="status" aria-live="polite" className="text-sm" style={{ color: '#86efac' }}>
+              {playlistSuccess}
+            </p>
+          )}
+        </form>
       </div>
 
       <details className="cursor-pointer">

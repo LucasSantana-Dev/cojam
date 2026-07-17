@@ -20,6 +20,8 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/match"
+	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 )
 
@@ -138,6 +140,26 @@ func main() {
 			return results, nil
 		})
 		logger.Info("searcher_enabled", "provider", "aggregated(deezer+spotify+tidal)")
+	// Wire playlist fetcher for playlist import
+	if featureEnabled("FEATURE_PLAYLIST_IMPORT", true) {
+		h.WithPlaylistFetcher(func(ctx context.Context, url string) ([]queue.TrackRef, error) {
+			return playlist.FetchPlaylist(ctx, url)
+		})
+		logger.Info("playlist_fetcher_enabled")
+	} else {
+		logger.Info("playlist_fetcher_disabled")
+	}
+
+	// Wire radio auto-refill (Last.fm) when feature is on
+	if featureEnabled("FEATURE_RADIO", true) && os.Getenv("LASTFM_API_KEY") != "" {
+		h.WithSimilarProvider(func(ctx context.Context, artist, title string, limit int) ([]queue.TrackRef, error) {
+			return match.SimilarTracks(ctx, artist, title, limit)
+		})
+		logger.Info("radio_enabled", "provider", "lastfm")
+	} else if featureEnabled("FEATURE_RADIO", true) {
+		logger.Info("radio_feature_enabled_but_lastfm_unconfigured", "hint", "set LASTFM_API_KEY to enable")
+	}
+
 	}
 		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")
 	}
