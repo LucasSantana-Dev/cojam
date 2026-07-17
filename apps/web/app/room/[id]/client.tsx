@@ -180,7 +180,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     </span>
                   </div>
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
+                    <div key={nowPlaying.id} className="flex-1 min-w-0 track-change-enter">
                       <h2 className="text-2xl font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
                         {nowPlaying.title}
                       </h2>

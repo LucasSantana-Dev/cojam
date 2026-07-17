@@ -98,6 +98,17 @@ input:focus, textarea:focus, select:focus {
   to { opacity: 1; }
 }
 
+@keyframes track-change {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Motion utilities */
 .animate-pulse-breath {
   animation: pulse-breath 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -109,6 +120,11 @@ input:focus, textarea:focus, select:focus {
 
 .animate-fade-in {
   animation: fade-in 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.track-change-enter {
+  animation: track-change 0.32s var(--ease-out-quart) forwards;
+  will-change: transform, opacity;
 }
 
 /* Respect prefers-reduced-motion */
@@ -400,36 +416,42 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
-/* Per-word rise-in; --i sets the stagger index from the component. The gradient
-   text treatment lives here (not on .hero-title) because each word is an
-   inline-block box: a parent-only clip would leave these children transparent. */
+/* Per-word masked reveal: each word starts below the mask line (translateY 100%)
+   and rises into view, staggered by --i index. Overflow:hidden on the mask
+   creates the clip effect. The gradient is on the inner .word span. */
+.hero-title .word-mask {
+  display: inline-block;
+  overflow: hidden;
+  margin-right: 0.25em;
+  line-height: 1.2; /* Space for descenders and glow blur. */
+}
+
 .hero-title .word {
   display: inline-block;
-  margin-right: 0.25em;
   background: linear-gradient(180deg, oklch(0.98 0.01 280), oklch(0.72 0.16 300));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  opacity: 0;
-  transform: translateY(0.5em);
-  animation: word-rise 0.7s cubic-bezier(0.2, 0.65, 0.2, 1) forwards;
-  animation-delay: calc(var(--i, 0) * 90ms + 150ms);
+  transform: translateY(100%);
+  animation: word-rise-masked 0.7s var(--ease-out-expo) forwards;
+  animation-delay: calc(var(--i, 0) * 60ms + 150ms);
 }
 
-@keyframes word-rise {
-  to { opacity: 1; transform: translateY(0); }
+@keyframes word-rise-masked {
+  to { transform: translateY(0); }
 }
 
-/* Signature payoff word: italic, brighter violet gradient, and a soft glow.
-   drop-shadow (not text-shadow) is used because the text is transparent with a
-   clipped gradient — a text-shadow would be invisible, drop-shadow lights the
-   glyph shape. */
-.hero-title .word-accent {
+/* Signature payoff word: italic, brighter violet gradient, and soft glow.
+   Glow (drop-shadow) is on the mask wrapper, gradient and style on the inner .word. */
+.hero-title .word-mask.word-accent {
+  filter: drop-shadow(0 0 28px oklch(0.66 0.2 300 / 0.55));
+}
+
+.hero-title .word-mask.word-accent .word {
   font-style: italic;
   background: linear-gradient(180deg, oklch(0.9 0.13 300), oklch(0.68 0.23 300));
   -webkit-background-clip: text;
   background-clip: text;
-  filter: drop-shadow(0 0 28px oklch(0.66 0.2 300 / 0.55));
 }
 
 .hero-sub {
@@ -786,6 +808,7 @@ input:focus, textarea:focus, select:focus {
   .hero-aurora::before,
   .hero-aurora::after { animation: none; }
   .eyebrow-dot { animation: none; }
+  .hero-title .word-mask,
   .hero-title .word,
   .hero-sub,
   .hero-cta { opacity: 1; transform: none; animation: none; }
@@ -794,4 +817,5 @@ input:focus, textarea:focus, select:focus {
   .step-card:hover { transform: none; }
   .site-header { transition: none; }
   .eq span { animation: none; }
+  .track-change-enter { animation: none; opacity: 1; transform: none; }
 }
