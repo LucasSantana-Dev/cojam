@@ -1,6 +1,6 @@
 # Deployment Runbook
 
-Cojam deploys to Fly.io with Docker containers for both the Next.js web app and the Go server. This runbook covers first-time setup and ongoing deployments.
+CoJam deploys to Fly.io with Docker containers for both the Next.js web app and the Go server. This runbook covers first-time setup and ongoing deployments.
 
 ## Prerequisites
 

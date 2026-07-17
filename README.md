@@ -1,6 +1,6 @@
 <div align="center">
 
-# Cojam
+# CoJam
 
 **Friends on different streaming services, listening together in one room.**
 
@@ -27,7 +27,7 @@ their own account while the server keeps everyone in sync on metadata alone.
 
 ## How it works
 
-Cojam lets friends in the same room listen to music together, each using their
+CoJam lets friends in the same room listen to music together, each using their
 own streaming account. A shared queue decides who plays what; the server
 coordinates **metadata only, never audio**. Every listener plays the current
 track on their own device through its native SDK, which preserves DRM and stays
@@ -53,7 +53,7 @@ flowchart TB
 ```
 
 > [!IMPORTANT]
-> Cojam follows the Stationhead / Vertigo model: per-user streams synchronized by
+> CoJam follows the Stationhead / Vertigo model: per-user streams synchronized by
 > metadata. It never rebroadcasts one audio stream to many listeners, the model
 > that violates streaming agreements and killed turntable.fm.
 

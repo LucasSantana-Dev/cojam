@@ -1,13 +1,14 @@
-# ADR-0004: Logo — "the dot, elevated" (violet dot + concentric ring)
+# ADR-0004: Logo — "Two Listeners" (headphone of two presence dots)
 
 **Date:** 2026-07-17
 **Status:** accepted
-**Decided via:** 2-researcher + 3-lens debate (brand-identity, distinctiveness/
-collision, scalability/craft) + synthesis; implemented same day.
+**Decided via:** 2-researcher + 3-lens debate + synthesis, then operator
+override on the first implementation; four crafted variants offered, operator
+picked "Two Listeners". Amended same day.
 
 ## Context
 
-Cojam needed a real mark. The de-facto identity was the wordmark beside a plain
+CoJam needed a real mark. The de-facto identity was the wordmark beside a plain
 glowing violet dot. Constraints: dark-first violet system, 16px favicon through
 1024px app icon, monochrome-able, must not collide with music-app marks
 (Spotify waves, Tidal diamond, Apple note, YouTube triangle, Last.fm 'as'), and
@@ -15,9 +16,10 @@ the operator's documented restraint taste (ADR-0003).
 
 ## Decision
 
-**The dot, elevated**: the existing violet presence dot gains one soft
-concentric ring - a room with someone inside. Pure geometry (two circles),
-hand-authored SVG rather than AI-generated raster:
+**Two Listeners**: a headphone whose earcups are two violet presence dots
+joined by the headband arc, with a pulse riding the band - the connection
+metaphor built into the headphone anatomy, nothing glued on. Hand-authored
+SVG (one arc + three circles), not AI-generated raster:
 
 - `apps/web/app/components/Logo.tsx` - `LogoMark` (token-driven color, optional
   glow; glow OFF below ~24px where it muddies).
@@ -32,8 +34,14 @@ hand-authored SVG rather than AI-generated raster:
 
 ## Alternatives considered
 
-- Room bracket (rounded square enclosing a dot) - pre-staged fallback had the
-  16px gate failed; not needed.
+- The dot, elevated (dot + concentric ring) - the debate winner, implemented
+  first; REJECTED by the operator as "way too simple, just a circle". Third
+  taste data point: distinctive figuration wanted, not bare geometry.
+- Sync-wave and sync-ping headphone variants (waveform / facing arcs between
+  cups) and orbit-room (headphone in a ring) - offered alongside the winner;
+  denser at 16px, not picked.
+- Room bracket (rounded square enclosing a dot) - earlier pre-staged fallback;
+  superseded with the dot concept.
 - Sync bars / equalizer abstraction - collides with the in-product equalizer's
   role; UI element, not identity.
 - Venn overlap circles - generic SaaS collaboration territory.

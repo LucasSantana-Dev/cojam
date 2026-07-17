@@ -82,7 +82,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           <div className="space-y-2 text-center">
             <h1 className="text-3xl font-bold inline-flex items-center justify-center gap-2.5" style={{ color: 'var(--color-text-primary)' }}>
               <LogoMark size={26} glow />
-              Cojam
+              CoJam
             </h1>
             <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               Room: {roomId}
@@ -128,7 +128,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
             <div className="space-y-1 min-w-0">
-              <h1 className="text-2xl font-bold inline-flex items-center gap-2"><LogoMark size={20} /> Cojam</h1>
+              <h1 className="text-2xl font-bold inline-flex items-center gap-2"><LogoMark size={20} /> CoJam</h1>
               <p className="text-sm truncate" style={{ color: 'var(--color-text-secondary)' }}>
                 Room: {roomId} as {store.name}
               </p>

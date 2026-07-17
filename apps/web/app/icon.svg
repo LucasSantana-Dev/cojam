@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- Cojam favicon: dot + ring on the brand ground. No glow: it turns to mush
-       at 16px (the legibility gate from the logo decision, docs/adr/0004). -->
+  <!-- CoJam favicon: "Two Listeners" mark on the brand ground (ADR-0004).
+       No glow at favicon sizes; geometry verified legible at 16px. -->
   <rect width="128" height="128" rx="28" fill="#0a0a0f"/>
-  <circle cx="64" cy="64" r="44" stroke="#a06bff" stroke-width="10" fill="none" opacity="0.6"/>
-  <circle cx="64" cy="64" r="25" fill="#a06bff"/>
+  <g transform="translate(64 66) scale(0.82) translate(-64 -64)">
+    <path d="M 26 78 A 38 38 0 0 1 102 78" stroke="#a06bff" stroke-width="12" stroke-linecap="round" fill="none"/>
+    <circle cx="26" cy="86" r="16" fill="#a06bff"/>
+    <circle cx="102" cy="86" r="16" fill="#a06bff"/>
+    <circle cx="64" cy="40" r="8" fill="#a06bff" opacity="0.9"/>
+  </g>
 </svg>
