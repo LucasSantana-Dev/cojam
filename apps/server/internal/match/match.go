@@ -166,8 +166,8 @@ func FetchTrackDepth(ctx context.Context, isrc, title, artist string) (*TrackDep
 		req.Header.Set("User-Agent", "cojam/0.1 (https://github.com/LucasSantana-Dev/cojam)")
 
 		var mbResp struct {
-			Count       int `json:"count"`
-			Recordings  []MusicBrainzRecordingResponse `json:"recordings"`
+			Count      int                            `json:"count"`
+			Recordings []MusicBrainzRecordingResponse `json:"recordings"`
 		}
 		if err := httpx.DoJSON(req, &mbResp); err == nil && len(mbResp.Recordings) > 0 {
 			return extractTrackDepth(&mbResp.Recordings[0]), nil
@@ -402,7 +402,6 @@ type tokenCacheEntry struct {
 	token     string
 	expiresAt time.Time
 }
-
 
 // SpotifyTrack represents a Spotify track from search results
 type SpotifyTrack struct {

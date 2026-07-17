@@ -66,7 +66,7 @@ func TestBuildToken_PKCS8AppleFormat(t *testing.T) {
 	}
 	exp := int64(claims["exp"].(float64))
 	iat := int64(claims["iat"].(float64))
-	if exp-iat > int64((180*24*time.Hour).Seconds()) {
+	if exp-iat > int64((180 * 24 * time.Hour).Seconds()) {
 		t.Fatalf("token lifetime %ds exceeds Apple's 180-day max", exp-iat)
 	}
 }

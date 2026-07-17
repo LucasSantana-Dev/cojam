@@ -2,8 +2,8 @@ package hub
 
 import (
 	"context"
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
@@ -290,7 +290,6 @@ func TestHandleRPC_TrackSearchWithSearcher(t *testing.T) {
 		t.Errorf("SpotifyURI = %q, want spotify:track:abc123", r.SpotifyURI)
 	}
 }
-
 
 func TestHandleRPC_PlaylistImport(t *testing.T) {
 	h := NewHub(nil)

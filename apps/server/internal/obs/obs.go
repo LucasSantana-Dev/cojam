@@ -9,12 +9,12 @@ import (
 )
 
 type Metrics struct {
-	Registry           *prometheus.Registry
-	RPCDuration        *prometheus.HistogramVec
-	ConnectionsActive  prometheus.Gauge
-	MatchConfidence    prometheus.Histogram
-	MatchCacheHits     prometheus.Counter
-	MatchCacheMisses   prometheus.Counter
+	Registry          *prometheus.Registry
+	RPCDuration       *prometheus.HistogramVec
+	ConnectionsActive prometheus.Gauge
+	MatchConfidence   prometheus.Histogram
+	MatchCacheHits    prometheus.Counter
+	MatchCacheMisses  prometheus.Counter
 }
 
 func New() *Metrics {
@@ -69,5 +69,5 @@ func (m *Metrics) ConnDec() { m.ConnectionsActive.Dec() }
 
 func (m *Metrics) ObserveMatchConfidence(c float64) { m.MatchConfidence.Observe(c) }
 
-func (m *Metrics) MatchCacheHit() { m.MatchCacheHits.Inc() }
+func (m *Metrics) MatchCacheHit()  { m.MatchCacheHits.Inc() }
 func (m *Metrics) MatchCacheMiss() { m.MatchCacheMisses.Inc() }

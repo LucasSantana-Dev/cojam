@@ -12,6 +12,7 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 )
 
 // Matcher resolves a YouTube source for a track (nil result = no confident match).
@@ -40,7 +41,6 @@ type SimilarProvider func(ctx context.Context, artist, title string, limit int) 
 // TrackDepthProvider fetches deep metadata for a track (credits, release year, label, tags)
 type TrackDepthProvider func(ctx context.Context, isrc, title, artist string) (interface{}, error)
 
-
 // LyricsProvider fetches lyrics for a track (synced and plain)
 type LyricsProvider func(ctx context.Context, artist, title, album string, durationMs int) (interface{}, error)
 
@@ -52,18 +52,19 @@ type Room struct {
 
 // Hub manages all rooms
 type Hub struct {
-	mu      sync.RWMutex
-	rooms   map[string]*Room
-	node    *centrifuge.Node
-	logger  *slog.Logger
-	metrics *obs.Metrics
-	matcher Matcher
-	spotifyMatcher Matcher
-	searcher Searcher
+	mu              sync.RWMutex
+	rooms           map[string]*Room
+	store           store.Store
+	node            *centrifuge.Node
+	logger          *slog.Logger
+	metrics         *obs.Metrics
+	matcher         Matcher
+	spotifyMatcher  Matcher
+	searcher        Searcher
 	playlistFetcher PlaylistFetcher
-	similar SimilarProvider
-	trackDepth TrackDepthProvider
-	lyrics LyricsProvider
+	similar         SimilarProvider
+	trackDepth      TrackDepthProvider
+	lyrics          LyricsProvider
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
@@ -91,6 +92,12 @@ func (h *Hub) WithMatcher(m Matcher) *Hub {
 	return h
 }
 
+// WithStore sets the store implementation for room persistence.
+func (h *Hub) WithStore(s store.Store) *Hub {
+	h.store = s
+	return h
+}
+
 // WithObservability attaches structured logging + metrics; nil-safe when omitted (tests).
 func (h *Hub) WithObservability(logger *slog.Logger, m *obs.Metrics) *Hub {
 	h.logger = logger
@@ -105,10 +112,12 @@ func (h *Hub) WithObservability(logger *slog.Logger, m *obs.Metrics) *Hub {
 	return h
 }
 
-// NewHub creates a new hub with the given centrifuge node (nil in tests: publish is skipped)
+// NewHub creates a new hub with the given centrifuge node (nil in tests: publish is skipped).
+// Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
 	return &Hub{
 		rooms:   make(map[string]*Room),
+		store:   store.NewMemory(),
 		node:    node,
 		members: make(map[string]map[string]struct{}),
 	}
@@ -170,29 +179,58 @@ func (h *Hub) Authorize(clientID, method string, data []byte) error {
 	return nil
 }
 
-// GetOrCreateRoom retrieves or creates a room
+// GetOrCreateRoom retrieves or creates a room, with read-through to the store.
+// If the room is not in the map, Load from store. On ErrNotFound, create a fresh room
+// and persist it. On other errors, log and create a fresh room (best-effort recovery).
 func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	if room, exists := h.rooms[roomID]; exists {
+		h.mu.Unlock()
+		return room
+	}
+	h.mu.Unlock()
+
+	// Try to load from store
+	ctx := context.Background()
+	state, err := h.store.Load(ctx, roomID)
+
+	// If found in store, use it
+	if err == nil && state != nil {
+		h.mu.Lock()
+		room := &Room{State: state}
+		h.rooms[roomID] = room
+		h.mu.Unlock()
 		return room
 	}
 
-	room := &Room{
-		State: &queue.RoomState{
-			RoomID:  roomID,
-			Queue:   []queue.TrackRef{},
-			Version: 0,
-		},
+	// If not found or error, create fresh
+	if err != nil && err != store.ErrNotFound && h.logger != nil {
+		h.logger.Error("store_load_failed", "room_id", roomID, "err", err.Error())
 	}
+
+	state = &queue.RoomState{
+		RoomID:  roomID,
+		Queue:   []queue.TrackRef{},
+		Version: 0,
+	}
+
+	// Persist the fresh room
+	if err := h.store.Save(ctx, state); err != nil && h.logger != nil {
+		h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+	}
+
+	h.mu.Lock()
+	room := &Room{State: state}
 	h.rooms[roomID] = room
+	h.mu.Unlock()
 	return room
 }
 
 // mutate applies fn to the room under its lock, marshals the resulting state while
-// still holding the lock (state is a pointer; marshaling outside would race), then
-// publishes the snapshot to the room channel.
+// still holding the lock (state is a pointer; marshaling outside would race), releases
+// the lock, then persists to the store and publishes the snapshot to the room channel.
+// The state is deep-copied before releasing the lock to prevent data races.
+// Store errors are logged but non-fatal to the mutation result.
 func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMessage, error) {
 	room := h.GetOrCreateRoom(roomID)
 
@@ -209,7 +247,22 @@ func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMe
 		return nil, err
 	}
 
-	if fn != nil { // reads don't publish
+	if fn != nil {
+		// Write-through: persist state after releasing room lock.
+		// Unmarshal the JSON to get a deep copy safe for store.Save.
+		var stateCopy queue.RoomState
+		if err := json.Unmarshal(data, &stateCopy); err != nil {
+			if h.logger != nil {
+				h.logger.Error("store_marshal_failed", "room_id", roomID, "err", err.Error())
+			}
+		} else {
+			ctx := context.Background()
+			if err := h.store.Save(ctx, &stateCopy); err != nil && h.logger != nil {
+				h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+			}
+		}
+
+		// Publish to room channel
 		if err := h.publish(roomID, data); err != nil {
 			return nil, err
 		}
@@ -483,8 +536,8 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 
 	case "playlist.import":
 		var req struct {
-			RoomID string `json:"roomId"`
-			URL    string `json:"url"`
+			RoomID  string `json:"roomId"`
+			URL     string `json:"url"`
 			AddedBy string `json:"addedBy"`
 		}
 		if err := json.Unmarshal(data, &req); err != nil {
@@ -634,6 +687,7 @@ func (h *Hub) WithSearcher(s Searcher) *Hub {
 	h.searcher = s
 	return h
 }
+
 // WithPlaylistFetcher enables playlist import via playlist.import RPC.
 func (h *Hub) WithPlaylistFetcher(pf PlaylistFetcher) *Hub {
 	h.playlistFetcher = pf

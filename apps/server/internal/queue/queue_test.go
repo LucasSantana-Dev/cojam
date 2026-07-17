@@ -6,8 +6,8 @@ import (
 
 func TestAdd(t *testing.T) {
 	rs := &RoomState{
-		RoomID: "room1",
-		Queue:  []TrackRef{},
+		RoomID:  "room1",
+		Queue:   []TrackRef{},
 		Version: 0,
 	}
 
@@ -36,8 +36,8 @@ func TestAdd(t *testing.T) {
 
 func TestAddMultipleTracks(t *testing.T) {
 	rs := &RoomState{
-		RoomID: "room1",
-		Queue:  []TrackRef{},
+		RoomID:  "room1",
+		Queue:   []TrackRef{},
 		Version: 0,
 	}
 
@@ -66,7 +66,7 @@ func TestRemove(t *testing.T) {
 			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
 		},
 		NowPlayingID: "t1",
-		Version: 1,
+		Version:      1,
 	}
 
 	err := rs.Remove("t1")
@@ -107,7 +107,7 @@ func TestSetNowPlaying(t *testing.T) {
 			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
 		},
 		NowPlayingID: "t1",
-		Version: 1,
+		Version:      1,
 	}
 
 	err := rs.SetNowPlaying("t2")
@@ -146,7 +146,7 @@ func TestAdvanceAfter(t *testing.T) {
 			{ID: "t3", Title: "Song 3", AddedBy: "u3", Sources: Sources{}},
 		},
 		NowPlayingID: "t1",
-		Version: 1,
+		Version:      1,
 	}
 
 	err := rs.AdvanceAfter("t1")
@@ -169,7 +169,7 @@ func TestAdvanceAfterToLastTrack(t *testing.T) {
 			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
 		},
 		NowPlayingID: "t2",
-		Version: 1,
+		Version:      1,
 	}
 
 	err := rs.AdvanceAfter("t2")
@@ -192,7 +192,7 @@ func TestAdvanceAfterIdempotent(t *testing.T) {
 			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
 		},
 		NowPlayingID: "t2",
-		Version: 1,
+		Version:      1,
 	}
 
 	// Call with stale afterID (NowPlayingID has already moved to t2)
@@ -218,7 +218,7 @@ func TestMove(t *testing.T) {
 			{ID: "t3", Title: "Song 3", AddedBy: "u3", Sources: Sources{}},
 		},
 		NowPlayingID: "t1",
-		Version: 1,
+		Version:      1,
 	}
 
 	err := rs.Move("t3", 0)
@@ -251,7 +251,7 @@ func TestMoveClampsToEnd(t *testing.T) {
 			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
 		},
 		NowPlayingID: "t1",
-		Version: 1,
+		Version:      1,
 	}
 
 	err := rs.Move("t1", 999)
@@ -271,7 +271,7 @@ func TestMoveClampsToStart(t *testing.T) {
 			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
 		},
 		NowPlayingID: "t2",
-		Version: 1,
+		Version:      1,
 	}
 
 	err := rs.Move("t2", -1)
@@ -301,8 +301,8 @@ func TestMoveNotFound(t *testing.T) {
 func TestAdvanceAfterSequence(t *testing.T) {
 	// Replicate the exact sequence from the hub test
 	rs := &RoomState{
-		RoomID: "room1",
-		Queue:  []TrackRef{},
+		RoomID:  "room1",
+		Queue:   []TrackRef{},
 		Version: 0,
 	}
 
