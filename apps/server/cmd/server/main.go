@@ -18,12 +18,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
+	"github.com/LucasSantana-Dev/cojam/server/internal/db"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/lyrics"
 	"github.com/LucasSantana-Dev/cojam/server/internal/match"
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 )
 
 // featureEnabled reads a FEATURE_* toggle (1/true/on/yes = on, 0/false/off/no = off,
@@ -57,6 +59,8 @@ func parseOrigins(raw string) map[string]bool {
 }
 
 func main() {
+	var shutdownHooks []func()
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	metrics := obs.New()
@@ -79,6 +83,30 @@ func main() {
 
 	// Create hub
 	h := hub.NewHub(node).WithObservability(logger, metrics)
+
+	// Wire persistent store if DATABASE_URL is configured
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		pool, err := db.Open(context.Background(), dbURL)
+		if err != nil {
+			log.Fatalf("failed to open database: %v", err)
+		}
+
+		if err := db.Migrate(context.Background(), pool); err != nil {
+			pool.Close()
+			log.Fatalf("failed to migrate database: %v", err)
+		}
+
+		pgStore := store.NewPostgres(pool)
+		h.WithStore(pgStore)
+		logger.Info("persistence_enabled", "store", "postgres")
+
+		// Schedule pool close on shutdown
+		shutdownHooks = append(shutdownHooks, func() {
+			pool.Close()
+		})
+	} else {
+		logger.Info("persistence_disabled", "store", "memory", "hint", "set DATABASE_URL to persist rooms")
+	}
 	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("YOUTUBE_API_KEY") != "" {
 		cachedMatcher := match.NewCachedMatcher(match.ResolveYouTube, func(hit bool) {
 			if hit {
@@ -330,6 +358,11 @@ func main() {
 	// Shutdown centrifuge node
 	if err := node.Shutdown(ctx); err != nil {
 		log.Printf("node shutdown error: %v", err)
+	}
+
+	// Call registered shutdown hooks (e.g. pool.Close() for database)
+	for _, hook := range shutdownHooks {
+		hook()
 	}
 
 	log.Println("Server stopped")
