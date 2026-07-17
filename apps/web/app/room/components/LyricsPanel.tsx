@@ -15,8 +15,14 @@ export function LyricsPanel({ roomId, track, open, onClose }: LyricsPanelProps) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
+  const [retry, setRetry] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Element focused before the panel opened, restored on close.
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  // onClose changes identity each parent render; hold it in a ref so the focus
+  // effect can depend on [open] alone and not tear down on every render.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open || !track) {
@@ -25,6 +31,7 @@ export function LyricsPanel({ roomId, track, open, onClose }: LyricsPanelProps) 
       return;
     }
 
+    let cancelled = false;
     const fetchData = async () => {
       setLoading(true);
       setError(null);
@@ -36,29 +43,60 @@ export function LyricsPanel({ roomId, track, open, onClose }: LyricsPanelProps) 
           undefined,
           track.durationMs || undefined
         );
-        setData(result);
+        if (!cancelled) setData(result);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch lyrics');
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch lyrics');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchData();
-  }, [open, track, roomId]);
+    // Guard against a stale response (track/room changed mid-flight, or a retry)
+    // overwriting the current track's lyrics.
+    return () => {
+      cancelled = true;
+    };
+  }, [open, track, roomId, retry]);
 
-  // Close on Esc
+  // Dialog focus management: move focus into the panel on open, trap Tab within
+  // it, close on Esc, and restore focus to the prior element on close.
   useEffect(() => {
     if (!open) return;
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const focusables = () =>
+      Array.from(
+        containerRef.current?.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((el) => !el.hasAttribute('disabled'));
+
+    focusables()[0]?.focus();
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
-        triggerRef.current?.focus();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [open]);
 
   if (!open || !track) return null;
 
@@ -79,6 +117,9 @@ export function LyricsPanel({ roomId, track, open, onClose }: LyricsPanelProps) 
           borderColor: 'var(--color-border)',
         }}
         ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Lyrics for ${track.title}`}
       >
         {/* Header */}
         <div className="flex-shrink-0 px-6 py-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
@@ -122,6 +163,7 @@ export function LyricsPanel({ roomId, track, open, onClose }: LyricsPanelProps) 
                 onClick={() => {
                   setError(null);
                   setData(null);
+                  setRetry((n) => n + 1);
                 }}
                 className="mt-2 text-xs underline hover:opacity-70 transition-opacity"
                 style={{ color: 'var(--color-accent)' }}
