@@ -23,6 +23,10 @@ updates:
         update-types:
           - minor
           - patch
+    # Keep @types/node aligned to the Node 22 runtime; do not propose 23+.
+    ignore:
+      - dependency-name: "@types/node"
+        versions: [">=23"]
 
   # GitHub Actions (keeps the SHA-pinned actions current with version-comment PRs)
   - package-ecosystem: github-actions
