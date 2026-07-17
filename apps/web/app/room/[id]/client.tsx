@@ -107,23 +107,25 @@ export function RoomClient({ roomId }: { roomId: string }) {
     <div className="room min-h-screen" style={{ color: 'var(--color-text-primary)' }}>
       <header className="room-header">
         <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <div className="space-y-1 min-w-0">
               <h1 className="text-2xl font-bold">Cojam</h1>
-              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              <p className="text-sm truncate" style={{ color: 'var(--color-text-secondary)' }}>
                 Room: {roomId} as {store.name}
               </p>
             </div>
-            <PresenceBar />
-            <ShareRoomButton />
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
-              <div
-                className="w-2 h-2 rounded-full animate-pulse-breath"
-                style={{ backgroundColor: store.connected ? 'var(--color-accent)' : '#ef4444' }}
-              />
-              <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                {store.connected ? 'Connected' : 'Disconnected'}
-              </span>
+            <div className="flex items-center gap-3 flex-wrap">
+              <PresenceBar />
+              <ShareRoomButton />
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+                <div
+                  className="w-2 h-2 rounded-full animate-pulse-breath"
+                  style={{ backgroundColor: store.connected ? 'var(--color-accent)' : '#ef4444' }}
+                />
+                <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                  {store.connected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
             </div>
           </div>
         </div>

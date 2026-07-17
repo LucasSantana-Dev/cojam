@@ -172,6 +172,19 @@ input:focus, textarea:focus, select:focus {
   padding: 2rem 1rem;
 }
 
+/* Touch-friendly hit targets (>=44px) on coarse pointers, for the in-room
+   surfaces where the controls are otherwise compact. */
+@media (pointer: coarse) {
+  .room button,
+  .panel button {
+    min-height: 44px;
+  }
+  .room input,
+  .panel input {
+    min-height: 44px;
+  }
+}
+
 /* Queue item list polish */
 .queue-item {
   background: var(--color-surface-2);
