@@ -5,6 +5,7 @@ import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
 import { beginAuth, getAccessToken, isAuthed } from '@/lib/spotifyAuth';
 import { features } from '@/lib/features';
+import { SpotifyIcon } from '@/app/components/icons';
 
 declare global {
   interface Window {
@@ -109,10 +110,10 @@ export function SpotifyPlayer({
     return (
       <button
         onClick={() => beginAuth(window.location.pathname)}
-        name="Connect Spotify"
-        className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
+        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
         style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
       >
+        <SpotifyIcon size={16} />
         Connect Spotify
       </button>
     );

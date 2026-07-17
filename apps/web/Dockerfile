@@ -4,8 +4,9 @@ FROM node:22-alpine AS builder
 
 WORKDIR /build
 
-# Install pnpm
-RUN npm install -g pnpm
+# Install pnpm (pinned to match the root packageManager field, so the frozen
+# install below cannot fail on a version mismatch).
+RUN npm install -g pnpm@11.11.0
 
 # Copy root package files + workspace manifest (build context is the REPO ROOT;
 # see .github/workflows/deploy.yml which builds web with --dockerfile from root).

@@ -1,7 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useStore, joinRoom } from '@/lib/realtime';
+
+// Persist the chosen name for the session so a full-page redirect (Spotify OAuth
+// returns to /callback/spotify then back here) auto-rejoins instead of dropping
+// the user back to the name form. Session-scoped; cleared when the tab closes.
+const NAME_KEY = 'mj_room_name';
 import { pickSource } from '@/lib/pickSource';
 import { features } from '@/lib/features';
 import { YouTubePlayer } from '../components/YouTubePlayer';
@@ -10,6 +15,9 @@ import { SpotifyPlayer } from '../components/SpotifyPlayer';
 import { QueuePanel } from '../components/QueuePanel';
 import { AddTrackForm } from '../components/AddTrackForm';
 import { PresenceBar } from '../components/PresenceBar';
+import { ShareRoomButton } from '../components/ShareRoomButton';
+import { OnboardingCard } from '../components/OnboardingCard';
+import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const [nameInput, setNameInput] = useState('');
@@ -24,29 +32,43 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const activeSource = nowPlaying
     ? pickSource(nowPlaying, { appleAuthorized, spotifyAuthorized })
     : null;
+  const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
 
-  const handleJoin = async (e: React.FormEvent) => {
+  const doJoin = useCallback(
+    async (name: string) => {
+      setLoading(true);
+      try {
+        await joinRoom(roomId, name);
+        sessionStorage.setItem(NAME_KEY, name);
+        setJoined(true);
+      } catch (error) {
+        console.error('Failed to join:', error);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [roomId],
+  );
+
+  const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameInput.trim()) return;
-
-    setLoading(true);
-    try {
-      await joinRoom(roomId, nameInput);
-      setJoined(true);
-    } catch (error) {
-      console.error('Failed to join:', error);
-    } finally {
-      setLoading(false);
-    }
+    const name = nameInput.trim();
+    if (name) doJoin(name);
   };
+
+  // Auto-rejoin after a full-page nav (e.g. Spotify OAuth) using the saved name.
+  useEffect(() => {
+    if (joined) return;
+    const saved = sessionStorage.getItem(NAME_KEY);
+    if (saved) doJoin(saved);
+  }, [joined, doJoin]);
 
   if (!joined) {
     return (
-      <div className="flex items-center justify-center min-h-screen p-4" style={{ background: 'var(--color-surface-0)' }}>
+      <main id="main" className="room flex items-center justify-center min-h-screen p-4">
         <form
           onSubmit={handleJoin}
-          className="w-full max-w-sm rounded-xl space-y-6 p-8"
-          style={{ background: 'var(--color-surface-1)', border: '1px solid var(--color-border)' }}
+          className="panel w-full max-w-sm space-y-6 p-8"
         >
           <div className="space-y-2 text-center">
             <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
@@ -60,6 +82,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           <input
             type="text"
             placeholder="Your name"
+            aria-label="Your name"
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
             className="w-full px-4 py-3 rounded-lg focus:outline-none transition-all duration-150"
@@ -76,39 +99,43 @@ export function RoomClient({ roomId }: { roomId: string }) {
             {loading ? 'Joining...' : 'Join & Play'}
           </button>
         </form>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--color-surface-0)', color: 'var(--color-text-primary)' }}>
-      <div className="border-b" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface-1)' }}>
+    <div className="room min-h-screen" style={{ color: 'var(--color-text-primary)' }}>
+      <header className="room-header">
         <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <div className="space-y-1 min-w-0">
               <h1 className="text-2xl font-bold">Cojam</h1>
-              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              <p className="text-sm truncate" style={{ color: 'var(--color-text-secondary)' }}>
                 Room: {roomId} as {store.name}
               </p>
             </div>
-            <PresenceBar />
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
-              <div
-                className="w-2 h-2 rounded-full animate-pulse-breath"
-                style={{ backgroundColor: store.connected ? 'var(--color-accent)' : '#ef4444' }}
-              />
-              <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                {store.connected ? 'Connected' : 'Disconnected'}
-              </span>
+            <div className="flex items-center gap-3 flex-wrap">
+              <PresenceBar />
+              <ShareRoomButton />
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+                <div
+                  className="w-2 h-2 rounded-full animate-pulse-breath"
+                  style={{ backgroundColor: store.connected ? 'var(--color-accent)' : '#ef4444' }}
+                />
+                <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                  {store.connected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <main id="main" className="max-w-7xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
-            <div className="rounded-xl p-6 space-y-4" style={{ background: 'var(--color-surface-1)', border: '1px solid var(--color-border)' }}>
+            {queueEmpty && <OnboardingCard />}
+            <div className="panel p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {features.spotify && (
                   <SpotifyPlayer authorized={spotifyAuthorized} onAuthorized={setSpotifyAuthorized} />
@@ -126,12 +153,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
             </div>
 
             {/* Now-Playing Hero */}
-            <div className="hero-section">
+            <div className={`panel now-playing p-6 space-y-3${nowPlaying ? ' is-live' : ''}`}>
               {nowPlaying ? (
-                <div className="space-y-3">
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="eq" aria-hidden>
+                      <span /><span /><span /><span />
+                    </span>
+                    <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-accent)', letterSpacing: '0.15em' }}>
+                      Now playing
+                    </span>
+                  </div>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <h2 className="text-xl font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
+                      <h2 className="text-2xl font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
                         {nowPlaying.title}
                       </h2>
                       <p className="text-sm mt-1 truncate" style={{ color: 'var(--color-text-secondary)' }}>
@@ -139,17 +174,25 @@ export function RoomClient({ roomId }: { roomId: string }) {
                       </p>
                     </div>
                     {activeSource === 'youtube' && (
-                      <span className="badge-source badge-youtube">YouTube</span>
+                      <span className="badge-source badge-youtube inline-flex items-center gap-1">
+                        <YouTubeIcon size={14} />
+                        YouTube
+                      </span>
                     )}
                     {activeSource === 'spotify' && (
-                      <span className="badge-source badge-spotify">Spotify</span>
+                      <span className="badge-source badge-spotify inline-flex items-center gap-1">
+                        <SpotifyIcon size={14} />
+                        Spotify
+                      </span>
                     )}
                     {activeSource === 'apple' && (
-                      <span className="badge-source badge-apple">Apple</span>
+                      <span className="badge-source badge-apple inline-flex items-center gap-1">
+                        <AppleMusicIcon size={14} />
+                        Apple
+                      </span>
                     )}
                   </div>
-                  <div className="h-40 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }} />
-                </div>
+                </>
               ) : (
                 <div className="hero-empty">
                   <p style={{ color: 'var(--color-text-secondary)' }}>Nothing playing</p>
@@ -167,7 +210,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <QueuePanel roomId={roomId} />
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

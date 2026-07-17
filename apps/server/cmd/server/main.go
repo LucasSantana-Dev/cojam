@@ -114,6 +114,31 @@ func main() {
 	} else {
 		logger.Info("spotify_matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_id", os.Getenv("SPOTIFY_CLIENT_ID") != "", "has_secret", os.Getenv("SPOTIFY_CLIENT_SECRET") != "")
 	}
+
+	// Wire aggregated search (Deezer + Spotify + Tidal) whenever FEATURE_MATCHING is on
+	// Deezer needs no credentials and is always available
+	if featureEnabled("FEATURE_MATCHING", true) {
+		h.WithSearcher(func(ctx context.Context, query string, limit int) ([]hub.SearchResult, error) {
+			candidates, err := match.SearchAll(ctx, query, limit)
+			if err != nil {
+				return nil, err
+			}
+			results := make([]hub.SearchResult, len(candidates))
+			for i, c := range candidates {
+				results[i] = hub.SearchResult{
+					Title:      c.Title,
+					Artist:     c.Artist,
+					Source:     c.Source,
+					SpotifyURI: c.SpotifyURI,
+					ISRC:       c.ISRC,
+					DurationMs: c.DurationMs,
+					ArtworkURL: c.ArtworkURL,
+				}
+			}
+			return results, nil
+		})
+		logger.Info("searcher_enabled", "provider", "aggregated(deezer+spotify+tidal)")
+	}
 		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")
 	}
 

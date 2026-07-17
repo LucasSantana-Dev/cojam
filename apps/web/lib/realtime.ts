@@ -133,3 +133,19 @@ export async function queueReorder(roomId: string, trackId: string, toIndex: num
   if (!centrifuge) throw new Error('Not connected');
   await centrifuge.rpc('queue.reorder', { roomId, trackId, toIndex });
 }
+
+export type SearchCandidate = {
+  title: string;
+  artist: string;
+  source: string; // "spotify"|"deezer"|"tidal"
+  spotifyUri?: string;
+  isrc: string;
+  durationMs: number;
+  artworkUrl: string;
+};
+
+export async function searchTracks(query: string): Promise<SearchCandidate[]> {
+  if (!centrifuge) throw new Error('Not connected');
+  const result = await centrifuge.rpc('track.search', { query });
+  return (result.data as SearchCandidate[]) ?? [];
+}
