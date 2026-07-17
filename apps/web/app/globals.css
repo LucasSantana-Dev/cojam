@@ -755,16 +755,9 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: -0.02em;
   font-size: 1.05rem;
   color: var(--color-text-primary);
-}
-.site-header .brand::before {
-  content: "";
-  display: inline-block;
-  width: 8px; height: 8px;
-  margin-right: 0.5rem;
-  border-radius: 50%;
-  background: var(--color-accent);
-  box-shadow: 0 0 10px 1px var(--color-accent);
-  vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .site-header .btn-primary { padding: 0.55rem 1.1rem; font-size: 0.9rem; }
 @media (max-width: 480px) {

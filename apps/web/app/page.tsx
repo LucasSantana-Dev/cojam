@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
+import { LogoMark } from '@/app/components/Logo';
 
 
 function generateRoomId() {
@@ -242,7 +243,7 @@ export default function Home() {
   return (
     <div ref={rootRef} className="landing">
       <header className="site-header">
-        <span className="brand">Cojam</span>
+        <span className="brand"><LogoMark size={18} /> Cojam</span>
         <button onClick={createRoom} className="btn-primary magnetic">
           Start a room
         </button>
