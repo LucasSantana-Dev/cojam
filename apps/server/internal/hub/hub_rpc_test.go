@@ -200,6 +200,55 @@ func TestHandleRPC_TrackSearchNoSearcher(t *testing.T) {
 	}
 }
 
+// Regression: track.lyrics must be a registered dispatch case. The provider was
+// once wired without the switch case, so the live RPC returned "104: method not
+// found" while the stubbed provider tests still passed. This exercises dispatch.
+func TestHandleRPC_TrackLyricsDispatch(t *testing.T) {
+	// No provider configured: dispatch must still resolve (not "method not
+	// found") and return an empty, well-formed result.
+	h := NewHub(nil)
+	res, err := h.HandleRPC("track.lyrics", []byte(`{"roomId":"R","artist":"Queen","title":"Bohemian Rhapsody"}`))
+	if err != nil {
+		t.Fatalf("track.lyrics with no provider should not error (got %v)", err)
+	}
+	var empty struct {
+		Synced []any  `json:"synced"`
+		Plain  string `json:"plain"`
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal(res, &empty); err != nil {
+		t.Fatalf("unmarshal empty: %v", err)
+	}
+	if empty.Source != "lrclib" || len(empty.Synced) != 0 {
+		t.Fatalf("expected empty lrclib result, got %+v", empty)
+	}
+
+	// With a provider: dispatch routes to it and returns its payload.
+	h.WithLyricsProvider(func(ctx context.Context, artist, title, album string, durationMs int) (interface{}, error) {
+		return map[string]interface{}{
+			"synced": []map[string]interface{}{{"timeMs": 12340, "text": "I've been tryna call"}},
+			"plain":  "I've been tryna call",
+			"source": "lrclib",
+		}, nil
+	})
+	res, err = h.HandleRPC("track.lyrics", []byte(`{"roomId":"R","artist":"The Weeknd","title":"Blinding Lights","durationMs":200000}`))
+	if err != nil {
+		t.Fatalf("track.lyrics with provider: %v", err)
+	}
+	var got struct {
+		Synced []struct {
+			TimeMs int    `json:"timeMs"`
+			Text   string `json:"text"`
+		} `json:"synced"`
+	}
+	if err := json.Unmarshal(res, &got); err != nil {
+		t.Fatalf("unmarshal got: %v", err)
+	}
+	if len(got.Synced) != 1 || got.Synced[0].TimeMs != 12340 {
+		t.Fatalf("expected 1 synced line at 12340ms, got %+v", got.Synced)
+	}
+}
+
 func TestHandleRPC_TrackSearchWithSearcher(t *testing.T) {
 	h := NewHub(nil)
 

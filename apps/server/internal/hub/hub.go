@@ -40,6 +40,10 @@ type SimilarProvider func(ctx context.Context, artist, title string, limit int) 
 // TrackDepthProvider fetches deep metadata for a track (credits, release year, label, tags)
 type TrackDepthProvider func(ctx context.Context, isrc, title, artist string) (interface{}, error)
 
+
+// LyricsProvider fetches lyrics for a track (synced and plain)
+type LyricsProvider func(ctx context.Context, artist, title, album string, durationMs int) (interface{}, error)
+
 // Room holds the state for a music jam room
 type Room struct {
 	mu    sync.Mutex
@@ -59,6 +63,7 @@ type Hub struct {
 	playlistFetcher PlaylistFetcher
 	similar SimilarProvider
 	trackDepth TrackDepthProvider
+	lyrics LyricsProvider
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
@@ -445,6 +450,37 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 
 		return json.Marshal(result)
 
+	case "track.lyrics":
+		var req struct {
+			RoomID     string `json:"roomId"`
+			Artist     string `json:"artist"`
+			Title      string `json:"title"`
+			Album      string `json:"album"`
+			DurationMs int    `json:"durationMs"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+
+		empty := map[string]interface{}{"synced": []interface{}{}, "plain": "", "source": "lrclib"}
+		if h.lyrics == nil {
+			return json.Marshal(empty)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		result, err := h.lyrics(ctx, req.Artist, req.Title, req.Album, req.DurationMs)
+		if err != nil {
+			// Log but return empty (a miss is not an RPC failure).
+			if h.logger != nil {
+				h.logger.Error("track_lyrics_failed", "title", req.Title, "artist", req.Artist, "err", err.Error())
+			}
+			return json.Marshal(empty)
+		}
+
+		return json.Marshal(result)
+
 	case "playlist.import":
 		var req struct {
 			RoomID string `json:"roomId"`
@@ -613,6 +649,12 @@ func (h *Hub) WithSimilarProvider(sp SimilarProvider) *Hub {
 // WithTrackDepthProvider enables track.depth RPC for fetching deep metadata.
 func (h *Hub) WithTrackDepthProvider(tdp TrackDepthProvider) *Hub {
 	h.trackDepth = tdp
+	return h
+}
+
+// WithLyricsProvider enables track.lyrics RPC for fetching lyrics.
+func (h *Hub) WithLyricsProvider(lp LyricsProvider) *Hub {
+	h.lyrics = lp
 	return h
 }
 

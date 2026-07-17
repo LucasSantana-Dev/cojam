@@ -181,6 +181,7 @@ flyctl ssh console --app cojam-server
 | `FEATURE_RADIO` | No | `true/false` (default: true; auto-refill via Last.fm) |
 | `LASTFM_API_KEY` | No | `abc123...` (radio similar-tracks provider; radio stays off without it) |
 | `FEATURE_TRACK_DEPTH` | No | `true/false` (default: true; MusicBrainz track.depth RPC) |
+| `FEATURE_LYRICS` | No | `true/false` (default: true; LRCLIB lyrics RPC) |
 
 ### Web (Next.js)
 
@@ -193,6 +194,7 @@ flyctl ssh console --app cojam-server
 | `NEXT_PUBLIC_FEATURE_APPLE` | No | `true/false` (default: true) |
 | `NEXT_PUBLIC_FEATURE_PRESENCE` | No | `true/false` (default: true) |
 | `NEXT_PUBLIC_FEATURE_TRACK_DEPTH` | No | `true/false` (default: true; Track Depth panel) |
+| `NEXT_PUBLIC_FEATURE_LYRICS` | No | `true/false` (default: true; Lyrics panel) |
 
 ## Rollback
 

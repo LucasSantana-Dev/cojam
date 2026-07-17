@@ -19,6 +19,7 @@ import { PresenceBar } from '../components/PresenceBar';
 import { ShareRoomButton } from '../components/ShareRoomButton';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
+import { LyricsPanel } from '../components/LyricsPanel';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
 
@@ -30,6 +31,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [appleAuthorized, setAppleAuthorized] = useState(false);
   const [spotifyAuthorized, setSpotifyAuthorized] = useState(false);
   const [trackDepthOpen, setTrackDepthOpen] = useState(false);
+  const [lyricsOpen, setLyricsOpen] = useState(false);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId
     ? store.state.queue.find((t) => t.id === store.state!.nowPlayingId)
@@ -274,6 +276,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
                           Details
                         </button>
                       )}
+                      {features.lyrics && nowPlaying && (
+                        <button
+                          onClick={() => setLyricsOpen(true)}
+                          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
+                          style={{
+                            background: 'var(--color-surface-2)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-primary)',
+                          }}
+                          title="View lyrics for this track"
+                        >
+                          Lyrics
+                        </button>
+                      )}
                     </div>
                   </div>
                 </>
@@ -302,6 +318,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
         track={nowPlaying || null}
         open={trackDepthOpen}
         onClose={() => setTrackDepthOpen(false)}
+      />
+      <LyricsPanel
+        roomId={roomId}
+        track={nowPlaying || null}
+        open={lyricsOpen}
+        onClose={() => setLyricsOpen(false)}
       />
     </div>
   );

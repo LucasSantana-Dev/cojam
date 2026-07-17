@@ -19,6 +19,7 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
+	"github.com/LucasSantana-Dev/cojam/server/internal/lyrics"
 	"github.com/LucasSantana-Dev/cojam/server/internal/match"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
@@ -166,6 +167,14 @@ func main() {
 			return match.FetchTrackDepth(ctx, isrc, title, artist)
 		})
 		logger.Info("track_depth_enabled", "provider", "musicbrainz")
+	}
+
+	// Wire lyrics (LRCLIB) when feature is on
+	if featureEnabled("FEATURE_LYRICS", true) {
+		h.WithLyricsProvider(func(ctx context.Context, artist, title, album string, durationMs int) (interface{}, error) {
+			return lyrics.FetchLyrics(ctx, artist, title, album, durationMs)
+		})
+		logger.Info("lyrics_enabled", "provider", "lrclib")
 	}
 
 	}
