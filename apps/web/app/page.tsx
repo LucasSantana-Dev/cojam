@@ -1,15 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
+import { HeroArtField } from '@/app/components/HeroArtField';
 
-const HeroCanvas = dynamic(() => import('@/app/components/HeroCanvas'), {
-  ssr: false,
-  loading: () => null,
-});
 
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -255,9 +251,7 @@ export default function Home() {
       <main id="main" className="landing-content">
         {/* Hero */}
         <header className="hero">
-          <Suspense fallback={null}>
-            <HeroCanvas />
-          </Suspense>
+          <HeroArtField />
           <div className="hero-aurora" aria-hidden />
           <div className="hero-glow" aria-hidden />
           <div className="hero-grid" aria-hidden />
