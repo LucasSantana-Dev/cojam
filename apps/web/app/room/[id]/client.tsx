@@ -16,6 +16,7 @@ import { QueuePanel } from '../components/QueuePanel';
 import { AddTrackForm } from '../components/AddTrackForm';
 import { PresenceBar } from '../components/PresenceBar';
 import { ShareRoomButton } from '../components/ShareRoomButton';
+import { OnboardingCard } from '../components/OnboardingCard';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 
 export function RoomClient({ roomId }: { roomId: string }) {
@@ -31,6 +32,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const activeSource = nowPlaying
     ? pickSource(nowPlaying, { appleAuthorized, spotifyAuthorized })
     : null;
+  const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
 
   const doJoin = useCallback(
     async (name: string) => {
@@ -130,6 +132,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       <main id="main" className="max-w-7xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
+            {queueEmpty && <OnboardingCard />}
             <div className="panel p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {features.spotify && (
