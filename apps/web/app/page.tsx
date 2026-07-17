@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
-import { HeroArtField } from '@/app/components/HeroArtField';
 
 
 function generateRoomId() {
@@ -251,7 +250,6 @@ export default function Home() {
       <main id="main" className="landing-content">
         {/* Hero */}
         <header className="hero">
-          <HeroArtField />
           <div className="hero-aurora" aria-hidden />
           <div className="hero-glow" aria-hidden />
           <div className="hero-grid" aria-hidden />
