@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
@@ -28,6 +29,13 @@ var (
 // - Deezer: deezer.com/.../playlist/<id> or api.deezer.com/playlist/<id>
 // - Spotify: open.spotify.com/playlist/<id> or spotify:playlist:<id>
 // - YouTube: youtube.com/playlist?list=<id> or watch?...&list=<id>
+// hostIs reports whether host equals domain or is a subdomain of it, so a
+// look-alike host like "deezer.com.attacker.example" does not match.
+func hostIs(host, domain string) bool {
+	host = strings.ToLower(host)
+	return host == domain || strings.HasSuffix(host, "."+domain)
+}
+
 func ParsePlaylistURL(raw string) (source string, id string, ok bool) {
 	if raw = strings.TrimSpace(raw); raw == "" {
 		return "", "", false
@@ -48,7 +56,7 @@ func ParsePlaylistURL(raw string) (source string, id string, ok bool) {
 	}
 
 	// Deezer
-	if strings.Contains(u.Hostname(), "deezer.com") {
+	if hostIs(u.Hostname(), "deezer.com") {
 		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 		for i, part := range parts {
 			if part == "playlist" && i+1 < len(parts) {
@@ -61,7 +69,7 @@ func ParsePlaylistURL(raw string) (source string, id string, ok bool) {
 	}
 
 	// Spotify (open.spotify.com/playlist/<id>)
-	if strings.Contains(u.Hostname(), "spotify.com") {
+	if hostIs(u.Hostname(), "spotify.com") {
 		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 		for i, part := range parts {
 			if part == "playlist" && i+1 < len(parts) {
@@ -74,7 +82,7 @@ func ParsePlaylistURL(raw string) (source string, id string, ok bool) {
 	}
 
 	// YouTube (list=<id> query param)
-	if strings.Contains(u.Hostname(), "youtube.com") {
+	if hostIs(u.Hostname(), "youtube.com") || hostIs(u.Hostname(), "youtu.be") {
 		id = u.Query().Get("list")
 		if id != "" {
 			return "youtube", id, true
@@ -97,15 +105,14 @@ func FetchDeezerPlaylist(ctx context.Context, playlistID string) ([]queue.TrackR
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -119,7 +126,7 @@ func FetchDeezerPlaylist(ctx context.Context, playlistID string) ([]queue.TrackR
 			} `json:"data"`
 		} `json:"tracks"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -155,22 +162,21 @@ func spotifyAccessToken(ctx context.Context) (string, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth(spotifyClientID, spotifyClientSecret)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("token request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected token status %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("unexpected token status %d", resp.StatusCode)
 	}
 
 	var tokenResp struct {
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int    `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&tokenResp); err != nil {
 		return "", fmt.Errorf("failed to decode token response: %w", err)
 	}
 
@@ -197,15 +203,14 @@ func FetchSpotifyPlaylist(ctx context.Context, playlistID string) ([]queue.Track
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -223,7 +228,7 @@ func FetchSpotifyPlaylist(ctx context.Context, playlistID string) ([]queue.Track
 			} `json:"track"`
 		} `json:"items"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -274,21 +279,20 @@ func FetchYouTubePlaylist(ctx context.Context, playlistID string) ([]queue.Track
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
 	var result struct {
 		Items []struct {
 			Snippet struct {
-				Title               string `json:"title"`
+				Title                  string `json:"title"`
 				VideoOwnerChannelTitle string `json:"videoOwnerChannelTitle"`
 			} `json:"snippet"`
 			ContentDetails struct {
@@ -296,15 +300,15 @@ func FetchYouTubePlaylist(ctx context.Context, playlistID string) ([]queue.Track
 			} `json:"contentDetails"`
 		} `json:"items"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	tracks := make([]queue.TrackRef, 0, len(result.Items))
 	for _, item := range result.Items {
 		tracks = append(tracks, queue.TrackRef{
-			Title:   item.Snippet.Title,
-			Artist:  item.Snippet.VideoOwnerChannelTitle,
+			Title:  item.Snippet.Title,
+			Artist: item.Snippet.VideoOwnerChannelTitle,
 			Sources: queue.Sources{
 				YouTube: &queue.SourceRef{
 					VideoID:    item.ContentDetails.VideoID,

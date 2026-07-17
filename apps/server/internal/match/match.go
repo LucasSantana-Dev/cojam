@@ -12,8 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
+	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"time"
 )
 
@@ -60,19 +61,18 @@ func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
 
 	req.Header.Set("User-Agent", "cojam/0.1 (dev)")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
 	var mbResp MusicBrainzResponse
-	if err := json.NewDecoder(resp.Body).Decode(&mbResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&mbResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -124,19 +124,18 @@ func YouTubeSearch(query string) ([]YouTubeCandidate, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
 	var result YouTubeSearchResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -255,7 +254,7 @@ var (
 	spotifyClientSecret = os.Getenv("SPOTIFY_CLIENT_SECRET")
 	spotifyTokenURL     = "https://accounts.spotify.com/api/token"
 	spotifySearchURL    = "https://api.spotify.com/v1/search"
-	spotifyClient       = http.DefaultClient
+	spotifyClient       = httpx.Client
 
 	// Deezer vars (no auth needed, public API)
 	deezerSearchURL = "https://api.deezer.com/search"
@@ -295,7 +294,7 @@ func spotifyAccessToken(ctx context.Context) (string, error) {
 	}
 
 	// Fetch new token
-	req, err := http.NewRequestWithContext(ctx, "POST", spotifyTokenURL, 
+	req, err := http.NewRequestWithContext(ctx, "POST", spotifyTokenURL,
 		strings.NewReader("grant_type=client_credentials"))
 	if err != nil {
 		return "", fmt.Errorf("failed to create token request: %w", err)
@@ -311,8 +310,7 @@ func spotifyAccessToken(ctx context.Context) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected token status %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("unexpected token status %d", resp.StatusCode)
 	}
 
 	var tokenResp struct {
@@ -320,7 +318,7 @@ func spotifyAccessToken(ctx context.Context) (string, error) {
 		ExpiresIn   int    `json:"expires_in"`
 		TokenType   string `json:"token_type"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&tokenResp); err != nil {
 		return "", fmt.Errorf("failed to decode token response: %w", err)
 	}
 
@@ -401,12 +399,11 @@ func ResolveSpotify(ctx context.Context, title, artist, isrc string) (*queue.Sou
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected search status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected search status %d", resp.StatusCode)
 	}
 
 	var result SpotifySearchResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode search response: %w", err)
 	}
 
@@ -453,13 +450,13 @@ func ResolveSpotify(ctx context.Context, title, artist, isrc string) (*queue.Sou
 
 // SearchCandidate represents a search result ready for the client
 type SearchCandidate struct {
-	Title       string `json:"title"`
-	Artist      string `json:"artist"`
-	Source      string `json:"source"` // "spotify"|"deezer"|"tidal"
-	SpotifyURI  string `json:"spotifyUri,omitempty"`
-	ISRC        string `json:"isrc"`
-	DurationMs  int    `json:"durationMs"`
-	ArtworkURL  string `json:"artworkUrl"`
+	Title      string `json:"title"`
+	Artist     string `json:"artist"`
+	Source     string `json:"source"` // "spotify"|"deezer"|"tidal"
+	SpotifyURI string `json:"spotifyUri,omitempty"`
+	ISRC       string `json:"isrc"`
+	DurationMs int    `json:"durationMs"`
+	ArtworkURL string `json:"artworkUrl"`
 }
 
 // SearchSpotify searches Spotify for tracks by query string and returns up to limit results.
@@ -505,12 +502,11 @@ func SearchSpotify(ctx context.Context, query string, limit int) ([]SearchCandid
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected search status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected search status %d", resp.StatusCode)
 	}
 
 	var result SpotifySearchResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode search response: %w", err)
 	}
 
@@ -526,13 +522,13 @@ func SearchSpotify(ctx context.Context, query string, limit int) ([]SearchCandid
 		}
 
 		candidates = append(candidates, SearchCandidate{
-			Title:       track.Name,
-			Artist:      artist,
-			Source:      "spotify",
-			SpotifyURI:  track.URI,
-			ISRC:        track.ExternalIDs.ISRC,
-			DurationMs:  track.DurationMs,
-			ArtworkURL:  artwork,
+			Title:      track.Name,
+			Artist:     artist,
+			Source:     "spotify",
+			SpotifyURI: track.URI,
+			ISRC:       track.ExternalIDs.ISRC,
+			DurationMs: track.DurationMs,
+			ArtworkURL: artwork,
 		})
 	}
 
@@ -561,15 +557,14 @@ func SearchDeezer(ctx context.Context, query string, limit int) ([]SearchCandida
 	q.Set("limit", fmt.Sprintf("%d", limit))
 	searchReq.URL.RawQuery = q.Encode()
 
-	resp, err := http.DefaultClient.Do(searchReq)
+	resp, err := httpx.Client.Do(searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -584,7 +579,7 @@ func SearchDeezer(ctx context.Context, query string, limit int) ([]SearchCandida
 			} `json:"album"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -624,15 +619,14 @@ func tidalAccessToken(ctx context.Context) (string, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth(tidalClientID, tidalClientSecret)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("token request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected token status %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("unexpected token status %d", resp.StatusCode)
 	}
 
 	var tokenResp struct {
@@ -640,7 +634,7 @@ func tidalAccessToken(ctx context.Context) (string, error) {
 		ExpiresIn   int    `json:"expires_in"`
 		TokenType   string `json:"token_type"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&tokenResp); err != nil {
 		return "", fmt.Errorf("failed to decode token response: %w", err)
 	}
 
@@ -688,15 +682,14 @@ func SearchTidal(ctx context.Context, query string, limit int) ([]SearchCandidat
 
 	searchReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
-	resp, err := http.DefaultClient.Do(searchReq)
+	resp, err := httpx.Client.Do(searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected search status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected search status %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -713,7 +706,7 @@ func SearchTidal(ctx context.Context, query string, limit int) ([]SearchCandidat
 			} `json:"album"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -908,19 +901,18 @@ func SimilarTracks(ctx context.Context, artist, title string, limit int) ([]queu
 
 	req.Header.Set("User-Agent", "cojam/0.1")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
 	var result LastfmSimilarResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, httpx.MaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
