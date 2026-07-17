@@ -16,9 +16,12 @@
   --color-text-muted: oklch(0.48 0.01 280);   /* for hints/secondary text */
   --color-accent: oklch(0.66 0.20 300);       /* violet — the identity accent */
   --color-accent-hover: oklch(0.72 0.18 300); /* lighter for hover */
-  /* Second brand accent: music green, used on the logo sound-core (ADR-0004). */
+  /* Second brand accent: music green (ADR-0004). This is the representative
+     SOLID for non-logo uses; the logo core is the --logo-core-* gradient below,
+     and --color-accent-2 sits between its lime and emerald endpoints. */
   --color-accent-2: #4ade80;
-  /* Logo mark gradients (frame = violet sweep, core = lime -> emerald). */
+  /* Logo mark gradients (frame = violet sweep, core = lime -> emerald). The core
+     endpoints are the gradient form of --color-accent-2. */
   --logo-frame-from: #6d5cff; --logo-frame-to: #c661ff;
   --logo-core-from: #a3e635;  --logo-core-to: #10b981;
   --color-status-warn: oklch(0.70 0.20 55);  /* amber-ish for reconnecting state */
