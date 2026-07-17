@@ -5,6 +5,7 @@ import type { RoomState } from '@cojam/shared';
 const state = (version: number, roomId = 'r1'): RoomState => ({
   roomId,
   queue: [],
+  radioEnabled: false,
   version,
 });
 

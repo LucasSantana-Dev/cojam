@@ -266,6 +266,10 @@ var (
 	tidalTokenURL     = "https://auth.tidal.com/v1/oauth2/token"
 	tidalSearchURL    = "https://openapi.tidal.com/v2/search"
 	tidalCountryCode  = "US" // Default country code for search
+
+	// Last.fm vars
+	lastfmAPIKey = os.Getenv("LASTFM_API_KEY")
+	lastfmURL    = "http://ws.audioscrobbler.com/2.0/"
 )
 
 // tokenCacheEntry holds a cached access token with expiry info
@@ -855,4 +859,82 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 	}
 
 	return deduplicated, nil
+}
+
+// LastfmSimilarTrack represents a similar track from Last.fm API
+type LastfmSimilarTrack struct {
+	Name   string `json:"name"`
+	Artist struct {
+		Name string `json:"name"`
+	} `json:"artist"`
+}
+
+// LastfmSimilarResponse wraps Last.fm similar tracks response
+type LastfmSimilarResponse struct {
+	SimilarTracks struct {
+		Track []LastfmSimilarTrack `json:"track"`
+	} `json:"similartracks"`
+}
+
+// SimilarTracks fetches tracks similar to the given track from Last.fm.
+// Returns ErrNotConfigured if LASTFM_API_KEY env var is unset.
+// Uses track.getSimilar endpoint with autocorrect enabled.
+func SimilarTracks(ctx context.Context, artist, title string, limit int) ([]queue.TrackRef, error) {
+	if lastfmAPIKey == "" {
+		return nil, ErrNotConfigured
+	}
+
+	// Clamp limit
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 20 {
+		limit = 20
+	}
+
+	params := url.Values{}
+	params.Set("method", "track.getSimilar")
+	params.Set("artist", artist)
+	params.Set("track", title)
+	params.Set("api_key", lastfmAPIKey)
+	params.Set("format", "json")
+	params.Set("limit", fmt.Sprintf("%d", limit))
+	params.Set("autocorrect", "1")
+
+	req, err := http.NewRequestWithContext(ctx, "GET", lastfmURL+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "cojam/0.1")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result LastfmSimilarResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Map Last.fm results to TrackRef (no source; enrichment will resolve playback)
+	tracks := make([]queue.TrackRef, 0, len(result.SimilarTracks.Track))
+	for _, t := range result.SimilarTracks.Track {
+		if t.Name == "" || t.Artist.Name == "" {
+			continue
+		}
+		tracks = append(tracks, queue.TrackRef{
+			Title:  t.Name,
+			Artist: t.Artist.Name,
+		})
+	}
+
+	return tracks, nil
 }

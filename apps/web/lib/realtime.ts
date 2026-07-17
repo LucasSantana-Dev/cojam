@@ -139,6 +139,11 @@ export async function importPlaylist(roomId: string, url: string, addedBy: strin
   await centrifuge.rpc('playlist.import', { roomId, url, addedBy });
 }
 
+export async function setRadio(roomId: string, enabled: boolean) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('radio.set', { roomId, enabled });
+}
+
 export type SearchCandidate = {
   title: string;
   artist: string;

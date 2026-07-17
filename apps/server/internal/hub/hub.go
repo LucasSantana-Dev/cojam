@@ -34,6 +34,9 @@ type Searcher func(ctx context.Context, query string, limit int) ([]SearchResult
 // PlaylistFetcher fetches tracks from a playlist URL
 type PlaylistFetcher func(ctx context.Context, url string) ([]queue.TrackRef, error)
 
+// SimilarProvider fetches tracks similar to a given track (used for radio auto-refill)
+type SimilarProvider func(ctx context.Context, artist, title string, limit int) ([]queue.TrackRef, error)
+
 // Room holds the state for a music jam room
 type Room struct {
 	mu    sync.Mutex
@@ -51,6 +54,7 @@ type Hub struct {
 	spotifyMatcher Matcher
 	searcher Searcher
 	playlistFetcher PlaylistFetcher
+	similar SimilarProvider
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
@@ -69,6 +73,7 @@ var mutatingMethods = map[string]bool{
 	"now_playing.set":     true,
 	"now_playing.advance": true,
 	"playlist.import":     true,
+	"radio.set":           true,
 }
 
 // WithMatcher enables async YouTube-source enrichment on queue.add.
@@ -325,9 +330,33 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("now_playing.advance: roomId required")
 		}
-		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
-			return s.AdvanceAfter(req.AfterID)
+
+		// Capture seed for potential radio refill (if queue runs dry)
+		var refillSeed *queue.TrackRef
+
+		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			// Store old NowPlayingID to detect if advance actually changed state
+			oldNowPlayingID := s.NowPlayingID
+
+			if err := s.AdvanceAfter(req.AfterID); err != nil {
+				return err
+			}
+
+			// Detect if advance actually changed state and queue is now empty
+			if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" && len(s.Queue) > 0 {
+				// Queue ran dry; capture the last track as seed for refill
+				refillSeed = &s.Queue[len(s.Queue)-1]
+			}
+
+			return nil
 		})
+
+		// After successful mutate, trigger refill if needed (async, outside the lock)
+		if err == nil && refillSeed != nil && h.similar != nil {
+			go h.refillRadio(req.RoomID, refillSeed)
+		}
+
+		return res, err
 
 	case "queue.reorder":
 		var req struct {
@@ -452,6 +481,23 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 
 		return res, mutErr
 
+	case "radio.set":
+		var req struct {
+			RoomID  string `json:"roomId"`
+			Enabled bool   `json:"enabled"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("radio.set: roomId required")
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			s.RadioEnabled = req.Enabled
+			s.Version++ // bump so clients accept the publication (setState version guard)
+			return nil
+		})
+
 	default:
 		return nil, centrifuge.ErrorMethodNotFound
 	}
@@ -515,6 +561,11 @@ func (h *Hub) WithPlaylistFetcher(pf PlaylistFetcher) *Hub {
 	return h
 }
 
+// WithSimilarProvider enables radio auto-refill via similar-track lookup.
+func (h *Hub) WithSimilarProvider(sp SimilarProvider) *Hub {
+	h.similar = sp
+	return h
+}
 
 // enrichSpotify resolves a Spotify source for a freshly added track and
 // republishes the room state (own mutation -> version bump -> clients accept).
@@ -541,5 +592,51 @@ func (h *Hub) enrichSpotify(roomID, trackID string, track queue.TrackRef) {
 	if h.logger != nil {
 		h.logger.Info("spotify_match_applied", "room_id", roomID, "track_id", trackID,
 			"track_uri", ref.TrackURI, "confidence", ref.Confidence)
+	}
+}
+
+// refillRadio fetches similar tracks and appends them to the queue when it runs dry.
+// Idempotent: re-checks that queue is still empty before appending (so a duplicate
+// refill from concurrent advances is a no-op).
+func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	similar, err := h.similar(ctx, seed.Artist, seed.Title, 5)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("radio_fetch_failed", "room_id", roomID, "track", seed.Title, "artist", seed.Artist, "err", err.Error())
+		}
+		return
+	}
+
+	// Append similar tracks, guarded by re-checking queue is still waiting (idempotency).
+	_, err = h.mutate(roomID, func(s *queue.RoomState) error {
+		// Guard: only refill if queue still has no next track (NowPlayingID empty)
+		// and radio is still enabled. If another client queued a track or disabled
+		// radio in the interim, this is a no-op.
+		if s.NowPlayingID != "" {
+			return nil // Another client queued a next track
+		}
+		if !s.RadioEnabled {
+			return nil // Radio was disabled
+		}
+
+		// Append up to N similar tracks without exceeding MaxQueueSize
+		for _, track := range similar {
+			if len(s.Queue) >= queue.MaxQueueSize {
+				break
+			}
+			track.AddedBy = "radio"
+			s.Add(track)
+		}
+
+		return nil
+	})
+
+	if err != nil && h.logger != nil {
+		h.logger.Error("radio_append_failed", "room_id", roomID, "err", err.Error())
+	} else if err == nil && len(similar) > 0 && h.logger != nil {
+		h.logger.Info("radio_refill", "room_id", roomID, "track", seed.Title, "artist", seed.Artist, "appended", len(similar))
 	}
 }
