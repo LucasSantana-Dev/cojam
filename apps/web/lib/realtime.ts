@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Centrifuge } from 'centrifuge';
 import { pickEnv, getRuntimeEnv } from './runtimeEnv';
+import { estimateOffset, type PingSample } from './clockSync';
 import type { RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = { clientId: string; name: string };
@@ -74,6 +75,10 @@ export async function joinRoom(roomId: string, name: string) {
   centrifuge.on('connected', () => {
     store.setConnected(true);
     store.setReconnecting(false);
+    // Re-measure clock offset on reconnect (fire-and-forget, non-fatal on error)
+    measureClockOffset().catch(() => {
+      /* clock sync error - not fatal */
+    });
   });
 
   centrifuge.on('connecting', () => {
@@ -124,6 +129,11 @@ export async function joinRoom(roomId: string, name: string) {
   if (joinResult.data) {
     store.setState(joinResult.data as RoomState);
   }
+
+  // Measure initial clock offset (fire-and-forget, non-fatal on error)
+  measureClockOffset().catch(() => {
+    /* clock sync error - not fatal */
+  });
 
   return sub;
 }
@@ -213,4 +223,33 @@ export async function fetchLyrics(roomId: string, artist: string, title: string,
   if (!centrifuge) throw new Error('Not connected');
   const result = await centrifuge.rpc('track.lyrics', { roomId, artist, title, album, durationMs });
   return (result.data as Lyrics) ?? { synced: [], plain: '', source: 'lrclib' };
+}
+
+// Clock sync (U3): measure client-server time offset for synchronized playback
+
+let clockOffsetMs = 0;
+
+export async function syncPing(): Promise<number> {
+  if (!centrifuge) throw new Error('Not connected');
+  const result = await centrifuge.rpc('sync.ping', {});
+  return (result.data as { serverNowMs: number }).serverNowMs;
+}
+
+export async function measureClockOffset(samples = 5): Promise<{ offsetMs: number; rttMs: number }> {
+  const pingSamples: PingSample[] = [];
+
+  for (let i = 0; i < samples; i++) {
+    const t0 = Date.now();
+    const serverNowMs = await syncPing();
+    const t1 = Date.now();
+    pingSamples.push({ t0, serverNowMs, t1 });
+  }
+
+  const result = estimateOffset(pingSamples);
+  clockOffsetMs = result.offsetMs;
+  return result;
+}
+
+export function getClockOffsetMs(): number {
+  return clockOffsetMs;
 }
