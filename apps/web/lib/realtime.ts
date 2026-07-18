@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { Centrifuge } from 'centrifuge';
 import { pickEnv, getRuntimeEnv } from './runtimeEnv';
 import { estimateOffset, type PingSample } from './clockSync';
+import { fetchConnectionToken } from './auth';
+import { features } from './features';
 import type { RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = { clientId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' };
@@ -100,8 +102,18 @@ export async function joinRoom(
   const connInfo: ConnInfo = { name };
   if (platform) connInfo.platform = platform;
 
+  // Fetch connection token if room auth is enabled; fall back to empty string if unavailable.
+  let token = '';
+  if (features.roomAuth) {
+    const tokenResult = await fetchConnectionToken();
+    if (tokenResult) {
+      token = tokenResult.token;
+    }
+    // If fetch fails or feature is off, token remains empty (v0 behavior).
+  }
+
   centrifuge = new Centrifuge(wsUrl, {
-    token: '',
+    token,
     data: connInfo, // becomes presence ConnInfo server-side
     // Read RPCs like track.lyrics (LRCLIB) and track.depth (MusicBrainz) hit
     // slow crowd-sourced upstreams; the server caps them at ~10s and returns a
