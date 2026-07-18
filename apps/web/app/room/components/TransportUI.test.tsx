@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTime } from './TransportUI';
+import { formatTime, playPauseLabel } from './TransportUI';
 
 describe('TransportUI', () => {
   describe('formatTime', () => {
@@ -44,18 +44,16 @@ describe('TransportUI', () => {
 
   describe('transport state mapping', () => {
     it('maps playing state to pause label', () => {
-      const state = 'playing';
-      expect(state === 'playing' ? 'Pause' : 'Play').toBe('Pause');
+      expect(playPauseLabel('playing')).toBe('Pause');
     });
 
     it('maps paused state to play label', () => {
-      const state = 'paused';
-      expect(state === 'playing' ? 'Pause' : 'Play').toBe('Play');
+      expect(playPauseLabel('paused')).toBe('Play');
     });
 
-    it('maps stopped state to play label', () => {
-      const state = 'stopped';
-      expect(state === 'playing' ? 'Pause' : 'Play').toBe('Play');
+    it('maps stopped and undefined state to play label', () => {
+      expect(playPauseLabel('stopped')).toBe('Play');
+      expect(playPauseLabel(undefined)).toBe('Play');
     });
   });
 

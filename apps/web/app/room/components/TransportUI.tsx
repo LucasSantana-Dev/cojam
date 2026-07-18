@@ -12,6 +12,11 @@ export function formatTime(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+// Label for the play/pause control given the current transport state.
+export function playPauseLabel(state: string | undefined): 'Play' | 'Pause' {
+  return state === 'playing' ? 'Pause' : 'Play';
+}
+
 interface TransportUIProps {
   roomId: string;
   activePlayer: IPlayer | null;
@@ -25,7 +30,10 @@ export function TransportUI({ roomId, activePlayer }: TransportUIProps) {
 
   const transport = store.state?.transport;
   const isPlaying = transport?.state === 'playing';
-  const duration = activePlayer ? activePlayer.getDurationMs?.() ?? 0 : 0;
+  // Duration comes from the now-playing track's metadata (a plain number),
+  // not the player's async getDurationMs(); U4 owns live position tracking.
+  const nowPlaying = store.state?.queue.find((t) => t.id === store.state?.nowPlayingId);
+  const duration = nowPlaying?.durationMs ?? 0;
   const canSeek = activePlayer?.canSeek?.() ?? false;
 
   // Sync display position with transport state when not dragging
@@ -57,17 +65,13 @@ export function TransportUI({ roomId, activePlayer }: TransportUIProps) {
     setDisplayPosition(Number(e.target.value));
   }, []);
 
-  const handleSeekEnd = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const position = Number(e.target.value);
-    setDisplayPosition(position);
+  // Commit the seek on release (not per input tick). No-arg so it attaches to
+  // mouse/touch/key up events; reads the dragged displayPosition from state.
+  const commitSeek = useCallback(() => {
     setIsDragging(false);
     dragRef.current = false;
-    try {
-      await transportSeek(roomId, position);
-    } catch (err) {
-      console.error('Seek error:', err);
-    }
-  }, [roomId]);
+    transportSeek(roomId, displayPosition).catch((err) => console.error('Seek error:', err));
+  }, [roomId, displayPosition]);
 
   const seekDisabledReason = !canSeek ? 'Seeking requires Spotify Premium' : '';
 
@@ -106,8 +110,9 @@ export function TransportUI({ roomId, activePlayer }: TransportUIProps) {
               onChange={handleSeekChange}
               onMouseDown={handleSeekStart}
               onTouchStart={handleSeekStart}
-              onMouseUp={handleSeekEnd}
-              onTouchEnd={handleSeekEnd}
+              onMouseUp={commitSeek}
+              onTouchEnd={commitSeek}
+              onKeyUp={commitSeek}
               disabled={!canSeek || !activePlayer}
               className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-color disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
@@ -127,7 +132,7 @@ export function TransportUI({ roomId, activePlayer }: TransportUIProps) {
       </div>
 
       {seekDisabledReason && (
-        <div className="text-xs px-3 py-1 rounded" style={{ color: 'var(--color-status-warn)', backgroundColor: 'rgba(112, 128, 144, 0.1)' }}>
+        <div className="text-xs px-3 py-1 rounded" style={{ color: 'var(--color-status-warn)', backgroundColor: 'var(--color-surface-2)' }}>
           {seekDisabledReason}
         </div>
       )}
