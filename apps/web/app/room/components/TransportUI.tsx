@@ -20,9 +20,10 @@ export function playPauseLabel(state: string | undefined): 'Play' | 'Pause' {
 interface TransportUIProps {
   roomId: string;
   activePlayer: IPlayer | null;
+  canControl: boolean;
 }
 
-export function TransportUI({ roomId, activePlayer }: TransportUIProps) {
+export function TransportUI({ roomId, activePlayer, canControl }: TransportUIProps) {
   const store = useStore();
   const [isDragging, setIsDragging] = useState(false);
   const [displayPosition, setDisplayPosition] = useState(0);
@@ -73,21 +74,25 @@ export function TransportUI({ roomId, activePlayer }: TransportUIProps) {
     transportSeek(roomId, displayPosition).catch((err) => console.error('Seek error:', err));
   }, [roomId, displayPosition]);
 
-  const seekDisabledReason = !canSeek ? 'Seeking requires Spotify Premium' : '';
+  const seekDisabledReason = !canControl
+    ? 'Only the host can seek'
+    : !canSeek
+      ? 'Seeking requires Spotify Premium'
+      : '';
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-3">
         <button
           onClick={handlePlayPause}
-          disabled={!activePlayer}
+          disabled={!activePlayer || !canControl}
           className="flex-shrink-0 w-12 h-12 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 flex items-center justify-center"
           style={{
             backgroundColor: 'var(--color-accent)',
             color: 'var(--color-surface-0)',
           }}
           aria-label={isPlaying ? 'Pause' : 'Play'}
-          title={isPlaying ? 'Pause playback' : 'Start playback'}
+          title={canControl ? (isPlaying ? 'Pause playback' : 'Start playback') : 'Only the host can control playback'}
         >
           {isPlaying ? (
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -113,7 +118,7 @@ export function TransportUI({ roomId, activePlayer }: TransportUIProps) {
               onMouseUp={commitSeek}
               onTouchEnd={commitSeek}
               onKeyUp={commitSeek}
-              disabled={!canSeek || !activePlayer}
+              disabled={!canSeek || !activePlayer || !canControl}
               className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-color disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 backgroundColor: 'var(--color-surface-3)',
