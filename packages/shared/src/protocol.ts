@@ -15,12 +15,19 @@ export type TrackRef = {
   addedBy: string;
 };
 
+export type TransportState = {
+  state: 'playing' | 'paused' | 'stopped';
+  positionMs: number;
+  updatedAtServerMs: number;
+};
+
 export type RoomState = {
   roomId: string;
   queue: TrackRef[];
   nowPlayingId?: string;
   radioEnabled: boolean;
   version: number;
+  transport?: TransportState;
 };
 
 export type RoomStatePub = {

@@ -36,13 +36,21 @@ type TrackRef struct {
 	AddedBy    string  `json:"addedBy"`
 }
 
+// TransportState represents playback transport state
+type TransportState struct {
+	State             string `json:"state"`
+	PositionMs        int64  `json:"positionMs"`
+	UpdatedAtServerMs int64  `json:"updatedAtServerMs"`
+}
+
 // RoomState represents the current state of a room's queue
 type RoomState struct {
-	RoomID       string     `json:"roomId"`
-	Queue        []TrackRef `json:"queue"`
-	NowPlayingID string     `json:"nowPlayingId,omitempty"`
-	RadioEnabled bool       `json:"radioEnabled"`
-	Version      int64      `json:"version"`
+	RoomID       string          `json:"roomId"`
+	Queue        []TrackRef      `json:"queue"`
+	NowPlayingID string          `json:"nowPlayingId,omitempty"`
+	RadioEnabled bool            `json:"radioEnabled"`
+	Version      int64           `json:"version"`
+	Transport    *TransportState `json:"transport,omitempty"`
 }
 
 // Add appends a track to the queue, generates an ID, and bumps the version.

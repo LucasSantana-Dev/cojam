@@ -84,6 +84,9 @@ var mutatingMethods = map[string]bool{
 	"now_playing.advance": true,
 	"playlist.import":     true,
 	"radio.set":           true,
+	"transport.play":      true,
+	"transport.pause":     true,
+	"transport.seek":      true,
 }
 
 // WithMatcher enables async YouTube-source enrichment on queue.add.
@@ -629,6 +632,88 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 			s.Version++ // bump so clients accept the publication (setState version guard)
 			return nil
 		})
+
+	case "transport.play":
+		var req struct {
+			RoomID     string `json:"roomId"`
+			TrackID    string `json:"trackId,omitempty"`
+			PositionMs int64  `json:"positionMs"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("transport.play: roomId required")
+		}
+		if req.PositionMs < 0 {
+			req.PositionMs = 0
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			if req.TrackID != "" {
+				if err := s.SetNowPlaying(req.TrackID); err != nil {
+					return err
+				}
+			}
+			s.Transport = &queue.TransportState{
+				State:             "playing",
+				PositionMs:        req.PositionMs,
+				UpdatedAtServerMs: time.Now().UnixMilli(),
+			}
+			s.Version++
+			return nil
+		})
+
+	case "transport.pause":
+		var req struct {
+			RoomID     string `json:"roomId"`
+			PositionMs int64  `json:"positionMs"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("transport.pause: roomId required")
+		}
+		if req.PositionMs < 0 {
+			req.PositionMs = 0
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			if s.Transport == nil {
+				s.Transport = &queue.TransportState{}
+			}
+			s.Transport.State = "paused"
+			s.Transport.PositionMs = req.PositionMs
+			s.Transport.UpdatedAtServerMs = time.Now().UnixMilli()
+			s.Version++
+			return nil
+		})
+
+	case "transport.seek":
+		var req struct {
+			RoomID     string `json:"roomId"`
+			PositionMs int64  `json:"positionMs"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("transport.seek: roomId required")
+		}
+		if req.PositionMs < 0 {
+			req.PositionMs = 0
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			if s.Transport == nil {
+				s.Transport = &queue.TransportState{}
+			}
+			s.Transport.PositionMs = req.PositionMs
+			s.Transport.UpdatedAtServerMs = time.Now().UnixMilli()
+			s.Version++
+			return nil
+		})
+
+	case "sync.ping":
+		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})
 
 	default:
 		return nil, centrifuge.ErrorMethodNotFound
