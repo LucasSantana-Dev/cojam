@@ -4,7 +4,7 @@ import { resolveFeatures } from './features';
 describe('resolveFeatures', () => {
   it('youtube+presence default on, spotify/apple default off (need setup)', () => {
     const f = resolveFeatures({});
-    expect(f).toEqual({ youtube: true, spotify: false, apple: false, presence: true, trackDepth: true, lyrics: true });
+    expect(f).toEqual({ youtube: true, spotify: false, apple: false, presence: true, trackDepth: true, lyrics: true, transport: true });
   });
 
   it('reads truthy values case-insensitively', () => {
@@ -14,7 +14,7 @@ describe('resolveFeatures', () => {
       NEXT_PUBLIC_FEATURE_YOUTUBE: 'off',
       NEXT_PUBLIC_FEATURE_PRESENCE: 'no',
     });
-    expect(f).toEqual({ youtube: false, spotify: true, apple: true, presence: false, trackDepth: true, lyrics: true });
+    expect(f).toEqual({ youtube: false, spotify: true, apple: true, presence: false, trackDepth: true, lyrics: true, transport: true });
   });
 
   it('unknown value falls back to the flag default', () => {

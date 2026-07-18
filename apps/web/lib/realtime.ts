@@ -253,3 +253,19 @@ export async function measureClockOffset(samples = 5): Promise<{ offsetMs: numbe
 export function getClockOffsetMs(): number {
   return clockOffsetMs;
 }
+
+// Transport controls (U5)
+export async function transportPlay(roomId: string, opts?: { trackId?: string; positionMs?: number }) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('transport.play', { roomId, ...opts });
+}
+
+export async function transportPause(roomId: string, positionMs: number) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('transport.pause', { roomId, positionMs });
+}
+
+export async function transportSeek(roomId: string, positionMs: number) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('transport.seek', { roomId, positionMs });
+}

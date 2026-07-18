@@ -20,6 +20,7 @@ import { ShareRoomButton } from '../components/ShareRoomButton';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
+import { TransportUI } from '../components/TransportUI';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
 import type { IPlayer } from '@/lib/playerInterface';
@@ -313,6 +314,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
                       )}
                     </div>
                   </div>
+
+                  {features.transport && (
+                    <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
+                      <TransportUI roomId={roomId} activePlayer={activePlayer} />
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="hero-empty">
