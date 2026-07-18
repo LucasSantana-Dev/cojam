@@ -17,3 +17,17 @@ graphify-out/
 # Internal design docs: kept local, not on the public repo
 docs/adr/
 .claude/plans/
+
+# AI-generated / internal design + ops docs: kept local, off the public repo.
+# Build-in-public = the code is visible; internal planning/decisions/self-host
+# guides are not. See CLAUDE.md (local) for the convention.
+.claude/
+AGENTS.md
+CLAUDE.md
+docs/rfc/
+docs/runbooks/
+docs/failures/
+docs/deploy.md
+docs/design-references.md
+SPOTIFY_SETUP.md
+apps/web/APPLE_SETUP.md
