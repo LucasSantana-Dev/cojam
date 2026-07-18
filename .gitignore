@@ -13,3 +13,7 @@ apps/server/server
 # Knowledge-graph output: symlink into the external knowledge-brain, not repo content
 graphify-out
 graphify-out/
+
+# Internal design docs: kept local, not on the public repo
+docs/adr/
+.claude/plans/
