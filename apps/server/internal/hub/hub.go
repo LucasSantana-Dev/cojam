@@ -87,6 +87,11 @@ type Hub struct {
 	// disconnect. Separate mutex from rooms to avoid contention.
 	memberMu sync.RWMutex
 	members  map[string]map[string]struct{} // clientID -> set of roomIDs
+
+	// clientUserID tracks authenticated userID per clientID for host assignment (U3+).
+	// Populated on room.join when FEATURE_ROOM_AUTH is on.
+	clientUserIDMu sync.RWMutex
+	clientUserID   map[string]string // clientID -> userID
 }
 
 // mutatingMethods are RPCs that change room state and therefore require the
@@ -141,10 +146,11 @@ func (h *Hub) WithSync(enabled bool) *Hub {
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
 	return &Hub{
-		rooms:   make(map[string]*Room),
-		store:   store.NewMemory(),
-		node:    node,
-		members: make(map[string]map[string]struct{}),
+		rooms:        make(map[string]*Room),
+		store:        store.NewMemory(),
+		node:         node,
+		members:      make(map[string]map[string]struct{}),
+		clientUserID: make(map[string]string),
 	}
 }
 
@@ -175,6 +181,47 @@ func (h *Hub) IsMember(clientID, roomID string) bool {
 	defer h.memberMu.RUnlock()
 	_, ok := h.members[clientID][roomID]
 	return ok
+}
+
+// RecordClientUserID tracks the userID for a client (called when joining with auth).
+func (h *Hub) RecordClientUserID(clientID, userID string) {
+	if clientID == "" {
+		return
+	}
+	h.clientUserIDMu.Lock()
+	defer h.clientUserIDMu.Unlock()
+	if userID != "" {
+		h.clientUserID[clientID] = userID
+	}
+}
+
+// RemoveClientUserID removes the userID tracking for a client (called on disconnect).
+func (h *Hub) RemoveClientUserID(clientID string) {
+	h.clientUserIDMu.Lock()
+	defer h.clientUserIDMu.Unlock()
+	delete(h.clientUserID, clientID)
+}
+
+// IsUserIDInRoom checks if a given userID has an active member in the room.
+func (h *Hub) IsUserIDInRoom(roomID, userID string) bool {
+	if userID == "" {
+		return false
+	}
+	h.memberMu.RLock()
+	defer h.memberMu.RUnlock()
+
+	h.clientUserIDMu.RLock()
+	defer h.clientUserIDMu.RUnlock()
+
+	// Iterate through all members and check if any have the target userID in this room
+	for clientID, rooms := range h.members {
+		if _, inRoom := rooms[roomID]; inRoom {
+			if h.clientUserID[clientID] == userID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Authorize gates a client's RPC before dispatch. room.join enrolls the client
@@ -315,10 +362,11 @@ func (h *Hub) publish(roomID string, state json.RawMessage) error {
 
 // HandleRPC is the transport-independent RPC dispatch per docs/protocol.md.
 // Every method takes roomId from params; every result is the full RoomState.
+// userID is the authenticated user (empty if anonymous or FEATURE_ROOM_AUTH is off).
 // Instrumented: one slog record + one histogram observation per call.
-func (h *Hub) HandleRPC(method string, data []byte) (json.RawMessage, error) {
+func (h *Hub) HandleRPC(method string, data []byte, userID string) (json.RawMessage, error) {
 	start := time.Now()
-	result, err := h.dispatch(method, data)
+	result, err := h.dispatch(method, data, userID)
 	d := time.Since(start)
 
 	if h.metrics != nil {
@@ -343,7 +391,7 @@ func (h *Hub) HandleRPC(method string, data []byte) (json.RawMessage, error) {
 	return result, err
 }
 
-func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
+func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessage, error) {
 	switch method {
 	case "room.join":
 		var req struct {
@@ -356,7 +404,24 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("room.join: roomId required")
 		}
-		return h.mutate(req.RoomID, nil)
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			// Set host if authenticated and room has no host yet.
+			// If host left the room, reclaim for the new joiner.
+			if userID != "" {
+				if s.HostUserID == "" {
+					// Fresh room: first authenticated joiner becomes host
+					s.HostUserID = userID
+					s.Version++ // host changed: bump so version-guarded clients accept it
+				} else if !h.IsUserIDInRoom(req.RoomID, s.HostUserID) {
+					// Host is not present: claim host
+					s.HostUserID = userID
+					s.Version++ // host changed: bump so version-guarded clients accept it
+				}
+				// else: host is present, don't reassign
+			}
+			// When userID is empty (FEATURE_ROOM_AUTH off), HostUserID stays empty
+			return nil
+		})
 
 	case "queue.add":
 		var req struct {
@@ -863,6 +928,12 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) {
 
 // RegisterClient wires a connected client's RPCs to the hub dispatch.
 func (h *Hub) RegisterClient(client *centrifuge.Client) {
+	clientID := client.ID()
+	userID := client.UserID()
+
+	// Record the userID for host assignment (U3+).
+	h.RecordClientUserID(clientID, userID)
+
 	client.OnRPC(func(e centrifuge.RPCEvent, cb centrifuge.RPCCallback) {
 		// Trust boundary: reject mutations of rooms this client hasn't joined.
 		// Authorize has access to client.UserID() for authenticated requests.
@@ -870,7 +941,7 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 			cb(centrifuge.RPCReply{}, err)
 			return
 		}
-		reply, err := h.HandleRPC(e.Method, e.Data)
+		reply, err := h.HandleRPC(e.Method, e.Data, userID)
 		cb(centrifuge.RPCReply{Data: reply}, err)
 	})
 }

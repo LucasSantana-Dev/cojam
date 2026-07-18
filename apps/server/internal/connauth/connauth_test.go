@@ -55,8 +55,14 @@ func TestValidateRejectsTamperedSignature(t *testing.T) {
 		}
 	}
 
-	// Fallback: just tamper with last char of signature
-	tamperedToken := token[:len(token)-1] + "X"
+	// Fallback: tamper with last char of signature. Pick a replacement that is
+	// guaranteed different from the original char, else a token whose signature
+	// already ends in the replacement would be unchanged and flakily accepted.
+	replacement := byte('X')
+	if token[len(token)-1] == replacement {
+		replacement = 'Y'
+	}
+	tamperedToken := token[:len(token)-1] + string(replacement)
 	_, err = Validate(secret, tamperedToken)
 	if err == nil {
 		t.Fatal("Validate should reject tampered signature but did not")

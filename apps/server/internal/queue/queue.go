@@ -48,6 +48,7 @@ type RoomState struct {
 	RoomID       string          `json:"roomId"`
 	Queue        []TrackRef      `json:"queue"`
 	NowPlayingID string          `json:"nowPlayingId,omitempty"`
+	HostUserID   string          `json:"hostUserId,omitempty"`
 	RadioEnabled bool            `json:"radioEnabled"`
 	Version      int64           `json:"version"`
 	Transport    *TransportState `json:"transport,omitempty"`
