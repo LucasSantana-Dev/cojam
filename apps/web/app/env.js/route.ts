@@ -9,6 +9,9 @@ export function GET() {
   const env = {
     wsUrl: process.env.COJAM_WS_URL ?? '',
     spotifyClientId: process.env.COJAM_SPOTIFY_CLIENT_ID ?? '',
+    // Feature flags must be runtime-configurable too: NEXT_PUBLIC_* are inlined
+    // at build time, so the env-agnostic image cannot enable Spotify without this.
+    spotifyEnabled: process.env.COJAM_FEATURE_SPOTIFY === 'true',
   };
   // JSON.stringify keeps the values safely encoded inside the script.
   const body = `window.__COJAM_ENV__ = ${JSON.stringify(env)};`;

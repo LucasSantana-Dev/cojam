@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
+import { SpotifyIcon, YouTubeIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
 import { LogoMark } from '@/app/components/Logo';
 
@@ -247,7 +247,7 @@ export default function Home() {
   }, []);
 
   const steps = [
-    { n: '01', t: 'Everyone brings their own', d: 'Spotify, YouTube, or Apple Music. No one switches services or shares a login.' },
+    { n: '01', t: 'Everyone brings their own', d: 'Spotify or YouTube. No one switches services or shares a login.' },
     { n: '02', t: 'Share the room link', d: 'One link drops your friends into the same room, wherever they are.' },
     { n: '03', t: 'Play in sync', d: 'Queue tracks together; the room syncs who plays what. Each of you streams on your own account.' },
   ];
@@ -255,13 +255,11 @@ export default function Home() {
   const platformIcons: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
     'YouTube': YouTubeIcon,
     'Spotify': SpotifyIcon,
-    'Apple Music': AppleMusicIcon,
   };
 
   const platforms: Array<[string, boolean]> = [
     ['YouTube', true],
     ['Spotify', true],
-    ['Apple Music', false],
   ];
 
   return (

@@ -9,6 +9,7 @@
 export type RuntimeEnv = {
   wsUrl?: string;
   spotifyClientId?: string;
+  spotifyEnabled?: boolean;
 };
 
 // pickEnv resolves a value: runtime injection first, then a build-time value,
