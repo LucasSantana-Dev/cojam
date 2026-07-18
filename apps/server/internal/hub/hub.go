@@ -65,6 +65,7 @@ type Hub struct {
 	similar         SimilarProvider
 	trackDepth      TrackDepthProvider
 	lyrics          LyricsProvider
+	syncEnabled     bool
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
@@ -112,6 +113,12 @@ func (h *Hub) WithObservability(logger *slog.Logger, m *obs.Metrics) *Hub {
 			return float64(len(h.rooms))
 		})
 	}
+	return h
+}
+
+// WithSync enables synchronized playback transport RPCs (transport.play/pause/seek).
+func (h *Hub) WithSync(enabled bool) *Hub {
+	h.syncEnabled = enabled
 	return h
 }
 
@@ -634,6 +641,9 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 		})
 
 	case "transport.play":
+		if !h.syncEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
 		var req struct {
 			RoomID     string `json:"roomId"`
 			TrackID    string `json:"trackId,omitempty"`
@@ -664,6 +674,9 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 		})
 
 	case "transport.pause":
+		if !h.syncEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
 		var req struct {
 			RoomID     string `json:"roomId"`
 			PositionMs int64  `json:"positionMs"`
@@ -689,6 +702,9 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 		})
 
 	case "transport.seek":
+		if !h.syncEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
 		var req struct {
 			RoomID     string `json:"roomId"`
 			PositionMs int64  `json:"positionMs"`

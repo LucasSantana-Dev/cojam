@@ -9,7 +9,7 @@ import (
 
 // TestTransportPlay tests transport.play RPC
 func TestTransportPlay(t *testing.T) {
-	h := NewHub(nil)
+	h := NewHub(nil).WithSync(true)
 
 	// Setup: join and add a track
 	h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"test"}`))
@@ -52,7 +52,7 @@ func TestTransportPlay(t *testing.T) {
 
 // TestTransportPlayWithoutTrackId tests transport.play without trackId
 func TestTransportPlayWithoutTrackId(t *testing.T) {
-	h := NewHub(nil)
+	h := NewHub(nil).WithSync(true)
 
 	// Setup
 	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"test"}`))
@@ -85,7 +85,7 @@ func TestTransportPlayWithoutTrackId(t *testing.T) {
 
 // TestTransportPause tests transport.pause RPC
 func TestTransportPause(t *testing.T) {
-	h := NewHub(nil)
+	h := NewHub(nil).WithSync(true)
 
 	// Setup and play
 	h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"test"}`))
@@ -117,7 +117,7 @@ func TestTransportPause(t *testing.T) {
 
 // TestTransportSeek tests transport.seek RPC
 func TestTransportSeek(t *testing.T) {
-	h := NewHub(nil)
+	h := NewHub(nil).WithSync(true)
 
 	// Setup and play
 	h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"test"}`))
@@ -149,7 +149,7 @@ func TestTransportSeek(t *testing.T) {
 
 // TestSyncPing tests sync.ping RPC (read-only, no publish)
 func TestSyncPing(t *testing.T) {
-	h := NewHub(nil)
+	h := NewHub(nil).WithSync(true)
 
 	// Setup and add a track to get version bumps
 	h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"test"}`))
@@ -183,7 +183,7 @@ func TestSyncPing(t *testing.T) {
 
 // TestTransportNegativePosition tests clamping of negative positions
 func TestTransportNegativePosition(t *testing.T) {
-	h := NewHub(nil)
+	h := NewHub(nil).WithSync(true)
 
 	h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"test"}`))
 	h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`))
@@ -218,5 +218,109 @@ func TestTransportMissingRoom(t *testing.T) {
 	// transport.seek without roomId should error
 	if _, err := h.HandleRPC("transport.seek", []byte(`{"positionMs":1000}`)); err == nil {
 		t.Fatalf("transport.seek without roomId should error")
+	}
+}
+
+// TestSyncDisabledTransport tests that transport RPCs are rejected when sync is disabled
+func TestSyncDisabledTransport(t *testing.T) {
+	h := NewHub(nil).WithSync(false)
+
+	// Setup: join room and add track
+	h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"test"}`))
+	h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+
+	// transport.play should be rejected
+	if _, err := h.HandleRPC("transport.play", []byte(`{"roomId":"demo","positionMs":1000}`)); err == nil {
+		t.Fatalf("transport.play should be rejected when sync disabled")
+	}
+
+	// transport.pause should be rejected
+	if _, err := h.HandleRPC("transport.pause", []byte(`{"roomId":"demo","positionMs":1000}`)); err == nil {
+		t.Fatalf("transport.pause should be rejected when sync disabled")
+	}
+
+	// transport.seek should be rejected
+	if _, err := h.HandleRPC("transport.seek", []byte(`{"roomId":"demo","positionMs":1000}`)); err == nil {
+		t.Fatalf("transport.seek should be rejected when sync disabled")
+	}
+}
+
+// TestSyncEnabledTransport tests that transport RPCs work when sync is enabled
+func TestSyncEnabledTransport(t *testing.T) {
+	h := NewHub(nil).WithSync(true)
+
+	// Setup: join room and add track
+	h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"test"}`))
+	res, _ := h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+
+	st := &queue.RoomState{}
+	json.Unmarshal(res, st)
+	trackID := st.Queue[0].ID
+
+	// transport.play should succeed
+	res, err := h.HandleRPC("transport.play", []byte(`{"roomId":"demo","trackId":"`+trackID+`","positionMs":1000}`))
+	if err != nil {
+		t.Fatalf("transport.play should succeed when sync enabled: %v", err)
+	}
+
+	json.Unmarshal(res, st)
+	if st.Transport.State != "playing" {
+		t.Fatalf("transport.state = %q, want playing", st.Transport.State)
+	}
+
+	// transport.pause should succeed
+	res, err = h.HandleRPC("transport.pause", []byte(`{"roomId":"demo","positionMs":2000}`))
+	if err != nil {
+		t.Fatalf("transport.pause should succeed when sync enabled: %v", err)
+	}
+
+	json.Unmarshal(res, st)
+	if st.Transport.State != "paused" {
+		t.Fatalf("transport.state = %q, want paused", st.Transport.State)
+	}
+
+	// transport.seek should succeed
+	res, err = h.HandleRPC("transport.seek", []byte(`{"roomId":"demo","positionMs":3000}`))
+	if err != nil {
+		t.Fatalf("transport.seek should succeed when sync enabled: %v", err)
+	}
+
+	json.Unmarshal(res, st)
+	if st.Transport.PositionMs != 3000 {
+		t.Fatalf("transport.positionMs = %d, want 3000", st.Transport.PositionMs)
+	}
+}
+
+// TestSyncPingAlwaysWorks tests that sync.ping works regardless of sync feature gate
+func TestSyncPingAlwaysWorks(t *testing.T) {
+	// Test with sync disabled
+	h := NewHub(nil).WithSync(false)
+	res, err := h.HandleRPC("sync.ping", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("sync.ping should work even when sync disabled: %v", err)
+	}
+
+	var pingResult map[string]int64
+	if err := json.Unmarshal(res, &pingResult); err != nil {
+		t.Fatalf("unmarshal ping result: %v", err)
+	}
+
+	if pingResult["serverNowMs"] <= 0 {
+		t.Fatalf("serverNowMs should be positive, got %d", pingResult["serverNowMs"])
+	}
+
+	// Test with sync enabled
+	h = NewHub(nil).WithSync(true)
+	res, err = h.HandleRPC("sync.ping", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("sync.ping should work when sync enabled: %v", err)
+	}
+
+	if err := json.Unmarshal(res, &pingResult); err != nil {
+		t.Fatalf("unmarshal ping result: %v", err)
+	}
+
+	if pingResult["serverNowMs"] <= 0 {
+		t.Fatalf("serverNowMs should be positive, got %d", pingResult["serverNowMs"])
 	}
 }
