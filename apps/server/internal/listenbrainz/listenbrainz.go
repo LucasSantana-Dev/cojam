@@ -18,18 +18,18 @@ var baseURL = "https://api.listenbrainz.org/api/v1"
 
 // Enrichment represents ListenBrainz enrichment data for a track.
 type Enrichment struct {
-	MBID  string   `json:"mbid,omitempty"`        // MusicBrainz ID of the recording
-	Tags  []string `json:"tags"`                  // Crowdsourced tags
-	Count int      `json:"count,omitempty"`       // Listen count (if available)
-	Source string  `json:"source"`                // Always "listenbrainz"
+	MBID   string   `json:"mbid,omitempty"`  // MusicBrainz ID of the recording
+	Tags   []string `json:"tags"`            // Crowdsourced tags
+	Count  int      `json:"count,omitempty"` // Listen count (if available)
+	Source string   `json:"source"`          // Always "listenbrainz"
 }
 
 // recordingByISRC is the response from /recording-by-isrc/{isrc}
 type recordingByISRC struct {
 	ISRC       string `json:"isrc"`
 	Recordings []struct {
-		ID     string `json:"id"`     // MBID
-		Title  string `json:"title"`
+		ID      string `json:"id"` // MBID
+		Title   string `json:"title"`
 		Artists []struct {
 			Name string `json:"name"`
 		} `json:"artists"`

@@ -15,6 +15,13 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 )
 
+// Client is the minimal interface for a connected client in the Authorize path.
+// centrifuge.Client and testClient both implement this interface.
+type Client interface {
+	ID() string
+	UserID() string
+}
+
 // Matcher resolves a YouTube source for a track (nil result = no confident match).
 type Matcher func(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error)
 
@@ -174,8 +181,11 @@ func (h *Hub) IsMember(clientID, roomID string) bool {
 // and is always allowed. Mutating methods require membership of the target room,
 // else ErrorPermissionDenied. Reads/unknown methods pass through (dispatch owns
 // unknown-method + roomId-required errors). Called at the transport boundary
-// where the clientID is known, keeping HandleRPC transport-independent.
-func (h *Hub) Authorize(clientID, method string, data []byte) error {
+// where the client is known, allowing access to authenticated userID.
+func (h *Hub) Authorize(client Client, method string, data []byte) error {
+	clientID := client.ID()
+	_ = client.UserID() // UserID is available here for authenticated requests (U4+)
+
 	var probe struct {
 		RoomID string `json:"roomId"`
 	}
@@ -855,7 +865,8 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) {
 func (h *Hub) RegisterClient(client *centrifuge.Client) {
 	client.OnRPC(func(e centrifuge.RPCEvent, cb centrifuge.RPCCallback) {
 		// Trust boundary: reject mutations of rooms this client hasn't joined.
-		if err := h.Authorize(client.ID(), e.Method, e.Data); err != nil {
+		// Authorize has access to client.UserID() for authenticated requests.
+		if err := h.Authorize(client, e.Method, e.Data); err != nil {
 			cb(centrifuge.RPCReply{}, err)
 			return
 		}
