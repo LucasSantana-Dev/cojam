@@ -293,6 +293,49 @@ input:focus, textarea:focus, select:focus {
   background: var(--color-surface-3);
 }
 
+/* Queue item row (redesigned, clean single-line layout) */
+.queue-item-row {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.queue-item-row:hover {
+  border-color: var(--color-accent);
+  background: var(--color-surface-3);
+}
+
+/* On now-playing, add left accent bar */
+.queue-item-row.is-now {
+  border-left: 3px solid var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-2));
+}
+
+/* Touch-capable devices (incl. hybrid touch+mouse laptops): always show
+   controls. any-pointer:coarse matches if ANY pointer is touch, so a
+   touchscreen laptop is covered even when its primary pointer is a mouse. */
+@media (any-pointer: coarse) or (hover: none) {
+  .queue-controls {
+    opacity: 1 !important;
+  }
+}
+
+/* Desktop with fine pointer: hide controls until hover/focus-within */
+@media (pointer: fine) and (hover: hover) {
+  .queue-item-row:not(:hover):not(:focus-within) .queue-controls {
+    opacity: 0;
+  }
+}
+
+/* Keyboard focus must stay visible on the controls (they set outline-none). */
+.queue-controls button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* Source badge polish */
 .badge-source {
   display: inline-block;

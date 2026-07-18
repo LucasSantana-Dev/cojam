@@ -105,82 +105,99 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
           </p>
         </div>
       ) : (
-        <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+        <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
           {queue.map((track, index) => (
             <div
               key={track.id}
               data-testid="queue-item"
-              className={`queue-item animate-fade-in-up flex flex-col items-start justify-between gap-3 p-3 rounded-lg group${track.id === nowPlayingId ? ' is-now' : ''}${removingIds.has(track.id) ? ' removing' : ''}`}
+              className={`queue-item-row animate-fade-in-up group${track.id === nowPlayingId ? ' is-now' : ''}${removingIds.has(track.id) ? ' removing' : ''}`}
+              style={track.id === nowPlayingId ? { borderLeft: '3px solid var(--color-accent)' } : {}}
             >
-              <div className="flex w-full items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div data-testid="queue-title" className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
-                    {track.title}
+              <div className="flex w-full items-center justify-between gap-2 p-2.5 rounded-lg transition-all duration-150 hover:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)] focus-within:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)]">
+                {/* Left side: position + track info */}
+                <div className="flex-1 min-w-0 flex items-center gap-2">
+                  <div className="text-xs font-semibold flex-shrink-0 w-6 text-center" style={{ color: track.id === nowPlayingId ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}>
+                    {track.id === nowPlayingId ? (
+                      <span className="inline-flex gap-0.5">
+                        <span className="inline-block w-1 h-2 rounded-sm bg-current" style={{ animation: 'eq-bounce 0.9s ease-in-out infinite' }} />
+                        <span className="inline-block w-1 h-3 rounded-sm bg-current" style={{ animation: 'eq-bounce 0.9s ease-in-out infinite', animationDelay: '-0.5s' }} />
+                        <span className="inline-block w-1 h-2 rounded-sm bg-current" style={{ animation: 'eq-bounce 0.9s ease-in-out infinite', animationDelay: '-0.1s' }} />
+                      </span>
+                    ) : (
+                      index + 1
+                    )}
                   </div>
-                  <div className="text-xs truncate mt-1 flex items-center gap-2" style={{ color: 'var(--color-text-muted)' }}>
-                    <span className="avatar-chip-sm" style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}>
-                      {getInitial(track.addedBy)}
-                    </span>
-                    {track.artist} by {track.addedBy}
-                  </div>
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {track.sources.youtube && (
-                      <span className="badge-source badge-youtube inline-flex items-center gap-1">
-                        <YouTubeIcon size={12} /> {Math.round(track.sources.youtube.confidence * 100)}%
+                  <div className="flex-1 min-w-0">
+                    <div data-testid="queue-title" className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
+                      {track.title}
+                    </div>
+                    <div className="text-xs truncate flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
+                      {track.artist}
+                      <span className="text-opacity-60">·</span>
+                      <span className="avatar-chip-sm inline-flex" style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)', width: '18px', height: '18px', fontSize: '0.6rem', padding: 0 }}>
+                        {getInitial(track.addedBy)}
                       </span>
-                    )}
-                    {track.sources.apple && (
-                      <span className="badge-source badge-apple inline-flex items-center gap-1">
-                        <AppleMusicIcon size={12} /> {Math.round(track.sources.apple.confidence * 100)}%
-                      </span>
-                    )}
-                    {track.sources.spotify && (
-                      <span className="badge-source badge-spotify inline-flex items-center gap-1">
-                        <SpotifyIcon size={12} /> {Math.round(track.sources.spotify.confidence * 100)}%
-                      </span>
-                    )}
+                      <span className="flex-shrink-0">{track.addedBy}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {track.sources.youtube && (
+                        <span className="badge-source badge-youtube inline-flex items-center gap-1 text-xs">
+                          <YouTubeIcon size={10} /> {Math.round(track.sources.youtube.confidence * 100)}%
+                        </span>
+                      )}
+                      {track.sources.apple && (
+                        <span className="badge-source badge-apple inline-flex items-center gap-1 text-xs">
+                          <AppleMusicIcon size={10} /> {Math.round(track.sources.apple.confidence * 100)}%
+                        </span>
+                      )}
+                      {track.sources.spotify && (
+                        <span className="badge-source badge-spotify inline-flex items-center gap-1 text-xs">
+                          <SpotifyIcon size={10} /> {Math.round(track.sources.spotify.confidence * 100)}%
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="flex flex-col gap-2 ml-2 flex-shrink-0">
+
+                {/* Right side: controls (hidden on desktop hover, always visible on touch) */}
+                <div className="queue-controls flex gap-1 flex-shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
                   <button
                     onClick={() => handlePlay(track.id)}
                     disabled={!canControl}
                     aria-label="Play"
                     title={canControl ? 'Play' : 'Only the host can play tracks'}
-                    className="inline-flex items-center justify-center px-2 py-1 rounded transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-1.5 rounded transition-all duration-150 hover:brightness-110 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
                   >
-                    <PlayIcon size={16} />
+                    <PlayIcon size={14} />
                   </button>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => handleMoveUp(track.id, index)}
-                      disabled={index === 0 || !canControl}
-                      aria-label="Move up"
-                      title={canControl ? 'Move up' : 'Only the host can reorder tracks'}
-                      className="flex-1 inline-flex items-center justify-center px-2 py-1 rounded border transition-all duration-150 hover:opacity-70 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: 'var(--color-surface-3)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-                    >
-                      <ArrowUpIcon size={14} />
-                    </button>
-                    <button
-                      onClick={() => handleMoveDown(track.id, index)}
-                      disabled={index === queue.length - 1 || !canControl}
-                      aria-label="Move down"
-                      title={canControl ? 'Move down' : 'Only the host can reorder tracks'}
-                      className="flex-1 inline-flex items-center justify-center px-2 py-1 rounded border transition-all duration-150 hover:opacity-70 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: 'var(--color-surface-3)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-                    >
-                      <ArrowDownIcon size={14} />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleMoveUp(track.id, index)}
+                    disabled={index === 0 || !canControl}
+                    aria-label="Move up"
+                    title={canControl ? 'Move up' : 'Only the host can reorder tracks'}
+                    className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
+                  >
+                    <ArrowUpIcon size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleMoveDown(track.id, index)}
+                    disabled={index === queue.length - 1 || !canControl}
+                    aria-label="Move down"
+                    title={canControl ? 'Move down' : 'Only the host can reorder tracks'}
+                    className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
+                  >
+                    <ArrowDownIcon size={14} />
+                  </button>
                   <button
                     onClick={() => handleRemove(track.id, track.title)}
                     disabled={!canControl}
                     aria-label="Remove"
                     title={canControl ? 'Remove' : 'Only the host can remove tracks'}
-                    className="inline-flex items-center justify-center px-2 py-1 rounded border transition-all duration-150 hover:opacity-70 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ backgroundColor: 'var(--color-surface-3)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+                    className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
                   >
                     <TrashIcon size={14} />
                   </button>

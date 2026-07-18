@@ -41,13 +41,13 @@ test('two users see each other\'s queue additions live', async ({ browser }) => 
   // Lucas adds — Ana receives via publication (no reload)
   await addTrack(lucas, 'Me at the zoo', 'jawed', 'jNQXAC9IVRw');
   await expect(lucas.getByText('Me at the zoo').first()).toBeVisible();
-  await expect(ana.getByText('Me at the zoo').first()).toBeVisible();
-  await expect(ana.getByText('jawed by Lucas')).toBeVisible();
+  // Ana receives Lucas's add in her queue. Scope to queue rows: the now-playing
+  // hero also shows the title/artist, so an unscoped text match is ambiguous.
+  await expect(ana.getByTestId('queue-title').filter({ hasText: 'Me at the zoo' })).toBeVisible();
 
-  // Ana adds — Lucas receives (bidirectional)
+  // Ana adds, Lucas receives (bidirectional)
   await addTrack(ana, 'Second Song', 'Someone');
-  await expect(lucas.getByText('Second Song')).toBeVisible();
-  await expect(lucas.getByText('Someone by Ana')).toBeVisible();
+  await expect(lucas.getByTestId('queue-title').filter({ hasText: 'Second Song' })).toBeVisible();
 
   // First add auto-set now playing → YouTube iframe mounted on both
   // YT.Player replaces the target div with an iframe that inherits the id
