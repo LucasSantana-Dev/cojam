@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { resolveFeatures } from './features';
 
 describe('resolveFeatures', () => {
-  it('youtube+presence default on, spotify/apple/sync default off', () => {
+  it('youtube+presence default on, spotify/apple/listenbrainz/sync default off', () => {
     const f = resolveFeatures({});
     expect(f).toEqual({
       youtube: true,
@@ -11,6 +11,7 @@ describe('resolveFeatures', () => {
       presence: true,
       trackDepth: true,
       lyrics: true,
+      listenBrainz: false,
       sync: false,
     });
   });
@@ -21,6 +22,7 @@ describe('resolveFeatures', () => {
       NEXT_PUBLIC_FEATURE_APPLE: '1',
       NEXT_PUBLIC_FEATURE_YOUTUBE: 'off',
       NEXT_PUBLIC_FEATURE_PRESENCE: 'no',
+      NEXT_PUBLIC_FEATURE_LISTENBRAINZ: 'true',
       NEXT_PUBLIC_FEATURE_SYNC: 'yes',
     });
     expect(f).toEqual({
@@ -30,6 +32,7 @@ describe('resolveFeatures', () => {
       presence: false,
       trackDepth: true,
       lyrics: true,
+      listenBrainz: true,
       sync: true,
     });
   });
@@ -65,6 +68,11 @@ describe('resolveFeatures', () => {
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_LYRICS: 'true' }).lyrics).toBe(true);
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_LYRICS: 'on' }).lyrics).toBe(true);
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_LYRICS: 'yes' }).lyrics).toBe(true);
+  });
+
+  it('listenbrainz defaults off and can be enabled', () => {
+    expect(resolveFeatures({}).listenBrainz).toBe(false);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_LISTENBRAINZ: 'on' }).listenBrainz).toBe(true);
   });
 
 });

@@ -225,6 +225,19 @@ export async function fetchLyrics(roomId: string, artist: string, title: string,
   return (result.data as Lyrics) ?? { synced: [], plain: '', source: 'lrclib' };
 }
 
+export type ListenBrainzEnrichment = {
+  mbid: string;
+  tags: string[];
+  count?: number;
+  source: string; // "listenbrainz"
+};
+
+export async function fetchListenBrainz(roomId: string, isrc: string, title: string, artist: string): Promise<ListenBrainzEnrichment> {
+  if (!centrifuge) throw new Error('Not connected');
+  const result = await centrifuge.rpc('track.listenbrainz', { roomId, isrc, title, artist });
+  return (result.data as ListenBrainzEnrichment) ?? { mbid: '', tags: [], source: 'listenbrainz' };
+}
+
 // Clock sync (U3): measure client-server time offset for synchronized playback
 
 let clockOffsetMs = 0;
