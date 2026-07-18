@@ -411,9 +411,11 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 				if s.HostUserID == "" {
 					// Fresh room: first authenticated joiner becomes host
 					s.HostUserID = userID
+					s.Version++ // host changed: bump so version-guarded clients accept it
 				} else if !h.IsUserIDInRoom(req.RoomID, s.HostUserID) {
 					// Host is not present: claim host
 					s.HostUserID = userID
+					s.Version++ // host changed: bump so version-guarded clients accept it
 				}
 				// else: host is present, don't reassign
 			}
