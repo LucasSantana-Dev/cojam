@@ -14,6 +14,7 @@ describe('resolveFeatures', () => {
       listenBrainz: false,
       lastfmEnrich: false,
       sync: false,
+      roomAuth: false,
     });
   });
 
@@ -37,6 +38,7 @@ describe('resolveFeatures', () => {
       listenBrainz: true,
       lastfmEnrich: true,
       sync: true,
+      roomAuth: false,
     });
   });
 
