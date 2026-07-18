@@ -46,10 +46,11 @@ export function PresenceBar() {
                   style={{
                     backgroundColor: 'var(--color-surface-0)',
                     border: '2px solid var(--color-surface-1)',
+                    color: 'var(--color-text-secondary)',
                   }}
                   title={member.platform}
                 >
-                  <Icon size={10} style={{ color: 'var(--color-text-secondary)' }} />
+                  <Icon size={10} />
                 </div>
               )}
             </div>
