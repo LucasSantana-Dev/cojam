@@ -165,7 +165,11 @@ export function SpotifyPlayer({
     (async () => {
       try {
         const token = await getAccessToken();
-        if (!token || cancelled) return;
+        if (cancelled) return;
+        if (!token) {
+          onAuthorized(false);
+          return;
+        }
         const playable = await decidePlayable(token);
         if (cancelled) return;
         if (!playable) {
