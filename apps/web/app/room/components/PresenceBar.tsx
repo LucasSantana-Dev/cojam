@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useStore } from '@/lib/realtime';
 import { features } from '@/lib/features';
 import { platformIcon } from '@/app/components/icons';
+import { avatarGradient } from '@/lib/avatar';
 
 export function PresenceBar() {
   const members = useStore((s) => s.members);
@@ -37,6 +38,7 @@ export function PresenceBar() {
             <div
               key={member.clientId}
               className="avatar-chip animate-fade-in relative group"
+              style={{ background: avatarGradient(member.clientId || member.name) }}
               title={member.name}
             >
               {initial}
