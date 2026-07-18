@@ -402,3 +402,52 @@ func TestAuthorize_PlaylistImport(t *testing.T) {
 		t.Errorf("non-member should not be authorized for playlist.import")
 	}
 }
+
+// track.lastfm dispatch test: verifies nil provider returns empty object
+func TestHandleRPC_TrackLastfmDispatch(t *testing.T) {
+	h := NewHub(nil)
+
+	// No provider configured: dispatch must resolve and return empty result
+	res, err := h.HandleRPC("track.lastfm", []byte(`{"roomId":"R","artist":"Queen","title":"Bohemian Rhapsody"}`))
+	if err != nil {
+		t.Fatalf("track.lastfm with no provider should not error (got %v)", err)
+	}
+	var empty struct {
+		Playcount int      `json:"playcount"`
+		Listeners int      `json:"listeners"`
+		Tags      []string `json:"tags"`
+		Source    string   `json:"source"`
+	}
+	if err := json.Unmarshal(res, &empty); err != nil {
+		t.Fatalf("unmarshal empty: %v", err)
+	}
+	if empty.Source != "lastfm" || empty.Playcount != 0 || empty.Listeners != 0 {
+		t.Fatalf("expected empty lastfm result, got %+v", empty)
+	}
+
+	// With a provider: dispatch routes to it and returns its payload
+	h.WithLastfmEnrichProvider(func(ctx context.Context, artist, title string) (interface{}, error) {
+		return map[string]interface{}{
+			"playcount": 5000,
+			"listeners": 3000,
+			"tags":      []string{"rock", "classic"},
+			"source":    "lastfm",
+		}, nil
+	})
+	res, err = h.HandleRPC("track.lastfm", []byte(`{"roomId":"R","artist":"Queen","title":"Bohemian Rhapsody"}`))
+	if err != nil {
+		t.Fatalf("track.lastfm with provider: %v", err)
+	}
+	var got struct {
+		Playcount int      `json:"playcount"`
+		Listeners int      `json:"listeners"`
+		Tags      []string `json:"tags"`
+		Source    string   `json:"source"`
+	}
+	if err := json.Unmarshal(res, &got); err != nil {
+		t.Fatalf("unmarshal got: %v", err)
+	}
+	if got.Playcount != 5000 || got.Listeners != 3000 || len(got.Tags) != 2 {
+		t.Fatalf("expected playcount=5000, listeners=3000, tags=2, got %+v", got)
+	}
+}

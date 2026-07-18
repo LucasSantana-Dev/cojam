@@ -238,6 +238,19 @@ export async function fetchListenBrainz(roomId: string, isrc: string, title: str
   return (result.data as ListenBrainzEnrichment) ?? { mbid: '', tags: [], source: 'listenbrainz' };
 }
 
+export type LastfmEnrich = {
+  playcount: number;
+  listeners: number;
+  tags: string[];
+  source: string; // "lastfm"
+};
+
+export async function fetchLastfmEnrich(roomId: string, artist: string, title: string): Promise<LastfmEnrich> {
+  if (!centrifuge) throw new Error('Not connected');
+  const result = await centrifuge.rpc('track.lastfm', { roomId, artist, title });
+  return (result.data as LastfmEnrich) ?? { playcount: 0, listeners: 0, tags: [], source: 'lastfm' };
+}
+
 // Clock sync (U3): measure client-server time offset for synchronized playback
 
 let clockOffsetMs = 0;
