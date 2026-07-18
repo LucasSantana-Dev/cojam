@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Centrifuge } from 'centrifuge';
+import { pickEnv, getRuntimeEnv } from './runtimeEnv';
 import type { RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = { clientId: string; name: string };
@@ -52,7 +53,11 @@ function nameFromInfo(info: unknown, fallback = 'Listener'): string {
 let centrifuge: Centrifuge | null = null;
 
 export async function joinRoom(roomId: string, name: string) {
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:8080/connection/websocket';
+  const wsUrl = pickEnv(
+    getRuntimeEnv()?.wsUrl,
+    process.env.NEXT_PUBLIC_WS_URL,
+    'ws://localhost:8080/connection/websocket',
+  );
 
   centrifuge = new Centrifuge(wsUrl, {
     token: '',
