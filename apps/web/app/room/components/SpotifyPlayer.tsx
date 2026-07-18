@@ -6,6 +6,8 @@ import { pickSource } from '@/lib/pickSource';
 import { beginAuth, getAccessToken, isAuthed } from '@/lib/spotifyAuth';
 import { features } from '@/lib/features';
 import { SpotifyIcon } from '@/app/components/icons';
+import type { IPlayer } from '@/lib/playerInterface';
+import { detectSpotifyCanSeek } from '@/lib/playerUtils';
 
 declare global {
   interface Window {
@@ -36,14 +38,112 @@ async function playUri(deviceId: string, uri: string) {
   });
 }
 
+/**
+ * Spotify player adapter implementing IPlayer interface.
+ */
+class SpotifyPlayerAdapter implements IPlayer {
+  private player: any;
+  private deviceId: string;
+  private endedCallbacks: Array<() => void> = [];
+  private positionCallbacks: Array<(ms: number) => void> = [];
+  private canSeekValue: boolean = false;
+  private positionPollInterval: NodeJS.Timeout | null = null;
+
+  constructor(player: any, deviceId: string, canSeek: boolean) {
+    this.player = player;
+    this.deviceId = deviceId;
+    this.canSeekValue = canSeek;
+  }
+
+  async play(): Promise<void> {
+    const token = await getAccessToken();
+    if (!token) return;
+    await fetch('https://api.spotify.com/v1/me/player/play', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  }
+
+  async pause(): Promise<void> {
+    const token = await getAccessToken();
+    if (!token) return;
+    await fetch('https://api.spotify.com/v1/me/player/pause', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  }
+
+  async seekToMs(positionMs: number): Promise<void> {
+    if (!this.canSeekValue) return;
+    const token = await getAccessToken();
+    if (!token) return;
+    await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${positionMs}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  }
+
+  async getCurrentPositionMs(): Promise<number> {
+    try {
+      const state = await this.player.getCurrentState();
+      if (!state) return 0;
+      return state.position ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  async getDurationMs(): Promise<number> {
+    try {
+      const state = await this.player.getCurrentState();
+      if (!state || !state.track_window?.current_track) return 0;
+      return state.track_window.current_track.duration_ms ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  canSeek(): boolean {
+    return this.canSeekValue;
+  }
+
+  onEnded(cb: () => void): void {
+    this.endedCallbacks.push(cb);
+  }
+
+  onPositionChanged(cb: (positionMs: number) => void): void {
+    this.positionCallbacks.push(cb);
+    if (!this.positionPollInterval) {
+      this.positionPollInterval = setInterval(async () => {
+        const pos = await this.getCurrentPositionMs();
+        this.positionCallbacks.forEach((c) => c(pos));
+      }, 1000);
+    }
+  }
+
+  dispose(): void {
+    if (this.positionPollInterval) {
+      clearInterval(this.positionPollInterval);
+      this.positionPollInterval = null;
+    }
+    this.endedCallbacks = [];
+    this.positionCallbacks = [];
+  }
+}
+
 export function SpotifyPlayer({
   authorized,
   onAuthorized,
+  onPlayerReady,
+  onPlayerGone,
 }: {
   authorized: boolean;
   onAuthorized: (v: boolean) => void;
+  onPlayerReady?: (player: IPlayer) => void;
+  onPlayerGone?: () => void;
 }) {
   const deviceId = useRef<string | null>(null);
+  const playerRef = useRef<SpotifyPlayerAdapter | null>(null);
   const [status, setStatus] = useState<'unconfigured' | 'idle' | 'ready' | 'error'>('idle');
   const state = useStore((s) => s.state);
   const nowPlaying = state?.nowPlayingId
@@ -72,8 +172,12 @@ export function SpotifyPlayer({
           },
           volume: 0.8,
         });
-        player.addListener('ready', ({ device_id }: { device_id: string }) => {
+        player.addListener('ready', async ({ device_id }: { device_id: string }) => {
           deviceId.current = device_id;
+          const canSeek = await detectSpotifyCanSeek(player);
+          const adapter = new SpotifyPlayerAdapter(player, device_id, canSeek);
+          playerRef.current = adapter;
+          onPlayerReady?.(adapter);
           setStatus('ready');
         });
         player.addListener('authentication_error', () => onAuthorized(false));
@@ -87,8 +191,13 @@ export function SpotifyPlayer({
     })();
     return () => {
       cancelled = true;
+      if (playerRef.current) {
+        playerRef.current.dispose();
+        playerRef.current = null;
+        onPlayerGone?.();
+      }
     };
-  }, [authorized, status, onAuthorized]);
+  }, [authorized, status, onAuthorized, onPlayerReady, onPlayerGone]);
 
   useEffect(() => {
     if (!authorized || !deviceId.current || !nowPlaying) return;
