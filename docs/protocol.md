@@ -10,8 +10,28 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `queue.add` | `{ roomId, track: TrackRef }` | `RoomState` |
 | `queue.remove` | `{ roomId, trackId: string }` | `RoomState` |
 | `queue.reorder` | `{ roomId, trackId: string, toIndex: number }` | `RoomState` |
-| `now_playing.set` | `{ roomId, trackId: string }` (host only, v0: anyone) | `RoomState` |
+| `now_playing.set` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
+
+### Roles & authorization (RFC-0005, behind `FEATURE_ROOM_AUTH`)
+
+When `FEATURE_ROOM_AUTH` is on, connections present a server-signed token (anonymous stable
+`sub`) and the server records a room **host** (the first authenticated joiner; reclaimed if the
+host leaves). Host-only RPCs are rejected with `ErrorPermissionDenied` for non-hosts; the server
+is authoritative (the web UI also hides these controls for listeners, but that is convenience
+only). When the flag is off, every member has equal rights (v0), unchanged.
+
+| RPC | Who may call (flag on) |
+|---|---|
+| `queue.add` | any member |
+| `room.join`, `sync.ping`, reads | any member |
+| `now_playing.set` / `now_playing.advance` | host only |
+| `queue.reorder` / `queue.remove` | host only |
+| `radio.set`, `playlist.import` | host only |
+| `transport.play` / `transport.pause` / `transport.seek` | host only |
+
+Follow-up: `queue.remove` is host-only in v1; letting listeners remove their own tracks needs
+`TrackRef.addedBy` to carry the stable `userId` (today it is a display name).
 
 ## Server → channel publications
 
