@@ -6,7 +6,8 @@ import { test, expect, type Page } from '@playwright/test';
 
 async function join(page: Page, roomId: string, name: string) {
   await page.goto(`/room/${roomId}`);
-  await expect(page.getByText(`Room: ${roomId}`)).toBeVisible();
+  // Waiting-room card shows the room code in a chip ("You're about to join <CODE>").
+  await expect(page.getByText(roomId, { exact: true })).toBeVisible();
   await page.getByPlaceholder('Your name').fill(name);
   await page.getByRole('button', { name: 'Join & Play' }).click();
   // Joined header shows the room-code chip + "you're <name>" (see RoomClient header).

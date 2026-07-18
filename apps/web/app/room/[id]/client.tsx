@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useStore, joinRoom, setRadio, transportPlay, transportPause, getClockOffsetMs } from '@/lib/realtime';
 import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS, serverNow } from '@/lib/playbackSync';
 import { StatusBanner } from '../components/StatusBanner';
+import { avatarGradient } from '@/lib/avatar';
 
 // Persist the chosen name for the session so a full-page redirect (Spotify OAuth
 // returns to /callback/spotify then back here) auto-rejoins instead of dropping
@@ -178,33 +179,64 @@ export function RoomClient({ roomId }: { roomId: string }) {
       <main id="main" className="room flex items-center justify-center min-h-screen p-4">
         <form
           onSubmit={handleJoin}
-          className="join-form panel w-full max-w-sm space-y-6 p-8"
+          className="join-form panel w-full max-w-sm space-y-8 p-8"
         >
-          <div className="space-y-2 text-center">
-            <h1 className="text-3xl font-bold inline-flex items-center justify-center gap-2.5" style={{ color: 'var(--color-text-primary)' }}>
-              <LogoMark size={26} glow animated />
-              CoJam
-            </h1>
+          {/* Framing: "You're about to join <CODE>" */}
+          <div className="space-y-3 text-center">
             <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              Room: {roomId}
+              You're about to join
+            </p>
+            <div
+              className="inline-block px-4 py-2 rounded-full font-bold text-lg"
+              style={{
+                background: 'var(--color-surface-2)',
+                border: '2px solid var(--color-accent)',
+                color: 'var(--color-accent)',
+              }}
+            >
+              {roomId}
+            </div>
+            <p className="text-xs pt-2" style={{ color: 'var(--color-text-muted)' }}>
+              Listen together, across services
             </p>
           </div>
 
-          <input
-            type="text"
-            placeholder="Your name"
-            aria-label="Your name"
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            className="focus-ring-grow w-full px-4 py-3 rounded-lg focus:outline-none transition-all duration-150"
-            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-            autoFocus
-          />
+          {/* Avatar preview + name input */}
+          <div className="space-y-4">
+            <div className="flex justify-center">
+              <div
+                className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold transition-all duration-200"
+                style={{
+                  background: avatarGradient(nameInput.trim() || 'guest'),
+                  color: 'white',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                }}
+              >
+                {(nameInput.trim() || 'G').charAt(0).toUpperCase()}
+              </div>
+            </div>
 
+            <input
+              type="text"
+              placeholder="Your name"
+              aria-label="Your name"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              className="focus-ring-grow w-full px-4 py-3 rounded-lg focus:outline-none transition-all duration-150 text-center"
+              style={{
+                backgroundColor: 'var(--color-surface-2)',
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text-primary)',
+              }}
+              autoFocus
+            />
+          </div>
+
+          {/* Prominent Join CTA */}
           <button
             type="submit"
             disabled={loading || !nameInput.trim()}
-            className="w-full px-6 py-3 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 text-base"
+            className="w-full px-6 py-4 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 text-base"
             style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
           >
             <span className="join-label-crossfade">
@@ -212,6 +244,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             </span>
           </button>
 
+          {/* Error state */}
           {joinError && (
             <p className="join-error" role="alert">
               {joinError}
