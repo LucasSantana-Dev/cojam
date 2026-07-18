@@ -41,9 +41,18 @@
 body {
   background: var(--color-surface-0);
   color: var(--color-text-primary);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body), system-ui, -apple-system, sans-serif;
   font-size: 1rem;
   line-height: 1.5;
+}
+
+/* Display face carries the marketing headings + the oversized hero backdrop.
+   Falls back to system-ui only if the web font fails to load. */
+.hero-title,
+.section-title,
+.hero-backdrop-word,
+.site-header .brand {
+  font-family: var(--font-display), system-ui, -apple-system, sans-serif;
 }
 
 input, textarea, select {
@@ -494,6 +503,29 @@ input:focus, textarea:focus, select:focus {
   mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
 }
 
+/* Oversized brand word set behind the hero content (DAYRISE steal). Clipped by
+   the hero's overflow:hidden; low-opacity so the headline stays legible over it.
+   Decorative — aria-hidden in markup. */
+.hero-backdrop-word {
+  position: absolute;
+  left: 50%;
+  bottom: -0.14em;
+  translate: -50% 0;
+  z-index: 0;
+  pointer-events: none;
+  margin: 0;
+  font-size: clamp(6rem, 26vw, 22rem);
+  font-weight: 800;
+  line-height: 0.8;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(180deg, oklch(0.66 0.2 300 / 0.16), oklch(0.66 0.2 300 / 0));
+  -webkit-background-clip: text;
+  background-clip: text;
+  user-select: none;
+}
+
 .hero-inner {
   position: relative;
   z-index: 2;
@@ -520,6 +552,86 @@ input:focus, textarea:focus, select:focus {
   background: var(--color-accent);
   box-shadow: 0 0 10px 1px var(--color-accent);
   animation: pulse-breath 1.6s ease-in-out infinite;
+}
+
+/* Live-signal variant: green (--color-accent-2) is reserved for "live" only.
+   The eyebrow border/text pick up the same green so the whole chip reads live. */
+.eyebrow.is-live {
+  color: var(--color-accent-2);
+  border-color: color-mix(in oklab, var(--color-accent-2) 40%, transparent);
+  background: color-mix(in oklab, var(--color-accent-2) 8%, transparent);
+}
+.eyebrow.is-live .eyebrow-dot {
+  background: var(--color-accent-2);
+  box-shadow: 0 0 10px 1px var(--color-accent-2);
+}
+
+/* "Bring your own service" trust strip under the hero CTA. */
+.hero-trust {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 1.75rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  opacity: 0;
+  animation: fade-in-up 0.7s var(--ease-out-quart) forwards;
+  animation-delay: 0.9s;
+}
+.hero-trust .trust-label { color: var(--color-text-secondary); }
+.hero-trust .trust-svc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-text-primary);
+}
+.hero-trust .trust-sep {
+  width: 1px;
+  height: 0.9rem;
+  background: var(--color-border);
+}
+
+/* Live activity marquee: evergreen value phrases scrolling under the hero.
+   Decorative (aria-hidden) — the same claims live in the readable sections. */
+.hero-ticker {
+  position: relative;
+  z-index: 2;
+  margin-top: 3.5rem;
+  width: 100%;
+  overflow: hidden;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.hero-ticker__track {
+  display: inline-flex;
+  align-items: center;
+  gap: 2.5rem;
+  padding: 0.75rem 0;
+  white-space: nowrap;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  animation: ticker-scroll 34s linear infinite;
+}
+.hero-ticker__track span { display: inline-flex; align-items: center; gap: 2.5rem; }
+.hero-ticker__track b {
+  color: var(--color-accent-2);
+  font-weight: 400;
+}
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-ticker__track { animation: none; }
 }
 
 .hero-title {
@@ -809,6 +921,22 @@ input:focus, textarea:focus, select:focus {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+}
+/* Clean marketing nav (Direction B borrow). Center anchor links; hidden on
+   small screens where the header keeps only brand + CTA. */
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  font-size: 0.9rem;
+}
+.site-nav a {
+  color: var(--color-text-secondary);
+  transition: color 150ms ease;
+}
+.site-nav a:hover { color: var(--color-text-primary); }
+@media (max-width: 47.999rem) {
+  .site-nav { display: none; }
 }
 .site-header .btn-primary { padding: 0.55rem 1.1rem; font-size: 0.9rem; }
 @media (max-width: 480px) {

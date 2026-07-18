@@ -1,6 +1,21 @@
 import type { Metadata } from 'next';
 import Script from 'next/script';
+import { Bricolage_Grotesque, Instrument_Sans } from 'next/font/google';
 import './globals.css';
+
+// Display face: characterful humanist-grotesque with a display optical cut —
+// carries the hero title + oversized backdrop word. Body: clean humanist sans,
+// not Inter. Both variable, exposed as CSS vars consumed in globals.css.
+const display = Bricolage_Grotesque({
+  subsets: ['latin'],
+  variable: '--font-display',
+  display: 'swap',
+});
+const body = Instrument_Sans({
+  subsets: ['latin'],
+  variable: '--font-body',
+  display: 'swap',
+});
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
 const description =
@@ -38,7 +53,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className={`dark ${display.variable} ${body.variable}`}>
       <head>
         {/* Runtime client config (WS URL, Spotify client id). Loaded before the
             app so window.__COJAM_ENV__ is set when realtime/auth code runs. */}

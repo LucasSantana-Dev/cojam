@@ -31,3 +31,10 @@ docs/deploy.md
 docs/design-references.md
 SPOTIFY_SETUP.md
 apps/web/APPLE_SETUP.md
+
+# Internal design token lock (AI-generated, local-only)
+DESIGN.md
+
+# Locally-installed external skills (npx skills) — never ship to the public repo
+.agents/
+skills-lock.json
