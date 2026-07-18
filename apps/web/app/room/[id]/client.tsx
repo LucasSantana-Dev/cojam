@@ -22,6 +22,7 @@ import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
+import type { IPlayer } from '@/lib/playerInterface';
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const [nameInput, setNameInput] = useState('');
@@ -32,6 +33,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [spotifyAuthorized, setSpotifyAuthorized] = useState(false);
   const [trackDepthOpen, setTrackDepthOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId
     ? store.state.queue.find((t) => t.id === store.state!.nowPlayingId)
@@ -179,16 +181,30 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <div className="panel p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {features.spotify && (
-                  <SpotifyPlayer authorized={spotifyAuthorized} onAuthorized={setSpotifyAuthorized} />
+                  <SpotifyPlayer
+                    authorized={spotifyAuthorized}
+                    onAuthorized={setSpotifyAuthorized}
+                    onPlayerReady={(player) => activeSource === 'spotify' && setActivePlayer(player)}
+                    onPlayerGone={() => activeSource === 'spotify' && setActivePlayer(null)}
+                  />
                 )}
                 {features.apple && (
-                  <ApplePlayer authorized={appleAuthorized} onAuthorized={setAppleAuthorized} />
+                  <ApplePlayer
+                    authorized={appleAuthorized}
+                    onAuthorized={setAppleAuthorized}
+                    onPlayerReady={(player) => activeSource === 'apple' && setActivePlayer(player)}
+                    onPlayerGone={() => activeSource === 'apple' && setActivePlayer(null)}
+                  />
                 )}
               </div>
 
               {features.youtube && activeSource === 'youtube' && (
                 <div className="pt-4" style={{ borderTop: '1px solid var(--color-border)' }}>
-                  <YouTubePlayer roomId={roomId} />
+                  <YouTubePlayer
+                    roomId={roomId}
+                    onPlayerReady={setActivePlayer}
+                    onPlayerGone={() => setActivePlayer(null)}
+                  />
                 </div>
               )}
             </div>

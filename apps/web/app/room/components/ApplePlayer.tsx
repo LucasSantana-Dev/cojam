@@ -5,6 +5,7 @@ import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
 import { features } from '@/lib/features';
 import { AppleMusicIcon } from '@/app/components/icons';
+import type { IPlayer } from '@/lib/playerInterface';
 
 declare global {
   interface Window {
@@ -33,14 +34,92 @@ async function fetchDeveloperToken(): Promise<string | null> {
   return body.token;
 }
 
+/**
+ * Apple Music player adapter implementing IPlayer interface.
+ * MusicKit v3 measures time in seconds; we convert to/from milliseconds internally.
+ */
+class ApplePlayerAdapter implements IPlayer {
+  private music: any;
+  private endedCallbacks: Array<() => void> = [];
+  private positionCallbacks: Array<(ms: number) => void> = [];
+  private positionPollInterval: NodeJS.Timeout | null = null;
+
+  constructor(music: any) {
+    this.music = music;
+  }
+
+  async play(): Promise<void> {
+    await this.music.play();
+  }
+
+  async pause(): Promise<void> {
+    await this.music.pause();
+  }
+
+  async seekToMs(positionMs: number): Promise<void> {
+    const seconds = positionMs / 1000;
+    await this.music.seekToTime(seconds);
+  }
+
+  async getCurrentPositionMs(): Promise<number> {
+    try {
+      const seconds = this.music.currentPlaybackTime;
+      return Math.round(seconds * 1000);
+    } catch {
+      return 0;
+    }
+  }
+
+  async getDurationMs(): Promise<number> {
+    try {
+      const seconds = this.music.currentPlaybackDuration;
+      return Math.round(seconds * 1000);
+    } catch {
+      return 0;
+    }
+  }
+
+  canSeek(): boolean {
+    return true;
+  }
+
+  onEnded(cb: () => void): void {
+    this.endedCallbacks.push(cb);
+  }
+
+  onPositionChanged(cb: (positionMs: number) => void): void {
+    this.positionCallbacks.push(cb);
+    if (!this.positionPollInterval) {
+      this.positionPollInterval = setInterval(async () => {
+        const pos = await this.getCurrentPositionMs();
+        this.positionCallbacks.forEach((c) => c(pos));
+      }, 1000);
+    }
+  }
+
+  dispose(): void {
+    if (this.positionPollInterval) {
+      clearInterval(this.positionPollInterval);
+      this.positionPollInterval = null;
+    }
+    this.endedCallbacks = [];
+    this.positionCallbacks = [];
+  }
+}
+
 export function ApplePlayer({
   authorized,
   onAuthorized,
+  onPlayerReady,
+  onPlayerGone,
 }: {
   authorized: boolean;
   onAuthorized: (v: boolean) => void;
+  onPlayerReady?: (player: IPlayer) => void;
+  onPlayerGone?: () => void;
 }) {
   const musicRef = useRef<any>(null);
+  const adapterRef = useRef<ApplePlayerAdapter | null>(null);
   const [status, setStatus] = useState<'idle' | 'unconfigured' | 'ready' | 'error'>('idle');
   const state = useStore((s) => s.state);
   const nowPlaying = state?.nowPlayingId
@@ -67,6 +146,9 @@ export function ApplePlayer({
           app: { name: 'cojam', build: '0.1.0' },
         });
         musicRef.current = MusicKit.getInstance();
+        const adapter = new ApplePlayerAdapter(musicRef.current);
+        adapterRef.current = adapter;
+        onPlayerReady?.(adapter);
         onAuthorized(musicRef.current.isAuthorized);
         setStatus('ready');
       } catch (e) {
@@ -76,8 +158,13 @@ export function ApplePlayer({
     })();
     return () => {
       cancelled = true;
+      if (adapterRef.current) {
+        adapterRef.current.dispose();
+        adapterRef.current = null;
+        onPlayerGone?.();
+      }
     };
-  }, [onAuthorized]);
+  }, [onAuthorized, onPlayerReady, onPlayerGone]);
 
   useEffect(() => {
     const music = musicRef.current;
