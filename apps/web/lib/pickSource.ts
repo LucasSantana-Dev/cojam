@@ -12,3 +12,13 @@ export function pickSource(
   if (track.sources.youtube?.videoId) return 'youtube';
   return null;
 }
+
+// Whether a track has no playable source for this client.
+// True means the track is unavailable (pickSource returns null).
+export function isUnavailable(
+  track: TrackRef | null,
+  opts: { appleAuthorized: boolean; spotifyAuthorized: boolean },
+): boolean {
+  if (!track) return false;
+  return pickSource(track, opts) === null;
+}

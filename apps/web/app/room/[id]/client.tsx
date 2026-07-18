@@ -9,7 +9,7 @@ import { StatusBanner } from '../components/StatusBanner';
 // returns to /callback/spotify then back here) auto-rejoins instead of dropping
 // the user back to the name form. Session-scoped; cleared when the tab closes.
 const NAME_KEY = 'mj_room_name';
-import { pickSource } from '@/lib/pickSource';
+import { pickSource, isUnavailable } from '@/lib/pickSource';
 import { features } from '@/lib/features';
 import { YouTubePlayer } from '../components/YouTubePlayer';
 import { ApplePlayer } from '../components/ApplePlayer';
@@ -22,6 +22,7 @@ import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
 import { EnrichmentPanel } from '../components/EnrichmentPanel';
+import { UnavailableTrack } from '../components/UnavailableTrack';
 import { TransportUI } from '../components/TransportUI';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
@@ -332,7 +333,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                   </div>
                 </label>
               </div>
-              {nowPlaying ? (
+              {nowPlaying && isUnavailable(nowPlaying, { appleAuthorized, spotifyAuthorized }) ? (
+                <UnavailableTrack />
+              ) : nowPlaying ? (
                 <>
                   <div className="flex items-start justify-between gap-4">
                     <div key={nowPlaying.id} className="flex-1 min-w-0 track-change-enter">
