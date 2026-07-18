@@ -246,3 +246,169 @@ func TestHostAssignment_PersistenceRoundTrip(t *testing.T) {
 		t.Fatalf("old snapshot should have empty hostUserId: got %q", oldState.HostUserID)
 	}
 }
+
+// TestAuthorize_HostOnlyMethods tests that host-only methods are enforced when
+// FEATURE_ROOM_AUTH is on (HostUserID is set). A listener calling a host-only
+// method should be denied even if they are a member.
+func TestAuthorize_HostOnlyMethods_ListenerBlocked(t *testing.T) {
+	h := NewHub(nil)
+
+	// alice joins and becomes host
+	h.RecordClientUserID("alice_client", "alice")
+	h.Join("alice_client", "room_auth")
+	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"room_auth","name":"alice"}`), "alice")
+	if err != nil {
+		t.Fatalf("room.join alice: %v", err)
+	}
+
+	// bob joins as a listener (member but not host)
+	h.RecordClientUserID("bob_client", "bob")
+	h.Join("bob_client", "room_auth")
+	_, err = h.HandleRPC("room.join", []byte(`{"roomId":"room_auth","name":"bob"}`), "bob")
+	if err != nil {
+		t.Fatalf("room.join bob: %v", err)
+	}
+
+	bobClient := newTestClient("bob_client", "bob")
+
+	// Host-only methods: bob (non-host) should be denied
+	hostOnlyMethods := []struct {
+		method string
+		data   string
+	}{
+		{"now_playing.set", `{"roomId":"room_auth","trackId":"t1"}`},
+		{"now_playing.advance", `{"roomId":"room_auth","afterId":"t1"}`},
+		{"queue.reorder", `{"roomId":"room_auth","trackId":"t1","toIndex":0}`},
+		{"queue.remove", `{"roomId":"room_auth","trackId":"t1"}`},
+		{"radio.set", `{"roomId":"room_auth","enabled":true}`},
+		{"playlist.import", `{"roomId":"room_auth","url":"http://example.com"}`},
+		{"transport.play", `{"roomId":"room_auth"}`},
+		{"transport.pause", `{"roomId":"room_auth"}`},
+		{"transport.seek", `{"roomId":"room_auth","positionMs":1000}`},
+	}
+
+	for _, test := range hostOnlyMethods {
+		err := h.Authorize(bobClient, test.method, []byte(test.data))
+		if !errors.Is(err, centrifuge.ErrorPermissionDenied) {
+			t.Fatalf("listener bob calling %s: got %v, want ErrorPermissionDenied", test.method, err)
+		}
+	}
+}
+
+// TestAuthorize_HostOnlyMethods_HostAllowed tests that the host can call
+// host-only methods.
+func TestAuthorize_HostOnlyMethods_HostAllowed(t *testing.T) {
+	h := NewHub(nil)
+
+	// alice joins and becomes host
+	h.RecordClientUserID("alice_client", "alice")
+	h.Join("alice_client", "room_host")
+	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"room_host","name":"alice"}`), "alice")
+	if err != nil {
+		t.Fatalf("room.join alice: %v", err)
+	}
+
+	aliceClient := newTestClient("alice_client", "alice")
+
+	// Host-only methods: alice (host) should be allowed
+	hostOnlyMethods := []struct {
+		method string
+		data   string
+	}{
+		{"now_playing.set", `{"roomId":"room_host","trackId":"t1"}`},
+		{"now_playing.advance", `{"roomId":"room_host","afterId":"t1"}`},
+		{"queue.reorder", `{"roomId":"room_host","trackId":"t1","toIndex":0}`},
+		{"queue.remove", `{"roomId":"room_host","trackId":"t1"}`},
+		{"radio.set", `{"roomId":"room_host","enabled":true}`},
+		{"playlist.import", `{"roomId":"room_host","url":"http://example.com"}`},
+		{"transport.play", `{"roomId":"room_host"}`},
+		{"transport.pause", `{"roomId":"room_host"}`},
+		{"transport.seek", `{"roomId":"room_host","positionMs":1000}`},
+	}
+
+	for _, test := range hostOnlyMethods {
+		err := h.Authorize(aliceClient, test.method, []byte(test.data))
+		if err != nil {
+			t.Fatalf("host alice calling %s: got %v, want nil", test.method, err)
+		}
+	}
+}
+
+// TestAuthorize_QueueAddAllowedForListener tests that queue.add is allowed for
+// any member, even non-hosts.
+func TestAuthorize_QueueAddAllowedForListener(t *testing.T) {
+	h := NewHub(nil)
+
+	// alice joins and becomes host
+	h.RecordClientUserID("alice_client", "alice")
+	h.Join("alice_client", "room_add")
+	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"room_add","name":"alice"}`), "alice")
+	if err != nil {
+		t.Fatalf("room.join alice: %v", err)
+	}
+
+	// bob joins as a listener
+	h.RecordClientUserID("bob_client", "bob")
+	h.Join("bob_client", "room_add")
+	_, err = h.HandleRPC("room.join", []byte(`{"roomId":"room_add","name":"bob"}`), "bob")
+	if err != nil {
+		t.Fatalf("room.join bob: %v", err)
+	}
+
+	bobClient := newTestClient("bob_client", "bob")
+
+	// queue.add should be allowed for bob
+	addData := []byte(`{"roomId":"room_add","track":{"title":"t","artist":"a","sources":{},"addedBy":"bob"}}`)
+	err = h.Authorize(bobClient, "queue.add", addData)
+	if err != nil {
+		t.Fatalf("listener bob queue.add: got %v, want nil", err)
+	}
+}
+
+// TestAuthorize_HostOnlyMethods_FlagOffAllowed tests that when FEATURE_ROOM_AUTH
+// is off (HostUserID is empty), host-only methods are allowed for any member
+// (preserving v0 behavior).
+func TestAuthorize_HostOnlyMethods_FlagOffAllowed(t *testing.T) {
+	h := NewHub(nil)
+
+	// Anonymous join (no userID): HostUserID stays empty, simulating flag off
+	h.Join("anon_client1", "room_v0")
+	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"room_v0","name":"anon1"}`), "")
+	if err != nil {
+		t.Fatalf("room.join anon1: %v", err)
+	}
+
+	h.Join("anon_client2", "room_v0")
+	_, err = h.HandleRPC("room.join", []byte(`{"roomId":"room_v0","name":"anon2"}`), "")
+	if err != nil {
+		t.Fatalf("room.join anon2: %v", err)
+	}
+
+	// Both anonymous clients should be able to call host-only methods
+	// (no host enforcement when HostUserID is empty)
+	client1 := newTestClient("anon_client1", "")
+	client2 := newTestClient("anon_client2", "")
+
+	hostOnlyMethods := []struct {
+		method string
+		data   string
+	}{
+		{"now_playing.set", `{"roomId":"room_v0","trackId":"t1"}`},
+		{"queue.reorder", `{"roomId":"room_v0","trackId":"t1","toIndex":0}`},
+		{"transport.play", `{"roomId":"room_v0"}`},
+	}
+
+	for _, test := range hostOnlyMethods {
+		// client1 should be allowed
+		err := h.Authorize(client1, test.method, []byte(test.data))
+		if err != nil {
+			t.Fatalf("anon client1 %s (flag off): got %v, want nil", test.method, err)
+		}
+
+		// client2 should also be allowed
+		err = h.Authorize(client2, test.method, []byte(test.data))
+		if err != nil {
+			t.Fatalf("anon client2 %s (flag off): got %v, want nil", test.method, err)
+		}
+	}
+}

@@ -110,6 +110,22 @@ var mutatingMethods = map[string]bool{
 	"transport.seek":      true,
 }
 
+// hostOnlyMethods are mutating RPCs that disrupt room control and therefore
+// require the caller to be the room's host (RFC-0005 U4).
+// queue.add and room.join are always allowed for members.
+// TODO(RFC-0005): allow listeners to remove their own tracks once AddedBy carries userID.
+var hostOnlyMethods = map[string]bool{
+	"now_playing.set":     true,
+	"now_playing.advance": true,
+	"queue.reorder":       true,
+	"queue.remove":        true,
+	"radio.set":           true,
+	"playlist.import":     true,
+	"transport.play":      true,
+	"transport.pause":     true,
+	"transport.seek":      true,
+}
+
 // WithMatcher enables async YouTube-source enrichment on queue.add.
 func (h *Hub) WithMatcher(m Matcher) *Hub {
 	h.matcher = m
@@ -224,6 +240,20 @@ func (h *Hub) IsUserIDInRoom(roomID, userID string) bool {
 	return false
 }
 
+// GetHostUserID returns the hostUserID for a room, or empty if no host is assigned.
+// Called inside Authorize to enforce host-only methods.
+func (h *Hub) GetHostUserID(roomID string) string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	room, exists := h.rooms[roomID]
+	if !exists {
+		return "" // room not loaded yet; no host
+	}
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	return room.State.HostUserID
+}
+
 // Authorize gates a client's RPC before dispatch. room.join enrolls the client
 // and is always allowed. Mutating methods require membership of the target room,
 // else ErrorPermissionDenied. Reads/unknown methods pass through (dispatch owns
@@ -231,7 +261,7 @@ func (h *Hub) IsUserIDInRoom(roomID, userID string) bool {
 // where the client is known, allowing access to authenticated userID.
 func (h *Hub) Authorize(client Client, method string, data []byte) error {
 	clientID := client.ID()
-	_ = client.UserID() // UserID is available here for authenticated requests (U4+)
+	userID := client.UserID() // UserID is available here for authenticated requests (U4+)
 
 	var probe struct {
 		RoomID string `json:"roomId"`
@@ -251,6 +281,17 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 	if !h.IsMember(clientID, probe.RoomID) {
 		return centrifuge.ErrorPermissionDenied
 	}
+
+	// Host-only gate (RFC-0005 U4): if method is host-only and room has a host,
+	// only the host can execute. When HostUserID is empty (flag off), this check
+	// is skipped, preserving v0 equal-member behavior.
+	if hostOnlyMethods[method] {
+		hostUserID := h.GetHostUserID(probe.RoomID)
+		if hostUserID != "" && userID != hostUserID {
+			return centrifuge.ErrorPermissionDenied
+		}
+	}
+
 	return nil
 }
 
