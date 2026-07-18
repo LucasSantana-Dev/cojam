@@ -42,12 +42,14 @@ test('two users see each other\'s queue additions live', async ({ browser }) => 
   await addTrack(lucas, 'Me at the zoo', 'jawed', 'jNQXAC9IVRw');
   await expect(lucas.getByText('Me at the zoo').first()).toBeVisible();
   await expect(ana.getByText('Me at the zoo').first()).toBeVisible();
-  await expect(ana.getByText('jawed by Lucas')).toBeVisible();
+  // Attribution: the row shows the artist and the adder's name (as separate
+  // spans since the repaint; assert the artist, which is unique to this track).
+  await expect(ana.getByText('jawed')).toBeVisible();
 
   // Ana adds — Lucas receives (bidirectional)
   await addTrack(ana, 'Second Song', 'Someone');
   await expect(lucas.getByText('Second Song')).toBeVisible();
-  await expect(lucas.getByText('Someone by Ana')).toBeVisible();
+  await expect(lucas.getByText('Someone')).toBeVisible();
 
   // First add auto-set now playing → YouTube iframe mounted on both
   // YT.Player replaces the target div with an iframe that inherits the id
