@@ -44,6 +44,12 @@ type TrackDepthProvider func(ctx context.Context, isrc, title, artist string) (i
 // LyricsProvider fetches lyrics for a track (synced and plain)
 type LyricsProvider func(ctx context.Context, artist, title, album string, durationMs int) (interface{}, error)
 
+// ListenBrainzProvider fetches enrichment data from ListenBrainz (tags, listen counts)
+type ListenBrainzProvider func(ctx context.Context, isrc, title, artist string) (interface{}, error)
+
+// LastfmEnrichProvider fetches enrichment data from Last.fm (playcount, listeners, tags)
+type LastfmEnrichProvider func(ctx context.Context, artist, title string) (interface{}, error)
+
 // Room holds the state for a music jam room
 type Room struct {
 	mu    sync.Mutex
@@ -65,6 +71,8 @@ type Hub struct {
 	similar         SimilarProvider
 	trackDepth      TrackDepthProvider
 	lyrics          LyricsProvider
+	listenBrainz    ListenBrainzProvider
+	lastfmEnrich    LastfmEnrichProvider
 	syncEnabled     bool
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
@@ -544,6 +552,85 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 
 		return json.Marshal(result)
 
+	case "track.listenbrainz":
+		var req struct {
+			RoomID string `json:"roomId"`
+			ISRC   string `json:"isrc"`
+			Title  string `json:"title"`
+			Artist string `json:"artist"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+
+		// If listenbrainz provider not configured, return empty result
+		if h.listenBrainz == nil {
+			return json.Marshal(map[string]interface{}{
+				"mbid":   "",
+				"tags":   []string{},
+				"source": "listenbrainz",
+			})
+		}
+
+		// Use a short timeout for listenbrainz lookup
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		result, err := h.listenBrainz(ctx, req.ISRC, req.Title, req.Artist)
+		if err != nil {
+			// Log error but return empty result instead of failing the RPC
+			if h.logger != nil {
+				h.logger.Error("listenbrainz_failed", "title", req.Title, "artist", req.Artist, "err", err.Error())
+			}
+			return json.Marshal(map[string]interface{}{
+				"mbid":   "",
+				"tags":   []string{},
+				"source": "listenbrainz",
+			})
+		}
+
+		return json.Marshal(result)
+
+	case "track.lastfm":
+		var req struct {
+			RoomID string `json:"roomId"`
+			Artist string `json:"artist"`
+			Title  string `json:"title"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+
+		// If lastfm provider not configured, return empty result
+		if h.lastfmEnrich == nil {
+			return json.Marshal(map[string]interface{}{
+				"playcount": 0,
+				"listeners": 0,
+				"tags":      []string{},
+				"source":    "lastfm",
+			})
+		}
+
+		// Use a short timeout for lastfm lookup
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		result, err := h.lastfmEnrich(ctx, req.Artist, req.Title)
+		if err != nil {
+			// Log error but return empty result instead of failing the RPC
+			if h.logger != nil {
+				h.logger.Error("lastfm_enrich_failed", "title", req.Title, "artist", req.Artist, "err", err.Error())
+			}
+			return json.Marshal(map[string]interface{}{
+				"playcount": 0,
+				"listeners": 0,
+				"tags":      []string{},
+				"source":    "lastfm",
+			})
+		}
+
+		return json.Marshal(result)
+
 	case "playlist.import":
 		var req struct {
 			RoomID  string `json:"roomId"`
@@ -810,6 +897,18 @@ func (h *Hub) WithTrackDepthProvider(tdp TrackDepthProvider) *Hub {
 // WithLyricsProvider enables track.lyrics RPC for fetching lyrics.
 func (h *Hub) WithLyricsProvider(lp LyricsProvider) *Hub {
 	h.lyrics = lp
+	return h
+}
+
+// WithListenBrainzProvider enables track.listenbrainz RPC for enrichment data.
+func (h *Hub) WithListenBrainzProvider(lbp ListenBrainzProvider) *Hub {
+	h.listenBrainz = lbp
+	return h
+}
+
+// WithLastfmEnrichProvider enables track.lastfm RPC for enrichment data.
+func (h *Hub) WithLastfmEnrichProvider(lep LastfmEnrichProvider) *Hub {
+	h.lastfmEnrich = lep
 	return h
 }
 

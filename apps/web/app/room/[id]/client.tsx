@@ -21,6 +21,7 @@ import { ShareRoomButton } from '../components/ShareRoomButton';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
+import { EnrichmentPanel } from '../components/EnrichmentPanel';
 import { TransportUI } from '../components/TransportUI';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
@@ -36,6 +37,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [trackDepthOpen, setTrackDepthOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
+  const [enrichmentOpen, setEnrichmentOpen] = useState(false);
   const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId
@@ -386,6 +388,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
                           Lyrics
                         </button>
                       )}
+                      {(features.listenBrainz || features.lastfmEnrich) && nowPlaying && (
+                        <button
+                          onClick={() => setEnrichmentOpen(true)}
+                          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
+                          style={{
+                            background: 'var(--color-surface-2)',
+                            border: '1px solid var(--color-border)',
+                            color: 'var(--color-text-primary)',
+                          }}
+                          title="View track enrichment from ListenBrainz and Last.fm"
+                        >
+                          More
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -426,6 +442,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
         track={nowPlaying || null}
         open={lyricsOpen}
         onClose={() => setLyricsOpen(false)}
+        activePlayer={activePlayer}
+      />
+      <EnrichmentPanel
+        roomId={roomId}
+        track={nowPlaying || null}
+        open={enrichmentOpen}
+        onClose={() => setEnrichmentOpen(false)}
       />
     </div>
   );

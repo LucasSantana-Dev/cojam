@@ -2,27 +2,34 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { TrackRef } from '@cojam/shared';
+import type { IPlayer } from '@/lib/playerInterface';
 import { fetchLyrics } from '@/lib/realtime';
+import { activeLineIndex } from '@/lib/lyricSync';
 
 interface LyricsPanelProps {
   roomId: string;
   track: TrackRef | null;
   open: boolean;
   onClose: () => void;
+  activePlayer?: IPlayer | null;
 }
 
-export function LyricsPanel({ roomId, track, open, onClose }: LyricsPanelProps) {
+export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: LyricsPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   const [retry, setRetry] = useState(0);
+  const [currentPositionMs, setCurrentPositionMs] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lyricsContentRef = useRef<HTMLDivElement>(null);
+  const activeLineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   // Element focused before the panel opened, restored on close.
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   // onClose changes identity each parent render; hold it in a ref so the focus
   // effect can depend on [open] alone and not tear down on every render.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const positionPollingRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!open || !track) {
@@ -58,6 +65,51 @@ export function LyricsPanel({ roomId, track, open, onClose }: LyricsPanelProps) 
       cancelled = true;
     };
   }, [open, track, roomId, retry]);
+
+  // Position polling for active-line highlighting
+  useEffect(() => {
+    if (!open || !activePlayer || !data?.synced || data.synced.length === 0) {
+      if (positionPollingRef.current) {
+        clearInterval(positionPollingRef.current);
+        positionPollingRef.current = null;
+      }
+      return;
+    }
+
+    positionPollingRef.current = setInterval(() => {
+      activePlayer.getCurrentPositionMs()
+        .then((posMs) => {
+          setCurrentPositionMs(posMs);
+        })
+        .catch((err) => {
+          console.warn('Failed to get current position for lyrics sync:', err);
+        });
+    }, 300);
+
+    return () => {
+      if (positionPollingRef.current) {
+        clearInterval(positionPollingRef.current);
+        positionPollingRef.current = null;
+      }
+    };
+  }, [open, activePlayer, data?.synced]);
+
+  // Auto-scroll active line into view
+  useEffect(() => {
+    if (!open || !data?.synced || data.synced.length === 0) return;
+
+    const currIdx = activeLineIndex(data.synced, currentPositionMs);
+    if (currIdx < 0) return;
+
+    const lineEl = activeLineRefs.current.get(currIdx);
+    if (!lineEl) return;
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    lineEl.scrollIntoView({
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      block: 'nearest',
+    });
+  }, [currentPositionMs, open, data?.synced]);
 
   // Dialog focus management: move focus into the panel on open, trap Tab within
   // it, close on Esc, and restore focus to the prior element on close.
@@ -177,22 +229,30 @@ export function LyricsPanel({ roomId, track, open, onClose }: LyricsPanelProps) 
             <>
               {/* Synced lyrics (if available) */}
               {data.synced && data.synced.length > 0 ? (
-                <div className="space-y-2">
-                  {data.synced.map((line: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className="py-2 px-3 rounded text-sm transition-all duration-150"
-                      style={{
-                        backgroundColor: 'var(--color-surface-2)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                    >
-                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        {Math.floor(line.timeMs / 60000)}:{String(Math.floor((line.timeMs % 60000) / 1000)).padStart(2, '0')}
-                      </span>
-                      <span className="ml-3">{line.text}</span>
-                    </div>
-                  ))}
+                <div className="space-y-2" ref={lyricsContentRef}>
+                  {data.synced.map((line: any, idx: number) => {
+                    const isActive = activeLineIndex(data.synced, currentPositionMs) === idx;
+                    return (
+                      <div
+                        key={idx}
+                        ref={(el) => {
+                          if (el) activeLineRefs.current.set(idx, el);
+                          else activeLineRefs.current.delete(idx);
+                        }}
+                        className="py-2 px-3 rounded text-sm transition-all duration-150"
+                        style={{
+                          backgroundColor: isActive ? 'var(--color-accent)' : 'var(--color-surface-2)',
+                          color: isActive ? 'var(--color-surface-0)' : 'var(--color-text-primary)',
+                          fontWeight: isActive ? '600' : '400',
+                        }}
+                      >
+                        <span className="text-xs" style={{ color: isActive ? 'var(--color-surface-0)' : 'var(--color-text-muted)', opacity: isActive ? 0.9 : 1 }}>
+                          {Math.floor(line.timeMs / 60000)}:{String(Math.floor((line.timeMs % 60000) / 1000)).padStart(2, '0')}
+                        </span>
+                        <span className="ml-3">{line.text}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : data.plain ? (
                 <div

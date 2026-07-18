@@ -811,3 +811,91 @@ func SimilarTracks(ctx context.Context, artist, title string, limit int) ([]queu
 
 	return tracks, nil
 }
+
+// LastfmEnrich represents enrichment data from Last.fm (playcount, listeners, top tags)
+type LastfmEnrich struct {
+	Playcount int      `json:"playcount,omitempty"`
+	Listeners int      `json:"listeners,omitempty"`
+	Tags      []string `json:"tags"`
+	Source    string   `json:"source"` // Always "lastfm"
+}
+
+// lastfmTrackInfoResponse wraps Last.fm track.getInfo response
+type lastfmTrackInfoResponse struct {
+	Track struct {
+		Name      string `json:"name"`
+		Artist    string `json:"artist"`
+		Playcount string `json:"playcount"` // String in Last.fm API
+		Listeners string `json:"listeners"`
+		Tags      struct {
+			Tag []struct {
+				Name string `json:"name"`
+			} `json:"tag"`
+		} `json:"tags"`
+	} `json:"track"`
+}
+
+// FetchLastfmEnrichment queries Last.fm for enrichment data about a track
+// (playcount, listeners, and top tags). Returns ErrNotConfigured when
+// LASTFM_API_KEY is unset. Returns graceful empty enrichment on network error.
+func FetchLastfmEnrichment(ctx context.Context, artist, title string) (*LastfmEnrich, error) {
+	if lastfmAPIKey == "" {
+		return nil, ErrNotConfigured
+	}
+
+	// Default graceful empty result
+	result := &LastfmEnrich{
+		Tags:   []string{},
+		Source: "lastfm",
+	}
+
+	// Build request to track.getInfo
+	params := url.Values{}
+	params.Set("method", "track.getInfo")
+	params.Set("artist", artist)
+	params.Set("track", title)
+	params.Set("api_key", lastfmAPIKey)
+	params.Set("format", "json")
+	params.Set("autocorrect", "1")
+
+	req, err := http.NewRequestWithContext(ctx, "GET", lastfmURL+"?"+params.Encode(), nil)
+	if err != nil {
+		// Graceful return on request creation error
+		return result, nil
+	}
+
+	req.Header.Set("User-Agent", "cojam/0.1 (https://github.com/LucasSantana-Dev/cojam)")
+
+	var resp lastfmTrackInfoResponse
+	if err := httpx.DoJSON(req, &resp); err != nil {
+		// Graceful return on network/parsing error
+		return result, nil
+	}
+
+	// Extract playcount and listeners (Last.fm returns them as strings)
+	if resp.Track.Playcount != "" {
+		if pc, parseErr := fmt.Sscanf(resp.Track.Playcount, "%d", &result.Playcount); parseErr == nil {
+			// Set only if successfully parsed
+			_ = pc
+		}
+	}
+	if resp.Track.Listeners != "" {
+		if ls, parseErr := fmt.Sscanf(resp.Track.Listeners, "%d", &result.Listeners); parseErr == nil {
+			// Set only if successfully parsed
+			_ = ls
+		}
+	}
+
+	// Extract top tags
+	if resp.Track.Tags.Tag != nil {
+		tags := make([]string, 0, len(resp.Track.Tags.Tag))
+		for _, t := range resp.Track.Tags.Tag {
+			if t.Name != "" {
+				tags = append(tags, t.Name)
+			}
+		}
+		result.Tags = tags
+	}
+
+	return result, nil
+}
