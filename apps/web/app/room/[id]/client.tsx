@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useStore, joinRoom, setRadio } from '@/lib/realtime';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useStore, joinRoom, setRadio, transportPlay, transportPause, getClockOffsetMs } from '@/lib/realtime';
+import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS, serverNow } from '@/lib/playbackSync';
 import { StatusBanner } from '../components/StatusBanner';
 
 // Persist the chosen name for the session so a full-page redirect (Spotify OAuth
@@ -20,8 +21,10 @@ import { ShareRoomButton } from '../components/ShareRoomButton';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
+import { TransportUI } from '../components/TransportUI';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
+import type { IPlayer } from '@/lib/playerInterface';
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const [nameInput, setNameInput] = useState('');
@@ -32,6 +35,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [spotifyAuthorized, setSpotifyAuthorized] = useState(false);
   const [trackDepthOpen, setTrackDepthOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
+  const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId
     ? store.state.queue.find((t) => t.id === store.state!.nowPlayingId)
@@ -73,6 +78,78 @@ export function RoomClient({ roomId }: { roomId: string }) {
     const saved = sessionStorage.getItem(NAME_KEY);
     if (saved) doJoin(saved);
   }, [joined, doJoin]);
+
+  // U4: Drift correction loop (gated by features.sync)
+  // Monitors transport state and corrects playback position drift.
+  useEffect(() => {
+    if (!features.sync || !activePlayer || !store.state?.transport) return;
+
+    const transport = store.state.transport;
+
+    // Handle state transitions: play/pause/stop
+    if (transport.state === 'playing') {
+      activePlayer.play().catch((err) => {
+        console.warn('Failed to play:', err);
+      });
+      // Seek to expected position to sync with server
+      const expected = computeExpectedPosition(transport, serverNow());
+      activePlayer.seekToMs(expected).catch((err) => {
+        if (activePlayer.canSeek()) {
+          console.warn('Failed to seek to expected position:', err);
+        }
+        // If !canSeek (e.g. Spotify free tier), silently continue
+      });
+    } else if (transport.state === 'paused') {
+      activePlayer.pause().catch((err) => {
+        console.warn('Failed to pause:', err);
+      });
+    }
+
+    // If playing and the player supports seek, set up drift correction loop
+    if (transport.state !== 'playing' || !activePlayer.canSeek()) {
+      // Clean up any existing interval
+      if (driftCorrectionIntervalRef.current) {
+        clearInterval(driftCorrectionIntervalRef.current);
+        driftCorrectionIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Start drift correction interval: check ~every 1500ms
+    driftCorrectionIntervalRef.current = setInterval(() => {
+      // Re-check state in case it changed
+      if (!activePlayer || !store.state?.transport || store.state.transport.state !== 'playing') {
+        if (driftCorrectionIntervalRef.current) {
+          clearInterval(driftCorrectionIntervalRef.current);
+          driftCorrectionIntervalRef.current = null;
+        }
+        return;
+      }
+
+      const transport = store.state.transport;
+      const expected = computeExpectedPosition(transport, serverNow());
+
+      activePlayer.getCurrentPositionMs()
+        .then((actual) => {
+          const drift = actual - expected;
+          if (shouldCorrect(drift, DRIFT_THRESHOLD_MS)) {
+            activePlayer.seekToMs(expected).catch((err) => {
+              console.warn('Drift correction seek failed:', err);
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn('Failed to get current position for drift check:', err);
+        });
+    }, 1500);
+
+    return () => {
+      if (driftCorrectionIntervalRef.current) {
+        clearInterval(driftCorrectionIntervalRef.current);
+        driftCorrectionIntervalRef.current = null;
+      }
+    };
+  }, [features.sync, activePlayer, store.state?.transport, store.state?.transport?.state]);
 
   if (!joined) {
     return (
@@ -138,7 +215,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 <span>Room</span>
                 <span className="room-code-chip">{roomId}</span>
                 <span aria-hidden style={{ opacity: 0.5 }}>·</span>
-                <span className="truncate">you&apos;re {store.name}</span>
+                <span className="truncate">you're {store.name}</span>
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
@@ -179,16 +256,30 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <div className="panel p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {features.spotify && (
-                  <SpotifyPlayer authorized={spotifyAuthorized} onAuthorized={setSpotifyAuthorized} />
+                  <SpotifyPlayer
+                    authorized={spotifyAuthorized}
+                    onAuthorized={setSpotifyAuthorized}
+                    onPlayerReady={(player) => activeSource === 'spotify' && setActivePlayer(player)}
+                    onPlayerGone={() => activeSource === 'spotify' && setActivePlayer(null)}
+                  />
                 )}
                 {features.apple && (
-                  <ApplePlayer authorized={appleAuthorized} onAuthorized={setAppleAuthorized} />
+                  <ApplePlayer
+                    authorized={appleAuthorized}
+                    onAuthorized={setAppleAuthorized}
+                    onPlayerReady={(player) => activeSource === 'apple' && setActivePlayer(player)}
+                    onPlayerGone={() => activeSource === 'apple' && setActivePlayer(null)}
+                  />
                 )}
               </div>
 
               {features.youtube && activeSource === 'youtube' && (
                 <div className="pt-4" style={{ borderTop: '1px solid var(--color-border)' }}>
-                  <YouTubePlayer roomId={roomId} />
+                  <YouTubePlayer
+                    roomId={roomId}
+                    onPlayerReady={setActivePlayer}
+                    onPlayerGone={() => setActivePlayer(null)}
+                  />
                 </div>
               )}
             </div>
@@ -297,6 +388,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
                       )}
                     </div>
                   </div>
+
+                  {features.transport && (
+                    <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
+                      <TransportUI roomId={roomId} activePlayer={activePlayer} />
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="hero-empty">

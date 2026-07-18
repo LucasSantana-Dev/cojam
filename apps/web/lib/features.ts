@@ -8,6 +8,8 @@ export type Features = {
   presence: boolean;
   trackDepth: boolean;
   lyrics: boolean;
+  transport: boolean;
+  sync: boolean;
 };
 
 const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
@@ -29,6 +31,8 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
     presence: flag(env.NEXT_PUBLIC_FEATURE_PRESENCE, true),
     trackDepth: flag(env.NEXT_PUBLIC_FEATURE_TRACK_DEPTH, true),
     lyrics: flag(env.NEXT_PUBLIC_FEATURE_LYRICS, true),
+    transport: flag(env.NEXT_PUBLIC_FEATURE_TRANSPORT, true),
+    sync: flag(env.NEXT_PUBLIC_FEATURE_SYNC, false),
   };
 }
 
@@ -40,4 +44,6 @@ export const features: Features = resolveFeatures({
   NEXT_PUBLIC_FEATURE_PRESENCE: process.env.NEXT_PUBLIC_FEATURE_PRESENCE,
   NEXT_PUBLIC_FEATURE_TRACK_DEPTH: process.env.NEXT_PUBLIC_FEATURE_TRACK_DEPTH,
   NEXT_PUBLIC_FEATURE_LYRICS: process.env.NEXT_PUBLIC_FEATURE_LYRICS,
+  NEXT_PUBLIC_FEATURE_TRANSPORT: process.env.NEXT_PUBLIC_FEATURE_TRANSPORT,
+  NEXT_PUBLIC_FEATURE_SYNC: process.env.NEXT_PUBLIC_FEATURE_SYNC,
 });

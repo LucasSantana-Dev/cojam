@@ -83,7 +83,15 @@ func main() {
 	}
 
 	// Create hub
-	h := hub.NewHub(node).WithObservability(logger, metrics)
+	h := hub.NewHub(node).
+		WithObservability(logger, metrics).
+		WithSync(featureEnabled("FEATURE_SYNC", false))
+
+	if featureEnabled("FEATURE_SYNC", false) {
+		logger.Info("sync_enabled")
+	} else {
+		logger.Info("sync_disabled")
+	}
 
 	// Wire persistent store if DATABASE_URL is configured. dbPool is held at this
 	// scope so the /readyz check can ping it; nil in in-memory mode.

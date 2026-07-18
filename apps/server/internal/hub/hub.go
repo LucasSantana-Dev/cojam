@@ -65,6 +65,7 @@ type Hub struct {
 	similar         SimilarProvider
 	trackDepth      TrackDepthProvider
 	lyrics          LyricsProvider
+	syncEnabled     bool
 
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
@@ -84,6 +85,9 @@ var mutatingMethods = map[string]bool{
 	"now_playing.advance": true,
 	"playlist.import":     true,
 	"radio.set":           true,
+	"transport.play":      true,
+	"transport.pause":     true,
+	"transport.seek":      true,
 }
 
 // WithMatcher enables async YouTube-source enrichment on queue.add.
@@ -109,6 +113,12 @@ func (h *Hub) WithObservability(logger *slog.Logger, m *obs.Metrics) *Hub {
 			return float64(len(h.rooms))
 		})
 	}
+	return h
+}
+
+// WithSync enables synchronized playback transport RPCs (transport.play/pause/seek).
+func (h *Hub) WithSync(enabled bool) *Hub {
+	h.syncEnabled = enabled
 	return h
 }
 
@@ -629,6 +639,97 @@ func (h *Hub) dispatch(method string, data []byte) (json.RawMessage, error) {
 			s.Version++ // bump so clients accept the publication (setState version guard)
 			return nil
 		})
+
+	case "transport.play":
+		if !h.syncEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		var req struct {
+			RoomID     string `json:"roomId"`
+			TrackID    string `json:"trackId,omitempty"`
+			PositionMs int64  `json:"positionMs"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("transport.play: roomId required")
+		}
+		if req.PositionMs < 0 {
+			req.PositionMs = 0
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			if req.TrackID != "" {
+				if err := s.SetNowPlaying(req.TrackID); err != nil {
+					return err
+				}
+			}
+			s.Transport = &queue.TransportState{
+				State:             "playing",
+				PositionMs:        req.PositionMs,
+				UpdatedAtServerMs: time.Now().UnixMilli(),
+			}
+			s.Version++
+			return nil
+		})
+
+	case "transport.pause":
+		if !h.syncEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		var req struct {
+			RoomID     string `json:"roomId"`
+			PositionMs int64  `json:"positionMs"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("transport.pause: roomId required")
+		}
+		if req.PositionMs < 0 {
+			req.PositionMs = 0
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			if s.Transport == nil {
+				s.Transport = &queue.TransportState{}
+			}
+			s.Transport.State = "paused"
+			s.Transport.PositionMs = req.PositionMs
+			s.Transport.UpdatedAtServerMs = time.Now().UnixMilli()
+			s.Version++
+			return nil
+		})
+
+	case "transport.seek":
+		if !h.syncEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		var req struct {
+			RoomID     string `json:"roomId"`
+			PositionMs int64  `json:"positionMs"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("transport.seek: roomId required")
+		}
+		if req.PositionMs < 0 {
+			req.PositionMs = 0
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			if s.Transport == nil {
+				s.Transport = &queue.TransportState{}
+			}
+			s.Transport.PositionMs = req.PositionMs
+			s.Transport.UpdatedAtServerMs = time.Now().UnixMilli()
+			s.Version++
+			return nil
+		})
+
+	case "sync.ping":
+		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})
 
 	default:
 		return nil, centrifuge.ErrorMethodNotFound
