@@ -255,6 +255,15 @@ func main() {
 		logger.Info("listenbrainz_enabled")
 	}
 
+	// Wire Last.fm enrichment when feature is on AND API key is configured.
+	// Enabling requires a commercial LOI with Last.fm.
+	if featureEnabled("FEATURE_LASTFM_ENRICH", false) && os.Getenv("LASTFM_API_KEY") != "" {
+		h.WithLastfmEnrichProvider(func(ctx context.Context, artist, title string) (interface{}, error) {
+			return match.FetchLastfmEnrichment(ctx, artist, title)
+		})
+		logger.Info("lastfm_enrich_enabled")
+	}
+
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
 		// Allow anonymous connections (no auth v0) — empty UserID marks the client anonymous,

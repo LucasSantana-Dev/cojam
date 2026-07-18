@@ -822,3 +822,75 @@ func TestTrackDepth_EmptyISRC(t *testing.T) {
 		t.Errorf("Source = %q, want musicbrainz", depth.Source)
 	}
 }
+
+// Last.fm enrichment tests
+
+func TestFetchLastfmEnrichment_Success(t *testing.T) {
+	defer lastfmStub(t, `{
+		"track": {
+			"name": "Bohemian Rhapsody",
+			"artist": "Queen",
+			"playcount": "9999",
+			"listeners": "5555",
+			"tags": {
+				"tag": [
+					{"name": "rock"},
+					{"name": "classic rock"},
+					{"name": "70s"}
+				]
+			}
+		}
+	}`)()
+
+	enrich, err := FetchLastfmEnrichment(context.Background(), "Queen", "Bohemian Rhapsody")
+	if err != nil {
+		t.Fatalf("FetchLastfmEnrichment: %v", err)
+	}
+
+	if enrich.Source != "lastfm" {
+		t.Errorf("Source = %q, want lastfm", enrich.Source)
+	}
+	if enrich.Playcount != 9999 {
+		t.Errorf("Playcount = %d, want 9999", enrich.Playcount)
+	}
+	if enrich.Listeners != 5555 {
+		t.Errorf("Listeners = %d, want 5555", enrich.Listeners)
+	}
+	if len(enrich.Tags) != 3 {
+		t.Errorf("Tags count = %d, want 3", len(enrich.Tags))
+	}
+}
+
+func TestFetchLastfmEnrichment_ErrNotConfigured(t *testing.T) {
+	oldAPIKey := lastfmAPIKey
+	defer func() { lastfmAPIKey = oldAPIKey }()
+
+	lastfmAPIKey = ""
+
+	_, err := FetchLastfmEnrichment(context.Background(), "Queen", "Bohemian Rhapsody")
+	if err != ErrNotConfigured {
+		t.Errorf("expected ErrNotConfigured, got %v", err)
+	}
+}
+
+func TestFetchLastfmEnrichment_GracefulEmpty(t *testing.T) {
+	defer lastfmStub(t, `{"track":{"name":"","artist":"","playcount":"","listeners":"","tags":{"tag":[]}}}`)()
+
+	enrich, err := FetchLastfmEnrichment(context.Background(), "Queen", "Bohemian Rhapsody")
+	if err != nil {
+		t.Fatalf("FetchLastfmEnrichment: %v", err)
+	}
+
+	if enrich.Source != "lastfm" {
+		t.Errorf("Source = %q, want lastfm", enrich.Source)
+	}
+	if enrich.Playcount != 0 {
+		t.Errorf("Playcount = %d, want 0", enrich.Playcount)
+	}
+	if enrich.Listeners != 0 {
+		t.Errorf("Listeners = %d, want 0", enrich.Listeners)
+	}
+	if len(enrich.Tags) != 0 {
+		t.Errorf("Tags count = %d, want 0", len(enrich.Tags))
+	}
+}

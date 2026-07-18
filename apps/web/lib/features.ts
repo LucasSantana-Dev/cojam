@@ -9,6 +9,7 @@ export type Features = {
   trackDepth: boolean;
   lyrics: boolean;
   listenBrainz: boolean;
+  lastfmEnrich: boolean;
   sync: boolean;
 };
 
@@ -32,6 +33,7 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
     trackDepth: flag(env.NEXT_PUBLIC_FEATURE_TRACK_DEPTH, true),
     lyrics: flag(env.NEXT_PUBLIC_FEATURE_LYRICS, true),
     listenBrainz: flag(env.NEXT_PUBLIC_FEATURE_LISTENBRAINZ, false),
+    lastfmEnrich: flag(env.NEXT_PUBLIC_FEATURE_LASTFM_ENRICH, false),
     sync: flag(env.NEXT_PUBLIC_FEATURE_SYNC, false),
   };
 }
@@ -45,5 +47,6 @@ export const features: Features = resolveFeatures({
   NEXT_PUBLIC_FEATURE_TRACK_DEPTH: process.env.NEXT_PUBLIC_FEATURE_TRACK_DEPTH,
   NEXT_PUBLIC_FEATURE_LYRICS: process.env.NEXT_PUBLIC_FEATURE_LYRICS,
   NEXT_PUBLIC_FEATURE_LISTENBRAINZ: process.env.NEXT_PUBLIC_FEATURE_LISTENBRAINZ,
+  NEXT_PUBLIC_FEATURE_LASTFM_ENRICH: process.env.NEXT_PUBLIC_FEATURE_LASTFM_ENRICH,
   NEXT_PUBLIC_FEATURE_SYNC: process.env.NEXT_PUBLIC_FEATURE_SYNC,
 });
