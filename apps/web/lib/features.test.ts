@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { resolveFeatures } from './features';
 
 describe('resolveFeatures', () => {
-  it('youtube+presence+transport default on, spotify/apple/sync default off', () => {
+  it('youtube+presence default on, spotify/apple/sync default off', () => {
     const f = resolveFeatures({});
     expect(f).toEqual({
       youtube: true,
@@ -11,7 +11,6 @@ describe('resolveFeatures', () => {
       presence: true,
       trackDepth: true,
       lyrics: true,
-      transport: true,
       sync: false,
     });
   });
@@ -31,7 +30,6 @@ describe('resolveFeatures', () => {
       presence: false,
       trackDepth: true,
       lyrics: true,
-      transport: true,
       sync: true,
     });
   });
@@ -69,8 +67,4 @@ describe('resolveFeatures', () => {
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_LYRICS: 'yes' }).lyrics).toBe(true);
   });
 
-  it('transport defaults on and can be disabled', () => {
-    expect(resolveFeatures({}).transport).toBe(true);
-    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_TRANSPORT: 'off' }).transport).toBe(false);
-  });
 });

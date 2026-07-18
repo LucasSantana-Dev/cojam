@@ -389,7 +389,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     </div>
                   </div>
 
-                  {features.transport && (
+                  {features.sync && (
                     <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
                       <TransportUI roomId={roomId} activePlayer={activePlayer} />
                     </div>
