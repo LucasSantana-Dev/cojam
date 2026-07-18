@@ -191,3 +191,23 @@ start-together-only and this model degrades for it).
 before merge; re-run `go test -race ./...` + web vitest + the two-browser room
 e2e after each queued merge. The two-browser e2e is the real acceptance surface
 for U4 (does a second browser actually converge?).
+
+## 7. Follow-up refinements (post-implementation)
+
+Captured from review of the shipped units; the feature is flag-gated
+(`FEATURE_SYNC` off by default), so these harden it before it is enabled widely:
+
+- **Bound `positionMs` server-side.** U1 clamps negative positions to 0; it does
+  not yet reject a position past the track's known duration. Not harmful (a seek
+  past the end simply ends the track), but validating the upper bound against the
+  now-playing track's `durationMs` would reject nonsense input.
+- **Gate transport mutations on track identity + version.** Transport writes are
+  currently last-writer-by-`Version` with no check that the caller's view is
+  current. A `transport.seek` issued against a track the room has already moved
+  past would still apply. Accepting an optional `trackId` / `expectedVersion` on
+  the transport RPCs and rejecting a mismatch (as `now_playing.advance` already
+  does idempotently) would prevent a stale seek from disrupting a room that just
+  changed tracks.
+
+Both are low-severity for the initial flag-gated rollout and are logged here so
+they are not lost.
