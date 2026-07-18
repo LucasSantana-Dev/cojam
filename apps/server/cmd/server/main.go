@@ -322,7 +322,8 @@ func main() {
 
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
 			metrics.ConnDec()
-			h.Leave(client.ID()) // revoke room memberships for this connection
+			h.Leave(client.ID())              // revoke room memberships for this connection
+			h.RemoveClientUserID(client.ID()) // clean up userID tracking for host assignment
 			logger.Info("client_disconnected", "client_id", client.ID(), "reason", e.Reason)
 		})
 

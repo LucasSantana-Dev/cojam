@@ -15,7 +15,7 @@ func TestHandleRPC_RoomRouting(t *testing.T) {
 	h := NewHub(nil) // nil node: publish skipped in tests
 
 	// join creates the room named by params, not a default
-	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"demo42","name":"probe"}`))
+	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"demo42","name":"probe"}`), "")
 	if err != nil {
 		t.Fatalf("room.join: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestHandleRPC_RoomRouting(t *testing.T) {
 	}
 
 	// queue.add routes to the same room and returns full RoomState with bumped version
-	res, err = h.HandleRPC("queue.add", []byte(`{"roomId":"demo42","track":{"title":"Me at the zoo","artist":"jawed","sources":{"youtube":{"videoId":"jNQXAC9IVRw","confidence":1}},"addedBy":"probe"}}`))
+	res, err = h.HandleRPC("queue.add", []byte(`{"roomId":"demo42","track":{"title":"Me at the zoo","artist":"jawed","sources":{"youtube":{"videoId":"jNQXAC9IVRw","confidence":1}},"addedBy":"probe"}}`), "")
 	if err != nil {
 		t.Fatalf("queue.add: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestHandleRPC_RoomRouting(t *testing.T) {
 	}
 
 	// separate room is isolated
-	res, err = h.HandleRPC("room.join", []byte(`{"roomId":"other","name":"x"}`))
+	res, err = h.HandleRPC("room.join", []byte(`{"roomId":"other","name":"x"}`), "")
 	if err != nil {
 		t.Fatalf("room.join other: %v", err)
 	}
@@ -55,10 +55,10 @@ func TestHandleRPC_RoomRouting(t *testing.T) {
 	}
 
 	// remove returns RoomState too
-	res, _ = h.HandleRPC("room.join", []byte(`{"roomId":"demo42","name":"probe"}`))
+	res, _ = h.HandleRPC("room.join", []byte(`{"roomId":"demo42","name":"probe"}`), "")
 	_ = json.Unmarshal(res, &st)
 	trackID := st.Queue[0].ID
-	res, err = h.HandleRPC("queue.remove", []byte(`{"roomId":"demo42","trackId":"`+trackID+`"}`))
+	res, err = h.HandleRPC("queue.remove", []byte(`{"roomId":"demo42","trackId":"`+trackID+`"}`), "")
 	if err != nil {
 		t.Fatalf("queue.remove: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestHandleRPC_RoomRouting(t *testing.T) {
 	}
 
 	// unknown method errors
-	if _, err := h.HandleRPC("nope", []byte(`{}`)); err == nil {
+	if _, err := h.HandleRPC("nope", []byte(`{}`), ""); err == nil {
 		t.Fatalf("unknown method should error")
 	}
 }
@@ -79,24 +79,24 @@ func TestHandleRPC_AdvanceAfter(t *testing.T) {
 	h := NewHub(nil)
 
 	// Set up a room with 3 tracks
-	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"probe"}`))
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"probe"}`), "")
 	st := &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
 	// Add first track
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	t1ID := st.Queue[0].ID
 
 	// Add second track
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 2","artist":"A2","sources":{},"addedBy":"u2"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 2","artist":"A2","sources":{},"addedBy":"u2"}}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	t2ID := st.Queue[1].ID
 
 	// Add third track
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 3","artist":"A3","sources":{},"addedBy":"u3"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 3","artist":"A3","sources":{},"addedBy":"u3"}}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	t3ID := st.Queue[2].ID
@@ -107,7 +107,7 @@ func TestHandleRPC_AdvanceAfter(t *testing.T) {
 	}
 
 	// Advance from t1 -> t2
-	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t1ID+`"}`))
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t1ID+`"}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	if st.NowPlayingID != t2ID {
@@ -115,7 +115,7 @@ func TestHandleRPC_AdvanceAfter(t *testing.T) {
 	}
 
 	// Advance from t2 -> t3
-	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t2ID+`"}`))
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t2ID+`"}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	if st.NowPlayingID != t3ID {
@@ -123,7 +123,7 @@ func TestHandleRPC_AdvanceAfter(t *testing.T) {
 	}
 
 	// Advance from t3 (last track) -> clears NowPlayingID
-	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t3ID+`"}`))
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t3ID+`"}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	if st.NowPlayingID != "" {
@@ -135,30 +135,30 @@ func TestHandleRPC_QueueReorder(t *testing.T) {
 	h := NewHub(nil)
 
 	// Set up a room with 3 tracks
-	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"probe"}`))
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"probe"}`), "")
 	st := &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
 	// Add first track
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	t1ID := st.Queue[0].ID
 
 	// Add second track
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 2","artist":"A2","sources":{},"addedBy":"u2"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 2","artist":"A2","sources":{},"addedBy":"u2"}}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	t2ID := st.Queue[1].ID
 
 	// Add third track
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 3","artist":"A3","sources":{},"addedBy":"u3"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 3","artist":"A3","sources":{},"addedBy":"u3"}}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	t3ID := st.Queue[2].ID
 
 	// Move t3 to index 0
-	res, err := h.HandleRPC("queue.reorder", []byte(`{"roomId":"demo","trackId":"`+t3ID+`","toIndex":0}`))
+	res, err := h.HandleRPC("queue.reorder", []byte(`{"roomId":"demo","trackId":"`+t3ID+`","toIndex":0}`), "")
 	if err != nil {
 		t.Fatalf("queue.reorder: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestHandleRPC_QueueReorder(t *testing.T) {
 func TestHandleRPC_TrackSearchNoSearcher(t *testing.T) {
 	h := NewHub(nil) // no searcher configured
 
-	res, err := h.HandleRPC("track.search", []byte(`{"query":"bohemian rhapsody"}`))
+	res, err := h.HandleRPC("track.search", []byte(`{"query":"bohemian rhapsody"}`), "")
 	if err != nil {
 		t.Fatalf("track.search with no searcher should not error: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestHandleRPC_TrackLyricsDispatch(t *testing.T) {
 	// No provider configured: dispatch must still resolve (not "method not
 	// found") and return an empty, well-formed result.
 	h := NewHub(nil)
-	res, err := h.HandleRPC("track.lyrics", []byte(`{"roomId":"R","artist":"Queen","title":"Bohemian Rhapsody"}`))
+	res, err := h.HandleRPC("track.lyrics", []byte(`{"roomId":"R","artist":"Queen","title":"Bohemian Rhapsody"}`), "")
 	if err != nil {
 		t.Fatalf("track.lyrics with no provider should not error (got %v)", err)
 	}
@@ -231,7 +231,7 @@ func TestHandleRPC_TrackLyricsDispatch(t *testing.T) {
 			"source": "lrclib",
 		}, nil
 	})
-	res, err = h.HandleRPC("track.lyrics", []byte(`{"roomId":"R","artist":"The Weeknd","title":"Blinding Lights","durationMs":200000}`))
+	res, err = h.HandleRPC("track.lyrics", []byte(`{"roomId":"R","artist":"The Weeknd","title":"Blinding Lights","durationMs":200000}`), "")
 	if err != nil {
 		t.Fatalf("track.lyrics with provider: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestHandleRPC_TrackSearchWithSearcher(t *testing.T) {
 		}, nil
 	})
 
-	res, err := h.HandleRPC("track.search", []byte(`{"query":"bohemian rhapsody"}`))
+	res, err := h.HandleRPC("track.search", []byte(`{"query":"bohemian rhapsody"}`), "")
 	if err != nil {
 		t.Fatalf("track.search: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestHandleRPC_PlaylistImport(t *testing.T) {
 		"roomId": "demo",
 		"url": "https://www.deezer.com/en/playlist/123456",
 		"addedBy": "testuser"
-	}`))
+	}`), "")
 	if err != nil {
 		t.Fatalf("playlist.import: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestHandleRPC_PlaylistImportQueueFull(t *testing.T) {
 		"roomId": "demo",
 		"url": "https://example.com/playlist",
 		"addedBy": "user"
-	}`))
+	}`), "")
 	if err != nil {
 		t.Fatalf("playlist.import should not error when adding up to capacity: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestHandleRPC_TrackLastfmDispatch(t *testing.T) {
 	h := NewHub(nil)
 
 	// No provider configured: dispatch must resolve and return empty result
-	res, err := h.HandleRPC("track.lastfm", []byte(`{"roomId":"R","artist":"Queen","title":"Bohemian Rhapsody"}`))
+	res, err := h.HandleRPC("track.lastfm", []byte(`{"roomId":"R","artist":"Queen","title":"Bohemian Rhapsody"}`), "")
 	if err != nil {
 		t.Fatalf("track.lastfm with no provider should not error (got %v)", err)
 	}
@@ -434,7 +434,7 @@ func TestHandleRPC_TrackLastfmDispatch(t *testing.T) {
 			"source":    "lastfm",
 		}, nil
 	})
-	res, err = h.HandleRPC("track.lastfm", []byte(`{"roomId":"R","artist":"Queen","title":"Bohemian Rhapsody"}`))
+	res, err = h.HandleRPC("track.lastfm", []byte(`{"roomId":"R","artist":"Queen","title":"Bohemian Rhapsody"}`), "")
 	if err != nil {
 		t.Fatalf("track.lastfm with provider: %v", err)
 	}

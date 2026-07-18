@@ -13,13 +13,13 @@ func TestHandleRPC_QueueCap(t *testing.T) {
 	add := []byte(`{"roomId":"cap","track":{"title":"t","artist":"a","sources":{},"addedBy":"u"}}`)
 
 	for i := 0; i < queue.MaxQueueSize; i++ {
-		if _, err := h.HandleRPC("queue.add", add); err != nil {
+		if _, err := h.HandleRPC("queue.add", add, ""); err != nil {
 			t.Fatalf("add %d/%d should succeed: %v", i+1, queue.MaxQueueSize, err)
 		}
 	}
 
 	// One past the cap is rejected, and the queue does not grow beyond the cap.
-	if _, err := h.HandleRPC("queue.add", add); err == nil {
+	if _, err := h.HandleRPC("queue.add", add, ""); err == nil {
 		t.Fatalf("add %d should be rejected (queue full)", queue.MaxQueueSize+1)
 	}
 }

@@ -17,7 +17,7 @@ func TestHandleRPC_EmitsLogAndMetric(t *testing.T) {
 	metrics := obs.New()
 	h := NewHub(nil).WithObservability(logger, metrics)
 
-	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"obs1","name":"x"}`)); err != nil {
+	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"obs1","name":"x"}`), ""); err != nil {
 		t.Fatalf("room.join: %v", err)
 	}
 
@@ -39,7 +39,7 @@ func TestHandleRPC_EmitsLogAndMetric(t *testing.T) {
 
 func TestHandleRPC_NoObservabilityConfigured_StillWorks(t *testing.T) {
 	h := NewHub(nil)
-	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"obs2","name":"x"}`)); err != nil {
+	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"obs2","name":"x"}`), ""); err != nil {
 		t.Fatalf("room.join without obs: %v", err)
 	}
 }

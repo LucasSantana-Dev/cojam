@@ -15,7 +15,7 @@ func TestRadioToggle(t *testing.T) {
 	h := NewHub(nil)
 
 	// Join room
-	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`))
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`), "")
 	st := &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
@@ -24,7 +24,7 @@ func TestRadioToggle(t *testing.T) {
 	}
 
 	// Enable radio
-	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`))
+	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`), "")
 	_ = json.Unmarshal(res, st)
 
 	if !st.RadioEnabled {
@@ -32,7 +32,7 @@ func TestRadioToggle(t *testing.T) {
 	}
 
 	// Disable radio
-	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":false}`))
+	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":false}`), "")
 	_ = json.Unmarshal(res, st)
 
 	if st.RadioEnabled {
@@ -57,22 +57,22 @@ func TestRadioAutoRefillOnAdvance(t *testing.T) {
 	})
 
 	// Join, add 2 tracks
-	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`))
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`), "")
 	st := &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"Track 1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"Track 1","artist":"A1","sources":{},"addedBy":"u1"}}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	t1ID := st.Queue[0].ID
 
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"Track 2","artist":"A2","sources":{},"addedBy":"u1"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"Track 2","artist":"A2","sources":{},"addedBy":"u1"}}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	t2ID := st.Queue[1].ID
 
 	// Advance to t2
-	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`))
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
@@ -81,7 +81,7 @@ func TestRadioAutoRefillOnAdvance(t *testing.T) {
 	}
 
 	// Enable radio
-	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`))
+	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
@@ -90,7 +90,7 @@ func TestRadioAutoRefillOnAdvance(t *testing.T) {
 	}
 
 	// Advance past t2 (last track) - should trigger refill
-	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t2ID+`"}`))
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t2ID+`"}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
@@ -126,19 +126,19 @@ func TestRadioIdempotentRefill(t *testing.T) {
 	})
 
 	// Join, add 1 track, enable radio
-	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`))
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`), "")
 	st := &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"T1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"T1","artist":"A1","sources":{},"addedBy":"u1"}}`), "")
 	_ = json.Unmarshal(res, st)
 	t1ID := st.Queue[0].ID
 
-	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`))
+	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`), "")
 	_ = json.Unmarshal(res, st)
 
 	// Advance past the only track
-	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`))
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`), "")
 	_ = json.Unmarshal(res, st)
 
 	// Wait for async refill to complete
@@ -154,7 +154,7 @@ func TestRadioIdempotentRefill(t *testing.T) {
 
 	// Now advance again with the same afterId (idempotent - should be no-op)
 	callCountBefore := atomic.LoadInt32(&callCount)
-	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`))
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`), "")
 	_ = json.Unmarshal(res, st)
 
 	// Give time for any async operations
@@ -179,23 +179,23 @@ func TestRadioDisabledNoRefill(t *testing.T) {
 	})
 
 	// Join, add track, enable radio, disable radio, advance
-	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`))
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`), "")
 	st := &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"T1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"T1","artist":"A1","sources":{},"addedBy":"u1"}}`), "")
 	_ = json.Unmarshal(res, st)
 	t1ID := st.Queue[0].ID
 
-	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`))
+	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`), "")
 	_ = json.Unmarshal(res, st)
 
 	// Disable before advance
-	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":false}`))
+	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":false}`), "")
 	_ = json.Unmarshal(res, st)
 
 	// Advance should not trigger refill (radio is disabled)
-	h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`))
+	h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`), "")
 
 	// Give time for any async operations
 	time.Sleep(time.Millisecond * 50)
@@ -212,21 +212,21 @@ func TestRadioNotConfigured(t *testing.T) {
 	// Don't wire a similar provider
 
 	// Join, add track, enable radio, advance
-	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`))
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"radio-test","name":"u1"}`), "")
 	st := &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
-	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"T1","artist":"A1","sources":{},"addedBy":"u1"}}`))
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"radio-test","track":{"title":"T1","artist":"A1","sources":{},"addedBy":"u1"}}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 	t1ID := st.Queue[0].ID
 
-	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`))
+	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`), "")
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
 	// Advance should not crash even though similar is nil
-	res, err := h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`))
+	res, err := h.HandleRPC("now_playing.advance", []byte(`{"roomId":"radio-test","afterId":"`+t1ID+`"}`), "")
 	if err != nil {
 		t.Fatalf("advance with unconfigured radio should not error: %v", err)
 	}

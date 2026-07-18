@@ -21,7 +21,7 @@ func TestQueueAdd_AsyncMatchEnrichment(t *testing.T) {
 		return &queue.SourceRef{VideoID: "resolved-vid", Confidence: 0.82}, nil
 	})
 
-	res, err := h.HandleRPC("queue.add", []byte(`{"roomId":"m1","track":{"title":"Song","artist":"Band","sources":{},"addedBy":"x"}}`))
+	res, err := h.HandleRPC("queue.add", []byte(`{"roomId":"m1","track":{"title":"Song","artist":"Band","sources":{},"addedBy":"x"}}`), "")
 	if err != nil {
 		t.Fatalf("queue.add: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestQueueAdd_AsyncMatchEnrichment(t *testing.T) {
 	// poll: enrichment applies asynchronously after the matcher returns
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		res, _ = h.HandleRPC("room.join", []byte(`{"roomId":"m1","name":"check"}`))
+		res, _ = h.HandleRPC("room.join", []byte(`{"roomId":"m1","name":"check"}`), "")
 		_ = json.Unmarshal(res, &st)
 		yt := st.Queue[0].Sources.YouTube
 		if yt != nil && yt.VideoID == "resolved-vid" && st.Version == 2 {
@@ -60,7 +60,7 @@ func TestQueueAdd_SkipsMatcherWhenSourcePresent(t *testing.T) {
 		called = true
 		return nil, nil
 	})
-	_, err := h.HandleRPC("queue.add", []byte(`{"roomId":"m2","track":{"title":"S","artist":"B","sources":{"youtube":{"videoId":"v","confidence":1}},"addedBy":"x"}}`))
+	_, err := h.HandleRPC("queue.add", []byte(`{"roomId":"m2","track":{"title":"S","artist":"B","sources":{"youtube":{"videoId":"v","confidence":1}},"addedBy":"x"}}`), "")
 	if err != nil {
 		t.Fatalf("queue.add: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestQueueAdd_BothMatchers_Enrich(t *testing.T) {
 		})
 
 	// Add a track with no sources
-	res, err := h.HandleRPC("queue.add", []byte(`{"roomId":"m3","track":{"title":"Test","artist":"Artist","sources":{},"addedBy":"x"}}`))
+	res, err := h.HandleRPC("queue.add", []byte(`{"roomId":"m3","track":{"title":"Test","artist":"Artist","sources":{},"addedBy":"x"}}`), "")
 	if err != nil {
 		t.Fatalf("queue.add: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestQueueAdd_BothMatchers_Enrich(t *testing.T) {
 	// Poll until enrichment applies (both sources present)
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		res, _ = h.HandleRPC("room.join", []byte(`{"roomId":"m3","name":"check"}`))
+		res, _ = h.HandleRPC("room.join", []byte(`{"roomId":"m3","name":"check"}`), "")
 		_ = json.Unmarshal(res, &st)
 		yt := st.Queue[0].Sources.YouTube
 		spotify := st.Queue[0].Sources.Spotify

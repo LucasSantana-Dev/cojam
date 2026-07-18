@@ -25,6 +25,7 @@ export type RoomState = {
   roomId: string;
   queue: TrackRef[];
   nowPlayingId?: string;
+  hostUserId?: string;
   radioEnabled: boolean;
   version: number;
   transport?: TransportState;

@@ -42,7 +42,7 @@ func TestHubPersistenceAcrossRestart(t *testing.T) {
 	hub1 := NewHub(nil).WithStore(pgStore1)
 
 	// Join the room and add two tracks via HandleRPC (mutating methods require membership)
-	joinRes, err := hub1.HandleRPC("room.join", []byte(fmt.Sprintf(`{"roomId":"%s","name":"alice"}`, roomID)))
+	joinRes, err := hub1.HandleRPC("room.join", []byte(fmt.Sprintf(`{"roomId":"%s","name":"alice"}`, roomID)), "")
 	if err != nil {
 		t.Fatalf("room.join failed: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestHubPersistenceAcrossRestart(t *testing.T) {
 	}
 
 	// Add first track
-	addRes, err := hub1.HandleRPC("queue.add", []byte(fmt.Sprintf(`{"roomId":"%s","track":{"title":"Song A","artist":"Artist A","sources":{},"addedBy":"alice"}}`, roomID)))
+	addRes, err := hub1.HandleRPC("queue.add", []byte(fmt.Sprintf(`{"roomId":"%s","track":{"title":"Song A","artist":"Artist A","sources":{},"addedBy":"alice"}}`, roomID)), "")
 	if err != nil {
 		t.Fatalf("queue.add track 1 failed: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestHubPersistenceAcrossRestart(t *testing.T) {
 	track1ID := state1.Queue[0].ID
 
 	// Add second track
-	addRes, err = hub1.HandleRPC("queue.add", []byte(fmt.Sprintf(`{"roomId":"%s","track":{"title":"Song B","artist":"Artist B","sources":{},"addedBy":"alice"}}`, roomID)))
+	addRes, err = hub1.HandleRPC("queue.add", []byte(fmt.Sprintf(`{"roomId":"%s","track":{"title":"Song B","artist":"Artist B","sources":{},"addedBy":"alice"}}`, roomID)), "")
 	if err != nil {
 		t.Fatalf("queue.add track 2 failed: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestHubPersistenceAcrossRestart(t *testing.T) {
 	track2ID := state1.Queue[1].ID
 
 	// Set now playing to the second track
-	npRes, err := hub1.HandleRPC("now_playing.set", []byte(fmt.Sprintf(`{"roomId":"%s","trackId":"%s"}`, roomID, track2ID)))
+	npRes, err := hub1.HandleRPC("now_playing.set", []byte(fmt.Sprintf(`{"roomId":"%s","trackId":"%s"}`, roomID, track2ID)), "")
 	if err != nil {
 		t.Fatalf("now_playing.set failed: %v", err)
 	}
