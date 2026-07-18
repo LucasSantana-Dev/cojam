@@ -154,7 +154,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
         Add Track
       </h3>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         <div className="relative">
           <input
             type="text"
@@ -162,76 +162,93 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
             aria-label="Search for a song"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
-            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+            className="w-full px-4 py-2.5 text-sm rounded-lg focus:outline-none transition-all duration-150 border"
+            style={{ backgroundColor: 'var(--color-surface-2)', borderColor: searchQuery ? 'var(--color-accent)' : 'var(--color-border)', color: 'var(--color-text-primary)' }}
           />
-          {isSearching && (
-            <div className="absolute right-3 top-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-              Searching...
-            </div>
-          )}
         </div>
 
-        {isSearching && searchQuery && (
-          <div className="border rounded-lg p-3 space-y-2" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-1)' }}>
-            {[...Array(3)].map((_, idx) => (
-              <div
-                key={idx}
-                className="skeleton-shimmer h-12 rounded-lg"
-                style={{ ['--i' as string]: idx }}
-              />
-            ))}
+        {/* Results dropdown: appears when searching or results available */}
+        {searchQuery && (
+          <div className="border rounded-lg overflow-hidden" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-1)' }}>
+            {isSearching && (
+              <div className="space-y-2 p-3">
+                {[...Array(3)].map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="skeleton-shimmer h-12 rounded-lg"
+                  />
+                ))}
+              </div>
+            )}
+
+            {!isSearching && searchResults.length > 0 && (
+              <ul className="space-y-0">
+                {searchResults.map((result, idx) => (
+                  <li
+                    key={`${result.source}-${result.title}-${idx}`}
+                    className="search-result-enter border-b last:border-b-0 hover:bg-[color-mix(in_oklab,var(--color-accent)_2%,transparent)]"
+                    style={{ borderBottomColor: 'var(--color-border)', ['--i' as string]: idx } as React.CSSProperties}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleSearchResultClick(result)}
+                      disabled={loading}
+                      className="w-full text-left px-3 py-2 text-sm focus:outline-none transition-all duration-150 flex items-center justify-between gap-3 group"
+                      style={{ color: 'var(--color-text-primary)' }}
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {result.artworkUrl && (
+                          <img
+                            src={result.artworkUrl}
+                            alt=""
+                            className="w-10 h-10 rounded object-cover flex-shrink-0"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium truncate text-sm">{result.title}</span>
+                            <span className="inline-block px-1.5 py-0.5 text-xs rounded flex-shrink-0" style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-secondary)' }}>
+                              {result.source}
+                            </span>
+                          </div>
+                          <div className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
+                            {result.artist}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleSearchResultClick(result);
+                        }}
+                        disabled={loading}
+                        className="px-2.5 py-1.5 text-xs font-semibold rounded transition-all duration-150 flex-shrink-0 hover:brightness-110 active:scale-90 disabled:opacity-50"
+                        style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+                        aria-label={`Add ${result.title}`}
+                      >
+                        + Add
+                      </button>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {!isSearching && searchResults.length === 0 && (
+              <div className="p-4 text-center">
+                <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                  No matches found. Try a different search, or add manually.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
-        {searchResults.length > 0 && (
-          <ul className="space-y-2 border rounded-lg p-3" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface-1)' }}>
-            {searchResults.map((result, idx) => (
-              <li
-                key={`${result.source}-${result.title}-${idx}`}
-                className="search-result-enter"
-                style={{ ['--i' as string]: idx }}
-              >
-                <button
-                  type="button"
-                  onClick={() => handleSearchResultClick(result)}
-                  disabled={loading}
-                  className="w-full text-left px-3 py-2 rounded-lg text-sm hover:brightness-110 active:scale-95 disabled:opacity-50 focus:outline-none transition-all duration-150 flex items-center gap-3"
-                  style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleSearchResultClick(result);
-                    }
-                  }}
-                >
-                  {result.artworkUrl && (
-                    <img
-                      src={result.artworkUrl}
-                      alt=""
-                      className="w-10 h-10 rounded object-cover flex-shrink-0"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">{result.title}</span>
-                      <span className="inline-block px-2 py-0.5 text-xs rounded" style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-secondary)', flexShrink: 0 }}>
-                        {result.source}
-                      </span>
-                    </div>
-                    <div className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
-                      {result.artist}
-                    </div>
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {searchQuery && searchResults.length === 0 && !isSearching && (
-          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            No matches. Try a different search, or add manually.
+        {/* Empty state: before any typing */}
+        {!searchQuery && (
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            Start typing to search...
           </p>
         )}
       </div>
