@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
 import { beginAuth, getAccessToken, isAuthed } from '@/lib/spotifyAuth';
+import { decidePlayable } from '@/lib/spotifyAccount';
 import { features } from '@/lib/features';
 import { SpotifyIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
@@ -163,6 +164,14 @@ export function SpotifyPlayer({
     let cancelled = false;
     (async () => {
       try {
+        const token = await getAccessToken();
+        if (!token || cancelled) return;
+        const playable = await decidePlayable(token);
+        if (cancelled) return;
+        if (!playable) {
+          onAuthorized(false);
+          return;
+        }
         await loadSDK();
         if (cancelled) return;
         const player = new window.Spotify.Player({
