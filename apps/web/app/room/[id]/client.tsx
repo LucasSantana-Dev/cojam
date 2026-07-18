@@ -11,6 +11,8 @@ import { StatusBanner } from '../components/StatusBanner';
 const NAME_KEY = 'mj_room_name';
 import { pickSource, isUnavailable } from '@/lib/pickSource';
 import { features } from '@/lib/features';
+import { canControl } from '@/lib/roomRole';
+import { getStoredUserId } from '@/lib/auth';
 import { YouTubePlayer } from '../components/YouTubePlayer';
 import { ApplePlayer } from '../components/ApplePlayer';
 import { SpotifyPlayer } from '../components/SpotifyPlayer';
@@ -48,6 +50,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
     ? pickSource(nowPlaying, { appleAuthorized, spotifyAuthorized })
     : null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
+
+  // U5: compute room control permission for this user
+  const hostControl = canControl({
+    roomAuth: features.roomAuth,
+    myUserId: getStoredUserId(),
+    hostUserId: store.state?.hostUserId,
+  });
 
   const doJoin = useCallback(
     async (name: string) => {
@@ -412,7 +421,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
                   {features.sync && (
                     <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
-                      <TransportUI roomId={roomId} activePlayer={activePlayer} />
+                      <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl} />
                     </div>
                   )}
                 </>
@@ -430,7 +439,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           </div>
 
           <div className="lg:col-span-1 room-arrival lg:sticky lg:top-24 lg:self-start" style={{ ['--i' as string]: 1 }}>
-            <QueuePanel roomId={roomId} />
+            <QueuePanel roomId={roomId} canControl={hostControl} />
           </div>
         </div>
       </main>

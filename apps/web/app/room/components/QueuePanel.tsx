@@ -12,7 +12,12 @@ import {
   TrashIcon,
 } from '@/app/components/icons';
 
-export function QueuePanel({ roomId }: { roomId: string }) {
+interface QueuePanelProps {
+  roomId: string;
+  canControl: boolean;
+}
+
+export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   const state = useStore((s) => s.state);
   const queue = state?.queue ?? [];
   const nowPlayingId = state?.nowPlayingId;
@@ -139,9 +144,10 @@ export function QueuePanel({ roomId }: { roomId: string }) {
                 <div className="flex flex-col gap-2 ml-2 flex-shrink-0">
                   <button
                     onClick={() => handlePlay(track.id)}
+                    disabled={!canControl}
                     aria-label="Play"
-                    title="Play"
-                    className="inline-flex items-center justify-center px-2 py-1 rounded transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
+                    title={canControl ? 'Play' : 'Only the host can play tracks'}
+                    className="inline-flex items-center justify-center px-2 py-1 rounded transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
                   >
                     <PlayIcon size={16} />
@@ -149,9 +155,9 @@ export function QueuePanel({ roomId }: { roomId: string }) {
                   <div className="flex gap-1">
                     <button
                       onClick={() => handleMoveUp(track.id, index)}
-                      disabled={index === 0}
+                      disabled={index === 0 || !canControl}
                       aria-label="Move up"
-                      title="Move up"
+                      title={canControl ? 'Move up' : 'Only the host can reorder tracks'}
                       className="flex-1 inline-flex items-center justify-center px-2 py-1 rounded border transition-all duration-150 hover:opacity-70 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ backgroundColor: 'var(--color-surface-3)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
                     >
@@ -159,9 +165,9 @@ export function QueuePanel({ roomId }: { roomId: string }) {
                     </button>
                     <button
                       onClick={() => handleMoveDown(track.id, index)}
-                      disabled={index === queue.length - 1}
+                      disabled={index === queue.length - 1 || !canControl}
                       aria-label="Move down"
-                      title="Move down"
+                      title={canControl ? 'Move down' : 'Only the host can reorder tracks'}
                       className="flex-1 inline-flex items-center justify-center px-2 py-1 rounded border transition-all duration-150 hover:opacity-70 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ backgroundColor: 'var(--color-surface-3)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
                     >
@@ -170,9 +176,10 @@ export function QueuePanel({ roomId }: { roomId: string }) {
                   </div>
                   <button
                     onClick={() => handleRemove(track.id, track.title)}
+                    disabled={!canControl}
                     aria-label="Remove"
-                    title="Remove"
-                    className="inline-flex items-center justify-center px-2 py-1 rounded border transition-all duration-150 hover:opacity-70 active:scale-95 focus:outline-none"
+                    title={canControl ? 'Remove' : 'Only the host can remove tracks'}
+                    className="inline-flex items-center justify-center px-2 py-1 rounded border transition-all duration-150 hover:opacity-70 active:scale-95 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-surface-3)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
                   >
                     <TrashIcon size={14} />
