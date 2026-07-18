@@ -216,19 +216,13 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
                           </div>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleSearchResultClick(result);
-                        }}
-                        disabled={loading}
-                        className="px-2.5 py-1.5 text-xs font-semibold rounded transition-all duration-150 flex-shrink-0 hover:brightness-110 active:scale-90 disabled:opacity-50"
+                      <span
+                        aria-hidden="true"
+                        className="px-2.5 py-1.5 text-xs font-semibold rounded flex-shrink-0 transition-all duration-150 group-hover:brightness-110 group-active:scale-90"
                         style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
-                        aria-label={`Add ${result.title}`}
                       >
                         + Add
-                      </button>
+                      </span>
                     </button>
                   </li>
                 ))}
