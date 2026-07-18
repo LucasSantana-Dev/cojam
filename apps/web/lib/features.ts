@@ -11,6 +11,7 @@ export type Features = {
   listenBrainz: boolean;
   lastfmEnrich: boolean;
   sync: boolean;
+  roomAuth: boolean;
 };
 
 const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
@@ -35,6 +36,7 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
     listenBrainz: flag(env.NEXT_PUBLIC_FEATURE_LISTENBRAINZ, false),
     lastfmEnrich: flag(env.NEXT_PUBLIC_FEATURE_LASTFM_ENRICH, false),
     sync: flag(env.NEXT_PUBLIC_FEATURE_SYNC, false),
+    roomAuth: flag(env.NEXT_PUBLIC_FEATURE_ROOM_AUTH, false),
   };
 }
 
@@ -49,4 +51,5 @@ export const features: Features = resolveFeatures({
   NEXT_PUBLIC_FEATURE_LISTENBRAINZ: process.env.NEXT_PUBLIC_FEATURE_LISTENBRAINZ,
   NEXT_PUBLIC_FEATURE_LASTFM_ENRICH: process.env.NEXT_PUBLIC_FEATURE_LASTFM_ENRICH,
   NEXT_PUBLIC_FEATURE_SYNC: process.env.NEXT_PUBLIC_FEATURE_SYNC,
+  NEXT_PUBLIC_FEATURE_ROOM_AUTH: process.env.NEXT_PUBLIC_FEATURE_ROOM_AUTH,
 });
