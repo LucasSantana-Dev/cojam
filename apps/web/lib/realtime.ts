@@ -4,7 +4,7 @@ import { pickEnv, getRuntimeEnv } from './runtimeEnv';
 import { estimateOffset, type PingSample } from './clockSync';
 import type { RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
-export type Member = { clientId: string; name: string };
+export type Member = { clientId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' };
 
 export interface AppStore {
   state: RoomState | null;
@@ -39,30 +39,70 @@ export const useStore = create<AppStore>((set) => ({
   removeMember: (clientId) => set((s) => ({ members: s.members.filter((x) => x.clientId !== clientId) })),
 }));
 
-// Presence entry info is the JSON {name} we set as ConnInfo server-side.
-function nameFromInfo(info: unknown, fallback = 'Listener'): string {
+// Presence entry info is the JSON {name, platform?} we set as ConnInfo server-side.
+interface ConnInfo {
+  name: string;
+  platform?: 'spotify' | 'apple' | 'youtube';
+}
+
+export function parseConnInfo(info: unknown): { name: string; platform?: 'spotify' | 'apple' | 'youtube' } {
+  const result: { name: string; platform?: 'spotify' | 'apple' | 'youtube' } = { name: 'Listener' };
   try {
-    if (info instanceof Uint8Array) info = JSON.parse(new TextDecoder().decode(info));
-    else if (typeof info === 'string') info = JSON.parse(atob(info));
-    if (info && typeof info === 'object' && 'name' in info) return String((info as { name: string }).name) || fallback;
+    let parsed: unknown = info;
+    if (parsed instanceof Uint8Array) {
+      parsed = JSON.parse(new TextDecoder().decode(parsed));
+    } else if (typeof parsed === 'string') {
+      const raw = parsed;
+      // Try to parse as JSON directly first (for test/direct use cases)
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        // If that fails, try base64 decode then parse (for wire protocol)
+        parsed = JSON.parse(atob(raw));
+      }
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      if ('name' in obj && typeof obj.name === 'string') {
+        result.name = obj.name || 'Listener';
+      }
+      if ('platform' in obj && typeof obj.platform === 'string') {
+        const p = obj.platform as string;
+        if (p === 'spotify' || p === 'apple' || p === 'youtube') {
+          result.platform = p;
+        }
+      }
+    }
   } catch {
-    /* fall through */
+    /* fall through, use default */
   }
-  return fallback;
+  return result;
+}
+
+function nameFromInfo(info: unknown, fallback = 'Listener'): string {
+  return parseConnInfo(info).name || fallback;
 }
 
 let centrifuge: Centrifuge | null = null;
 
-export async function joinRoom(roomId: string, name: string) {
+export async function joinRoom(
+  roomId: string,
+  name: string,
+  platform?: 'spotify' | 'apple' | 'youtube' | null,
+) {
   const wsUrl = pickEnv(
     getRuntimeEnv()?.wsUrl,
     process.env.NEXT_PUBLIC_WS_URL,
     'ws://localhost:8080/connection/websocket',
   );
 
+  const connInfo: ConnInfo = { name };
+  if (platform) connInfo.platform = platform;
+
   centrifuge = new Centrifuge(wsUrl, {
     token: '',
-    data: { name }, // becomes presence ConnInfo server-side
+    data: connInfo, // becomes presence ConnInfo server-side
     // Read RPCs like track.lyrics (LRCLIB) and track.depth (MusicBrainz) hit
     // slow crowd-sourced upstreams; the server caps them at ~10s and returns a
     // graceful empty. The client must wait past that, so raise the default (5s).
@@ -102,15 +142,20 @@ export async function joinRoom(roomId: string, name: string) {
   // Presence: seed the member list on subscribe, then track join/leave live.
   sub.on('subscribed', () => {
     sub.presence().then((res) => {
-      const members: Member[] = Object.values(res.clients ?? {}).map((c) => ({
-        clientId: c.client,
-        name: nameFromInfo(c.connInfo),
-      }));
+      const members: Member[] = Object.values(res.clients ?? {}).map((c) => {
+        const info = parseConnInfo(c.connInfo);
+        return {
+          clientId: c.client,
+          name: info.name,
+          platform: info.platform,
+        };
+      });
       store.setMembers(members);
     }).catch(() => { /* presence unavailable — leave list empty */ });
   });
   sub.on('join', (ctx) => {
-    store.addMember({ clientId: ctx.info.client, name: nameFromInfo(ctx.info.connInfo) });
+    const info = parseConnInfo(ctx.info.connInfo);
+    store.addMember({ clientId: ctx.info.client, name: info.name, platform: info.platform });
   });
   sub.on('leave', (ctx) => {
     store.removeMember(ctx.info.client);

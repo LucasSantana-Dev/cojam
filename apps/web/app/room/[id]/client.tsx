@@ -53,7 +53,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
       setLoading(true);
       setJoinError('');
       try {
-        await joinRoom(roomId, name);
+        // Compute initial platform from the current active source if available
+        const initialPlatform = activeSource;
+        await joinRoom(roomId, name, initialPlatform);
         sessionStorage.setItem(NAME_KEY, name);
         setJoined(true);
       } catch (error) {
@@ -65,7 +67,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         setLoading(false);
       }
     },
-    [roomId],
+    [roomId, activeSource],
   );
 
   const handleJoin = (e: React.FormEvent) => {
