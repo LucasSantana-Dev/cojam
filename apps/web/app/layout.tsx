@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
@@ -38,6 +39,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
+      <head>
+        {/* Runtime client config (WS URL, Spotify client id). Loaded before the
+            app so window.__COJAM_ENV__ is set when realtime/auth code runs. */}
+        <Script src="/env.js" strategy="beforeInteractive" />
+      </head>
       <body>
         <a href="#main" className="sr-only focus:not-sr-only">
           Skip to content

@@ -1,6 +1,8 @@
 // Spotify OAuth 2.0 Authorization Code + PKCE for a SPA (no client secret).
 // Web Playback SDK needs the `streaming` scope + a Premium account.
 
+import { pickEnv, getRuntimeEnv } from './runtimeEnv';
+
 export type StoredToken = {
   accessToken: string;
   refreshToken: string;
@@ -21,8 +23,8 @@ export function isTokenValid(t: StoredToken | null, now: number): boolean {
 }
 
 function clientId(): string {
-  const id = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID;
-  if (!id) throw new Error('NEXT_PUBLIC_SPOTIFY_CLIENT_ID not set');
+  const id = pickEnv(getRuntimeEnv()?.spotifyClientId, process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID);
+  if (!id) throw new Error('Spotify client id not set (COJAM_SPOTIFY_CLIENT_ID or NEXT_PUBLIC_SPOTIFY_CLIENT_ID)');
   return id;
 }
 
