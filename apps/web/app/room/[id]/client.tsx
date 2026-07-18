@@ -426,6 +426,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         track={nowPlaying || null}
         open={lyricsOpen}
         onClose={() => setLyricsOpen(false)}
+        activePlayer={activePlayer}
       />
     </div>
   );
