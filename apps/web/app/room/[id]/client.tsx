@@ -184,7 +184,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           {/* Framing: "You're about to join <CODE>" */}
           <div className="space-y-3 text-center">
             <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              You\'re about to join
+              You're about to join
             </p>
             <div
               className="inline-block px-4 py-2 rounded-full font-bold text-lg"
