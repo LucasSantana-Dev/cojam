@@ -21,6 +21,7 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
+	"github.com/LucasSantana-Dev/cojam/server/internal/listenbrainz"
 	"github.com/LucasSantana-Dev/cojam/server/internal/lyrics"
 	"github.com/LucasSantana-Dev/cojam/server/internal/match"
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
@@ -244,6 +245,14 @@ func main() {
 			return fetchLyrics(ctx, artist, title, album, durationMs)
 		})
 		logger.Info("lyrics_enabled", "provider", "lrclib")
+	}
+
+	// Wire ListenBrainz enrichment when feature is on
+	if featureEnabled("FEATURE_LISTENBRAINZ", false) {
+		h.WithListenBrainzProvider(func(ctx context.Context, isrc, title, artist string) (interface{}, error) {
+			return listenbrainz.FetchEnrichment(ctx, isrc, title, artist)
+		})
+		logger.Info("listenbrainz_enabled")
 	}
 
 	// Setup centrifuge connection handlers
