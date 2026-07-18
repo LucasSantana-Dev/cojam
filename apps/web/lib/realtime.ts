@@ -52,12 +52,13 @@ export function parseConnInfo(info: unknown): { name: string; platform?: 'spotif
     if (parsed instanceof Uint8Array) {
       parsed = JSON.parse(new TextDecoder().decode(parsed));
     } else if (typeof parsed === 'string') {
+      const raw = parsed;
       // Try to parse as JSON directly first (for test/direct use cases)
       try {
-        parsed = JSON.parse(parsed);
+        parsed = JSON.parse(raw);
       } catch {
         // If that fails, try base64 decode then parse (for wire protocol)
-        parsed = JSON.parse(atob(parsed));
+        parsed = JSON.parse(atob(raw));
       }
     }
 
