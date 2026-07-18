@@ -21,7 +21,7 @@ Greenfield (2026-07-16). No code yet. Plan: `.claude/plans/` (see latest). Resea
 
 - **XP cadence** (/xp): one small task per cycle: plan (confirm what/why/how) → one failing test → minimal code → refactor under green → small commit. Cycle >30 min = split it. Signal-first handoff after cycles.
 - **TDD** (/tdd): no production code without a failing test first, watched failing. Vertical slices (one test + one impl per cycle), tests target public interfaces (queue reducer, match confidence, RPC handlers via centrifuge test client), never mock internals. Server: `go test -race ./...`; web: Vitest; e2e: Playwright two-browser room scenarios.
-- **Observability** (/observe, MVP-light by design): Go server uses `log/slog` JSON structured logs (request + RPC + room lifecycle events with `room_id`, `client_id`, `method`, `duration_ms`) and `prometheus/client_golang` at `/metrics` (rooms active, connections, RPC count/latency, match confidence histogram). Backend: self-hosted Grafana/Loki/Prometheus on homelab when deployed; log to stdout, scrape /metrics. Full OTEL tracing deferred until multi-service.
+- **Observability** (/observe, MVP-light by design): Go server uses `log/slog` JSON structured logs (request + RPC + room lifecycle events with `room_id`, `client_id`, `method`, `duration_ms`) and `prometheus/client_golang` at `/metrics` (rooms active, connections, RPC count/latency, match confidence histogram). Backend: a Grafana/Loki/Prometheus observability stack on the deployment infrastructure; log to stdout, scrape /metrics. Full OTEL tracing deferred until multi-service.
 - Exception: the initial tracer-bullet scaffold predates these agreements; from Phase 1 on they bind.
 
 ## Brain back-link
