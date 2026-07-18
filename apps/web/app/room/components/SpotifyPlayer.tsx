@@ -5,7 +5,7 @@ import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
 import { beginAuth, getAccessToken, isAuthed } from '@/lib/spotifyAuth';
 import { decidePlayable } from '@/lib/spotifyAccount';
-import { features } from '@/lib/features';
+import { getRuntimeEnv, pickEnv } from '@/lib/runtimeEnv';
 import { SpotifyIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
 import { detectSpotifyCanSeek } from '@/lib/playerUtils';
@@ -152,7 +152,11 @@ export function SpotifyPlayer({
     : undefined;
 
   useEffect(() => {
-    if (!features.spotify || !process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID) {
+    // Enablement is gated where this component is mounted; here we only need a
+    // client id, resolved from runtime (/env.js) first so the env-agnostic image
+    // works, then the build-time fallback.
+    const clientId = pickEnv(getRuntimeEnv()?.spotifyClientId, process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID);
+    if (!clientId) {
       setStatus('unconfigured');
       return;
     }

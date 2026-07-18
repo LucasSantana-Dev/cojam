@@ -11,6 +11,7 @@ import { StatusBanner } from '../components/StatusBanner';
 const NAME_KEY = 'mj_room_name';
 import { pickSource, isUnavailable } from '@/lib/pickSource';
 import { features } from '@/lib/features';
+import { getRuntimeEnv } from '@/lib/runtimeEnv';
 import { canControl } from '@/lib/roomRole';
 import { getStoredUserId } from '@/lib/auth';
 import { YouTubePlayer } from '../components/YouTubePlayer';
@@ -41,6 +42,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
   const [enrichmentOpen, setEnrichmentOpen] = useState(false);
+  // Spotify enable is resolved at runtime (via /env.js), not build time, so the
+  // env-agnostic image can turn it on. Resolve after mount to avoid an SSR
+  // hydration mismatch (server has no window.__COJAM_ENV__).
+  const [spotifyEnabled, setSpotifyEnabled] = useState(features.spotify);
+  useEffect(() => {
+    setSpotifyEnabled(getRuntimeEnv()?.spotifyEnabled ?? features.spotify);
+  }, []);
   const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId
@@ -269,7 +277,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             {queueEmpty && <OnboardingCard />}
             <div className="panel p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
-                {features.spotify && (
+                {spotifyEnabled && (
                   <SpotifyPlayer
                     authorized={spotifyAuthorized}
                     onAuthorized={setSpotifyAuthorized}
