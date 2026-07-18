@@ -391,13 +391,13 @@ func TestAuthorize_PlaylistImport(t *testing.T) {
 
 	// Case 1: member can mutate
 	h.Join("client1", "room1")
-	err := h.Authorize("client1", "playlist.import", []byte(`{"roomId":"room1"}`))
+	err := h.Authorize(newTestClient("client1", ""), "playlist.import", []byte(`{"roomId":"room1"}`))
 	if err != nil {
 		t.Errorf("member should be authorized for playlist.import, got %v", err)
 	}
 
 	// Case 2: non-member cannot mutate
-	err = h.Authorize("client2", "playlist.import", []byte(`{"roomId":"room1"}`))
+	err = h.Authorize(newTestClient("client2", ""), "playlist.import", []byte(`{"roomId":"room1"}`))
 	if err == nil {
 		t.Errorf("non-member should not be authorized for playlist.import")
 	}

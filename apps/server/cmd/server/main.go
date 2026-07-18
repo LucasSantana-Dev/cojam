@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
+	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/listenbrainz"
@@ -264,10 +265,19 @@ func main() {
 		logger.Info("lastfm_enrich_enabled")
 	}
 
+	// Connection authentication setup
+	roomAuthEnabled := featureEnabled("FEATURE_ROOM_AUTH", false)
+	roomAuthSecret := os.Getenv("ROOM_AUTH_SECRET")
+
+	// Validate ROOM_AUTH_SECRET when feature is on
+	if roomAuthEnabled {
+		if roomAuthSecret == "" {
+			logger.Error("FEATURE_ROOM_AUTH is on but ROOM_AUTH_SECRET is empty — connections will be rejected")
+		}
+	}
+
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
-		// Allow anonymous connections (no auth v0) — empty UserID marks the client anonymous,
-		// but Credentials must be present or centrifuge rejects the connect with "bad request".
 		// The display name arrives as connect data {name}; carry it as ConnInfo so presence
 		// entries show who is in the room (metadata only — no audio, no auth).
 		var info []byte
@@ -279,8 +289,27 @@ func main() {
 				info, _ = json.Marshal(map[string]string{"name": d.Name})
 			}
 		}
+
+		var userID string
+
+		// When FEATURE_ROOM_AUTH is on, validate the connection token.
+		if roomAuthEnabled {
+			if e.Token == "" {
+				logger.Info("connection_rejected", "reason", "empty_token")
+				return centrifuge.ConnectReply{}, centrifuge.ErrorUnauthorized
+			}
+
+			sub, err := connauth.Validate([]byte(roomAuthSecret), e.Token)
+			if err != nil {
+				logger.Info("connection_rejected", "reason", "invalid_token", "error", err.Error())
+				return centrifuge.ConnectReply{}, centrifuge.ErrorUnauthorized
+			}
+			userID = sub
+		}
+		// When off, preserve v0 behavior: empty UserID, connection allowed.
+
 		return centrifuge.ConnectReply{
-			Credentials: &centrifuge.Credentials{UserID: "", Info: info},
+			Credentials: &centrifuge.Credentials{UserID: userID, Info: info},
 		}, nil
 	})
 
@@ -356,6 +385,38 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"token": token})
+	})
+
+	// Connection token endpoint: returns a signed JWT token for anonymous connection auth.
+	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented).
+	r.Get("/api/connection-token", func(w http.ResponseWriter, r *http.Request) {
+		if !roomAuthEnabled {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotImplemented)
+			json.NewEncoder(w).Encode(map[string]string{"error": "connection auth not enabled"})
+			return
+		}
+
+		// If request includes a userId query param, reuse it; else generate a fresh one.
+		userID := r.URL.Query().Get("userId")
+		if userID == "" {
+			userID = connauth.NewSub()
+		}
+
+		token, err := connauth.Mint([]byte(roomAuthSecret), userID, 24*time.Hour)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"token":  token,
+			"userId": userID,
+		})
 	})
 
 	// WebSocket handler for centrifuge. Origin allowlist prevents cross-site
