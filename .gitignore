@@ -20,10 +20,12 @@ docs/adr/
 
 # AI-generated / internal design + ops docs: kept local, off the public repo.
 # Build-in-public = the code is visible; internal planning/decisions/self-host
-# guides are not. See CLAUDE.md (local) for the convention.
+# guides are not. See CLAUDE.md / KIMI.md (local) for the convention.
 .claude/
+.kimi/
 AGENTS.md
 CLAUDE.md
+KIMI.md
 docs/rfc/
 docs/runbooks/
 docs/failures/
