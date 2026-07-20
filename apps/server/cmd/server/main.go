@@ -189,11 +189,12 @@ func main() {
 	// Wire aggregated search (Deezer + Spotify) whenever FEATURE_MATCHING is on
 	// Deezer needs no credentials and is always available
 	if featureEnabled("FEATURE_MATCHING", true) {
-		h.WithSearcher(func(ctx context.Context, query string, limit int) ([]hub.SearchResult, error) {
+		h.WithSearcher(func(ctx context.Context, query string, prefer []string, limit int) ([]hub.SearchResult, error) {
 			candidates, err := match.SearchAll(ctx, query, limit)
 			if err != nil {
 				return nil, err
 			}
+			candidates = match.RankByProviders(candidates, prefer)
 			results := make([]hub.SearchResult, len(candidates))
 			for i, c := range candidates {
 				results[i] = hub.SearchResult{

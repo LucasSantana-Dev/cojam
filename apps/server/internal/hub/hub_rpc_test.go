@@ -253,7 +253,7 @@ func TestHandleRPC_TrackSearchWithSearcher(t *testing.T) {
 	h := NewHub(nil)
 
 	// Mock searcher that returns fixed results
-	h.WithSearcher(func(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	h.WithSearcher(func(ctx context.Context, query string, prefer []string, limit int) ([]SearchResult, error) {
 		return []SearchResult{
 			{
 				Title:      "Bohemian Rhapsody",
@@ -449,5 +449,34 @@ func TestHandleRPC_TrackLastfmDispatch(t *testing.T) {
 	}
 	if got.Playcount != 5000 || got.Listeners != 3000 || len(got.Tags) != 2 {
 		t.Fatalf("expected playcount=5000, listeners=3000, tags=2, got %+v", got)
+	}
+}
+
+// track.search must forward the caller's provider preferences to the searcher.
+// Unknown providers pass through the hub untouched; the ranking layer
+// (match.RankByProviders) owns the allowlist.
+func TestHandleRPC_TrackSearchForwardsPrefer(t *testing.T) {
+	h := NewHub(nil)
+
+	var gotPrefer []string
+	h.WithSearcher(func(ctx context.Context, query string, prefer []string, limit int) ([]SearchResult, error) {
+		gotPrefer = prefer
+		return []SearchResult{}, nil
+	})
+
+	if _, err := h.HandleRPC("track.search", []byte(`{"query":"q","prefer":["spotify","tidal"]}`), ""); err != nil {
+		t.Fatalf("track.search: %v", err)
+	}
+	if len(gotPrefer) != 2 || gotPrefer[0] != "spotify" || gotPrefer[1] != "tidal" {
+		t.Fatalf("prefer = %v, want [spotify tidal]", gotPrefer)
+	}
+
+	// Absent prefer: nil/empty reaches the searcher, order unchanged downstream.
+	gotPrefer = []string{"sentinel"}
+	if _, err := h.HandleRPC("track.search", []byte(`{"query":"q"}`), ""); err != nil {
+		t.Fatalf("track.search without prefer: %v", err)
+	}
+	if len(gotPrefer) != 0 {
+		t.Fatalf("prefer without param = %v, want empty", gotPrefer)
 	}
 }
