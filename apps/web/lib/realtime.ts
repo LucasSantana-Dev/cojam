@@ -230,10 +230,12 @@ export async function queueReorder(roomId: string, trackId: string, toIndex: num
   await centrifuge.rpc('queue.reorder', { roomId, trackId, toIndex });
 }
 
-export async function importPlaylist(roomId: string, url: string, addedBy: string) {
+export async function importPlaylist(roomId: string, url: string, addedBy: string, tracks?: Omit<TrackRef, 'id' | 'addedBy'>[]) {
   if (!centrifuge) throw new Error('Not connected');
   try {
-    await centrifuge.rpc('playlist.import', { roomId, url, addedBy });
+    // tracks is set for RFC-0007 client-side Spotify imports: the browser
+    // already resolved the playlist with the user's OAuth token.
+    await centrifuge.rpc('playlist.import', { roomId, url, addedBy, ...(tracks?.length ? { tracks } : {}) });
   } catch (err) {
     // centrifuge-js rejects with a plain {code, message} object, not an Error;
     // normalize so callers can show the server's message via err.message.

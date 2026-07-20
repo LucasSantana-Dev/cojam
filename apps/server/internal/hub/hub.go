@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sync"
 	"time"
 
@@ -16,6 +17,48 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 )
+
+// maxImportTracks bounds client-supplied playlist imports (RFC-0007). 200 track
+// refs at ~250 bytes of JSON each stay under centrifuge's default 64 KiB message
+// limit; a larger frame would drop the websocket instead of returning an error.
+const maxImportTracks = 200
+
+// maxImportFieldLen caps free-text fields coming from clients.
+const maxImportFieldLen = 300
+
+// maxImportDurationMs bounds track duration (2 hours); longer is a client bug.
+const maxImportDurationMs = 2 * 60 * 60 * 1000
+
+var spotifyTrackURIRe = regexp.MustCompile(`^spotify:track:[0-9A-Za-z]{22}$`)
+
+// validateImportTracks checks client-supplied track metadata before enqueueing
+// (RFC-0007). The data crosses a trust boundary: it claims to come from a
+// provider playlist but is arbitrary client input, so cap sizes and shapes.
+// Errors are user-facing (UserError) so the host sees why the import failed.
+func validateImportTracks(tracks []queue.TrackRef) error {
+	if len(tracks) > maxImportTracks {
+		return userErrorf("too many tracks: %d (max %d per import)", len(tracks), maxImportTracks)
+	}
+	for i, t := range tracks {
+		if t.Title == "" {
+			return userErrorf("track %d: title is required", i+1)
+		}
+		if len(t.Title) > maxImportFieldLen {
+			return userErrorf("track %d: title too long (max %d chars)", i+1, maxImportFieldLen)
+		}
+		if len(t.Artist) > maxImportFieldLen {
+			return userErrorf("track %d: artist too long (max %d chars)", i+1, maxImportFieldLen)
+		}
+		if t.DurationMs < 0 || t.DurationMs > maxImportDurationMs {
+			return userErrorf("track %d: duration out of range", i+1)
+		}
+		if t.Sources.Spotify != nil && t.Sources.Spotify.TrackURI != "" &&
+			!spotifyTrackURIRe.MatchString(t.Sources.Spotify.TrackURI) {
+			return userErrorf("track %d: invalid spotify track URI", i+1)
+		}
+	}
+	return nil
+}
 
 // UserError wraps an error whose message is safe and useful to show to the
 // client. Centrifuge masks plain errors into code 100 "internal server error",
@@ -108,6 +151,11 @@ type Hub struct {
 	lastfmEnrich    LastfmEnrichProvider
 	syncEnabled     bool
 
+	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
+	// up to 200 tracks at once; an unbounded goroutine per track would burst
+	// hundreds of simultaneous YouTube/Spotify requests and trip rate limits.
+	enrichSem chan struct{}
+
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
 	// disconnect. Separate mutex from rooms to avoid contention.
@@ -193,7 +241,18 @@ func NewHub(node *centrifuge.Node) *Hub {
 		node:         node,
 		members:      make(map[string]map[string]struct{}),
 		clientUserID: make(map[string]string),
+		enrichSem:    make(chan struct{}, 8),
 	}
+}
+
+// launchEnrich runs fn in a goroutine gated by enrichSem so bulk imports cannot
+// fire unbounded concurrent matcher lookups.
+func (h *Hub) launchEnrich(fn func()) {
+	go func() {
+		h.enrichSem <- struct{}{}
+		defer func() { <-h.enrichSem }()
+		fn()
+	}()
 }
 
 // Join enrolls a client as a member of a room (called on room.join and on
@@ -510,10 +569,10 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 			return nil
 		})
 		if err == nil && h.matcher != nil && req.Track.Sources.YouTube == nil {
-			go h.enrichYouTube(req.RoomID, addedID, req.Track)
+			h.launchEnrich(func() { h.enrichYouTube(req.RoomID, addedID, req.Track) })
 		}
 		if err == nil && h.spotifyMatcher != nil && req.Track.Sources.Spotify == nil {
-			go h.enrichSpotify(req.RoomID, addedID, req.Track)
+			h.launchEnrich(func() { h.enrichSpotify(req.RoomID, addedID, req.Track) })
 		}
 		return res, err
 
@@ -776,9 +835,10 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 
 	case "playlist.import":
 		var req struct {
-			RoomID  string `json:"roomId"`
-			URL     string `json:"url"`
-			AddedBy string `json:"addedBy"`
+			RoomID  string           `json:"roomId"`
+			URL     string           `json:"url"`
+			AddedBy string           `json:"addedBy"`
+			Tracks  []queue.TrackRef `json:"tracks"`
 		}
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
@@ -790,23 +850,35 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 			return nil, userErrorf("enter a playlist URL")
 		}
 
-		// If playlist fetcher not configured, return error
-		if h.playlistFetcher == nil {
-			return nil, userErrorf("playlist import is not enabled on this server")
-		}
-
-		// Fetch playlist tracks (short timeout to not block the RPC too long)
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-
-		tracks, err := h.playlistFetcher(ctx, req.URL)
-		if err != nil {
-			// Fetcher errors are already sanitized (no upstream bodies, see
-			// httpx/playlist packages), so they are safe to show the user.
-			if errors.Is(err, playlist.ErrNotConfigured) {
-				return nil, userErrorf("this playlist service is not configured on the server (Spotify import needs server credentials)")
+		var tracks []queue.TrackRef
+		if len(req.Tracks) > 0 {
+			// Client-supplied tracks (RFC-0007: Spotify import via the user's own
+			// OAuth token in the browser). The server never sees the token, only
+			// resolved metadata, which must be validated before enqueueing.
+			if err := validateImportTracks(req.Tracks); err != nil {
+				return nil, err
 			}
-			return nil, userErrorf("could not load playlist: %v", err)
+			tracks = req.Tracks
+		} else {
+			// If playlist fetcher not configured, return error
+			if h.playlistFetcher == nil {
+				return nil, userErrorf("playlist import is not enabled on this server")
+			}
+
+			// Fetch playlist tracks (short timeout to not block the RPC too long)
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			var err error
+			tracks, err = h.playlistFetcher(ctx, req.URL)
+			if err != nil {
+				// Fetcher errors are already sanitized (no upstream bodies, see
+				// httpx/playlist packages), so they are safe to show the user.
+				if errors.Is(err, playlist.ErrNotConfigured) {
+					return nil, userErrorf("this playlist service is not configured on the server (Spotify import needs server credentials)")
+				}
+				return nil, userErrorf("could not load playlist: %v", err)
+			}
 		}
 
 		// Add tracks to queue up to capacity, set AddedBy on each
@@ -848,10 +920,10 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 			// Launch enrichment for tracks lacking sources
 			for _, track := range newTracks {
 				if h.matcher != nil && track.Sources.YouTube == nil {
-					go h.enrichYouTube(req.RoomID, track.ID, track)
+					h.launchEnrich(func() { h.enrichYouTube(req.RoomID, track.ID, track) })
 				}
 				if h.spotifyMatcher != nil && track.Sources.Spotify == nil {
-					go h.enrichSpotify(req.RoomID, track.ID, track)
+					h.launchEnrich(func() { h.enrichSpotify(req.RoomID, track.ID, track) })
 				}
 			}
 		}

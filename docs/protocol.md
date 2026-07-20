@@ -13,11 +13,21 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `now_playing.set` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
 | `track.search` | `{ query: string, prefer?: string[] }` | `SearchResult[]` |
+| `playlist.import` | `{ roomId, url: string, addedBy: string, tracks?: TrackRef[] }` | `RoomState` |
 
 `track.search` is a read (not membership-gated). `prefer` lists the caller's connected
 providers (`"spotify"`, `"apple"`); results playable on those providers rank first, other
 providers still appear below. Unknown providers are ignored; omitting `prefer` leaves the
 order unchanged.
+
+`playlist.import` accepts an optional `tracks` array (RFC-0007). When present and
+non-empty, the server skips its own playlist fetcher and enqueues the supplied
+metadata after validation (max 200 tracks, field length caps, duration range,
+`spotify:track:<base62>` URI shape); the web client uses this for Spotify imports,
+which it fetches client-side with the user's OAuth token. When `tracks` is absent,
+the server fetches `url` itself (Deezer, YouTube). Compatibility: old clients send
+no `tracks` and behave as before; old servers ignore the unknown field and fetch
+`url` server-side (Spotify URLs then 403 in dev mode).
 
 ### Roles & authorization (RFC-0005, behind `FEATURE_ROOM_AUTH`)
 

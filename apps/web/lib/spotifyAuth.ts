@@ -7,19 +7,32 @@ export type StoredToken = {
   accessToken: string;
   refreshToken: string;
   expiresAt: number; // epoch ms
+  scope?: string; // granted scopes from the token response; absent on legacy tokens
 };
 
 const STORAGE_KEY = 'mj_spotify_token';
 const VERIFIER_KEY = 'mj_spotify_verifier';
 const RETURN_KEY = 'mj_spotify_return';
 const REFRESH_SKEW_MS = 60_000; // refresh a minute early
-const SCOPES = 'streaming user-read-email user-read-private';
+// playlist-read-private enables RFC-0007 client-side playlist import. Verified
+// empirically (2026-07-20): this app gets `invalid_scope` when requesting
+// `playlist-read-public`, while `playlist-read-private` is accepted and user
+// tokens read public playlists without a dedicated scope. Refreshing an
+// old-scope token does NOT grant new scopes: users must re-consent once.
+const SCOPES = 'streaming user-read-email user-read-private playlist-read-private';
 const AUTH_URL = 'https://accounts.spotify.com/authorize';
 const TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
 // Pure: is this token usable right now? (exported for unit tests)
 export function isTokenValid(t: StoredToken | null, now: number): boolean {
   return !!t && t.expiresAt - REFRESH_SKEW_MS > now;
+}
+
+// Pure: was `scope` part of this token's grant? Legacy tokens have no recorded
+// scope, so they fail the check and trigger a re-auth (exported for unit tests).
+export function hasScope(t: StoredToken | null, scope: string): boolean {
+  if (!t?.scope) return false;
+  return t.scope.split(' ').includes(scope);
 }
 
 function clientId(): string {
@@ -123,6 +136,7 @@ export async function handleCallback(code: string): Promise<string> {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresAt: Date.now() + data.expires_in * 1000,
+    scope: data.scope,
   });
   sessionStorage.removeItem(VERIFIER_KEY);
   return sessionStorage.getItem(RETURN_KEY) ?? '/';
@@ -145,6 +159,8 @@ async function refresh(t: StoredToken): Promise<StoredToken | null> {
     accessToken: data.access_token,
     refreshToken: data.refresh_token ?? t.refreshToken,
     expiresAt: Date.now() + data.expires_in * 1000,
+    // Refresh responses may omit scope; the grant does not change on refresh.
+    scope: data.scope ?? t.scope,
   };
   store(next);
   return next;
@@ -163,4 +179,12 @@ export async function getAccessToken(): Promise<string | null> {
 
 export function isAuthed(): boolean {
   return isTokenValid(loadStored(), Date.now());
+}
+
+// Can the stored token read playlists (RFC-0007 import)? False for legacy
+// tokens granted before the playlist-read scope existed: those users must
+// re-connect Spotify once. Public playlists are readable by any user token;
+// the scope additionally covers private ones.
+export function canReadPlaylists(): boolean {
+  return hasScope(loadStored(), 'playlist-read-private');
 }
