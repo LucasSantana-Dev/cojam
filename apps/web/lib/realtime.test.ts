@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useStore, parseConnInfo } from './realtime';
+import { useStore, parseConnInfo, buildProviderPrefs } from './realtime';
 import type { RoomState } from '@cojam/shared';
 
 const state = (version: number, roomId = 'r1'): RoomState => ({
@@ -104,5 +104,24 @@ describe('parseConnInfo', () => {
     const result = parseConnInfo({ name: 'Frank', platform: 'spotify' });
     expect(result.name).toBe('Frank');
     expect(result.platform).toBe('spotify');
+  });
+});
+
+describe('buildProviderPrefs', () => {
+  it('returns empty when nothing is connected', () => {
+    expect(buildProviderPrefs({})).toEqual([]);
+    expect(buildProviderPrefs({ spotify: false, apple: false })).toEqual([]);
+  });
+
+  it('lists spotify when spotify is connected', () => {
+    expect(buildProviderPrefs({ spotify: true })).toEqual(['spotify']);
+  });
+
+  it('lists apple when apple is connected', () => {
+    expect(buildProviderPrefs({ apple: true })).toEqual(['apple']);
+  });
+
+  it('lists both in canonical order when both are connected', () => {
+    expect(buildProviderPrefs({ spotify: true, apple: true })).toEqual(['spotify', 'apple']);
   });
 });

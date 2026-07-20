@@ -253,9 +253,20 @@ export type TrackDepth = {
   source: string; // "musicbrainz"
 };
 
-export async function searchTracks(query: string): Promise<SearchCandidate[]> {
+// buildProviderPrefs maps the caller's connected playback services to the provider
+// list the server uses to rank track.search results (playable-on-your-service first).
+// Canonical order matches pickSource: spotify before apple. Deezer is never listed:
+// it is the anonymous fallback, not a connectable service.
+export function buildProviderPrefs({ spotify, apple }: { spotify?: boolean; apple?: boolean }): string[] {
+  const prefs: string[] = [];
+  if (spotify) prefs.push('spotify');
+  if (apple) prefs.push('apple');
+  return prefs;
+}
+
+export async function searchTracks(query: string, prefer?: string[]): Promise<SearchCandidate[]> {
   if (!centrifuge) throw new Error('Not connected');
-  const result = await centrifuge.rpc('track.search', { query });
+  const result = await centrifuge.rpc('track.search', { query, ...(prefer && prefer.length > 0 ? { prefer } : {}) });
   return (result.data as SearchCandidate[]) ?? [];
 }
 

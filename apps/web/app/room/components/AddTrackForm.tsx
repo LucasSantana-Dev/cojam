@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useStore, queueAdd, searchTracks, importPlaylist, type SearchCandidate } from '@/lib/realtime';
+import { useStore, queueAdd, searchTracks, importPlaylist, buildProviderPrefs, type SearchCandidate } from '@/lib/realtime';
 import { features } from '@/lib/features';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
 
-export function AddTrackForm({ roomId }: { roomId: string }) {
+export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { roomId: string; spotifyAuthorized?: boolean; appleAuthorized?: boolean }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -50,7 +50,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
     setSearchResults([]); // stale results must not render under the skeleton
     debounceTimerRef.current = setTimeout(async () => {
       try {
-        const results = await searchTracks(searchQuery);
+        const results = await searchTracks(searchQuery, buildProviderPrefs({ spotify: spotifyAuthorized, apple: appleAuthorized }));
         if (searchSeqRef.current === seq) setSearchResults(results);
       } catch {
         if (searchSeqRef.current === seq) setSearchResults([]);
@@ -62,7 +62,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [searchQuery]);
+  }, [searchQuery, spotifyAuthorized, appleAuthorized]);
 
   const handleSearchResultClick = async (result: SearchCandidate) => {
     setLoading(true);

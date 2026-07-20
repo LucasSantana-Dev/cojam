@@ -12,6 +12,12 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `queue.reorder` | `{ roomId, trackId: string, toIndex: number }` | `RoomState` |
 | `now_playing.set` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
+| `track.search` | `{ query: string, prefer?: string[] }` | `SearchResult[]` |
+
+`track.search` is a read (not membership-gated). `prefer` lists the caller's connected
+providers (`"spotify"`, `"apple"`); results playable on those providers rank first, other
+providers still appear below. Unknown providers are ignored; omitting `prefer` leaves the
+order unchanged.
 
 ### Roles & authorization (RFC-0005, behind `FEATURE_ROOM_AUTH`)
 

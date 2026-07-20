@@ -533,7 +533,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
               )}
             </div>
 
-            <AddTrackForm roomId={roomId} />
+            <AddTrackForm roomId={roomId} spotifyAuthorized={spotifyAuthorized} appleAuthorized={appleAuthorized} />
           </div>
 
           <div className="lg:col-span-1 room-arrival lg:sticky lg:top-24 lg:self-start" style={{ ['--i' as string]: 1 }}>
