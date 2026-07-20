@@ -29,6 +29,7 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
+	"github.com/LucasSantana-Dev/cojam/server/internal/supauth"
 )
 
 // featureEnabled reads a FEATURE_* toggle (1/true/on/yes = on, 0/false/off/no = off,
@@ -95,6 +96,16 @@ func main() {
 		logger.Info("sync_disabled")
 	}
 
+	// Supabase Auth (accounts): when on, a connection token that validates as a
+	// Supabase access token sets the user id to "sb:<supabase-user-uuid>". Checked
+	// before the anonymous room-auth path; tokens that do not validate fall through
+	// to the existing behavior unchanged.
+	supabaseAuthEnabled := featureEnabled("FEATURE_SUPABASE_AUTH", false)
+	supabaseJWTSecret := os.Getenv("SUPABASE_JWT_SECRET")
+	if supabaseAuthEnabled && supabaseJWTSecret == "" {
+		logger.Error("FEATURE_SUPABASE_AUTH is on but SUPABASE_JWT_SECRET is empty: Supabase tokens will not validate")
+	}
+
 	// Wire persistent store if DATABASE_URL is configured. dbPool is held at this
 	// scope so the /readyz check can ping it; nil in in-memory mode.
 	var dbPool *pgxpool.Pool
@@ -113,21 +124,30 @@ func main() {
 		// Migrate via DIRECT_DATABASE_URL when provided: hosted Postgres poolers can
 		// restrict DDL, and the direct connection sidesteps that. Falls back to the
 		// runtime pool when no direct URL is set.
-		if direct := os.Getenv("DIRECT_DATABASE_URL"); direct != "" {
-			migratePool, err := db.Open(ctx, direct)
-			if err != nil {
+		runMigration := func(migrate func(context.Context, *pgxpool.Pool) error, label string) {
+			if direct := os.Getenv("DIRECT_DATABASE_URL"); direct != "" {
+				migratePool, err := db.Open(ctx, direct)
+				if err != nil {
+					pool.Close()
+					log.Fatalf("failed to open DIRECT_DATABASE_URL for %s: %v", label, err)
+				}
+				err = migrate(ctx, migratePool)
+				migratePool.Close()
+				if err != nil {
+					pool.Close()
+					log.Fatalf("failed %s: %v", label, err)
+				}
+			} else if err := migrate(ctx, pool); err != nil {
 				pool.Close()
-				log.Fatalf("failed to open DIRECT_DATABASE_URL for migration: %v", err)
+				log.Fatalf("failed %s: %v", label, err)
 			}
-			err = db.Migrate(ctx, migratePool)
-			migratePool.Close()
-			if err != nil {
-				pool.Close()
-				log.Fatalf("failed to migrate database: %v", err)
-			}
-		} else if err := db.Migrate(ctx, pool); err != nil {
-			pool.Close()
-			log.Fatalf("failed to migrate database: %v", err)
+		}
+		runMigration(db.Migrate, "migrate database")
+
+		// Supabase-only migrations (profiles, connected_services) reference the auth
+		// schema, which plain hosted Postgres lacks; run them only for accounts.
+		if supabaseAuthEnabled {
+			runMigration(db.MigrateSupabase, "migrate supabase schema")
 		}
 
 		dbPool = pool
@@ -293,8 +313,17 @@ func main() {
 
 		var userID string
 
+		// Supabase accounts take precedence: a valid Supabase access token yields a
+		// stable "sb:<uuid>" identity. Failures are silent here because every
+		// anonymous room-auth token also fails this check; fall through.
+		if supabaseAuthEnabled && e.Token != "" {
+			if sub, err := supauth.Validate([]byte(supabaseJWTSecret), e.Token); err == nil {
+				userID = "sb:" + sub
+			}
+		}
+
 		// When FEATURE_ROOM_AUTH is on, validate the connection token.
-		if roomAuthEnabled {
+		if userID == "" && roomAuthEnabled {
 			if e.Token == "" {
 				logger.Info("connection_rejected", "reason", "empty_token")
 				return centrifuge.ConnectReply{}, centrifuge.ErrorUnauthorized
