@@ -32,6 +32,13 @@ import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons
 import { LogoMark } from '@/app/components/Logo';
 import type { IPlayer } from '@/lib/playerInterface';
 
+// mm:ss for the per-client "in room" clock on the now-playing card.
+function formatElapsed(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export function RoomClient({ roomId }: { roomId: string }) {
   const [nameInput, setNameInput] = useState('');
   const [joined, setJoined] = useState(false);
@@ -60,12 +67,34 @@ export function RoomClient({ roomId }: { roomId: string }) {
     : null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
 
+  // Per-client "in room" clock (honest: elapsed since this tab joined).
+  const [roomElapsedS, setRoomElapsedS] = useState(0);
+  useEffect(() => {
+    if (!joined) return;
+    const startedAt = Date.now();
+    const id = setInterval(() => setRoomElapsedS(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [joined]);
+
   // U5: compute room control permission for this user
   const hostControl = canControl({
     roomAuth: features.roomAuth,
     myUserId: getStoredUserId(),
     hostUserId: store.state?.hostUserId,
   });
+
+  // Presence snapshot for the fused now-playing chip. Deduped by name (like
+  // PresenceBar) so one person with two tabs counts once.
+  const members = store.members ?? [];
+  const presenceNames = new Set<string>();
+  const presence = members.filter((m) => {
+    if (presenceNames.has(m.name)) return false;
+    presenceNames.add(m.name);
+    return true;
+  });
+  const presenceStack = presence.slice(0, 4);
+  const transportState = store.state?.transport?.state;
+  const isPlaying = transportState === 'playing';
 
   const doJoin = useCallback(
     async (name: string) => {
@@ -340,12 +369,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
             </div>
 
             {/* Now-Playing Hero */}
-            <div className={`panel now-playing p-6 space-y-4${nowPlaying ? ' is-live' : ''}`}>
+            <div className={`panel now-playing p-6 space-y-4${nowPlaying && isPlaying ? ' is-live' : ''}`}>
               {/* Header row: section label anchors the left, Radio control the right,
-                  so the toggle never floats alone above an empty panel. */}
+                  so the toggle never floats alone above an empty panel. Eq + accent
+                  render only while actually playing; paused/stopped say so (R6). */}
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
-                  {nowPlaying && (
+                  {nowPlaying && isPlaying && (
                     <span className="eq" aria-hidden>
                       <span /><span /><span /><span />
                     </span>
@@ -353,11 +383,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
                   <span
                     className="text-xs font-medium uppercase tracking-wider"
                     style={{
-                      color: nowPlaying ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                      color: nowPlaying && isPlaying ? 'var(--color-accent)' : 'var(--color-text-muted)',
                       letterSpacing: '0.15em',
                     }}
                   >
-                    Now playing
+                    {!nowPlaying || isPlaying
+                      ? 'Now playing'
+                      : transportState === 'stopped'
+                        ? 'Stopped'
+                        : 'Paused'}
                   </span>
                 </div>
                 <label className="radio-control cursor-pointer" title="Auto-plays related songs when the queue runs out">
@@ -395,6 +429,29 @@ export function RoomClient({ roomId }: { roomId: string }) {
                       <p className="text-sm mt-1 truncate" style={{ color: 'var(--color-text-secondary)' }}>
                         {nowPlaying.artist}
                       </p>
+                      {/* Fused presence + provenance (R7 + R1): the room's social
+                          state lives on the player, not siloed in the header. */}
+                      <div className="np-meta">
+                        {features.presence && presence.length > 0 && (
+                          <>
+                            <span className="presence-stack presence-stack--sm" aria-hidden>
+                              {presenceStack.map((m) => (
+                                <span
+                                  key={m.clientId}
+                                  className="avatar-chip"
+                                  style={{ background: avatarGradient(m.clientId || m.name) }}
+                                >
+                                  {m.name.charAt(0).toUpperCase()}
+                                </span>
+                              ))}
+                            </span>
+                            <span>{presence.length === 1 ? '1 listening' : `${presence.length} listening`}</span>
+                            <span aria-hidden className="np-meta__dot">·</span>
+                          </>
+                        )}
+                        <span>added by {nowPlaying.addedBy}</span>
+                        <span className="np-timer">in room {formatElapsed(roomElapsedS)}</span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {activeSource === 'youtube' && (

@@ -55,14 +55,19 @@ func TestValidateRejectsTamperedSignature(t *testing.T) {
 		}
 	}
 
-	// Fallback: tamper with last char of signature. Pick a replacement that is
-	// guaranteed different from the original char, else a token whose signature
-	// already ends in the replacement would be unchanged and flakily accepted.
+	// Fallback: tamper with the FIRST signature char. The final base64 char of
+	// a 32-byte signature carries 2 ignored padding bits, so replacing it with
+	// a char that differs only there (e.g. U/V/W -> X) leaves the decoded
+	// signature byte-identical and the "tampered" token valid: ~5% flake.
+	// Every bit of the first char is significant, so the swap always changes
+	// the signature. Replacement is still guaranteed different from the
+	// original char.
+	sigStart := findNthDot(token, 2) + 1
 	replacement := byte('X')
-	if token[len(token)-1] == replacement {
+	if token[sigStart] == replacement {
 		replacement = 'Y'
 	}
-	tamperedToken := token[:len(token)-1] + string(replacement)
+	tamperedToken := token[:sigStart] + string(replacement) + token[sigStart+1:]
 	_, err = Validate(secret, tamperedToken)
 	if err == nil {
 		t.Fatal("Validate should reject tampered signature but did not")

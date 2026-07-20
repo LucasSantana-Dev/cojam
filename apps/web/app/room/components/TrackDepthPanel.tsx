@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { TrackRef } from '@cojam/shared';
 import { fetchTrackDepth } from '@/lib/realtime';
+import { formatTime } from './TransportUI';
 
 interface TrackDepthPanelProps {
   roomId: string;
@@ -114,6 +115,32 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
               <p>{error}</p>
             </div>
           )}
+
+          {/* Metadata rail (R8): mono LABEL / value pairs from data the room
+              already has, so it renders even while the fetch is in flight. */}
+          <dl className="meta-rail">
+            <div className="meta-rail__row">
+              <dt>ISRC</dt>
+              <dd>{track.isrc || 'Unknown'}</dd>
+            </div>
+            <div className="meta-rail__row">
+              <dt>Duration</dt>
+              <dd>{track.durationMs != null ? formatTime(track.durationMs) : 'Unknown'}</dd>
+            </div>
+            <div className="meta-rail__row">
+              <dt>Added by</dt>
+              <dd>{track.addedBy}</dd>
+            </div>
+            <div className="meta-rail__row">
+              <dt>Services</dt>
+              <dd>
+                {(['youtube', 'spotify', 'apple'] as const)
+                  .filter((s) => track.sources[s])
+                  .map((s) => (s === 'youtube' ? 'YouTube' : s === 'spotify' ? 'Spotify' : 'Apple'))
+                  .join(' · ') || 'None'}
+              </dd>
+            </div>
+          </dl>
 
           {data && !loading && (
             <>

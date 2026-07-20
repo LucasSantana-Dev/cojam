@@ -55,8 +55,10 @@ export default function Home() {
           const revealElements = root.querySelectorAll('.reveal');
 
           // Stagger group: step-cards have a 40ms stagger between each.
+          // Gated on reduced-motion — under reduce, the CSS `.reveal` rule shows
+          // them statically (no slide), per prefers-reduced-motion guidance.
           const stepCards = root.querySelectorAll('.step-card.reveal');
-          if (stepCards.length > 0) {
+          if (stepCards.length > 0 && !prefersReduced) {
             gsap.default.fromTo(
               stepCards,
               { opacity: 0, y: 28 },
@@ -102,28 +104,32 @@ export default function Home() {
           }
 
           // Individual reveals (section titles, eyebrows, platform row, final CTA).
-          revealElements.forEach((el) => {
-            // Skip step-cards + platform chips (already animated above).
-            if (el.classList.contains('step-card') || el.classList.contains('platform-chip')) return;
+          // Gated on reduced-motion — under reduce, the CSS `.reveal` rule shows
+          // them statically instead of sliding up.
+          if (!prefersReduced) {
+            revealElements.forEach((el) => {
+              // Skip step-cards + platform chips (already animated above).
+              if (el.classList.contains('step-card') || el.classList.contains('platform-chip')) return;
 
-            gsap.default.fromTo(
-              el,
-              { opacity: 0, y: 28 },
-              {
-                opacity: 1,
-                y: 0,
-                duration: 0.7,
-                ease: 'cubic-bezier(0.2, 0.65, 0.2, 1)',
-                scrollTrigger: {
-                  trigger: el,
-                  start: 'top center+=100',
-                  end: 'center center',
-                  toggleActions: 'play none none none',
-                  markers: false,
+              gsap.default.fromTo(
+                el,
+                { opacity: 0, y: 28 },
+                {
+                  opacity: 1,
+                  y: 0,
+                  duration: 0.7,
+                  ease: 'cubic-bezier(0.2, 0.65, 0.2, 1)',
+                  scrollTrigger: {
+                    trigger: el,
+                    start: 'top center+=100',
+                    end: 'center center',
+                    toggleActions: 'play none none none',
+                    markers: false,
+                  },
                 },
-              },
-            );
-          });
+              );
+            });
+          }
 
           // Scroll scrub: RoomShowcase progress bar animates as user scrolls through showcase.
           // One subtle, scrubbed beat: progress bar fills from 35% to 90% over the showcase scroll.
@@ -193,6 +199,14 @@ export default function Home() {
         }, root);
 
         cleanups.push(() => ctx.revert());
+
+        // Web fonts (next/font) load after this init, and their metrics reflow
+        // the hero + sections — recomputing every ScrollTrigger's start/end so
+        // reveals don't fire against the fallback-font layout. Official GSAP
+        // guidance: refresh after fonts are ready.
+        if (typeof document !== 'undefined' && document.fonts?.ready) {
+          document.fonts.ready.then(() => ScrollTrigger.refresh()).catch(() => {});
+        }
       } catch (error) {
         console.error('GSAP initialization failed:', error);
       }
@@ -252,6 +266,21 @@ export default function Home() {
     { n: '03', t: 'Play in sync', d: 'Queue tracks together; the room syncs who plays what. Each of you streams on your own account.' },
   ];
 
+  // Evergreen value phrases for the hero marquee. Decorative (the parent is
+  // aria-hidden); the same claims appear in the readable sections below.
+  const tickerPhrases = [
+    'Per-user streams',
+    'Metadata only, never a rebroadcast',
+    'Everyone on their own account',
+    'The queue stays in sync',
+    'Bring the service you already pay for',
+  ].map((phrase, i) => (
+    <span key={i} className="ticker-item">
+      {phrase}
+      <b>·</b>
+    </span>
+  ));
+
   const platformIcons: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
     'YouTube': YouTubeIcon,
     'Spotify': SpotifyIcon,
@@ -266,6 +295,13 @@ export default function Home() {
     <div ref={rootRef} className="landing">
       <header className="site-header">
         <span className="brand"><LogoMark size={18} /> CoJam</span>
+        <nav className="site-nav" aria-label="Primary">
+          <a href="#how">How it works</a>
+          <a href="#showcase">See it live</a>
+          <a href="https://github.com/LucasSantana-Dev/cojam" target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+        </nav>
         <button onClick={createRoom} className="btn-primary magnetic">
           Start a room
         </button>
@@ -276,10 +312,11 @@ export default function Home() {
           <div className="hero-aurora" aria-hidden />
           <div className="hero-glow" aria-hidden />
           <div className="hero-grid" aria-hidden />
+          <p className="hero-backdrop-word" aria-hidden>together</p>
           <div className="hero-inner">
-            <span className="eyebrow">
+            <span className="eyebrow is-live">
               <span className="eyebrow-dot" aria-hidden />
-              Listen together, across services
+              Live sync, across services
             </span>
             <h1 className="hero-title">
               <Words text="Your friends." start={0} />
@@ -314,13 +351,25 @@ export default function Home() {
                 </button>
               </form>
             </div>
+            <div className="hero-trust">
+              <span className="trust-label">Bring your own service</span>
+              <span className="trust-sep" aria-hidden />
+              <span className="trust-svc"><SpotifyIcon size={15} /> Spotify</span>
+              <span className="trust-svc"><YouTubeIcon size={15} /> YouTube</span>
+            </div>
+          </div>
+          <div className="hero-ticker" aria-hidden>
+            <div className="hero-ticker__track">
+              <span>{tickerPhrases}</span>
+              <span>{tickerPhrases}</span>
+            </div>
           </div>
         </header>
 
         {/* How it works */}
-        <section className="section">
+        <section id="how" className="section">
           <p className="section-eyebrow reveal">How it works</p>
-          <h2 className="section-title reveal">One room, three streaming services, zero switching.</h2>
+          <h2 className="section-title reveal">One room, your streaming services, zero switching.</h2>
           <div className="step-grid">
             {steps.map((s) => (
               <div key={s.n} className="step-card reveal">
@@ -333,7 +382,7 @@ export default function Home() {
         </section>
 
         {/* Room Showcase */}
-        <section className="section">
+        <section id="showcase" className="section">
           <p className="section-eyebrow reveal">In the room right now</p>
           <h2 className="section-title reveal">See it in sync.</h2>
           <p className="max-w-2xl mx-auto text-center reveal" style={{ color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>

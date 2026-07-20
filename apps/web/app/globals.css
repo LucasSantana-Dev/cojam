@@ -41,9 +41,18 @@
 body {
   background: var(--color-surface-0);
   color: var(--color-text-primary);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body), system-ui, -apple-system, sans-serif;
   font-size: 1rem;
   line-height: 1.5;
+}
+
+/* Display face carries the marketing headings + the oversized hero backdrop.
+   Falls back to system-ui only if the web font fails to load. */
+.hero-title,
+.section-title,
+.hero-backdrop-word,
+.site-header .brand {
+  font-family: var(--font-display), system-ui, -apple-system, sans-serif;
 }
 
 input, textarea, select {
@@ -387,6 +396,26 @@ input:focus, textarea:focus, select:focus {
   overflow-x: clip;
 }
 
+/* Scroll progress rail: 2px violet hairline at the viewport top, scrub-filled
+   by GSAP (scaleX 0 -> 1 over the document scroll). Stays at scaleX(0) when
+   motion is reduced or GSAP fails to load: an enhancement, never a blocker. */
+.scroll-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 40;
+  pointer-events: none;
+}
+.scroll-rail__bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), oklch(0.72 0.18 300));
+  transform: scaleX(0);
+  transform-origin: left center;
+  will-change: transform;
+}
+
 /* Fixed grain overlay to kill digital sterility (very subtle). */
 .landing::before {
   content: "";
@@ -494,6 +523,91 @@ input:focus, textarea:focus, select:focus {
   mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
 }
 
+/* Oversized brand word set behind the hero content (DAYRISE steal). Clipped by
+   the hero's overflow:hidden; low-opacity so the headline stays legible over it.
+   Decorative — aria-hidden in markup. */
+.hero-backdrop-word {
+  position: absolute;
+  left: 50%;
+  bottom: -0.14em;
+  translate: -50% 0;
+  z-index: 0;
+  pointer-events: none;
+  margin: 0;
+  font-size: clamp(6rem, 26vw, 22rem);
+  font-weight: 800;
+  line-height: 0.8;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(180deg, oklch(0.66 0.2 300 / 0.16), oklch(0.66 0.2 300 / 0));
+  -webkit-background-clip: text;
+  background-clip: text;
+  user-select: none;
+}
+
+/* Kinetic repeats of the backdrop word at fixed angles (Shopify Editions steal).
+   GSAP sways them via the --sway custom property so the CSS rotate is preserved
+   (GSAP writes inline `transform`, which would otherwise wipe the rotation).
+   Fainter than the main word; hidden on small screens. */
+.hero-backdrop-word--a,
+.hero-backdrop-word--b {
+  left: auto;
+  bottom: auto;
+  translate: none;
+  transform: rotate(var(--r)) translate3d(0, var(--sway, 0px), 0);
+  background: linear-gradient(180deg, oklch(0.66 0.2 300 / 0.1), oklch(0.66 0.2 300 / 0));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.hero-backdrop-word--a {
+  --r: -8deg;
+
+  top: 15%;
+  left: -1.25rem;
+  font-size: clamp(2.5rem, 9vw, 7rem);
+}
+.hero-backdrop-word--b {
+  --r: 7deg;
+
+  top: 54%;
+  right: -1rem;
+  font-size: clamp(2rem, 8vw, 6rem);
+}
+@media (max-width: 47.999rem) {
+  .hero-backdrop-word--a,
+  .hero-backdrop-word--b { display: none; }
+}
+
+/* HUD corner readouts (Astro Dither steal): the landing reports state like a
+   room does. ui-monospace per the DESIGN.md technical-labels lock (no 3rd
+   webfont). Decorative atmosphere — aria-hidden in markup, desktop only. */
+.hero-hud {
+  position: absolute;
+  top: 4.75rem;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  color: var(--color-text-secondary);
+  pointer-events: none;
+}
+.hero-hud--tl { left: clamp(1rem, 4vw, 2.5rem); }
+.hero-hud--tr { right: clamp(1rem, 4vw, 2.5rem); }
+.hero-hud .hud-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.22em;
+  color: var(--color-text-muted);
+}
+.hero-hud .cmd-readout { color: var(--color-accent); }
+.hero-hud .hud-clock { font-variant-numeric: tabular-nums; }
+@media (max-width: 47.999rem) {
+  .hero-hud { display: none; }
+}
+
 .hero-inner {
   position: relative;
   z-index: 2;
@@ -520,6 +634,115 @@ input:focus, textarea:focus, select:focus {
   background: var(--color-accent);
   box-shadow: 0 0 10px 1px var(--color-accent);
   animation: pulse-breath 1.6s ease-in-out infinite;
+}
+
+/* Live-signal variant: green (--color-accent-2) is reserved for "live" only.
+   The eyebrow border/text pick up the same green so the whole chip reads live. */
+.eyebrow.is-live {
+  color: var(--color-accent-2);
+  border-color: color-mix(in oklab, var(--color-accent-2) 40%, transparent);
+  background: color-mix(in oklab, var(--color-accent-2) 8%, transparent);
+}
+.eyebrow.is-live .eyebrow-dot {
+  background: var(--color-accent-2);
+  box-shadow: 0 0 10px 1px var(--color-accent-2);
+}
+
+/* Checkmark claims row under the hero room card (Uppbeat steal): claims with
+   violet checks — green stays reserved for LIVE state. Service claims carry the
+   platform marks. */
+.hero-claims {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 2rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  opacity: 0;
+  animation: fade-in-up 0.7s var(--ease-out-quart) forwards;
+  animation-delay: 0.9s;
+}
+.hero-claims .claim {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.hero-claims .claim svg { color: var(--color-accent); flex-shrink: 0; }
+.hero-claims .claim-sep {
+  width: 1px;
+  height: 0.9rem;
+  background: var(--color-border);
+}
+
+/* Dot-prefixed micro nav at the bottom of the hero stack (valen.co steal):
+   a contents manifest for the page, cockpit chrome. */
+.hero-manifest {
+  margin-top: 1.1rem;
+  display: flex;
+  gap: 1.4rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  opacity: 0;
+  animation: fade-in-up 0.7s var(--ease-out-quart) forwards;
+  animation-delay: 1.05s;
+}
+.hero-manifest a {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+.hero-manifest a::before {
+  content: ".";
+  color: var(--color-accent);
+}
+.hero-manifest a:hover { color: var(--color-text-primary); }
+
+/* Live activity marquee: evergreen value phrases scrolling under the hero.
+   Decorative (aria-hidden) — the same claims live in the readable sections. */
+.hero-ticker {
+  position: relative;
+  z-index: 2;
+  margin-top: 3.5rem;
+  width: 100%;
+  overflow: hidden;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.hero-ticker__track {
+  display: inline-flex;
+  align-items: center;
+  gap: 2.5rem;
+  padding: 0.75rem 0;
+  white-space: nowrap;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  animation: ticker-scroll 34s linear infinite;
+}
+.hero-ticker__track span { display: inline-flex; align-items: center; gap: 2.5rem; }
+.hero-ticker__track b {
+  color: var(--color-accent-2);
+  font-weight: 400;
+}
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-ticker__track { animation: none; }
 }
 
 .hero-title {
@@ -608,6 +831,147 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
+/* Join-by-code elevated to equal footing with Start a room (Spotify Jam steal:
+   the guest's first ten seconds is the pitch). Real <label>, mono micro. */
+.hero-join {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.hero-join__label {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* Example room artifact (Stationhead steal: hero as evidence, not promise).
+   A compact, clearly-labeled illustration of a live room — the same people and
+   track as the RoomShowcase below, one consistent story. GSAP floats it via the
+   --float var so the CSS tilt is preserved. aria-hidden in markup. */
+.room-card {
+  margin: 2.75rem auto 0;
+  width: min(100%, 23rem);
+  padding: 0.85rem 1rem;
+  text-align: left;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, oklch(0.16 0.01 280 / 0.72), oklch(0.12 0.01 280 / 0.72));
+  border: 1px solid oklch(0.3 0.02 280 / 0.6);
+  box-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.04) inset,
+    0 24px 60px -40px oklch(0 0 0 / 0.9);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  transform: rotate(var(--tilt, 1.5deg)) translate3d(0, var(--float, 0px), 0);
+  opacity: 0;
+  animation: fade-in 0.9s ease forwards;
+  animation-delay: 1.1s;
+}
+.room-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+.room-card__label {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.room-card__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-accent-2);
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--color-accent-2) 40%, transparent);
+  background: color-mix(in oklab, var(--color-accent-2) 8%, transparent);
+}
+.room-card__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent-2);
+  box-shadow: 0 0 8px 1px var(--color-accent-2);
+  animation: pulse-breath 1.6s ease-in-out infinite;
+}
+.room-card__main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.room-card__art {
+  width: 52px;
+  height: 52px;
+  border-radius: 0.5rem;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.room-card__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.room-card__title {
+  font-weight: 650;
+  font-size: 0.95rem;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.room-card__artist {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.room-card__bottom {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--color-border);
+}
+.room-card__avatars { display: flex; flex-shrink: 0; }
+.room-card__avatars i {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: oklch(0.12 0.01 280);
+  border: 2px solid var(--color-surface-1);
+  margin-left: -6px;
+}
+.room-card__avatars i:first-child { margin-left: 0; }
+.room-card__chat {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.room-card__chat b {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
 /* Buttons ----------------------------------------------------- */
 .btn-primary {
   position: relative;
@@ -672,49 +1036,28 @@ input:focus, textarea:focus, select:focus {
   color: var(--color-text-primary);
 }
 
+/* Steps as hairline-ruled spec modules (RIDDIM steal): transparent cards, a
+   top rule per module, `01]` bracket numbers, one shared bottom rule. The
+   .step-card class name is GSAP-coupled — restyle in place, never rename. */
 .step-grid {
   display: grid;
   gap: 1.5rem;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   position: relative;
-}
-/* Connecting line between cards (desktop only) */
-@media (min-width: 48rem) {
-  .step-grid::before {
-    content: "";
-    position: absolute;
-    top: 2.2rem;
-    left: calc(33.333% - 0.75rem);
-    right: calc(33.333% - 0.75rem);
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
-    opacity: 0.3;
-    pointer-events: none;
-    z-index: 0;
-  }
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.25rem;
 }
 .step-card {
   position: relative;
-  padding: 1.75rem;
-  border-radius: 0.9rem;
-  background: var(--color-surface-1);
-  border: 1px solid var(--color-border);
-  transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+  padding: 1.25rem 0.25rem 1.5rem;
+  background: transparent;
+  border-top: 1px solid var(--color-border);
+  transition: border-color 200ms ease, background 200ms ease;
   z-index: 1;
 }
 .step-card:hover {
-  transform: translateY(-4px);
-  border-color: oklch(0.66 0.2 300 / 0.5);
-  box-shadow: 0 20px 40px -24px oklch(0.66 0.2 300 / 0.8);
-}
-/* Stagger vertical position on desktop for visual progression */
-@media (min-width: 48rem) {
-  .step-card:nth-child(2) {
-    margin-top: 0.5rem;
-  }
-  .step-card:nth-child(3) {
-    margin-top: 0;
-  }
+  border-top-color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-surface-1) 55%, transparent);
 }
 @media (max-width: 47.999rem) {
   .step-grid {
@@ -723,11 +1066,85 @@ input:focus, textarea:focus, select:focus {
 }
 .step-num {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
   color: var(--color-accent);
+}
+/* Accent rule that draws in over each module's hairline (GSAP scaleX 0 -> 1,
+   staggered). Under reduced motion it stays hidden; the plain hairline above
+   remains as the static state. */
+.step-rule {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--color-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
 }
 .step-card h3 { margin: 0.6rem 0 0.4rem; font-size: 1.15rem; font-weight: 650; color: var(--color-text-primary); }
 .step-card p { font-size: 0.92rem; color: var(--color-text-secondary); }
+
+/* Italic accent word inside section titles (Epidemic Sound steal, adapted to
+   the font lock: synthetic oblique on Bricolage, violet, no 3rd webfont). */
+.section-title em {
+  font-style: italic;
+  color: var(--color-accent);
+}
+
+/* "Alone vs in a room" comparison table (Hang the DJ steal): hairline-ruled,
+   semantic table, violet checks in the room column. */
+.vs-table {
+  width: 100%;
+  max-width: 46rem;
+  margin: 0 auto;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.vs-table th,
+.vs-table td {
+  padding: 0.85rem 1rem;
+  text-align: left;
+  border-top: 1px solid var(--color-border);
+}
+.vs-table thead th {
+  border-top: none;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.vs-table thead th:last-child { color: var(--color-accent); }
+.vs-table tbody th {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.vs-table tbody td { color: var(--color-text-secondary); }
+.vs-table tbody td:last-child {
+  color: var(--color-text-primary);
+  font-weight: 550;
+}
+.vs-table tbody tr:last-child th,
+.vs-table tbody tr:last-child td { border-bottom: 1px solid var(--color-border); }
+.vs-yes {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.vs-yes svg { color: var(--color-accent); flex-shrink: 0; }
+@media (max-width: 480px) {
+  .vs-table { font-size: 0.84rem; }
+  .vs-table th,
+  .vs-table td { padding: 0.7rem 0.5rem; }
+}
 
 .platform-row {
   display: flex;
@@ -776,7 +1193,7 @@ input:focus, textarea:focus, select:focus {
   text-align: center;
   padding: 2rem 1.5rem 3rem;
   font-size: 0.8rem;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   border-top: 1px solid var(--color-border);
 }
 .landing-footer a { color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 2px; }
@@ -809,6 +1226,22 @@ input:focus, textarea:focus, select:focus {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+}
+/* Clean marketing nav (Direction B borrow). Center anchor links; hidden on
+   small screens where the header keeps only brand + CTA. */
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  font-size: 0.9rem;
+}
+.site-nav a {
+  color: var(--color-text-secondary);
+  transition: color 150ms ease;
+}
+.site-nav a:hover { color: var(--color-text-primary); }
+@media (max-width: 47.999rem) {
+  .site-nav { display: none; }
 }
 .site-header .btn-primary { padding: 0.55rem 1.1rem; font-size: 0.9rem; }
 @media (max-width: 480px) {
@@ -923,7 +1356,9 @@ input:focus, textarea:focus, select:focus {
 .eq span {
   width: 3px;
   border-radius: 2px;
-  background: var(--color-accent);
+  /* Green = sound is playing right now (LIVE-only lock). The eq renders only
+     while transport.state === 'playing'. */
+  background: var(--color-accent-2);
   animation: eq-bounce 0.9s ease-in-out infinite;
 }
 .eq span:nth-child(1) { height: 40%; animation-delay: -0.2s; }
@@ -951,9 +1386,12 @@ input:focus, textarea:focus, select:focus {
   .hero-title .word,
   .hero-sub,
   .hero-cta { opacity: 1; transform: none; animation: none; }
+  .hero-claims,
+  .hero-manifest,
+  .room-card { opacity: 1; animation: none; }
+  .room-card__dot { animation: none; }
   .reveal { opacity: 1; transform: none; transition: none; }
   .magnetic { transform: none !important; }
-  .step-card:hover { transform: none; }
   .site-header { transition: none; }
   .eq span { animation: none; }
   .track-change-enter,
@@ -962,6 +1400,13 @@ input:focus, textarea:focus, select:focus {
   .queue-row,
   .queue-row:hover { transition: none; transform: none; }
 }
+
+/* Showcase card tilt-in: perspective on the wrapper, GSAP eases the inner
+   card's rotateX to 0 on approach. The card's own overflow:hidden doesn't
+   flatten this (the transform is on the card, applied via the parent's
+   perspective). Under reduced motion the card stays flat. */
+.room-showcase { perspective: 1000px; }
+.showcase-tilt { will-change: transform; }
 
 /* Showcase queue rows: hover lift via CSS (no JS style mutation), pointer-fine only.
    Self-guarded on reduced-motion so rule order vs the block above cannot regress it. */
@@ -1342,4 +1787,87 @@ input:focus, textarea:focus, select:focus {
   .enrichment-panel, .enrichment-backdrop {
     animation: none;
   }
+}
+
+/* ============================================================
+   Room repaint (2026-07-19, Direction A: social document).
+   Board: .claude/design/reference-board-room2.md
+   ============================================================ */
+
+/* Fused presence + provenance row on the now-playing card (R7 + R1). */
+.np-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.np-meta__dot { opacity: 0.5; }
+
+/* Smaller avatar stack variant for the now-playing meta row. */
+.presence-stack--sm .avatar-chip {
+  width: 22px;
+  height: 22px;
+  font-size: 0.6rem;
+  margin-left: -6px;
+  border-width: 1.5px;
+}
+.presence-stack--sm .avatar-chip:first-child { margin-left: 0; }
+
+/* Per-client session clock: mono, right-aligned, muted. */
+.np-timer {
+  margin-left: auto;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Queue aggregate header (R2): "N tracks · total duration · M contributors". */
+.queue-agg {
+  margin-top: 0.125rem;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Per-row duration (R9): right-aligned, tabular, out of the truncation path. */
+.queue-duration {
+  flex-shrink: 0;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  align-self: center;
+}
+
+/* Metadata rail (R8): tracked-uppercase mono LABEL / value pairs. */
+.meta-rail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem 1.25rem;
+  padding: 0.875rem;
+  border-radius: 0.5rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+}
+.meta-rail__row dt {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.meta-rail__row dd {
+  margin: 0.125rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
 }
