@@ -23,3 +23,11 @@ describe('mergeProviderPrefs', () => {
     expect(mergeProviderPrefs(['tidal', 'spotify'], {})).toEqual(['spotify']);
   });
 });
+
+describe('signInWithGoogle', () => {
+  it('errors cleanly when accounts are not configured', async () => {
+    const { signInWithGoogle } = await import('./account');
+    const { error } = await signInWithGoogle();
+    expect(error).toBe('Accounts are not configured');
+  });
+});

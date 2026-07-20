@@ -6,6 +6,7 @@ import { supabaseEnabled } from '@/lib/supabase';
 import {
   getAccountSession,
   signInWithEmail,
+  signInWithGoogle,
   signOut,
   getDisplayName,
   saveDisplayName,
@@ -51,6 +52,16 @@ export default function AccountPage() {
     setBusy(false);
     if (err) setError(err);
     else setMessage('Check your email for the sign-in link.');
+  };
+
+  const handleGoogle = async () => {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    const { error: err } = await signInWithGoogle();
+    // On success the browser navigates away to Google; only errors land here.
+    setBusy(false);
+    if (err) setError(err);
   };
 
   const handleSaveName = async (e: React.FormEvent) => {
@@ -105,29 +116,45 @@ export default function AccountPage() {
         </div>
 
         {!session ? (
-          <form onSubmit={handleSignIn} className="space-y-3">
-            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              Sign in with a magic link to keep your name and connected services across devices. Guests can keep using rooms without an account.
-            </p>
-            <input
-              type="email"
-              required
-              placeholder="you@example.com"
-              aria-label="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2.5 text-sm rounded-lg focus:outline-none border"
-              style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-            />
+          <div className="space-y-3">
+            <form onSubmit={handleSignIn} className="space-y-3">
+              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                Sign in to keep your name and connected services across devices. Guests can keep using rooms without an account.
+              </p>
+              <input
+                type="email"
+                required
+                placeholder="you@example.com"
+                aria-label="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-2.5 text-sm rounded-lg focus:outline-none border"
+                style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+              />
+              <button
+                type="submit"
+                disabled={busy || !email.trim()}
+                className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+              >
+                {busy ? 'Sending...' : 'Email me a sign-in link'}
+              </button>
+            </form>
+            <div className="flex items-center gap-3" aria-hidden>
+              <div className="flex-1 h-px" style={{ backgroundColor: 'var(--color-border)' }} />
+              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>or</span>
+              <div className="flex-1 h-px" style={{ backgroundColor: 'var(--color-border)' }} />
+            </div>
             <button
-              type="submit"
-              disabled={busy || !email.trim()}
-              className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50"
-              style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+              type="button"
+              onClick={handleGoogle}
+              disabled={busy}
+              className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 border"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-surface-2)' }}
             >
-              {busy ? 'Sending...' : 'Email me a sign-in link'}
+              Continue with Google
             </button>
-          </form>
+          </div>
         ) : (
           <div className="space-y-5">
             <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>

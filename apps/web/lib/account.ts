@@ -46,6 +46,21 @@ export async function signInWithEmail(email: string): Promise<{ error: string | 
   return { error: error?.message ?? null };
 }
 
+// signInWithGoogle starts the OAuth flow: the browser navigates to Google and
+// returns to /account, where the Supabase client completes the code exchange.
+// Requires the Google provider enabled in the Supabase dashboard (OAuth client
+// id/secret); the issued session is a standard Supabase JWT, so the server side
+// needs nothing Google-specific.
+export async function signInWithGoogle(): Promise<{ error: string | null }> {
+  const sb = getSupabase();
+  if (!sb) return { error: 'Accounts are not configured' };
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${window.location.origin}/account` },
+  });
+  return { error: error?.message ?? null };
+}
+
 export async function signOut(): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
