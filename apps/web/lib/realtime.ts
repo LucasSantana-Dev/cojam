@@ -232,7 +232,14 @@ export async function queueReorder(roomId: string, trackId: string, toIndex: num
 
 export async function importPlaylist(roomId: string, url: string, addedBy: string) {
   if (!centrifuge) throw new Error('Not connected');
-  await centrifuge.rpc('playlist.import', { roomId, url, addedBy });
+  try {
+    await centrifuge.rpc('playlist.import', { roomId, url, addedBy });
+  } catch (err) {
+    // centrifuge-js rejects with a plain {code, message} object, not an Error;
+    // normalize so callers can show the server's message via err.message.
+    const msg = (err as { message?: string })?.message;
+    throw new Error(msg || 'Failed to import playlist');
+  }
 }
 
 export async function setRadio(roomId: string, enabled: boolean) {

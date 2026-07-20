@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -11,9 +12,33 @@ import (
 	"github.com/centrifugal/centrifuge"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
+	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 )
+
+// UserError wraps an error whose message is safe and useful to show to the
+// client. Centrifuge masks plain errors into code 100 "internal server error",
+// so user-actionable failures (bad input, unconfigured provider, full queue)
+// must cross the transport as *centrifuge.Error; rpcClientError does that.
+type UserError struct{ msg string }
+
+func (e *UserError) Error() string { return e.msg }
+
+func userErrorf(format string, args ...interface{}) *UserError {
+	return &UserError{msg: fmt.Sprintf(format, args...)}
+}
+
+// rpcClientError converts UserError into a centrifuge client-visible error
+// (application code range 400-1999) and passes every other error through
+// unchanged so centrifuge still masks internal details as code 100.
+func rpcClientError(err error) error {
+	var ue *UserError
+	if errors.As(err, &ue) {
+		return &centrifuge.Error{Code: 400, Message: ue.msg}
+	}
+	return err
+}
 
 // Client is the minimal interface for a connected client in the Authorize path.
 // centrifuge.Client and testClient both implement this interface.
@@ -759,15 +784,15 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 			return nil, err
 		}
 		if req.RoomID == "" {
-			return nil, fmt.Errorf("playlist.import: roomId required")
+			return nil, userErrorf("room id required")
 		}
 		if req.URL == "" {
-			return nil, fmt.Errorf("playlist.import: url required")
+			return nil, userErrorf("enter a playlist URL")
 		}
 
 		// If playlist fetcher not configured, return error
 		if h.playlistFetcher == nil {
-			return nil, fmt.Errorf("playlist.import: not configured")
+			return nil, userErrorf("playlist import is not enabled on this server")
 		}
 
 		// Fetch playlist tracks (short timeout to not block the RPC too long)
@@ -776,14 +801,19 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 
 		tracks, err := h.playlistFetcher(ctx, req.URL)
 		if err != nil {
-			return nil, fmt.Errorf("playlist.import: %w", err)
+			// Fetcher errors are already sanitized (no upstream bodies, see
+			// httpx/playlist packages), so they are safe to show the user.
+			if errors.Is(err, playlist.ErrNotConfigured) {
+				return nil, userErrorf("this playlist service is not configured on the server (Spotify import needs server credentials)")
+			}
+			return nil, userErrorf("could not load playlist: %v", err)
 		}
 
 		// Add tracks to queue up to capacity, set AddedBy on each
 		res, mutErr := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			remaining := queue.MaxQueueSize - len(s.Queue)
 			if remaining <= 0 {
-				return fmt.Errorf("queue full")
+				return userErrorf("queue is full")
 			}
 
 			toAdd := tracks
@@ -985,7 +1015,7 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 			return
 		}
 		reply, err := h.HandleRPC(e.Method, e.Data, userID)
-		cb(centrifuge.RPCReply{Data: reply}, err)
+		cb(centrifuge.RPCReply{Data: reply}, rpcClientError(err))
 	})
 }
 
