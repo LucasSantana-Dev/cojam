@@ -257,7 +257,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           {/* Framing: "You're about to join <CODE>" */}
           <div className="space-y-3 text-center">
             <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              You're about to join
+              You&rsquo;re about to join
             </p>
             <div
               className="inline-block px-4 py-2 rounded-full font-bold text-lg"
@@ -343,7 +343,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 <span>Room</span>
                 <span className="room-code-chip">{roomId}</span>
                 <span aria-hidden style={{ opacity: 0.5 }}>·</span>
-                <span className="truncate">you're {store.name}</span>
+                <span className="truncate">you&rsquo;re {store.name}</span>
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">

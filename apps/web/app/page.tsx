@@ -661,7 +661,7 @@ export default function Home() {
           <p className="section-eyebrow reveal">In the room right now</p>
           <h2 className="section-title reveal">See it <em>in sync.</em></h2>
           <p className="max-w-2xl mx-auto text-center reveal" style={{ color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
-            Watch how CoJam keeps everyone's queue in perfect sync while each person plays on their own service.
+            Watch how CoJam keeps everyone&rsquo;s queue in perfect sync while each person plays on their own service.
           </p>
           <RoomShowcase />
         </section>
