@@ -252,7 +252,7 @@ export function SpotifyPlayer({
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-accent)' }} />
       <span>
         Spotify connected{status === 'ready' ? '' : ' (starting...)'}
-        {playingHere && <span style={{ color: 'var(--color-accent)' }}> playing "{nowPlaying!.title}"</span>}
+        {playingHere && <span style={{ color: 'var(--color-accent)' }}> playing &quot;{nowPlaying!.title}&quot;</span>}
       </span>
     </div>
   );

@@ -216,7 +216,7 @@ export function ApplePlayer({
       <span>
         Apple Music connected
         {nowPlaying && pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple' && (
-          <span style={{ color: 'var(--color-info)' }}> playing "{nowPlaying.title}"</span>
+          <span style={{ color: 'var(--color-info)' }}> playing &quot;{nowPlaying.title}&quot;</span>
         )}
       </span>
     </div>

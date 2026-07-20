@@ -4,6 +4,7 @@ packages:
 allowBuilds:
   protobufjs: true
   sharp: true
+  unrs-resolver: true
 overrides:
   # Force the transitive postcss off <8.5.10 (XSS via unescaped </style> in stringify).
   postcss@<8.5.10: '>=8.5.10'

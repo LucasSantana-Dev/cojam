@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { handleCallback } from '@/lib/spotifyAuth';
 
 type CallbackState = 'loading' | 'success' | 'error';
@@ -131,7 +132,7 @@ export default function SpotifyCallback() {
         <p style={{ color: '#ef4444', marginTop: '1rem', fontWeight: 500 }}>
           {error || 'Authentication failed'}
         </p>
-        <a
+        <Link
           href="/"
           className="inline-block mt-3 px-4 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-[var(--color-surface-3)] hover:border-[var(--color-accent)]"
           style={{
@@ -142,7 +143,7 @@ export default function SpotifyCallback() {
           }}
         >
           Back to home
-        </a>
+        </Link>
       </div>
 
     </div>
