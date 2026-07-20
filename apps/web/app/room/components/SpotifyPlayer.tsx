@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
 import { beginAuth, getAccessToken, isAuthed } from '@/lib/spotifyAuth';
@@ -59,6 +59,9 @@ async function playUri(deviceId: string, uri: string) {
     body: JSON.stringify({ uris: [uri] }),
   });
 }
+
+// Runtime env (/env.js) never changes after load; nothing to subscribe to.
+const noopSubscribe = () => () => {};
 
 /**
  * Spotify player adapter implementing IPlayer interface.
@@ -166,26 +169,30 @@ export function SpotifyPlayer({
 }) {
   const deviceId = useRef<string | null>(null);
   const playerRef = useRef<SpotifyPlayerAdapter | null>(null);
-  const [status, setStatus] = useState<'unconfigured' | 'idle' | 'ready' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'ready' | 'error'>('idle');
   const state = useStore((s) => s.state);
   const nowPlaying = state?.nowPlayingId
     ? state.queue.find((t) => t.id === state.nowPlayingId)
     : undefined;
 
-  useEffect(() => {
-    // Enablement is gated where this component is mounted; here we only need a
-    // client id, resolved from runtime (/env.js) first so the env-agnostic image
-    // works, then the build-time fallback.
-    const clientId = pickEnv(getRuntimeEnv()?.spotifyClientId, process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID);
-    if (!clientId) {
-      setStatus('unconfigured');
-      return;
-    }
-    onAuthorized(isAuthed());
-  }, [onAuthorized]);
+  // Client id resolves from runtime (/env.js) first so the env-agnostic image
+  // works, then the build-time fallback; the server snapshot is the build-time
+  // value, keeping SSR and the first client render in agreement.
+  const clientId = useSyncExternalStore(
+    noopSubscribe,
+    () => pickEnv(getRuntimeEnv()?.spotifyClientId, process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID),
+    () => pickEnv(undefined, process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID),
+  );
 
   useEffect(() => {
-    if (status === 'unconfigured' || !authorized || deviceId.current) return;
+    if (!clientId) return;
+    // Auth state lives in localStorage (an external system); sync it to the
+    // parent once on mount.
+    onAuthorized(isAuthed());
+  }, [clientId, onAuthorized]);
+
+  useEffect(() => {
+    if (!clientId || !authorized || deviceId.current) return;
     let cancelled = false;
     (async () => {
       try {
@@ -237,7 +244,7 @@ export function SpotifyPlayer({
         onPlayerGone?.();
       }
     };
-  }, [authorized, status, onAuthorized, onPlayerReady, onPlayerGone]);
+  }, [clientId, authorized, status, onAuthorized, onPlayerReady, onPlayerGone]);
 
   useEffect(() => {
     if (!authorized || !deviceId.current || !nowPlaying) return;
@@ -246,7 +253,7 @@ export function SpotifyPlayer({
     if (uri) playUri(deviceId.current, uri).catch((e) => console.error('Spotify play failed:', e));
   }, [authorized, nowPlaying]);
 
-  if (status === 'unconfigured') return null;
+  if (!clientId) return null;
   if (status === 'error') {
     return (
       <div className="text-sm" style={{ color: '#ef4444' }}>

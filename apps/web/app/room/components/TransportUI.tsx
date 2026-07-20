@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useStore, transportPlay, transportPause, transportSeek } from '@/lib/realtime';
 import type { IPlayer } from '@/lib/playerInterface';
 
@@ -37,12 +37,13 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
   const duration = nowPlaying?.durationMs ?? 0;
   const canSeek = activePlayer?.canSeek?.() ?? false;
 
-  // Sync display position with transport state when not dragging
-  useEffect(() => {
-    if (!isDragging && transport) {
-      setDisplayPosition(transport.positionMs);
-    }
-  }, [transport, isDragging]);
+  // Sync display position with transport state when not dragging (adjust state
+  // during render, keyed on the transport object identity).
+  const [prevTransport, setPrevTransport] = useState(transport);
+  if (!isDragging && transport && transport !== prevTransport) {
+    setPrevTransport(transport);
+    setDisplayPosition(transport.positionMs);
+  }
 
   const handlePlayPause = useCallback(async () => {
     try {

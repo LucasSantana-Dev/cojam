@@ -32,13 +32,21 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
 
   const triggerRef = useRef<HTMLButtonElement>(null);
 
+  // Panel stays mounted while closed; reset loaded data when the open/track
+  // key changes (docs-sanctioned state adjustment during render).
+  const trackKey = open && track ? track.id : null;
+  const [prevTrackKey, setPrevTrackKey] = useState(trackKey);
+  if (trackKey !== prevTrackKey) {
+    setPrevTrackKey(trackKey);
+    setLbData(null);
+    setLbError(null);
+    setLfmData(null);
+    setLfmError(null);
+  }
+
   // Fetch data when panel opens
   useEffect(() => {
     if (!open || !track) {
-      setLbData(null);
-      setLbError(null);
-      setLfmData(null);
-      setLfmError(null);
       return;
     }
 

@@ -18,10 +18,18 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
   const [data, setData] = useState<TrackDepth | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
+  // Panel stays mounted while closed; reset loaded data when the open/track
+  // key changes (docs-sanctioned state adjustment during render).
+  const trackKey = open && track ? track.id : null;
+  const [prevTrackKey, setPrevTrackKey] = useState(trackKey);
+  if (trackKey !== prevTrackKey) {
+    setPrevTrackKey(trackKey);
+    setData(null);
+    setError(null);
+  }
+
   useEffect(() => {
     if (!open || !track) {
-      setData(null);
-      setError(null);
       return;
     }
 
