@@ -894,3 +894,61 @@ func TestFetchLastfmEnrichment_GracefulEmpty(t *testing.T) {
 		t.Errorf("Tags count = %d, want 0", len(enrich.Tags))
 	}
 }
+
+func TestRankByProviders_PreferSpotify(t *testing.T) {
+	results := []SearchCandidate{
+		{Title: "A", Artist: "X", Source: "deezer"},
+		{Title: "B", Artist: "Y", Source: "spotify", SpotifyURI: "spotify:track:b"},
+		{Title: "C", Artist: "Z", Source: "deezer", SpotifyURI: "spotify:track:c"}, // dedup-merged entry
+		{Title: "D", Artist: "W", Source: "deezer"},
+		{Title: "E", Artist: "V", Source: "spotify"}, // no URI: not playable on Spotify
+	}
+
+	ranked := RankByProviders(results, []string{"spotify"})
+
+	want := []string{"B", "C", "A", "D", "E"}
+	if len(ranked) != len(want) {
+		t.Fatalf("len = %d, want %d", len(ranked), len(want))
+	}
+	for i, title := range want {
+		if ranked[i].Title != title {
+			t.Errorf("ranked[%d].Title = %q, want %q", i, ranked[i].Title, title)
+		}
+	}
+}
+
+func TestRankByProviders_EmptyPreferKeepsOrder(t *testing.T) {
+	results := []SearchCandidate{
+		{Title: "A", Source: "deezer"},
+		{Title: "B", Source: "spotify", SpotifyURI: "spotify:track:b"},
+	}
+
+	ranked := RankByProviders(results, nil)
+	if ranked[0].Title != "A" || ranked[1].Title != "B" {
+		t.Errorf("order changed with empty prefer: %q, %q", ranked[0].Title, ranked[1].Title)
+	}
+}
+
+func TestRankByProviders_UnknownProviderIgnored(t *testing.T) {
+	results := []SearchCandidate{
+		{Title: "A", Source: "deezer"},
+		{Title: "B", Source: "spotify", SpotifyURI: "spotify:track:b"},
+	}
+
+	ranked := RankByProviders(results, []string{"tidal"})
+	if ranked[0].Title != "A" || ranked[1].Title != "B" {
+		t.Errorf("unknown provider changed order: %q, %q", ranked[0].Title, ranked[1].Title)
+	}
+}
+
+func TestRankByProviders_PreferDeezer(t *testing.T) {
+	results := []SearchCandidate{
+		{Title: "B", Source: "spotify", SpotifyURI: "spotify:track:b"},
+		{Title: "A", Source: "deezer"},
+	}
+
+	ranked := RankByProviders(results, []string{"deezer"})
+	if ranked[0].Title != "A" {
+		t.Errorf("ranked[0].Title = %q, want A (deezer preferred)", ranked[0].Title)
+	}
+}

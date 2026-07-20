@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useStore, queueAdd, searchTracks, importPlaylist, type SearchCandidate } from '@/lib/realtime';
+import { mergeProviderPrefs } from '@/lib/account';
 import { features } from '@/lib/features';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
 
-export function AddTrackForm({ roomId }: { roomId: string }) {
+export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { roomId: string; spotifyAuthorized?: boolean; appleAuthorized?: boolean }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -27,6 +28,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
   const [playlistSuccess, setPlaylistSuccess] = useState('');
 
   const name = useStore((s) => s.name);
+  const connectedServices = useStore((s) => s.connectedServices);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Monotonic request id: only the latest search may apply its result, so a slow
   // stale query (the RPC is not abortable) cannot overwrite a newer one.
@@ -50,7 +52,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
     setSearchResults([]); // stale results must not render under the skeleton
     debounceTimerRef.current = setTimeout(async () => {
       try {
-        const results = await searchTracks(searchQuery);
+        const results = await searchTracks(searchQuery, mergeProviderPrefs(connectedServices, { spotify: spotifyAuthorized, apple: appleAuthorized }));
         if (searchSeqRef.current === seq) setSearchResults(results);
       } catch {
         if (searchSeqRef.current === seq) setSearchResults([]);
@@ -62,7 +64,7 @@ export function AddTrackForm({ roomId }: { roomId: string }) {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [searchQuery]);
+  }, [searchQuery, spotifyAuthorized, appleAuthorized, connectedServices]);
 
   const handleSearchResultClick = async (result: SearchCandidate) => {
     setLoading(true);

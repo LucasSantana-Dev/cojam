@@ -3,6 +3,7 @@ import { Centrifuge } from 'centrifuge';
 import { pickEnv, getRuntimeEnv } from './runtimeEnv';
 import { estimateOffset, type PingSample } from './clockSync';
 import { fetchConnectionToken } from './auth';
+import { getAccountToken } from './account';
 import { features } from './features';
 import type { RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
@@ -14,11 +15,13 @@ export interface AppStore {
   reconnecting: boolean;
   name: string;
   members: Member[];
+  connectedServices: string[];
   setName: (name: string) => void;
   setState: (state: RoomState) => void;
   setConnected: (connected: boolean) => void;
   setReconnecting: (reconnecting: boolean) => void;
   setMembers: (members: Member[]) => void;
+  setConnectedServices: (services: string[]) => void;
   addMember: (m: Member) => void;
   removeMember: (clientId: string) => void;
 }
@@ -29,6 +32,7 @@ export const useStore = create<AppStore>((set) => ({
   reconnecting: false,
   name: '',
   members: [],
+  connectedServices: [],
   setName: (name) => set({ name }),
   setState: (state) => set((s) => ({
     state: !s.state || state.version > s.state.version ? state : s.state,
@@ -36,6 +40,7 @@ export const useStore = create<AppStore>((set) => ({
   setConnected: (connected) => set({ connected }),
   setReconnecting: (reconnecting) => set({ reconnecting }),
   setMembers: (members) => set({ members }),
+  setConnectedServices: (connectedServices) => set({ connectedServices }),
   addMember: (m) => set((s) =>
     s.members.some((x) => x.clientId === m.clientId) ? s : { members: [...s.members, m] }),
   removeMember: (clientId) => set((s) => ({ members: s.members.filter((x) => x.clientId !== clientId) })),
@@ -102,9 +107,14 @@ export async function joinRoom(
   const connInfo: ConnInfo = { name };
   if (platform) connInfo.platform = platform;
 
-  // Fetch connection token if room auth is enabled; fall back to empty string if unavailable.
+  // Connection token precedence: a signed-in Supabase account token wins (the
+  // server derives a stable "sb:<uuid>" identity from it); otherwise the
+  // anonymous room-auth token; otherwise empty (v0 behavior).
   let token = '';
-  if (features.roomAuth) {
+  const accountToken = await getAccountToken();
+  if (accountToken) {
+    token = accountToken;
+  } else if (features.roomAuth) {
     const tokenResult = await fetchConnectionToken();
     if (tokenResult) {
       token = tokenResult.token;
@@ -253,9 +263,20 @@ export type TrackDepth = {
   source: string; // "musicbrainz"
 };
 
-export async function searchTracks(query: string): Promise<SearchCandidate[]> {
+// buildProviderPrefs maps the caller's connected playback services to the provider
+// list the server uses to rank track.search results (playable-on-your-service first).
+// Canonical order matches pickSource: spotify before apple. Deezer is never listed:
+// it is the anonymous fallback, not a connectable service.
+export function buildProviderPrefs({ spotify, apple }: { spotify?: boolean; apple?: boolean }): string[] {
+  const prefs: string[] = [];
+  if (spotify) prefs.push('spotify');
+  if (apple) prefs.push('apple');
+  return prefs;
+}
+
+export async function searchTracks(query: string, prefer?: string[]): Promise<SearchCandidate[]> {
   if (!centrifuge) throw new Error('Not connected');
-  const result = await centrifuge.rpc('track.search', { query });
+  const result = await centrifuge.rpc('track.search', { query, ...(prefer && prefer.length > 0 ? { prefer } : {}) });
   return (result.data as SearchCandidate[]) ?? [];
 }
 

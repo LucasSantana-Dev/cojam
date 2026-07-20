@@ -745,6 +745,54 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 	return deduplicated, nil
 }
 
+// providerAllowlist gates which provider names may influence ranking.
+var providerAllowlist = map[string]bool{"spotify": true, "deezer": true, "apple": true}
+
+// playableOn reports whether the candidate can be played via provider p.
+// Spotify playback needs a URI, which dedup may have merged onto a Deezer-sourced
+// entry, so the URI is the authoritative signal: a spotify-sourced candidate
+// without one is not playable on Spotify.
+func playableOn(c SearchCandidate, p string) bool {
+	if p == "spotify" {
+		return c.SpotifyURI != ""
+	}
+	return c.Source == p
+}
+
+// RankByProviders stable-partitions results so candidates playable on any of the
+// caller's preferred providers come first. Within each group the input order is
+// preserved. Unknown providers are ignored; empty prefer returns the input order.
+func RankByProviders(results []SearchCandidate, prefer []string) []SearchCandidate {
+	set := make(map[string]bool, len(prefer))
+	for _, p := range prefer {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if providerAllowlist[p] {
+			set[p] = true
+		}
+	}
+	if len(set) == 0 || len(results) < 2 {
+		return results
+	}
+
+	preferred := make([]SearchCandidate, 0, len(results))
+	rest := make([]SearchCandidate, 0, len(results))
+	for _, c := range results {
+		ok := false
+		for p := range set {
+			if playableOn(c, p) {
+				ok = true
+				break
+			}
+		}
+		if ok {
+			preferred = append(preferred, c)
+		} else {
+			rest = append(rest, c)
+		}
+	}
+	return append(preferred, rest...)
+}
+
 // LastfmSimilarTrack represents a similar track from Last.fm API
 type LastfmSimilarTrack struct {
 	Name   string `json:"name"`

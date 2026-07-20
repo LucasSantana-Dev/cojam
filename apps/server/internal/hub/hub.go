@@ -36,8 +36,9 @@ type SearchResult struct {
 	ArtworkURL string `json:"artworkUrl"`
 }
 
-// Searcher finds tracks by query
-type Searcher func(ctx context.Context, query string, limit int) ([]SearchResult, error)
+// Searcher finds tracks by query. prefer lists the caller's connected providers
+// (e.g. "spotify"); implementations may use it to rank results. May be empty.
+type Searcher func(ctx context.Context, query string, prefer []string, limit int) ([]SearchResult, error)
 
 // PlaylistFetcher fetches tracks from a playlist URL
 type PlaylistFetcher func(ctx context.Context, url string) ([]queue.TrackRef, error)
@@ -572,7 +573,8 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 
 	case "track.search":
 		var req struct {
-			Query string `json:"query"`
+			Query  string   `json:"query"`
+			Prefer []string `json:"prefer"`
 		}
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
@@ -587,7 +589,7 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		results, err := h.searcher(ctx, req.Query, 8)
+		results, err := h.searcher(ctx, req.Query, req.Prefer, 8)
 		if err != nil {
 			// Log error but return empty array instead of failing the RPC
 			if h.logger != nil {

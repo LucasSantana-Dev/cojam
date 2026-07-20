@@ -16,6 +16,9 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+//go:embed migrations-supabase/*.sql
+var supabaseMigrationsFS embed.FS
+
 // Open opens a connection pool to the PostgreSQL database at the given URL.
 // Returns a typed error if the URL is empty or unparseable.
 // Pings the database before returning to verify connectivity.
@@ -55,6 +58,17 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 // Uses a schema_migrations tracking table and applies each embedded *.sql file
 // whose version is not yet recorded, in filename order, each inside a transaction.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	return migrateFrom(ctx, pool, migrationsFS, "migrations")
+}
+
+// MigrateSupabase applies the Supabase-only migrations (they reference the
+// auth schema, which plain hosted Postgres does not have). Call this only when
+// the DATABASE_URL points at a Supabase project.
+func MigrateSupabase(ctx context.Context, pool *pgxpool.Pool) error {
+	return migrateFrom(ctx, pool, supabaseMigrationsFS, "migrations-supabase")
+}
+
+func migrateFrom(ctx context.Context, pool *pgxpool.Pool, fsys embed.FS, dir string) error {
 	// Create schema_migrations table if it doesn't exist. DDL returns no rows, so
 	// use Exec (not QueryRow) and surface a real failure instead of swallowing it.
 	if _, err := pool.Exec(ctx, `
@@ -67,7 +81,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	// Read all migration files from the embedded filesystem.
-	entries, err := fs.Glob(migrationsFS, "migrations/*.sql")
+	entries, err := fs.Glob(fsys, dir+"/*.sql")
 	if err != nil {
 		return fmt.Errorf("failed to list migration files: %w", err)
 	}
@@ -85,8 +99,8 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			continue
 		}
 
-		// Read the migration file.
-		content, err := fs.ReadFile(migrationsFS, entry)
+		// Read the migration file from the FS being migrated (base or Supabase-only).
+		content, err := fs.ReadFile(fsys, entry)
 		if err != nil {
 			return fmt.Errorf("failed to read migration file %s: %w", entry, err)
 		}

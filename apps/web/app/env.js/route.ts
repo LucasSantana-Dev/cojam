@@ -10,10 +10,20 @@ export function GET() {
     wsUrl: string;
     spotifyClientId: string;
     spotifyEnabled?: boolean;
+    supabaseUrl?: string;
+    supabaseAnonKey?: string;
   } = {
     wsUrl: process.env.COJAM_WS_URL ?? '',
     spotifyClientId: process.env.COJAM_SPOTIFY_CLIENT_ID ?? '',
   };
+  // Accounts are optional: the Supabase pair is emitted only when BOTH runtime
+  // values are set. Emitting just one would mix the runtime project with the
+  // build-time NEXT_PUBLIC_* fallback of the other, pointing the client at two
+  // different Supabase projects.
+  if (process.env.COJAM_SUPABASE_URL !== undefined && process.env.COJAM_SUPABASE_ANON_KEY !== undefined) {
+    env.supabaseUrl = process.env.COJAM_SUPABASE_URL;
+    env.supabaseAnonKey = process.env.COJAM_SUPABASE_ANON_KEY;
+  }
   // Feature flags must be runtime-configurable too: NEXT_PUBLIC_* are inlined at
   // build time, so the env-agnostic image cannot enable Spotify without this.
   // Only emit when explicitly set, so an UNSET runtime value falls back to the

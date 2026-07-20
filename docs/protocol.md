@@ -12,6 +12,12 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `queue.reorder` | `{ roomId, trackId: string, toIndex: number }` | `RoomState` |
 | `now_playing.set` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
+| `track.search` | `{ query: string, prefer?: string[] }` | `SearchResult[]` |
+
+`track.search` is a read (not membership-gated). `prefer` lists the caller's connected
+providers (`"spotify"`, `"apple"`); results playable on those providers rank first, other
+providers still appear below. Unknown providers are ignored; omitting `prefer` leaves the
+order unchanged.
 
 ### Roles & authorization (RFC-0005, behind `FEATURE_ROOM_AUTH`)
 
@@ -42,6 +48,21 @@ Every accepted mutation publishes the full `RoomState` (v0 keeps it simple; delt
 ```
 
 Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages.
+
+## Accounts (Supabase Auth, behind `FEATURE_SUPABASE_AUTH`)
+
+Accounts are optional; guests use rooms exactly as before. The web app signs users in with
+Supabase (magic link) and presents the Supabase access token as the centrifuge connection
+token. The server validates it (ES256 or RS256 via the project JWKS from `SUPABASE_URL`, falling back to
+HS256 with the legacy project JWT secret; audience `authenticated`) and
+sets the identity to `sb:<user-uuid>`; anything that does not validate falls through to the
+anonymous room-auth path, then to v0 allow-all. Token precedence on connect:
+Supabase account token → anonymous room-auth token → none.
+
+Account data lives in the Supabase project, written client-direct with row-level security
+(owner-only): `public.profiles` (display name) and `public.connected_services` (the fact
+that Spotify/Apple is connected; OAuth tokens never leave the client). Persisted connected
+services feed the `prefer` parameter of `track.search` on any device.
 
 ## Types
 
