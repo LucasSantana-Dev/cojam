@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { TrackRef } from '@cojam/shared';
-import { fetchTrackDepth } from '@/lib/realtime';
+import { fetchTrackDepth, type TrackDepth } from '@/lib/realtime';
 import { formatTime } from './TransportUI';
 
 interface TrackDepthPanelProps {
@@ -15,7 +15,7 @@ interface TrackDepthPanelProps {
 export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<TrackDepth | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -151,7 +151,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
                     Credits
                   </h3>
                   <div className="space-y-2">
-                    {data.credits.map((credit: any, idx: number) => (
+                    {data.credits.map((credit, idx: number) => (
                       <div key={idx} className="flex gap-3">
                         <span className="text-xs uppercase font-medium flex-shrink-0 w-16" style={{ color: 'var(--color-text-secondary)' }}>
                           {credit.role}

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS, serverNow } from './playbackSync';
-import * as realtimeModule from './realtime';
+import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS } from './playbackSync';
 
 // Mock getClockOffsetMs to control clock offset in tests
 vi.mock('./realtime', () => ({

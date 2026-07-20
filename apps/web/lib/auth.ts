@@ -11,7 +11,7 @@ export function getStoredUserId(): string | null {
   if (typeof window === 'undefined') return null;
   try {
     // Use window.localStorage which is properly mocked in tests
-    const storage = (typeof window !== 'undefined' && window.localStorage) || (global as any).localStorage;
+    const storage = window.localStorage ?? (globalThis as { localStorage?: Storage }).localStorage;
     return storage ? storage.getItem(STORAGE_KEY) : null;
   } catch {
     return null;
@@ -23,7 +23,7 @@ export function getStoredUserId(): string | null {
 function storeUserId(userId: string): void {
   if (typeof window === 'undefined') return;
   try {
-    const storage = (typeof window !== 'undefined' && window.localStorage) || (global as any).localStorage;
+    const storage = window.localStorage ?? (globalThis as { localStorage?: Storage }).localStorage;
     if (storage) {
       storage.setItem(STORAGE_KEY, userId);
     }

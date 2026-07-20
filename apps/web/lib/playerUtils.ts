@@ -10,6 +10,8 @@ export function msToSeconds(ms: number): number {
   return ms / 1000;
 }
 
+import type { SpotifySDKPlayer } from '@/app/room/components/SpotifyPlayer';
+
 /**
  * Try to detect if Spotify seek is available on this account.
  * Attempts a no-op seek and catches any errors; if successful or timing-out,
@@ -20,7 +22,7 @@ export function msToSeconds(ms: number): number {
  * @param player Spotify Web Playback SDK player instance
  * @returns true if seek is confirmed available, false otherwise
  */
-export async function detectSpotifyCanSeek(player: any): Promise<boolean> {
+export async function detectSpotifyCanSeek(player: Pick<SpotifySDKPlayer, 'getCurrentState'>): Promise<boolean> {
   try {
     const state = await player.getCurrentState();
     if (!state) return false;

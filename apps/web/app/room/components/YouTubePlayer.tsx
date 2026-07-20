@@ -5,10 +5,34 @@ import { useStore, nowPlayingAdvance } from '@/lib/realtime';
 import type { IPlayer } from '@/lib/playerInterface';
 import { secondsToMs, msToSeconds } from '@/lib/playerUtils';
 
+// Minimal structural types for the YouTube IFrame API surface this adapter uses.
+interface YTPlayerInstance {
+  playVideo(): void;
+  pauseVideo(): void;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
+  getCurrentTime(): number;
+  getDuration(): number;
+  loadVideoById(videoId: string): void;
+}
+
+interface YTGlobal {
+  Player: new (
+    elementId: string,
+    opts: {
+      width?: number;
+      height?: number;
+      events?: {
+        onReady?: () => void;
+        onStateChange?: (event: { data: number }) => void;
+      };
+    }
+  ) => YTPlayerInstance;
+}
+
 declare global {
   interface Window {
     onYouTubeIframeAPIReady?: () => void;
-    YT: any;
+    YT?: YTGlobal;
   }
 }
 
@@ -35,12 +59,12 @@ function loadYouTubeAPI(onReady: () => void) {
  * YouTube IFrame API measures time in seconds; we convert to/from milliseconds.
  */
 class YouTubePlayerAdapter implements IPlayer {
-  private ytPlayer: any;
+  private ytPlayer: YTPlayerInstance;
   private endedCallbacks: Array<() => void> = [];
   private positionCallbacks: Array<(ms: number) => void> = [];
   private positionPollInterval: NodeJS.Timeout | null = null;
 
-  constructor(ytPlayer: any) {
+  constructor(ytPlayer: YTPlayerInstance) {
     this.ytPlayer = ytPlayer;
   }
 
@@ -111,7 +135,7 @@ export function YouTubePlayer({
   onPlayerReady?: (player: IPlayer) => void;
   onPlayerGone?: () => void;
 }) {
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<YTPlayerInstance | null>(null);
   const adapterRef = useRef<YouTubePlayerAdapter | null>(null);
   const playerUsable = useRef(false);
   const pendingVideoId = useRef<string | null>(null);
@@ -143,35 +167,40 @@ export function YouTubePlayer({
     if (!apiReady) return;
 
     if (!playerRef.current) {
-      playerRef.current = new window.YT.Player('youtube-player', {
+      const YT = window.YT;
+      if (!YT) return;
+      const player = new YT.Player('youtube-player', {
         width: 480,
         height: 270,
         events: {
           onReady: () => {
             playerUsable.current = true;
-            const adapter = new YouTubePlayerAdapter(playerRef.current);
+            const adapter = new YouTubePlayerAdapter(player);
             adapterRef.current = adapter;
             onPlayerReadyRef.current?.(adapter);
             if (pendingVideoId.current) {
-              playerRef.current.loadVideoById(pendingVideoId.current);
+              player.loadVideoById(pendingVideoId.current);
               pendingVideoId.current = null;
             }
           },
-          onStateChange: (event: any) => {
+          onStateChange: (event: { data: number }) => {
             if (event.data === 0 && nowPlayingIdRef.current) {
               nowPlayingAdvance(roomId, nowPlayingIdRef.current);
             }
           },
         },
       });
+      playerRef.current = player;
     }
 
     const track = nowPlayingId ? queue.find((t) => t.id === nowPlayingId) : undefined;
     const videoId = track?.sources.youtube?.videoId;
     if (!videoId) return;
 
+    const player = playerRef.current;
+    if (!player) return;
     if (playerUsable.current) {
-      playerRef.current.loadVideoById(videoId);
+      player.loadVideoById(videoId);
     } else {
       pendingVideoId.current = videoId;
     }
