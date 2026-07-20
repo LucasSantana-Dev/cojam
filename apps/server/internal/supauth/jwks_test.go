@@ -194,3 +194,84 @@ func TestValidator_UnknownAlgRejected(t *testing.T) {
 		t.Fatal("HS384 must be rejected")
 	}
 }
+
+func TestValidator_RefetchCooldownLimitsFetches(t *testing.T) {
+	stub := newJWKSStub(t)
+	v := newStubValidator(stub, nil)
+
+	tok := jwt.NewWithClaims(jwt.SigningMethodES256, validClaims())
+	tok.Header["kid"] = "no-such-key"
+	signed, err := tok.SignedString(stub.priv)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	// Repeated connection attempts with an unknown kid must not each trigger a
+	// live fetch (unauthenticated fetch amplification).
+	for i := 0; i < 5; i++ {
+		if _, err := v.Validate(signed); err == nil {
+			t.Fatal("unknown kid must be rejected")
+		}
+	}
+	if stub.hits.Load() != 1 {
+		t.Errorf("jwks fetches = %d, want 1 (cooldown suppresses the rest)", stub.hits.Load())
+	}
+}
+
+func TestValidator_EmptyJWKSKeepPreviousKeys(t *testing.T) {
+	stub := newJWKSStub(t)
+	v := newStubValidator(stub, nil)
+
+	if _, err := v.Validate(stub.signES256(t, validClaims())); err != nil {
+		t.Fatalf("first Validate: %v", err)
+	}
+
+	// Upstream starts returning an empty document; known-good keys must survive.
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"keys": []any{}})
+	}))
+	t.Cleanup(empty.Close)
+	v.jwksURL = empty.URL
+	v.lastFetch = time.Now().Add(-time.Hour) // force past the cooldown
+
+	if _, err := v.Validate(stub.signES256(t, validClaims())); err != nil {
+		t.Fatalf("cached key must keep validating after an empty JWKS fetch: %v", err)
+	}
+}
+
+func TestValidator_NonHTTPSURLRejected(t *testing.T) {
+	v := NewValidator("http://example.supabase.co", nil)
+	if v.jwksURL != "" {
+		t.Fatal("http URLs must not produce a JWKS endpoint")
+	}
+}
+
+func TestValidator_WrongIssuerRejected(t *testing.T) {
+	stub := newJWKSStub(t)
+	v := newStubValidator(stub, nil)
+	v.issuer = "https://neuthlwwqucjohvruqde.supabase.co/auth/v1"
+
+	claims := validClaims()
+	claims["iss"] = "https://evil.example.com/auth/v1"
+	if _, err := v.Validate(stub.signES256(t, claims)); err == nil {
+		t.Fatal("mismatched iss must be rejected")
+	}
+
+	claims["iss"] = v.issuer
+	if _, err := v.Validate(stub.signES256(t, claims)); err != nil {
+		t.Fatalf("matching iss must validate: %v", err)
+	}
+}
+
+func TestValidator_MissingExpRejected(t *testing.T) {
+	stub := newJWKSStub(t)
+	v := newStubValidator(stub, nil)
+
+	claims := validClaims()
+	delete(claims, "exp")
+	if _, err := v.Validate(stub.signES256(t, claims)); err == nil {
+		t.Fatal("ES256 token without exp must be rejected")
+	}
+	if _, err := Validate(testSecret, sign(t, jwt.SigningMethodHS256, testSecret, claims)); err == nil {
+		t.Fatal("HS256 token without exp must be rejected")
+	}
+}

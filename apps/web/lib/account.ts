@@ -114,20 +114,26 @@ export async function markServiceConnected(provider: ConnectedProvider): Promise
   const sb = getSupabase();
   const session = await getAccountSession();
   if (!sb || !session) return;
-  await sb
+  const { error } = await sb
     .from('connected_services')
     .upsert({ user_id: session.userId, provider });
+  if (error) {
+    console.warn('[account] failed to persist connected service', error.message);
+  }
 }
 
 export async function markServiceDisconnected(provider: ConnectedProvider): Promise<void> {
   const sb = getSupabase();
   const session = await getAccountSession();
   if (!sb || !session) return;
-  await sb
+  const { error } = await sb
     .from('connected_services')
     .delete()
     .eq('user_id', session.userId)
     .eq('provider', provider);
+  if (error) {
+    console.warn('[account] failed to remove connected service', error.message);
+  }
 }
 
 // mergeProviderPrefs unions persisted connected services with live auth state so

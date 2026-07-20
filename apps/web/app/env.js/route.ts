@@ -16,8 +16,8 @@ export function GET() {
     wsUrl: process.env.COJAM_WS_URL ?? '',
     spotifyClientId: process.env.COJAM_SPOTIFY_CLIENT_ID ?? '',
   };
-  // Accounts are optional: only emit when both are set, so an unset runtime
-  // value falls back to the build-time NEXT_PUBLIC_* pair.
+  // Accounts are optional: each value is emitted independently when set, so an
+  // unset runtime value falls back to the build-time NEXT_PUBLIC_* pair.
   if (process.env.COJAM_SUPABASE_URL !== undefined) {
     env.supabaseUrl = process.env.COJAM_SUPABASE_URL;
   }

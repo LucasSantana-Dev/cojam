@@ -1,12 +1,10 @@
 // Package supauth validates Supabase Auth (GoTrue) access tokens presented by
-// clients at connection time. Tokens are HS256 JWTs signed with the project's
-// JWT secret (Supabase dashboard: Settings -> API); the subject is the Supabase
-// user's UUID and the audience must be "authenticated" (the "anon" audience used
-// by pre-signup keys is rejected).
-//
-// If a project migrates to the newer asymmetric signing keys, this package is
-// the single place that would switch to JWKS verification; callers only see
-// Validate.
+// clients at connection time. Two signing schemes are supported: new projects
+// issue ES256 tokens verified against the project's JWKS (see jwks.go, the
+// Validator type), and legacy projects issue HS256 tokens signed with the
+// project's shared JWT secret (Validate, below). In both cases the subject is
+// the Supabase user's UUID and the audience must be "authenticated" (the
+// "anon" audience used by pre-signup keys is rejected); exp is required.
 package supauth
 
 import (
@@ -38,6 +36,7 @@ func Validate(secret []byte, token string) (string, error) {
 			}
 			return secret, nil
 		},
+		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse token: %w", err)

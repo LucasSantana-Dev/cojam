@@ -11,11 +11,17 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 )
+
+// refetchCooldown bounds how often an unknown kid can trigger a live JWKS
+// fetch: without it, unauthenticated connection attempts carrying random kids
+// would make this server hammer the Supabase JWKS endpoint at attempt rate.
+const refetchCooldown = 30 * time.Second
 
 // Validator validates Supabase access tokens against the project's current
 // signing keys. New Supabase projects sign access tokens asymmetrically
@@ -25,21 +31,26 @@ import (
 // against legacySecret when provided.
 type Validator struct {
 	jwksURL string
+	issuer  string
 	legacy  []byte
 
-	mu   sync.Mutex
-	keys map[string]any // kid -> *ecdsa.PublicKey or *rsa.PublicKey
+	mu        sync.Mutex
+	keys      map[string]any // kid -> *ecdsa.PublicKey or *rsa.PublicKey
+	lastFetch time.Time
 }
 
 // NewValidator builds a Validator for a Supabase project. supabaseURL is the
 // project URL (https://<ref>.supabase.co); when empty, only legacy HS256
-// tokens can validate. legacySecret is the legacy JWT secret from the
+// tokens can validate. Non-https URLs are refused: key material must never
+// travel over plaintext. legacySecret is the legacy JWT secret from the
 // dashboard (Settings -> JWT Keys -> Legacy JWT Secret); pass nil to reject
 // HS256 tokens entirely.
 func NewValidator(supabaseURL string, legacySecret []byte) *Validator {
 	v := &Validator{legacy: legacySecret, keys: map[string]any{}}
-	if supabaseURL != "" {
-		v.jwksURL = strings.TrimRight(supabaseURL, "/") + "/auth/v1/.well-known/jwks.json"
+	if supabaseURL != "" && strings.HasPrefix(supabaseURL, "https://") {
+		base := strings.TrimRight(supabaseURL, "/")
+		v.jwksURL = base + "/auth/v1/.well-known/jwks.json"
+		v.issuer = base + "/auth/v1"
 	}
 	return v
 }
@@ -81,8 +92,9 @@ func (v *Validator) validateAsymmetric(token string) (string, error) {
 		kid, _ := tok.Header["kid"].(string)
 		key, ok := v.lookupKey(kid)
 		if !ok {
-			// Unknown kid: the project may have rotated keys. Refetch once and retry.
-			if err := v.fetchJWKS(); err != nil {
+			// Unknown kid: the project may have rotated keys. Refetch (bounded
+			// by refetchCooldown) and retry.
+			if err := v.refetchJWKS(); err != nil {
 				return nil, fmt.Errorf("jwks fetch: %w", err)
 			}
 			key, ok = v.lookupKey(kid)
@@ -104,7 +116,7 @@ func (v *Validator) validateAsymmetric(token string) (string, error) {
 			return nil, fmt.Errorf("unexpected signing method: %v", tok.Method)
 		}
 		return key, nil
-	})
+	}, jwt.WithExpirationRequired())
 	if err != nil {
 		if kidNotFound {
 			return "", err
@@ -117,6 +129,11 @@ func (v *Validator) validateAsymmetric(token string) (string, error) {
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
 		return "", errors.New("failed to extract claims")
+	}
+	if v.issuer != "" {
+		if iss, _ := claims["iss"].(string); iss != v.issuer {
+			return "", fmt.Errorf("unexpected issuer: %q", iss)
+		}
 	}
 	return subjectFromClaims(claims)
 }
@@ -152,6 +169,20 @@ type jwkSet struct {
 		N   string `json:"n"`
 		E   string `json:"e"`
 	} `json:"keys"`
+}
+
+// refetchJWKS fetches the JWKS document unless a fetch happened within
+// refetchCooldown; concurrent callers within the window share the outcome of
+// the previous fetch instead of each hitting the network.
+func (v *Validator) refetchJWKS() error {
+	v.mu.Lock()
+	if time.Since(v.lastFetch) < refetchCooldown {
+		v.mu.Unlock()
+		return nil
+	}
+	v.lastFetch = time.Now()
+	v.mu.Unlock()
+	return v.fetchJWKS()
 }
 
 func (v *Validator) fetchJWKS() error {
@@ -196,6 +227,12 @@ func (v *Validator) fetchJWKS() error {
 			}
 			keys[k.Kid] = &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: e}
 		}
+	}
+
+	// An empty or unparseable document (transient upstream oddity) must not
+	// wipe the known-good keys; keep serving the previous set.
+	if len(keys) == 0 {
+		return errors.New("jwks document contained no usable keys")
 	}
 
 	v.mu.Lock()
