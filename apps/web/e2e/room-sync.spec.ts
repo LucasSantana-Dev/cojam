@@ -10,7 +10,7 @@ async function join(page: Page, roomId: string, name: string) {
   await page.getByPlaceholder('Your name').fill(name);
   await page.getByRole('button', { name: 'Join & Play' }).click();
   // Joined header shows the room-code chip + "you're <name>" (see RoomClient header).
-  await expect(page.getByText(`you're ${name}`)).toBeVisible();
+  await expect(page.getByText(`you\u2019re ${name}`)).toBeVisible();
 }
 
 async function addTrack(page: Page, title: string, artist: string, videoId?: string) {
