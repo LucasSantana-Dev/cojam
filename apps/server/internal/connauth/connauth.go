@@ -85,6 +85,58 @@ func Validate(secret []byte, token string) (string, error) {
 	return sub, nil
 }
 
+// ValidateForRefresh verifies an HS256 JWT's signature and returns its subject,
+// tolerating expiry within the given grace window. Used by the connection-token
+// endpoint to prove ownership of a previous identity before reissuing it: the
+// bearer of a still-recognizable token for sub X may refresh X; anyone else gets
+// a fresh identity instead.
+// Returns an error if the signature is invalid, the token is malformed, or the
+// token expired more than grace ago.
+func ValidateForRefresh(secret []byte, token string, grace time.Duration) (string, error) {
+	if len(secret) == 0 {
+		return "", errors.New("secret cannot be empty")
+	}
+	if token == "" {
+		return "", errors.New("token cannot be empty")
+	}
+
+	parsedToken, err := jwt.ParseWithClaims(
+		token,
+		&jwt.MapClaims{},
+		func(tok *jwt.Token) (interface{}, error) {
+			if tok.Method != jwt.SigningMethodHS256 {
+				return nil, fmt.Errorf("unexpected signing method: %v", tok.Method)
+			}
+			return secret, nil
+		},
+		jwt.WithoutClaimsValidation(),
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse token: %w", err)
+	}
+	if !parsedToken.Valid {
+		return "", errors.New("token is invalid")
+	}
+
+	claims, ok := parsedToken.Claims.(*jwt.MapClaims)
+	if !ok {
+		return "", errors.New("failed to extract claims")
+	}
+	sub, ok := (*claims)["sub"].(string)
+	if !ok || sub == "" {
+		return "", errors.New("missing or invalid sub claim")
+	}
+	exp, ok := (*claims)["exp"].(float64)
+	if !ok {
+		return "", errors.New("missing or invalid exp claim")
+	}
+	if time.Since(time.Unix(int64(exp), 0)) > grace {
+		return "", errors.New("token expired beyond refresh grace")
+	}
+
+	return sub, nil
+}
+
 // NewSub generates a fresh anonymous stable identity using 16 random bytes
 // base64url-encoded. Two NewSub() calls will produce different identities.
 func NewSub() string {
