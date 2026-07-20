@@ -52,6 +52,15 @@ func validateImportTracks(tracks []queue.TrackRef) error {
 		if t.DurationMs < 0 || t.DurationMs > maxImportDurationMs {
 			return userErrorf("track %d: duration out of range", i+1)
 		}
+		if len(t.ISRC) > maxImportFieldLen {
+			return userErrorf("track %d: isrc too long", i+1)
+		}
+		if t.Sources.YouTube != nil && len(t.Sources.YouTube.VideoID) > maxImportFieldLen {
+			return userErrorf("track %d: youtube video id too long", i+1)
+		}
+		if t.Sources.Apple != nil && len(t.Sources.Apple.SongID) > maxImportFieldLen {
+			return userErrorf("track %d: apple song id too long", i+1)
+		}
 		if t.Sources.Spotify != nil && t.Sources.Spotify.TrackURI != "" &&
 			!spotifyTrackURIRe.MatchString(t.Sources.Spotify.TrackURI) {
 			return userErrorf("track %d: invalid spotify track URI", i+1)

@@ -13,7 +13,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `now_playing.set` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
 | `track.search` | `{ query: string, prefer?: string[] }` | `SearchResult[]` |
-| `playlist.import` | `{ roomId, url: string, addedBy: string, tracks?: TrackRef[] }` | `RoomState` |
+| `playlist.import` | `{ roomId, url: string, addedBy: string, tracks?: Omit<TrackRef, 'id' \| 'addedBy'>[] }` | `RoomState` |
 
 `track.search` is a read (not membership-gated). `prefer` lists the caller's connected
 providers (`"spotify"`, `"apple"`); results playable on those providers rank first, other
@@ -86,6 +86,7 @@ type TrackRef = {
   sources: {           // per-platform resolution, filled by matching
     youtube?: { videoId: string; confidence: number };
     apple?: { songId: string; confidence: number };
+    spotify?: { trackUri: string; confidence: number };
   };
   addedBy: string;     // display name
 };

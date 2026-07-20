@@ -447,6 +447,9 @@ func TestHandleRPC_PlaylistImportClientTracksValidation(t *testing.T) {
 		{"artist too long", `"tracks":[{"title":"T","artist":"` + longTitle + `"}]`, "artist"},
 		{"negative duration", `"tracks":[{"title":"T","artist":"A","durationMs":-5}]`, "duration"},
 		{"duration out of range", `"tracks":[{"title":"T","artist":"A","durationMs":99999999}]`, "duration"},
+		{"isrc too long", `"tracks":[{"title":"T","artist":"A","isrc":"` + longTitle + `"}]`, "isrc"},
+		{"youtube id too long", `"tracks":[{"title":"T","artist":"A","sources":{"youtube":{"videoId":"` + longTitle + `"}}}]`, "youtube"},
+		{"apple id too long", `"tracks":[{"title":"T","artist":"A","sources":{"apple":{"songId":"` + longTitle + `"}}}]`, "apple"},
 		{"bad spotify uri", `"tracks":[{"title":"T","artist":"A","sources":{"spotify":{"trackUri":"not-a-uri"}}}]`, "spotify"},
 	}
 
