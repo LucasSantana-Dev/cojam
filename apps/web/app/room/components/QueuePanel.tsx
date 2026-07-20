@@ -100,10 +100,11 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   };
 
   // Aggregate header (R2). Duration only when every row reports one, so the
-  // total is never silently partial.
+  // total is never silently partial. `!= null`: 0ms is known metadata.
   const totalDurationMs = queue.reduce((sum, t) => sum + (t.durationMs ?? 0), 0);
-  const allDurationsKnown = queue.length > 0 && queue.every((t) => t.durationMs);
+  const allDurationsKnown = queue.length > 0 && queue.every((t) => t.durationMs != null);
   const contributors = new Set(queue.map((t) => t.addedBy)).size;
+  const isPlaying = state?.transport?.state === 'playing';
   const aggregate = [
     `${queue.length} ${queue.length === 1 ? 'track' : 'tracks'}`,
     allDurationsKnown ? formatTotal(totalDurationMs) : null,
@@ -141,7 +142,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                 {/* Left side: position + track info */}
                 <div className="flex-1 min-w-0 flex items-center gap-2">
                   <div className="text-xs font-semibold flex-shrink-0 w-6 text-center" style={{ color: track.id === nowPlayingId ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}>
-                    {track.id === nowPlayingId ? (
+                    {track.id === nowPlayingId && isPlaying ? (
                       <span className="inline-flex gap-0.5">
                         <span className="inline-block w-1 h-2 rounded-sm bg-current" style={{ animation: 'eq-bounce 0.9s ease-in-out infinite' }} />
                         <span className="inline-block w-1 h-3 rounded-sm bg-current" style={{ animation: 'eq-bounce 0.9s ease-in-out infinite', animationDelay: '-0.5s' }} />

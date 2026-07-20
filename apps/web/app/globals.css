@@ -562,12 +562,14 @@ input:focus, textarea:focus, select:focus {
 }
 .hero-backdrop-word--a {
   --r: -8deg;
+
   top: 15%;
   left: -1.25rem;
   font-size: clamp(2.5rem, 9vw, 7rem);
 }
 .hero-backdrop-word--b {
   --r: 7deg;
+
   top: 54%;
   right: -1rem;
   font-size: clamp(2rem, 8vw, 6rem);

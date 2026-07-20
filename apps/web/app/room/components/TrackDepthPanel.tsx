@@ -125,7 +125,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
             </div>
             <div className="meta-rail__row">
               <dt>Duration</dt>
-              <dd>{track.durationMs ? formatTime(track.durationMs) : 'Unknown'}</dd>
+              <dd>{track.durationMs != null ? formatTime(track.durationMs) : 'Unknown'}</dd>
             </div>
             <div className="meta-rail__row">
               <dt>Added by</dt>
