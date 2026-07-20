@@ -391,6 +391,115 @@ func TestHandleRPC_PlaylistImportQueueFull(t *testing.T) {
 	}
 }
 
+func TestHandleRPC_PlaylistImportClientTracks(t *testing.T) {
+	h := NewHub(nil)
+	h.Join("client1", "demo")
+
+	// No playlist fetcher wired: client-supplied tracks must skip the fetcher gate.
+	res, err := h.HandleRPC("playlist.import", []byte(`{
+		"roomId": "demo",
+		"url": "https://open.spotify.com/playlist/abc",
+		"addedBy": "host",
+		"tracks": [
+			{"title":"Song One","artist":"Artist A","durationMs":200000,"isrc":"XX0000000001","sources":{"spotify":{"trackUri":"spotify:track:4uLU6hMCjMI75M1A2tKUQC"}}},
+			{"title":"Song Two","artist":"Artist B","durationMs":210000,"sources":{"spotify":{"trackUri":"spotify:track:0VjIjW4GlUZAMYd2vXMi3b"}}}
+		]
+	}`), "")
+	if err != nil {
+		t.Fatalf("playlist.import with client tracks: %v", err)
+	}
+
+	var st queue.RoomState
+	if err := json.Unmarshal(res, &st); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(st.Queue) != 2 {
+		t.Fatalf("expected 2 tracks in queue, got %d", len(st.Queue))
+	}
+	if st.Queue[0].Title != "Song One" || st.Queue[0].AddedBy != "host" {
+		t.Errorf("track 0: got %+v", st.Queue[0])
+	}
+	if st.Queue[0].Sources.Spotify == nil || st.Queue[0].Sources.Spotify.TrackURI != "spotify:track:4uLU6hMCjMI75M1A2tKUQC" {
+		t.Errorf("track 0 spotify source lost: %+v", st.Queue[0].Sources)
+	}
+	// Version must reflect both adds (setState version guard on clients).
+	if st.Version != 2 {
+		t.Errorf("version: got %d, want 2 (one bump per added track)", st.Version)
+	}
+}
+
+func TestHandleRPC_PlaylistImportClientTracksValidation(t *testing.T) {
+	longTitle := strings.Repeat("x", 301)
+	tooMany := make([]map[string]any, 0, 201)
+	for i := 0; i < 201; i++ {
+		tooMany = append(tooMany, map[string]any{"title": fmt.Sprintf("T%d", i), "artist": "A"})
+	}
+	tooManyJSON, _ := json.Marshal(tooMany)
+
+	cases := []struct {
+		name    string
+		tracks  string
+		wantErr string
+	}{
+		{"too many tracks", `"tracks":` + string(tooManyJSON), "too many tracks"},
+		{"empty title", `"tracks":[{"title":"","artist":"A"}]`, "title"},
+		{"title too long", `"tracks":[{"title":"` + longTitle + `","artist":"A"}]`, "title"},
+		{"artist too long", `"tracks":[{"title":"T","artist":"` + longTitle + `"}]`, "artist"},
+		{"negative duration", `"tracks":[{"title":"T","artist":"A","durationMs":-5}]`, "duration"},
+		{"duration out of range", `"tracks":[{"title":"T","artist":"A","durationMs":99999999}]`, "duration"},
+		{"isrc too long", `"tracks":[{"title":"T","artist":"A","isrc":"` + longTitle + `"}]`, "isrc"},
+		{"youtube id too long", `"tracks":[{"title":"T","artist":"A","sources":{"youtube":{"videoId":"` + longTitle + `"}}}]`, "youtube"},
+		{"apple id too long", `"tracks":[{"title":"T","artist":"A","sources":{"apple":{"songId":"` + longTitle + `"}}}]`, "apple"},
+		{"bad spotify uri", `"tracks":[{"title":"T","artist":"A","sources":{"spotify":{"trackUri":"not-a-uri"}}}]`, "spotify"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := NewHub(nil)
+			h.Join("client1", "demo")
+			payload := `{"roomId":"demo","url":"https://open.spotify.com/playlist/abc","addedBy":"host",` + tc.tracks + `}`
+			_, err := h.HandleRPC("playlist.import", []byte(payload), "")
+			if err == nil {
+				t.Fatalf("expected validation error for %s", tc.name)
+			}
+			var ue *UserError
+			if !errors.As(err, &ue) {
+				t.Fatalf("validation error must be user-facing, got %T: %v", err, err)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error %q should mention %q", err.Error(), tc.wantErr)
+			}
+			// Queue must be untouched.
+			room := h.GetOrCreateRoom("demo")
+			room.mu.Lock()
+			n := len(room.State.Queue)
+			room.mu.Unlock()
+			if n != 0 {
+				t.Errorf("queue should be empty after rejected import, got %d tracks", n)
+			}
+		})
+	}
+}
+
+func TestHandleRPC_PlaylistImportEmptyTracksNeedsFetcher(t *testing.T) {
+	h := NewHub(nil)
+	h.Join("client1", "demo")
+
+	// Empty tracks array = no client data, so the fetcher gate still applies.
+	_, err := h.HandleRPC("playlist.import", []byte(`{
+		"roomId": "demo",
+		"url": "https://open.spotify.com/playlist/abc",
+		"addedBy": "host",
+		"tracks": []
+	}`), "")
+	if err == nil {
+		t.Fatal("expected error when no tracks and no fetcher configured")
+	}
+	if !strings.Contains(err.Error(), "not enabled") {
+		t.Errorf("error %q should be the fetcher-not-enabled message", err.Error())
+	}
+}
+
 func TestHandleRPC_PlaylistImportErrorsAreUserFacing(t *testing.T) {
 	h := NewHub(nil)
 	h.Join("client1", "demo")

@@ -5,6 +5,8 @@ import { useStore, queueAdd, searchTracks, importPlaylist, type SearchCandidate 
 import { mergeProviderPrefs } from '@/lib/account';
 import { features } from '@/lib/features';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
+import { parseSpotifyPlaylistId, fetchSpotifyPlaylistTracks } from '@/lib/spotifyPlaylist';
+import { isAuthed as isSpotifyAuthed, canReadPlaylists } from '@/lib/spotifyAuth';
 
 export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { roomId: string; spotifyAuthorized?: boolean; appleAuthorized?: boolean }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -136,7 +138,19 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
     setPlaylistLoading(true);
 
     try {
-      await importPlaylist(roomId, playlistUrl, name);
+      // RFC-0007: Spotify playlists are fetched client-side with the user's own
+      // OAuth token (server-side client credentials get 403 in dev mode).
+      const spotifyPlaylistId = parseSpotifyPlaylistId(playlistUrl);
+      if (spotifyPlaylistId && isSpotifyAuthed()) {
+        if (!canReadPlaylists()) {
+          // Token predates the playlist-read scopes; only a fresh consent helps.
+          throw new Error('Reconnect Spotify to import playlists (a new permission is required).');
+        }
+        const tracks = await fetchSpotifyPlaylistTracks(spotifyPlaylistId);
+        await importPlaylist(roomId, playlistUrl, name, tracks);
+      } else {
+        await importPlaylist(roomId, playlistUrl, name);
+      }
       setPlaylistUrl('');
       setPlaylistSuccess('Playlist tracks added to queue');
       setTimeout(() => setPlaylistSuccess(''), 3000);
