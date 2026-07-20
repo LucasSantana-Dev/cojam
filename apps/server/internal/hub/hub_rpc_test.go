@@ -423,8 +423,8 @@ func TestHandleRPC_PlaylistImportErrorsAreUserFacing(t *testing.T) {
 			if !errors.As(cerr, &ce) {
 				t.Fatalf("rpcClientError must produce *centrifuge.Error, got %T", cerr)
 			}
-			if ce.Code == 100 {
-				t.Errorf("code 100 is masked as internal server error; want an application code")
+			if ce.Code != 400 {
+				t.Errorf("code: got %d, want application code 400 (100 is masked as internal server error)", ce.Code)
 			}
 			if !strings.Contains(ce.Message, tc.wantMsg) {
 				t.Errorf("message %q should contain %q", ce.Message, tc.wantMsg)
