@@ -54,15 +54,5 @@ func Validate(secret []byte, token string) (string, error) {
 
 	// Supabase issues aud="authenticated" for signed-in users; the anon key's
 	// audience ("anon") proves no identity and is rejected.
-	aud, _ := (*claims)["aud"].(string)
-	if aud != "authenticated" {
-		return "", fmt.Errorf("unexpected audience: %q", aud)
-	}
-
-	sub, ok := (*claims)["sub"].(string)
-	if !ok || sub == "" {
-		return "", errors.New("missing or invalid sub claim")
-	}
-
-	return sub, nil
+	return subjectFromClaims(*claims)
 }

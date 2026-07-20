@@ -53,7 +53,8 @@ Presence: centrifuge native presence on the channel (join/leave events + presenc
 
 Accounts are optional; guests use rooms exactly as before. The web app signs users in with
 Supabase (magic link) and presents the Supabase access token as the centrifuge connection
-token. The server validates it (HS256, project JWT secret, audience `authenticated`) and
+token. The server validates it (ES256 via the project JWKS from `SUPABASE_URL`, falling back to
+HS256 with the legacy project JWT secret; audience `authenticated`) and
 sets the identity to `sb:<user-uuid>`; anything that does not validate falls through to the
 anonymous room-auth path, then to v0 allow-all. Token precedence on connect:
 Supabase account token → anonymous room-auth token → none.

@@ -99,11 +99,14 @@ func main() {
 	// Supabase Auth (accounts): when on, a connection token that validates as a
 	// Supabase access token sets the user id to "sb:<supabase-user-uuid>". Checked
 	// before the anonymous room-auth path; tokens that do not validate fall through
-	// to the existing behavior unchanged.
+	// to the existing behavior unchanged. New projects sign tokens asymmetrically
+	// (ES256), verified via the project JWKS; the legacy JWT secret covers HS256.
 	supabaseAuthEnabled := featureEnabled("FEATURE_SUPABASE_AUTH", false)
+	supabaseURL := os.Getenv("SUPABASE_URL")
 	supabaseJWTSecret := os.Getenv("SUPABASE_JWT_SECRET")
-	if supabaseAuthEnabled && supabaseJWTSecret == "" {
-		logger.Error("FEATURE_SUPABASE_AUTH is on but SUPABASE_JWT_SECRET is empty: Supabase tokens will not validate")
+	supaValidator := supauth.NewValidator(supabaseURL, []byte(supabaseJWTSecret))
+	if supabaseAuthEnabled && supabaseURL == "" && supabaseJWTSecret == "" {
+		logger.Error("FEATURE_SUPABASE_AUTH is on but neither SUPABASE_URL nor SUPABASE_JWT_SECRET is set: Supabase tokens will not validate")
 	}
 
 	// Wire persistent store if DATABASE_URL is configured. dbPool is held at this
@@ -317,7 +320,7 @@ func main() {
 		// stable "sb:<uuid>" identity. Failures are silent here because every
 		// anonymous room-auth token also fails this check; fall through.
 		if supabaseAuthEnabled && e.Token != "" {
-			if sub, err := supauth.Validate([]byte(supabaseJWTSecret), e.Token); err == nil {
+			if sub, err := supaValidator.Validate(e.Token); err == nil {
 				userID = "sb:" + sub
 			}
 		}

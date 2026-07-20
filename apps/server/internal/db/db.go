@@ -99,8 +99,8 @@ func migrateFrom(ctx context.Context, pool *pgxpool.Pool, fsys embed.FS, dir str
 			continue
 		}
 
-		// Read the migration file.
-		content, err := fs.ReadFile(migrationsFS, entry)
+		// Read the migration file from the FS being migrated (base or Supabase-only).
+		content, err := fs.ReadFile(fsys, entry)
 		if err != nil {
 			return fmt.Errorf("failed to read migration file %s: %w", entry, err)
 		}

@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"testing"
 	"time"
@@ -129,5 +130,23 @@ func TestMigrateIdempotent(t *testing.T) {
 
 	if !tableExists {
 		t.Fatal("rooms table does not exist after second migration")
+	}
+}
+
+// TestSupabaseMigrationsReadable guards the embed wiring: migrateFrom must read
+// files from the FS it is given (a past bug read every entry from the base FS,
+// which made MigrateSupabase fail with "file does not exist" at startup).
+func TestSupabaseMigrationsReadable(t *testing.T) {
+	entries, err := fs.Glob(supabaseMigrationsFS, "migrations-supabase/*.sql")
+	if err != nil {
+		t.Fatalf("glob supabase migrations: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no supabase migration files embedded")
+	}
+	for _, entry := range entries {
+		if _, err := fs.ReadFile(supabaseMigrationsFS, entry); err != nil {
+			t.Fatalf("read %s from supabase FS: %v", entry, err)
+		}
 	}
 }
