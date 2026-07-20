@@ -604,6 +604,77 @@ func TestSearchAll_DedupesByNormalizedTitle(t *testing.T) {
 	}
 }
 
+func TestSearchAll_DoesNotTruncateBeforeRanking(t *testing.T) {
+	oldDeezerURL := deezerSearchURL
+	oldSpotifyID, oldSpotifySecret := spotifyauth.ClientID, spotifyauth.ClientSecret
+	oldTokenURL, oldSearchURL := spotifyauth.TokenURL, spotifySearchURL
+	oldClient := spotifyauth.Client
+
+	defer func() {
+		deezerSearchURL = oldDeezerURL
+		spotifyauth.ClientID, spotifyauth.ClientSecret = oldSpotifyID, oldSpotifySecret
+		spotifyauth.TokenURL, spotifySearchURL = oldTokenURL, oldSearchURL
+		spotifyauth.Client = oldClient
+		spotifyauth.ResetCache()
+	}()
+
+	// Deezer fills the whole limit with distinct tracks (no ISRC, like the real API).
+	deezerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[
+			{"title":"Track One","duration":200,"artist":{"name":"Artist A"},"album":{"cover_medium":"https://example.com/1.jpg"}},
+			{"title":"Track Two","duration":201,"artist":{"name":"Artist B"},"album":{"cover_medium":"https://example.com/2.jpg"}},
+			{"title":"Track Three","duration":202,"artist":{"name":"Artist C"},"album":{"cover_medium":"https://example.com/3.jpg"}}
+		]}`))
+	}))
+	defer deezerSrv.Close()
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"tok","expires_in":3600,"token_type":"Bearer"}`))
+	}))
+	defer tokenSrv.Close()
+
+	// Spotify returns tracks WITH ISRCs, so they never dedup-merge with the
+	// ISRC-less Deezer entries and must survive as their own rows.
+	spotifySearchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tracks":{"items":[
+			{"id":"s1","name":"Spotify One","uri":"spotify:track:s1","artists":[{"name":"Artist S"}],"duration_ms":200000,"external_ids":{"isrc":"XX0000000001"},"album":{"images":[{"url":"https://example.com/s1.jpg"}]}},
+			{"id":"s2","name":"Spotify Two","uri":"spotify:track:s2","artists":[{"name":"Artist S"}],"duration_ms":201000,"external_ids":{"isrc":"XX0000000002"},"album":{"images":[{"url":"https://example.com/s2.jpg"}]}}
+		]}}`))
+	}))
+	defer spotifySearchSrv.Close()
+
+	deezerSearchURL = deezerSrv.URL
+	spotifyauth.ClientID = "id"
+	spotifyauth.ClientSecret = "secret"
+	spotifyauth.TokenURL = tokenSrv.URL
+	spotifySearchURL = spotifySearchSrv.URL
+	spotifyauth.Client = http.DefaultClient
+	spotifyauth.ResetCache()
+
+	// limit 3 is exactly what Deezer returns; a cap applied before ranking would
+	// discard every Spotify candidate (the bug this test guards).
+	results, err := SearchAll(context.Background(), "track", 3)
+	if err != nil {
+		t.Fatalf("SearchAll: %v", err)
+	}
+
+	spotifyCount := 0
+	for _, r := range results {
+		if r.Source == "spotify" {
+			spotifyCount++
+		}
+	}
+	if spotifyCount != 2 {
+		t.Errorf("expected 2 spotify-sourced candidates in the aggregated pool, got %d (pool=%d)", spotifyCount, len(results))
+	}
+	if len(results) != 5 {
+		t.Errorf("expected full aggregated pool of 5 candidates (3 deezer + 2 spotify), got %d; caller truncates after ranking", len(results))
+	}
+}
+
 // SimilarTracks tests
 
 func lastfmStub(t *testing.T, responseJSON string) func() {

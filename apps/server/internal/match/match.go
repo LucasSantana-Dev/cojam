@@ -644,7 +644,9 @@ func SearchDeezer(ctx context.Context, query string, limit int) ([]SearchCandida
 // and Spotify (if configured). Each source is queried with a short timeout;
 // timeouts or errors are logged and skipped. Results are deduplicated by ISRC
 // when both sources have it, preferring results with SpotifyURI for playback.
-// Final list is capped at limit.
+// The pool is bounded by the per-source limits (each source is queried with
+// limit); callers truncate after ranking so preferred-provider results are not
+// discarded before they can be ranked first.
 func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate, error) {
 	// Clamp limit
 	if limit < 1 {
@@ -737,11 +739,8 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 		}
 	}
 
-	// Cap at limit
-	if len(deduplicated) > limit {
-		deduplicated = deduplicated[:limit]
-	}
-
+	// No cap here: the caller truncates after RankByProviders so that
+	// playable-on-preferred-provider candidates survive to be ranked first.
 	return deduplicated, nil
 }
 
