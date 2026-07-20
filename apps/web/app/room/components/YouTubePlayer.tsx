@@ -116,6 +116,16 @@ export function YouTubePlayer({
   const playerUsable = useRef(false);
   const pendingVideoId = useRef<string | null>(null);
   const nowPlayingIdRef = useRef<string | null>(null);
+  // Callbacks arrive as fresh inline arrows every render; keep them in refs so
+  // effect identity stays stable. Without this the unmount cleanup below ran on
+  // every render, disposing the adapter and nulling activePlayer right after
+  // onPlayerReady set it (Play button permanently disabled).
+  const onPlayerReadyRef = useRef(onPlayerReady);
+  const onPlayerGoneRef = useRef(onPlayerGone);
+  useEffect(() => {
+    onPlayerReadyRef.current = onPlayerReady;
+    onPlayerGoneRef.current = onPlayerGone;
+  });
   const [apiReady, setApiReady] = useState(false);
   const state = useStore((s) => s.state);
   const nowPlayingId = state?.nowPlayingId;
@@ -141,7 +151,7 @@ export function YouTubePlayer({
             playerUsable.current = true;
             const adapter = new YouTubePlayerAdapter(playerRef.current);
             adapterRef.current = adapter;
-            onPlayerReady?.(adapter);
+            onPlayerReadyRef.current?.(adapter);
             if (pendingVideoId.current) {
               playerRef.current.loadVideoById(pendingVideoId.current);
               pendingVideoId.current = null;
@@ -172,10 +182,10 @@ export function YouTubePlayer({
       if (adapterRef.current) {
         adapterRef.current.dispose();
         adapterRef.current = null;
-        onPlayerGone?.();
+        onPlayerGoneRef.current?.();
       }
     };
-  }, [onPlayerGone]);
+  }, []);
 
   const nowPlaying = nowPlayingId ? queue.find((t) => t.id === nowPlayingId) : undefined;
 
