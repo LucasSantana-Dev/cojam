@@ -11,6 +11,16 @@ import {
   ArrowDownIcon,
   TrashIcon,
 } from '@/app/components/icons';
+import { formatTime } from './TransportUI';
+
+// Deezer-style total duration: "1 hr 23 min" / "42 min" / "< 1 min".
+function formatTotal(ms: number): string {
+  const totalMin = Math.round(ms / 60000);
+  if (totalMin < 1) return '< 1 min';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h} hr ${m.toString().padStart(2, '0')} min` : `${m} min`;
+}
 
 interface QueuePanelProps {
   roomId: string;
@@ -89,11 +99,25 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     return name.charAt(0).toUpperCase();
   };
 
+  // Aggregate header (R2). Duration only when every row reports one, so the
+  // total is never silently partial.
+  const totalDurationMs = queue.reduce((sum, t) => sum + (t.durationMs ?? 0), 0);
+  const allDurationsKnown = queue.length > 0 && queue.every((t) => t.durationMs);
+  const contributors = new Set(queue.map((t) => t.addedBy)).size;
+  const aggregate = [
+    `${queue.length} ${queue.length === 1 ? 'track' : 'tracks'}`,
+    allDurationsKnown ? formatTotal(totalDurationMs) : null,
+    `${contributors} ${contributors === 1 ? 'contributor' : 'contributors'}`,
+  ].filter(Boolean).join(' · ');
+
   return (
     <div className="panel p-6 space-y-4 h-fit lg:sticky lg:top-24">
-      <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-        Queue
-      </h3>
+      <div>
+        <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          Queue
+        </h3>
+        {queue.length > 0 && <p className="queue-agg">{aggregate}</p>}
+      </div>
 
       {queue.length === 0 ? (
         <div className="py-8 text-center">
@@ -131,7 +155,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                     <div data-testid="queue-title" className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
                       {track.title}
                     </div>
-                    <div className="text-xs truncate flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
+                    <div className="text-xs truncate flex items-center gap-1" style={{ color: 'var(--color-text-secondary)' }}>
                       {track.artist}
                       <span className="text-opacity-60">·</span>
                       <span className="avatar-chip-sm inline-flex" style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)', width: '18px', height: '18px', fontSize: '0.6rem', padding: 0 }}>
@@ -141,23 +165,38 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {track.sources.youtube && (
-                        <span className="badge-source badge-youtube inline-flex items-center gap-1 text-xs">
-                          <YouTubeIcon size={10} /> {Math.round(track.sources.youtube.confidence * 100)}%
+                        <span
+                          className="badge-source badge-youtube inline-flex items-center text-xs"
+                          title={`YouTube match ${Math.round(track.sources.youtube.confidence * 100)}%`}
+                        >
+                          <YouTubeIcon size={10} />
                         </span>
                       )}
                       {track.sources.apple && (
-                        <span className="badge-source badge-apple inline-flex items-center gap-1 text-xs">
-                          <AppleMusicIcon size={10} /> {Math.round(track.sources.apple.confidence * 100)}%
+                        <span
+                          className="badge-source badge-apple inline-flex items-center text-xs"
+                          title={`Apple Music match ${Math.round(track.sources.apple.confidence * 100)}%`}
+                        >
+                          <AppleMusicIcon size={10} />
                         </span>
                       )}
                       {track.sources.spotify && (
-                        <span className="badge-source badge-spotify inline-flex items-center gap-1 text-xs">
-                          <SpotifyIcon size={10} /> {Math.round(track.sources.spotify.confidence * 100)}%
+                        <span
+                          className="badge-source badge-spotify inline-flex items-center text-xs"
+                          title={`Spotify match ${Math.round(track.sources.spotify.confidence * 100)}%`}
+                        >
+                          <SpotifyIcon size={10} />
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
+
+                {/* Per-row duration (R9): right-aligned tabular, before the
+                    hover-revealed controls. */}
+                {track.durationMs != null && (
+                  <span className="queue-duration">{formatTime(track.durationMs)}</span>
+                )}
 
                 {/* Right side: controls (hidden on desktop hover, always visible on touch) */}
                 <div className="queue-controls flex gap-1 flex-shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
