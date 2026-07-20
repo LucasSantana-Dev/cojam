@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, CheckIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
 import { LogoMark } from '@/app/components/Logo';
+import { supabaseEnabled } from '@/lib/supabase';
 
 
 function generateRoomId() {
@@ -32,6 +34,12 @@ export default function Home() {
   const [roomId, setRoomId] = useState('');
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
+  // Accounts are optional and resolved at runtime (via /env.js); resolve after
+  // mount to avoid an SSR hydration mismatch.
+  const [accountsEnabled, setAccountsEnabled] = useState(false);
+  useEffect(() => {
+    setAccountsEnabled(supabaseEnabled());
+  }, []);
 
   const createRoom = () => router.push(`/room/${generateRoomId()}`);
   const joinRoom = (e: React.FormEvent) => {
@@ -496,6 +504,7 @@ export default function Home() {
           <a href="https://github.com/LucasSantana-Dev/cojam" target="_blank" rel="noreferrer">
             GitHub
           </a>
+          {accountsEnabled && <Link href="/account">Sign in</Link>}
         </nav>
         <button onClick={createRoom} className="btn-primary magnetic">
           Start a room

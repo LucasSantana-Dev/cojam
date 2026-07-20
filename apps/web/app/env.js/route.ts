@@ -10,10 +10,20 @@ export function GET() {
     wsUrl: string;
     spotifyClientId: string;
     spotifyEnabled?: boolean;
+    supabaseUrl?: string;
+    supabaseAnonKey?: string;
   } = {
     wsUrl: process.env.COJAM_WS_URL ?? '',
     spotifyClientId: process.env.COJAM_SPOTIFY_CLIENT_ID ?? '',
   };
+  // Accounts are optional: only emit when both are set, so an unset runtime
+  // value falls back to the build-time NEXT_PUBLIC_* pair.
+  if (process.env.COJAM_SUPABASE_URL !== undefined) {
+    env.supabaseUrl = process.env.COJAM_SUPABASE_URL;
+  }
+  if (process.env.COJAM_SUPABASE_ANON_KEY !== undefined) {
+    env.supabaseAnonKey = process.env.COJAM_SUPABASE_ANON_KEY;
+  }
   // Feature flags must be runtime-configurable too: NEXT_PUBLIC_* are inlined at
   // build time, so the env-agnostic image cannot enable Spotify without this.
   // Only emit when explicitly set, so an UNSET runtime value falls back to the

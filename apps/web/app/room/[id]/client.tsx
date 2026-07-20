@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { useStore, joinRoom, setRadio, transportPlay, transportPause, getClockOffsetMs } from '@/lib/realtime';
 import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS, serverNow } from '@/lib/playbackSync';
 import { StatusBanner } from '../components/StatusBanner';
@@ -15,6 +16,8 @@ import { features } from '@/lib/features';
 import { getRuntimeEnv } from '@/lib/runtimeEnv';
 import { canControl } from '@/lib/roomRole';
 import { getStoredUserId } from '@/lib/auth';
+import { getAccountSession, getConnectedServices, getDisplayName, markServiceConnected } from '@/lib/account';
+import { supabaseEnabled } from '@/lib/supabase';
 import { YouTubePlayer } from '../components/YouTubePlayer';
 import { ApplePlayer } from '../components/ApplePlayer';
 import { SpotifyPlayer } from '../components/SpotifyPlayer';
@@ -57,6 +60,35 @@ export function RoomClient({ roomId }: { roomId: string }) {
   useEffect(() => {
     setSpotifyEnabled(getRuntimeEnv()?.spotifyEnabled ?? features.spotify);
   }, []);
+  // Accounts link: resolved at runtime after mount (hydration-safe).
+  const [accountsEnabled, setAccountsEnabled] = useState(false);
+  useEffect(() => {
+    setAccountsEnabled(supabaseEnabled());
+  }, []);
+
+  // Accounts: when signed in, load persisted connected services into the store
+  // (search ranking follows them on any device, even before local OAuth state
+  // settles) and prefill the join name from the profile. Guests skip all of this.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const session = await getAccountSession();
+      if (!session || cancelled) return;
+      const [services, displayName] = await Promise.all([getConnectedServices(), getDisplayName()]);
+      if (cancelled) return;
+      useStore.getState().setConnectedServices(services);
+      if (displayName) setNameInput((prev) => prev || displayName);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Remember the Spotify connection on the account (fact only, never tokens).
+  // No-op when signed out.
+  useEffect(() => {
+    if (spotifyAuthorized) void markServiceConnected('spotify');
+  }, [spotifyAuthorized]);
   const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId
@@ -305,6 +337,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <div className="flex items-center gap-3 flex-wrap">
               <PresenceBar />
               <ShareRoomButton />
+              {accountsEnabled && (
+                <Link
+                  href="/account"
+                  className="text-sm underline"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  Account
+                </Link>
+              )}
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
                 <div
                   className="connection-dot"
