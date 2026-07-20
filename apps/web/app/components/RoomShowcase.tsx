@@ -85,7 +85,7 @@ export function RoomShowcase() {
       {/* Frosted glass card container with premium lighting.
           Glass gradient + shadow stops are deliberate one-offs (no token equivalents). */}
       <div
-        className="relative rounded-2xl p-6 overflow-hidden"
+        className="relative rounded-2xl p-6 overflow-hidden showcase-tilt"
         style={{
           background: 'linear-gradient(135deg, oklch(0.16 0.01 280 / 0.7) 0%, oklch(0.12 0.01 280 / 0.7) 100%)',
           backdropFilter: 'blur(12px) saturate(1.2)',
