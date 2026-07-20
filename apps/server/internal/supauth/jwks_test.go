@@ -226,12 +226,22 @@ func TestValidator_EmptyJWKSKeepPreviousKeys(t *testing.T) {
 	}
 
 	// Upstream starts returning an empty document; known-good keys must survive.
+	var emptyHits atomic.Int32
 	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		emptyHits.Add(1)
 		json.NewEncoder(w).Encode(map[string]any{"keys": []any{}})
 	}))
 	t.Cleanup(empty.Close)
 	v.jwksURL = empty.URL
 	v.lastFetch = time.Now().Add(-time.Hour) // force past the cooldown
+
+	// Fetch explicitly: Validate with a cached kid never refetches on its own.
+	// An empty document is an error (keys are kept, not wiped); either outcome
+	// is fine here, what matters is that the empty endpoint was actually hit.
+	_ = v.refetchJWKS()
+	if emptyHits.Load() != 1 {
+		t.Errorf("empty endpoint fetches = %d, want 1", emptyHits.Load())
+	}
 
 	if _, err := v.Validate(stub.signES256(t, validClaims())); err != nil {
 		t.Fatalf("cached key must keep validating after an empty JWKS fetch: %v", err)

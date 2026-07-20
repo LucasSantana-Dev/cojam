@@ -87,8 +87,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // Remember the Spotify connection on the account (fact only, never tokens).
   // No-op when signed out.
   useEffect(() => {
-    if (spotifyAuthorized) void markServiceConnected('spotify');
+    if (spotifyAuthorized) {
+      markServiceConnected('spotify').catch((err) => {
+        console.warn('[account] persist spotify connection failed', err);
+      });
+    }
   }, [spotifyAuthorized]);
+  // Same for Apple Music.
+  useEffect(() => {
+    if (appleAuthorized) {
+      markServiceConnected('apple').catch((err) => {
+        console.warn('[account] persist apple connection failed', err);
+      });
+    }
+  }, [appleAuthorized]);
   const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId

@@ -16,12 +16,12 @@ export function GET() {
     wsUrl: process.env.COJAM_WS_URL ?? '',
     spotifyClientId: process.env.COJAM_SPOTIFY_CLIENT_ID ?? '',
   };
-  // Accounts are optional: each value is emitted independently when set, so an
-  // unset runtime value falls back to the build-time NEXT_PUBLIC_* pair.
-  if (process.env.COJAM_SUPABASE_URL !== undefined) {
+  // Accounts are optional: the Supabase pair is emitted only when BOTH runtime
+  // values are set. Emitting just one would mix the runtime project with the
+  // build-time NEXT_PUBLIC_* fallback of the other, pointing the client at two
+  // different Supabase projects.
+  if (process.env.COJAM_SUPABASE_URL !== undefined && process.env.COJAM_SUPABASE_ANON_KEY !== undefined) {
     env.supabaseUrl = process.env.COJAM_SUPABASE_URL;
-  }
-  if (process.env.COJAM_SUPABASE_ANON_KEY !== undefined) {
     env.supabaseAnonKey = process.env.COJAM_SUPABASE_ANON_KEY;
   }
   // Feature flags must be runtime-configurable too: NEXT_PUBLIC_* are inlined at

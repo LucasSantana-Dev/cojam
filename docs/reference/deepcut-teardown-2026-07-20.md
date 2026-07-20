@@ -9,7 +9,7 @@ Context lock: cojam is per-user licensed streams synced by metadata (Stationhead
 model, see CLAUDE.md), never rebroadcast audio. Deepcut is the opposite model: one shared
 YouTube embed per room. Most findings below are shaped by that divergence.
 
-## ADOPT list (ranked)
+## ADAPT list (ranked)
 
 Nothing transfers as-is; every transferable idea needs adaptation to the per-user-stream
 model. Ranked adapts:
@@ -23,6 +23,7 @@ model. Ranked adapts:
 ## Findings
 
 ### F1 — The product IS the landing page: live public room directory [UX/Growth]
+
 - evidence: `.claude/design/refs/deepcut-01-landing.png`
 - what: no marketing page at all. `/` is a sortable directory of live public rooms: album-art thumb, room name, current DJ + now-playing track, open DJ spots, listener count, "Listen now". Sorts: All rooms, DJs needed, What's Hot, # of Listeners, Recent, Random. A 💬 prefix marks rooms with active chat.
 - why-it-works-for-them: network-effect product whose entire value prop is live rooms; showing 42 listeners in "Aunt Jackie" and real track names proves the place is alive better than any hero copy. Sort tabs map to visitor intents (join a crowd vs. find a room that needs a DJ).
@@ -32,15 +33,17 @@ model. Ranked adapts:
 - lands-in: `apps/web/app/page.tsx`, hub read RPC for public room summaries (name, now-playing metadata, listener count), `RoomState.public` flag
 
 ### F2 — Zero-auth guest listening; signup is avatar + DJ name only [UX/Growth]
+
 - evidence: `.claude/design/refs/deepcut-04-room-live.png` (listened as a guest), `.claude/design/refs/deepcut-05-signup-modal.png`
 - what: guests enter rooms and listen immediately; the only gate is a bottom banner ("Sign up to customize your avatar, participate in the room chat, step up to DJ"). Signup itself is one modal: pick an avatar, pick a DJ name, done. No email wall up front.
 - why-it-works-for-them: their media source (YouTube embeds) needs no user credentials, so a guest costs them nothing and top-of-funnel is frictionless.
-- rationale: [their constraint: license-free media source] → [applies to us: partially — full playback in cojam needs the listener's own streaming account (Spotify OAuth), but presence, queue, chat, and previews cost nothing] → keep the guest path open as far as the licensed-stream model allows; gate only what actually costs us.
+- rationale: [their constraint: license-free media source] → [applies to us: partially — full playback in cojam needs the listener's own streaming account (Spotify or Apple OAuth), but presence, queue, chat, and previews cost nothing] → keep the guest path open as far as the licensed-stream model allows; gate only what actually costs us.
 - verdict: adapt
 - effort: S-M
 - lands-in: join flow (`apps/web/app/room/[id]`), `features.ts`
 
 ### F3 — Stage + dance-floor avatar presence [Visual/UX]
+
 - evidence: `.claude/design/refs/deepcut-04-room-live.png`
 - what: a literal stage: DJ avatars behind decks, a crowd of listener avatars on a floor, floating point totals. Presence is spatial and playful, not a list.
 - why-it-works-for-them: deliberate Turntable.fm nostalgia clone; the retro game-room metaphor IS the brand.
@@ -49,6 +52,7 @@ model. Ranked adapts:
 - lands-in: n/a (state-check: `PresenceBar.tsx`, `avatar.ts`)
 
 ### F4 — Vote-driven DJ points economy [Features/Growth]
+
 - evidence: `.claude/design/refs/deepcut-04-room-live.png` (thumbs up/down flanking the songboard, "1,566,140 points" over a DJ)
 - what: listeners vote on the current track; DJs accumulate points; points are status and unlock cosmetics. DJ seats are scarce (5), so voting allocates attention.
 - why-it-works-for-them: DJ-slot scarcity needs a merit mechanism; points give DJs a reason to perform and listeners a reason to react.
@@ -58,6 +62,7 @@ model. Ranked adapts:
 - lands-in: hub mutating RPC (remember: bump `RoomState.Version`, assert in test per AGENTS.md), `apps/web/app/room/components/QueuePanel.tsx`, protocol in `packages/shared`
 
 ### F5 — YouTube as the media source, and its visible failure mode [Platform]
+
 - evidence: `.claude/design/refs/deepcut-04-room-live.png` (left screen: "Video unavailable — UMG has blocked it from display on this website")
 - what: the room plays one synced YouTube embed for everyone. Mid-room, label-blocked videos render a dead "Video unavailable" panel on the stage screens.
 - why-it-works-for-them: zero licensing cost, zero user auth, full catalog — until a label pulls the embed.
@@ -66,6 +71,7 @@ model. Ranked adapts:
 - lands-in: n/a
 
 ### F6 — Charity gate with cosmetic reward [Growth/Monetization]
+
 - evidence: `.claude/design/refs/deepcut-02-charity-gate.png`
 - what: first room entry shows "Just one thing": donate to World Central Kitchen or Direct Relief to unlock a special avatar. Fully skippable ("Continue to Room"), no guilt copy.
 - why-it-works-for-them: no visible subscription revenue; a cosmetic economy plus goodwill monetizes without paywalling music.
@@ -74,6 +80,7 @@ model. Ranked adapts:
 - lands-in: n/a
 
 ### F7 — Manifesto About page: "people, not algorithms" [Copy/Growth]
+
 - evidence: `.claude/design/refs/deepcut-06-about.png`
 - what: "We believe music is better with friends", "Listen to music selected by people, not algorithms", DJ-skills framing, press quotes (NYT, Wired, Mashable — inherited 2011-era Turntable.fm press; "10 years later — We're back").
 - why-it-works-for-them: positions against the dominant solitary/algorithmic listening model in one line.
@@ -83,6 +90,7 @@ model. Ranked adapts:
 - lands-in: `apps/web/app/page.tsx` hero/subcopy
 
 ### F8 — Room chat with system events, mentions, sounds [Features]
+
 - evidence: room snapshot this session (chat panel: "PEAK started playing 'Love The Way You Lie ft. Rihanna' by Eminem"; `chatsound mention` classes in DOM); 💬 badges in `.claude/design/refs/deepcut-01-landing.png`
 - what: chat is a first-class room panel; system messages announce track changes; mentions and chat sounds exist; chat activity is advertised on directory cards.
 - why-it-works-for-them: synchronous hangout is the product; chat is where "together" actually happens.

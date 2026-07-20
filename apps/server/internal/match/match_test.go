@@ -901,11 +901,12 @@ func TestRankByProviders_PreferSpotify(t *testing.T) {
 		{Title: "B", Artist: "Y", Source: "spotify", SpotifyURI: "spotify:track:b"},
 		{Title: "C", Artist: "Z", Source: "deezer", SpotifyURI: "spotify:track:c"}, // dedup-merged entry
 		{Title: "D", Artist: "W", Source: "deezer"},
+		{Title: "E", Artist: "V", Source: "spotify"}, // no URI: not playable on Spotify
 	}
 
 	ranked := RankByProviders(results, []string{"spotify"})
 
-	want := []string{"B", "C", "A", "D"}
+	want := []string{"B", "C", "A", "D", "E"}
 	if len(ranked) != len(want) {
 		t.Fatalf("len = %d, want %d", len(ranked), len(want))
 	}

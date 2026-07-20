@@ -213,11 +213,26 @@ func main() {
 	// Deezer needs no credentials and is always available
 	if featureEnabled("FEATURE_MATCHING", true) {
 		h.WithSearcher(func(ctx context.Context, query string, prefer []string, limit int) ([]hub.SearchResult, error) {
-			candidates, err := match.SearchAll(ctx, query, limit)
+			// Ranking must see the full candidate pool: truncating before ranking
+			// could drop playable-on-preferred tracks that sort later. When
+			// preferences are set, fetch up to the provider cap (10) and truncate
+			// after ranking instead.
+			searchLimit := limit
+			if len(prefer) > 0 {
+				searchLimit = 10
+			}
+			candidates, err := match.SearchAll(ctx, query, searchLimit)
 			if err != nil {
 				return nil, err
 			}
+			// SearchAll clamps limit to >= 1; keep the same floor here.
+			if limit < 1 {
+				limit = 1
+			}
 			candidates = match.RankByProviders(candidates, prefer)
+			if len(candidates) > limit {
+				candidates = candidates[:limit]
+			}
 			results := make([]hub.SearchResult, len(candidates))
 			for i, c := range candidates {
 				results[i] = hub.SearchResult{

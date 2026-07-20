@@ -750,10 +750,11 @@ var providerAllowlist = map[string]bool{"spotify": true, "deezer": true, "apple"
 
 // playableOn reports whether the candidate can be played via provider p.
 // Spotify playback needs a URI, which dedup may have merged onto a Deezer-sourced
-// entry, so the URI (not Source) is the authoritative signal there.
+// entry, so the URI is the authoritative signal: a spotify-sourced candidate
+// without one is not playable on Spotify.
 func playableOn(c SearchCandidate, p string) bool {
 	if p == "spotify" {
-		return c.SpotifyURI != "" || c.Source == "spotify"
+		return c.SpotifyURI != ""
 	}
 	return c.Source == p
 }

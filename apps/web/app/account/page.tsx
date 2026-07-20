@@ -29,6 +29,11 @@ export default function AccountPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // supabaseEnabled() reads runtime /env.js values that can differ from the
+  // build-time NEXT_PUBLIC_* seen during SSR, so render a placeholder until
+  // mount to keep SSR and the first client render in agreement.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     (async () => {
@@ -76,11 +81,31 @@ export default function AccountPage() {
   };
 
   const handleSignOut = async () => {
-    await signOut();
-    setSession(null);
-    setServices([]);
-    setDisplayName('');
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await signOut();
+      setSession(null);
+      setServices([]);
+      setDisplayName('');
+    } catch {
+      setError('Could not sign out. Try again.');
+    } finally {
+      setBusy(false);
+    }
   };
+
+  if (!mounted || !loaded) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6">
+        <div className="panel p-6 max-w-md w-full space-y-2">
+          <div className="skeleton-shimmer h-6 rounded" />
+          <div className="skeleton-shimmer h-10 rounded" />
+        </div>
+      </main>
+    );
+  }
 
   if (!supabaseEnabled()) {
     return (
@@ -91,17 +116,6 @@ export default function AccountPage() {
             Accounts are not configured on this deployment.
           </p>
           <Link href="/" className="text-sm underline" style={{ color: 'var(--color-accent)' }}>Back home</Link>
-        </div>
-      </main>
-    );
-  }
-
-  if (!loaded) {
-    return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="panel p-6 max-w-md w-full space-y-2">
-          <div className="skeleton-shimmer h-6 rounded" />
-          <div className="skeleton-shimmer h-10 rounded" />
         </div>
       </main>
     );
@@ -206,7 +220,8 @@ export default function AccountPage() {
             <button
               type="button"
               onClick={handleSignOut}
-              className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 border"
+              disabled={busy}
+              className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 border"
               style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
             >
               Sign out
