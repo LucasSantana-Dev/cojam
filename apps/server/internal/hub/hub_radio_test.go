@@ -236,3 +236,55 @@ func TestRadioNotConfigured(t *testing.T) {
 		t.Fatalf("should have cleared NowPlayingID")
 	}
 }
+
+// TestRadioRefillSeedIsCopied verifies the refill seed is a stable copy, not a
+// pointer into the live queue: mutating the queue after the advance must not
+// change what the refill searches for. Run under -race: with the old
+// pointer-into-slice capture this interleaving was a data race.
+func TestRadioRefillSeedIsCopied(t *testing.T) {
+	h := NewHub(nil)
+
+	seedSeen := make(chan [2]string, 1)
+	// Block the provider until the test has mutated the queue, then report
+	// which (artist, title) the refill actually searched with.
+	release := make(chan struct{})
+	h.WithSimilarProvider(func(ctx context.Context, artist, title string, limit int) ([]queue.TrackRef, error) {
+		<-release
+		seedSeen <- [2]string{artist, title}
+		return []queue.TrackRef{{Title: "Similar", Artist: "S"}}, nil
+	})
+
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"seed-test","name":"u1"}`), "")
+	st := &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"seed-test","track":{"title":"Original Seed","artist":"Original Artist","sources":{},"addedBy":"u1"}}`), "")
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t1ID := st.Queue[0].ID
+
+	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"seed-test","enabled":true}`), "")
+	_ = res
+
+	// Advance past the only track: queue "runs dry" (NowPlayingID empty) with
+	// the track still in the queue as the refill seed.
+	if _, err := h.HandleRPC("now_playing.advance", []byte(`{"roomId":"seed-test","afterId":"`+t1ID+`"}`), ""); err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+
+	// Mutate the queue before the provider runs: reorder/add rewrite the
+	// backing array the old code pointed into.
+	for i := 0; i < 20; i++ {
+		_, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"seed-test","track":{"title":"Interloper","artist":"Other","sources":{},"addedBy":"u2"}}`), "")
+	}
+	close(release)
+
+	select {
+	case got := <-seedSeen:
+		if got != [2]string{"Original Artist", "Original Seed"} {
+			t.Errorf("refill searched with mutated seed %v; want [Original Artist Original Seed]", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("refill provider was never called")
+	}
+}

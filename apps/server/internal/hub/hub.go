@@ -634,8 +634,12 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 
 			// Detect if advance actually changed state and queue is now empty
 			if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" && len(s.Queue) > 0 {
-				// Queue ran dry; capture the last track as seed for refill
-				refillSeed = &s.Queue[len(s.Queue)-1]
+				// Queue ran dry; capture the last track as seed for refill.
+				// Copy the value: a pointer into s.Queue would race with
+				// concurrent queue mutations (Move rewrites elements, Add can
+				// reallocate) once refillRadio reads it after unlock.
+				seed := s.Queue[len(s.Queue)-1]
+				refillSeed = &seed
 			}
 
 			return nil
