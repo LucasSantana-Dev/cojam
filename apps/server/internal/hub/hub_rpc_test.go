@@ -3,9 +3,14 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/centrifugal/centrifuge"
+
+	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
@@ -383,6 +388,56 @@ func TestHandleRPC_PlaylistImportQueueFull(t *testing.T) {
 
 	if len(st.Queue) != queue.MaxQueueSize {
 		t.Errorf("queue size: got %d, want %d", len(st.Queue), queue.MaxQueueSize)
+	}
+}
+
+func TestHandleRPC_PlaylistImportErrorsAreUserFacing(t *testing.T) {
+	h := NewHub(nil)
+	h.Join("client1", "demo")
+
+	// Fetcher failing like a real unconfigured provider.
+	h.WithPlaylistFetcher(func(ctx context.Context, url string) ([]queue.TrackRef, error) {
+		return nil, playlist.ErrNotConfigured
+	})
+
+	cases := []struct {
+		name    string
+		payload string
+		wantMsg string
+	}{
+		{"missing url", `{"roomId":"demo"}`, "enter a playlist URL"},
+		{"service not configured", `{"roomId":"demo","url":"https://open.spotify.com/playlist/x"}`, "not configured on the server"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := h.HandleRPC("playlist.import", []byte(tc.payload), "")
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			var ue *UserError
+			if !errors.As(err, &ue) {
+				t.Fatalf("error must be a UserError to reach the client, got %T: %v", err, err)
+			}
+			cerr := rpcClientError(err)
+			var ce *centrifuge.Error
+			if !errors.As(cerr, &ce) {
+				t.Fatalf("rpcClientError must produce *centrifuge.Error, got %T", cerr)
+			}
+			if ce.Code == 100 {
+				t.Errorf("code 100 is masked as internal server error; want an application code")
+			}
+			if !strings.Contains(ce.Message, tc.wantMsg) {
+				t.Errorf("message %q should contain %q", ce.Message, tc.wantMsg)
+			}
+		})
+	}
+}
+
+func TestRPCClientErrorMasksNonUserErrors(t *testing.T) {
+	err := rpcClientError(fmt.Errorf("db connection to 10.0.0.5 refused"))
+	var ce *centrifuge.Error
+	if errors.As(err, &ce) {
+		t.Fatalf("internal errors must not be converted; centrifuge will mask them as code 100")
 	}
 }
 
