@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useStore, nowPlayingAdvance } from '@/lib/realtime';
+import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
 import { secondsToMs, msToSeconds } from '@/lib/playerUtils';
 
@@ -37,6 +38,10 @@ declare global {
 }
 
 const apiReadyCallbacks: Array<() => void> = [];
+
+// Stable empty-queue fallback: `?? []` inline would create a new array identity
+// every render, re-running the player effect below each time.
+const EMPTY_QUEUE: TrackRef[] = [];
 
 function loadYouTubeAPI(onReady: () => void) {
   if (window.YT?.Player) {
@@ -151,9 +156,9 @@ export function YouTubePlayer({
     onPlayerGoneRef.current = onPlayerGone;
   });
   const [apiReady, setApiReady] = useState(false);
-  const state = useStore((s) => s.state);
-  const nowPlayingId = state?.nowPlayingId;
-  const queue = state?.queue ?? [];
+  const nowPlayingId = useStore((s) => s.state?.nowPlayingId);
+  const queueMaybe = useStore((s) => s.state?.queue);
+  const queue = queueMaybe ?? EMPTY_QUEUE;
 
   useEffect(() => {
     loadYouTubeAPI(() => setApiReady(true));

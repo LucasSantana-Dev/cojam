@@ -28,13 +28,23 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
   // onClose changes identity each parent render; hold it in a ref so the focus
   // effect can depend on [open] alone and not tear down on every render.
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
   const positionPollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Panel stays mounted while closed; reset loaded data when the open/track
+  // key changes (docs-sanctioned state adjustment during render).
+  const trackKey = open && track ? track.id : null;
+  const [prevTrackKey, setPrevTrackKey] = useState(trackKey);
+  if (trackKey !== prevTrackKey) {
+    setPrevTrackKey(trackKey);
+    setData(null);
+    setError(null);
+  }
 
   useEffect(() => {
     if (!open || !track) {
-      setData(null);
-      setError(null);
       return;
     }
 

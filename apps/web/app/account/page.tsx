@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { supabaseEnabled } from '@/lib/supabase';
 import {
@@ -20,6 +20,9 @@ const PROVIDER_LABEL: Record<ConnectedProvider, string> = {
   apple: 'Apple Music',
 };
 
+// Runtime env (/env.js) never changes after load; nothing to subscribe to.
+const noopSubscribe = () => () => {};
+
 export default function AccountPage() {
   const [session, setSession] = useState<AccountSession | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -30,10 +33,9 @@ export default function AccountPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   // supabaseEnabled() reads runtime /env.js values that can differ from the
-  // build-time NEXT_PUBLIC_* seen during SSR, so render a placeholder until
-  // mount to keep SSR and the first client render in agreement.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // build-time NEXT_PUBLIC_* seen during SSR, so a server snapshot keeps SSR
+  // and the first client render in agreement.
+  const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
   useEffect(() => {
     (async () => {

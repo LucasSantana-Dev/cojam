@@ -214,7 +214,10 @@ export function ApplePlayer({
       <button
         onClick={async () => {
           try {
-            await musicRef.current?.authorize();
+            // Optional chaining would resolve undefined on a null ref and
+            // report success; fail loudly instead.
+            if (!musicRef.current) throw new Error('Apple Music is still loading');
+            await musicRef.current.authorize();
             onAuthorized(true);
           } catch (e) {
             console.error('Apple authorize failed:', e);

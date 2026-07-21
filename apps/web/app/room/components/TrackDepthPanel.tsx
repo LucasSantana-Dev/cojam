@@ -18,27 +18,41 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
   const [data, setData] = useState<TrackDepth | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
+  // Panel stays mounted while closed; reset loaded data when the open/track
+  // key changes (docs-sanctioned state adjustment during render).
+  const trackKey = open && track ? track.id : null;
+  const [prevTrackKey, setPrevTrackKey] = useState(trackKey);
+  if (trackKey !== prevTrackKey) {
+    setPrevTrackKey(trackKey);
+    setData(null);
+    setError(null);
+  }
+
   useEffect(() => {
     if (!open || !track) {
-      setData(null);
-      setError(null);
       return;
     }
+    // Drop stale responses: a fetch for the previous track must not
+    // repopulate the panel after a track change (or after close).
+    let cancelled = false;
 
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
         const result = await fetchTrackDepth(roomId, track.isrc || '', track.title, track.artist);
-        setData(result);
+        if (!cancelled) setData(result);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch track details');
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch track details');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchData();
+    return () => {
+      cancelled = true;
+    };
   }, [open, track, roomId]);
 
   // Close on Esc

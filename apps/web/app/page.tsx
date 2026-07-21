@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, CheckIcon } from '@/app/components/icons';
@@ -16,6 +16,9 @@ function generateRoomId() {
 // Protocol commands cycled in the HUD readout. The product is a protocol
 // (RoomState, RPC dispatch, version bumps) — this is its voice.
 const HUD_COMMANDS = [';sync', ';queue', ';veto'];
+
+// Runtime env (/env.js) never changes after load; nothing to subscribe to.
+const noopSubscribe = () => () => {};
 
 // Split a headline into per-word spans wrapped in overflow:hidden masks for reveal animation.
 function Words({ text, start = 0 }: { text: string; start?: number }) {
@@ -34,12 +37,9 @@ export default function Home() {
   const [roomId, setRoomId] = useState('');
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
-  // Accounts are optional and resolved at runtime (via /env.js); resolve after
-  // mount to avoid an SSR hydration mismatch.
-  const [accountsEnabled, setAccountsEnabled] = useState(false);
-  useEffect(() => {
-    setAccountsEnabled(supabaseEnabled());
-  }, []);
+  // Accounts are optional and resolved at runtime (via /env.js); the server
+  // snapshot keeps SSR and the first client render in agreement.
+  const accountsEnabled = useSyncExternalStore(noopSubscribe, supabaseEnabled, () => false);
 
   const createRoom = () => router.push(`/room/${generateRoomId()}`);
   const joinRoom = (e: React.FormEvent) => {

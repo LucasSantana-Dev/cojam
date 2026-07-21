@@ -43,15 +43,12 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
     }
 
     if (!searchQuery.trim()) {
+      // Invalidate any in-flight search (ref only; state resets live in onChange).
       searchSeqRef.current++;
-      setSearchResults([]);
-      setIsSearching(false);
       return;
     }
 
     const seq = ++searchSeqRef.current;
-    setIsSearching(true);
-    setSearchResults([]); // stale results must not render under the skeleton
     debounceTimerRef.current = setTimeout(async () => {
       try {
         const results = await searchTracks(searchQuery, mergeProviderPrefs(connectedServices, { spotify: spotifyAuthorized, apple: appleAuthorized }));
@@ -177,7 +174,23 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
             placeholder="Search for a song"
             aria-label="Search for a song"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              const q = e.target.value;
+              // Invalidate any in-flight search synchronously: an old request
+              // resolving before the debounce effect re-runs must not apply
+              // its results to the new query.
+              searchSeqRef.current++;
+              setSearchQuery(q);
+              // Search-state resets happen here (event handler), not in the
+              // debounce effect.
+              if (q.trim()) {
+                setIsSearching(true);
+                setSearchResults([]); // stale results must not render under the skeleton
+              } else {
+                setIsSearching(false);
+                setSearchResults([]);
+              }
+            }}
             className="w-full px-4 py-2.5 text-sm rounded-lg focus:outline-none transition-all duration-150 border"
             style={{ backgroundColor: 'var(--color-surface-2)', borderColor: searchQuery ? 'var(--color-accent)' : 'var(--color-border)', color: 'var(--color-text-primary)' }}
           />
