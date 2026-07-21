@@ -144,6 +144,16 @@ export function ApplePlayer({
   const nowPlaying = state?.nowPlayingId
     ? state.queue.find((t) => t.id === state.nowPlayingId)
     : undefined;
+  const appleSongId = nowPlaying?.sources.apple?.songId;
+  // Callbacks arrive as fresh inline arrows every render; keep them in refs so
+  // the init effect identity stays stable. Otherwise the cleanup below ran on
+  // every parent render, disposing the adapter right after ready.
+  const onPlayerReadyRef = useRef(onPlayerReady);
+  const onPlayerGoneRef = useRef(onPlayerGone);
+  useEffect(() => {
+    onPlayerReadyRef.current = onPlayerReady;
+    onPlayerGoneRef.current = onPlayerGone;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -167,7 +177,7 @@ export function ApplePlayer({
         musicRef.current = MusicKit.getInstance();
         const adapter = new ApplePlayerAdapter(musicRef.current);
         adapterRef.current = adapter;
-        onPlayerReady?.(adapter);
+        onPlayerReadyRef.current?.(adapter);
         onAuthorized(musicRef.current.isAuthorized);
         setStatus('ready');
       } catch (e) {
@@ -180,25 +190,30 @@ export function ApplePlayer({
       if (adapterRef.current) {
         adapterRef.current.dispose();
         adapterRef.current = null;
-        onPlayerGone?.();
+        onPlayerGoneRef.current?.();
       }
     };
-  }, [onAuthorized, onPlayerReady, onPlayerGone]);
+  }, [onAuthorized]);
 
   useEffect(() => {
     const music = musicRef.current;
-    if (!music || !authorized || !nowPlaying) return;
-    if (pickSource(nowPlaying, { appleAuthorized: authorized, spotifyAuthorized: false }) !== 'apple') return;
-    const songId = nowPlaying.sources.apple!.songId!;
+    if (!music || !authorized || !appleSongId) return;
+    // Read the latest room state imperatively: this effect must fire only when
+    // the song id (or auth) changes, not on every state publication.
+    const current = useStore.getState().state;
+    const track = current?.nowPlayingId
+      ? current.queue.find((t) => t.id === current.nowPlayingId)
+      : undefined;
+    if (!track || pickSource(track, { appleAuthorized: authorized, spotifyAuthorized: false }) !== 'apple') return;
     (async () => {
       try {
-        await music.setQueue({ songs: [songId] });
+        await music.setQueue({ songs: [appleSongId] });
         await music.play();
       } catch (e) {
         console.error('Apple playback failed:', e);
       }
     })();
-  }, [authorized, nowPlaying]);
+  }, [authorized, appleSongId]);
 
   if (status === 'unconfigured' || status === 'idle') return null;
   if (status === 'error') {

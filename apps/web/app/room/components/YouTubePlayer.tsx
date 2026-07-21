@@ -198,7 +198,11 @@ export function YouTubePlayer({
       playerRef.current = player;
     }
 
-    const track = nowPlayingId ? queue.find((t) => t.id === nowPlayingId) : undefined;
+    // Read the queue imperatively: this effect must re-run only when apiReady
+    // or nowPlayingId changes, not on every state publication (a fresh queue
+    // array identity per publication used to restart the current video).
+    const queueNow = useStore.getState().state?.queue ?? EMPTY_QUEUE;
+    const track = nowPlayingId ? queueNow.find((t) => t.id === nowPlayingId) : undefined;
     const videoId = track?.sources.youtube?.videoId;
     if (!videoId) return;
 
@@ -209,7 +213,7 @@ export function YouTubePlayer({
     } else {
       pendingVideoId.current = videoId;
     }
-  }, [apiReady, nowPlayingId, queue, roomId, onPlayerReady]);
+  }, [apiReady, nowPlayingId, roomId]);
 
   useEffect(() => {
     return () => {

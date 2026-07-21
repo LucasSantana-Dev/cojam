@@ -174,6 +174,16 @@ export function SpotifyPlayer({
   const nowPlaying = state?.nowPlayingId
     ? state.queue.find((t) => t.id === state.nowPlayingId)
     : undefined;
+  const spotifyUri = nowPlaying?.sources.spotify?.trackUri;
+  // Callbacks arrive as fresh inline arrows every render; keep them in refs so
+  // the init effect identity stays stable. Otherwise the cleanup below ran on
+  // every parent render, disposing the adapter right after ready.
+  const onPlayerReadyRef = useRef(onPlayerReady);
+  const onPlayerGoneRef = useRef(onPlayerGone);
+  useEffect(() => {
+    onPlayerReadyRef.current = onPlayerReady;
+    onPlayerGoneRef.current = onPlayerGone;
+  });
 
   // Client id resolves from runtime (/env.js) first so the env-agnostic image
   // works, then the build-time fallback; the server snapshot is the build-time
@@ -224,7 +234,7 @@ export function SpotifyPlayer({
           const canSeek = await detectSpotifyCanSeek(player);
           const adapter = new SpotifyPlayerAdapter(player, device_id, canSeek);
           playerRef.current = adapter;
-          onPlayerReady?.(adapter);
+          onPlayerReadyRef.current?.(adapter);
           setStatus('ready');
         });
         player.addListener('authentication_error', () => onAuthorized(false));
@@ -241,17 +251,22 @@ export function SpotifyPlayer({
       if (playerRef.current) {
         playerRef.current.dispose();
         playerRef.current = null;
-        onPlayerGone?.();
+        onPlayerGoneRef.current?.();
       }
     };
-  }, [clientId, authorized, status, onAuthorized, onPlayerReady, onPlayerGone]);
+  }, [clientId, authorized, status, onAuthorized]);
 
   useEffect(() => {
-    if (!authorized || !deviceId.current || !nowPlaying) return;
-    if (pickSource(nowPlaying, { appleAuthorized: false, spotifyAuthorized: authorized }) !== 'spotify') return;
-    const uri = nowPlaying.sources.spotify?.trackUri;
-    if (uri) playUri(deviceId.current, uri).catch((e) => console.error('Spotify play failed:', e));
-  }, [authorized, nowPlaying]);
+    if (!authorized || !deviceId.current || !spotifyUri) return;
+    // Read the latest room state imperatively: this effect must fire only when
+    // the uri (or auth) changes, not on every state publication.
+    const current = useStore.getState().state;
+    const track = current?.nowPlayingId
+      ? current.queue.find((t) => t.id === current.nowPlayingId)
+      : undefined;
+    if (!track || pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) !== 'spotify') return;
+    playUri(deviceId.current, spotifyUri).catch((e) => console.error('Spotify play failed:', e));
+  }, [authorized, spotifyUri]);
 
   if (!clientId) return null;
   if (status === 'error') {
