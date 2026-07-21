@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useStore, queueAdd, searchTracks, importPlaylist, type SearchCandidate } from '@/lib/realtime';
+import { useStore, queueAdd, searchTracks, importPlaylist, rpcErrorMessage, type SearchCandidate } from '@/lib/realtime';
 import { mergeProviderPrefs } from '@/lib/account';
 import { features } from '@/lib/features';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
@@ -67,6 +67,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
 
   const handleSearchResultClick = async (result: SearchCandidate) => {
     setLoading(true);
+    setError('');
     try {
       await queueAdd(roomId, {
         title: result.title,
@@ -80,6 +81,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       });
       setSearchQuery('');
       setSearchResults([]);
+    } catch (err) {
+      setError(rpcErrorMessage(err, 'Couldn\'t add that track. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -121,6 +124,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       setVideoId('');
       setAppleSongId('');
       setSpotifyUri('');
+    } catch (err) {
+      setError(rpcErrorMessage(err, 'Couldn\'t add that track. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -322,6 +327,12 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
         </form>
       </div>
 
+      {/* Shared add-track error lives OUTSIDE the manual form: a failed
+          search-result add must stay visible when the details are closed. */}
+      <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171', minHeight: error ? undefined : 0 }}>
+        {error}
+      </p>
+
       <details className="cursor-pointer">
         <summary className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
           Add manually
@@ -379,10 +390,6 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             />
           )}
-
-          <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171', minHeight: error ? undefined : 0 }}>
-            {error}
-          </p>
 
           <button
             type="submit"
