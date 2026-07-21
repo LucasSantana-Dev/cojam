@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useStore, queueAdd, searchTracks, importPlaylist, type SearchCandidate } from '@/lib/realtime';
+import { useStore, queueAdd, searchTracks, importPlaylist, rpcErrorMessage, type SearchCandidate } from '@/lib/realtime';
 import { mergeProviderPrefs } from '@/lib/account';
 import { features } from '@/lib/features';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
@@ -70,6 +70,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
 
   const handleSearchResultClick = async (result: SearchCandidate) => {
     setLoading(true);
+    setError('');
     try {
       await queueAdd(roomId, {
         title: result.title,
@@ -83,6 +84,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       });
       setSearchQuery('');
       setSearchResults([]);
+    } catch (err) {
+      setError(rpcErrorMessage(err, 'Couldn\'t add that track. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -124,6 +127,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       setVideoId('');
       setAppleSongId('');
       setSpotifyUri('');
+    } catch (err) {
+      setError(rpcErrorMessage(err, 'Couldn\'t add that track. Try again.'));
     } finally {
       setLoading(false);
     }

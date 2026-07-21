@@ -210,6 +210,15 @@ export async function queueAdd(roomId: string, track: Omit<TrackRef, 'id'>) {
   await centrifuge.rpc('queue.add', { roomId, track });
 }
 
+// rpcErrorMessage normalizes centrifuge-js RPC rejections (plain {code,
+// message} objects, not Errors) so UI handlers can surface the server's
+// message inline instead of failing silently.
+export function rpcErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  const msg = (err as { message?: string } | null)?.message;
+  return typeof msg === 'string' && msg ? msg : fallback;
+}
+
 export async function queueRemove(roomId: string, trackId: string) {
   if (!centrifuge) throw new Error('Not connected');
   await centrifuge.rpc('queue.remove', { roomId, trackId });
