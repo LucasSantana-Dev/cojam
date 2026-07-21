@@ -39,6 +39,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     // Second click while an undo window is open would schedule a duplicate
     // timer that bypasses Undo; ignore it.
     if (removingIds.has(trackId)) return;
+    // Clear any stale action error: a successful removal must not leave a
+    // previous failure's alert visible.
+    setActionError('');
     setRemovingIds((prev) => new Set([...prev, trackId]));
     const timer = setTimeout(async () => {
       try {

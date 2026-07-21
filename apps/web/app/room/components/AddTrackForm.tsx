@@ -314,6 +314,12 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
         </form>
       </div>
 
+      {/* Shared add-track error lives OUTSIDE the manual form: a failed
+          search-result add must stay visible when the details are closed. */}
+      <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171', minHeight: error ? undefined : 0 }}>
+        {error}
+      </p>
+
       <details className="cursor-pointer">
         <summary className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
           Add manually
@@ -371,10 +377,6 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             />
           )}
-
-          <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171', minHeight: error ? undefined : 0 }}>
-            {error}
-          </p>
 
           <button
             type="submit"
