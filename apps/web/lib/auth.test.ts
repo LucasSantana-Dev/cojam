@@ -66,6 +66,31 @@ describe('auth module', () => {
       expect(global.fetch).toHaveBeenCalledWith('http://localhost:8080/api/connection-token?userId=stored-user-789');
     });
 
+    it('includes the previous token as ownership proof when stored', async () => {
+      const mockLS = mockLocalStorage();
+      mockLS.setItem('cojam_uid', 'stored-user-789');
+      mockLS.setItem('cojam_token', 'previous-jwt');
+      (global as any).localStorage = mockLS;
+      (global as any).window = (global as any).window || {};
+      (global as any).window.localStorage = mockLS;
+
+      const auth = await import('./auth');
+
+      (global.fetch as any).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ token: 'new-jwt', userId: 'stored-user-789' }),
+      });
+
+      const result = await auth.fetchConnectionToken('http://localhost:8080');
+
+      expect(result).toEqual({ token: 'new-jwt', userId: 'stored-user-789' });
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:8080/api/connection-token?userId=stored-user-789&token=previous-jwt'
+      );
+      // Returned identity replaces the stored one for the next refresh.
+      expect(mockLS.getItem('cojam_token')).toBe('new-jwt');
+    });
+
     it('returns null on 501 response (feature off)', async () => {
       const mockLS = mockLocalStorage();
       (global as any).localStorage = mockLS;
@@ -136,7 +161,7 @@ describe('auth module', () => {
       const mockLS = mockLocalStorage();
       (global as any).localStorage = mockLS;
       const originalWindow = (global as any).window;
-      // @ts-ignore
+      // Simulate SSR by removing window from the global scope.
       delete (global as any).window;
       
       const auth = await import('./auth');

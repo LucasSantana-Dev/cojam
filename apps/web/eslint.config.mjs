@@ -1,11 +1,10 @@
 import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
+import nextTs from 'eslint-config-next/typescript';
 
-// Matches the rule set the removed `next lint` applied by default
-// (core-web-vitals). The stricter eslint-config-next/typescript preset
-// currently reports ~90 pre-existing errors; adopt it separately if wanted.
 export default defineConfig([
   ...nextVitals,
+  ...nextTs,
   {
     rules: {
       // New in the react-hooks v6 preset bundled with eslint-config-next 16;
@@ -13,6 +12,14 @@ export default defineConfig([
       // Kept visible as warnings; tighten to error after a dedicated cleanup.
       'react-hooks/set-state-in-effect': 'warn',
       'react-hooks/refs': 'warn',
+    },
+  },
+  {
+    // Test mocks patch globals (localStorage, window, fetch) and stub partial
+    // Response/Request shapes; typing those precisely costs more than it guards.
+    files: ['**/*.test.ts', '**/*.test.tsx'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
   globalIgnores(['.next/**', 'out/**', 'node_modules/**', 'playwright-report/**', 'test-results/**', 'next-env.d.ts']),

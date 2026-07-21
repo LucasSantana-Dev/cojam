@@ -438,35 +438,7 @@ func main() {
 
 	// Connection token endpoint: returns a signed JWT token for anonymous connection auth.
 	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented).
-	r.Get("/api/connection-token", func(w http.ResponseWriter, r *http.Request) {
-		if !roomAuthEnabled {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotImplemented)
-			json.NewEncoder(w).Encode(map[string]string{"error": "connection auth not enabled"})
-			return
-		}
-
-		// If request includes a userId query param, reuse it; else generate a fresh one.
-		userID := r.URL.Query().Get("userId")
-		if userID == "" {
-			userID = connauth.NewSub()
-		}
-
-		token, err := connauth.Mint([]byte(roomAuthSecret), userID, 24*time.Hour)
-		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"token":  token,
-			"userId": userID,
-		})
-	})
+	r.Get("/api/connection-token", connectionTokenHandler(roomAuthEnabled, roomAuthSecret))
 
 	// WebSocket handler for centrifuge. Origin allowlist prevents cross-site
 	// WebSocket hijacking: without it any page could open a socket and mutate rooms.
@@ -490,10 +462,15 @@ func main() {
 	// Prometheus metrics (custom registry from obs)
 	r.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
 
-	// HTTP server setup
+	// HTTP server setup. ReadHeaderTimeout bounds slowloris-style header
+	// trickling; IdleTimeout releases keep-alive connections gone quiet.
+	// Neither affects upgraded websocket conns (hijacked before either
+	// deadline applies).
 	server := &http.Server{
-		Addr:    ":8080",
-		Handler: r,
+		Addr:              ":8080",
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	log.Println("Starting server on :8080")

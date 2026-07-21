@@ -241,3 +241,67 @@ func TestMintWithProvidedSub(t *testing.T) {
 		t.Errorf("Expected sub %q, got %q", sub, validatedSub)
 	}
 }
+
+func TestValidateForRefreshAcceptsUnexpired(t *testing.T) {
+	secret := []byte("test-secret-key")
+	token, err := Mint(secret, "user-abc", 1*time.Hour)
+	if err != nil {
+		t.Fatalf("Mint failed: %v", err)
+	}
+	sub, err := ValidateForRefresh(secret, token, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("ValidateForRefresh failed: %v", err)
+	}
+	if sub != "user-abc" {
+		t.Errorf("Expected sub %q, got %q", "user-abc", sub)
+	}
+}
+
+func TestValidateForRefreshAcceptsExpiredWithinGrace(t *testing.T) {
+	secret := []byte("test-secret-key")
+	// Already expired (negative TTL), but inside the grace window.
+	token, err := Mint(secret, "user-abc", -1*time.Hour)
+	if err != nil {
+		t.Fatalf("Mint failed: %v", err)
+	}
+	sub, err := ValidateForRefresh(secret, token, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("ValidateForRefresh failed: %v", err)
+	}
+	if sub != "user-abc" {
+		t.Errorf("Expected sub %q, got %q", "user-abc", sub)
+	}
+}
+
+func TestValidateForRefreshRejectsExpiredBeyondGrace(t *testing.T) {
+	secret := []byte("test-secret-key")
+	token, err := Mint(secret, "user-abc", -48*time.Hour)
+	if err != nil {
+		t.Fatalf("Mint failed: %v", err)
+	}
+	if _, err := ValidateForRefresh(secret, token, 24*time.Hour); err == nil {
+		t.Error("Expected error for token expired beyond grace, got nil")
+	}
+}
+
+func TestValidateForRefreshRejectsWrongSecret(t *testing.T) {
+	token, err := Mint([]byte("secret-a"), "user-abc", 1*time.Hour)
+	if err != nil {
+		t.Fatalf("Mint failed: %v", err)
+	}
+	if _, err := ValidateForRefresh([]byte("secret-b"), token, 24*time.Hour); err == nil {
+		t.Error("Expected error for wrong secret, got nil")
+	}
+}
+
+func TestValidateForRefreshRejectsNonHS256(t *testing.T) {
+	// alg=none token must be rejected even for refresh.
+	claims := jwt.MapClaims{"sub": "user-abc", "exp": time.Now().Add(time.Hour).Unix()}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodNone, claims).SignedString(jwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatalf("failed to build none token: %v", err)
+	}
+	if _, err := ValidateForRefresh([]byte("test-secret-key"), token, 24*time.Hour); err == nil {
+		t.Error("Expected error for alg=none token, got nil")
+	}
+}

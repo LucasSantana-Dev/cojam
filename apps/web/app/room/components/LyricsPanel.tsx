@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
-import { fetchLyrics } from '@/lib/realtime';
+import { fetchLyrics, type Lyrics } from '@/lib/realtime';
 import { activeLineIndex } from '@/lib/lyricSync';
 
 interface LyricsPanelProps {
@@ -17,7 +17,7 @@ interface LyricsPanelProps {
 export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: LyricsPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<Lyrics | null>(null);
   const [retry, setRetry] = useState(0);
   const [currentPositionMs, setCurrentPositionMs] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,13 +28,23 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
   // onClose changes identity each parent render; hold it in a ref so the focus
   // effect can depend on [open] alone and not tear down on every render.
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
   const positionPollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Panel stays mounted while closed; reset loaded data when the open/track
+  // key changes (docs-sanctioned state adjustment during render).
+  const trackKey = open && track ? track.id : null;
+  const [prevTrackKey, setPrevTrackKey] = useState(trackKey);
+  if (trackKey !== prevTrackKey) {
+    setPrevTrackKey(trackKey);
+    setData(null);
+    setError(null);
+  }
 
   useEffect(() => {
     if (!open || !track) {
-      setData(null);
-      setError(null);
       return;
     }
 
@@ -230,7 +240,7 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
               {/* Synced lyrics (if available) */}
               {data.synced && data.synced.length > 0 ? (
                 <div className="space-y-2" ref={lyricsContentRef}>
-                  {data.synced.map((line: any, idx: number) => {
+                  {data.synced.map((line, idx) => {
                     const isActive = activeLineIndex(data.synced, currentPositionMs) === idx;
                     return (
                       <div
