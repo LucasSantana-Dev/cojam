@@ -338,7 +338,7 @@ export default function Home() {
             const showcase = root.querySelector<HTMLElement>('.room-showcase');
             if (showcase) {
               gsap.default.to(showcase, {
-                '--progress': '90%' as any,
+                '--progress': '90%',
                 scrollTrigger: {
                   trigger: showcase,
                   start: 'top center+=100',

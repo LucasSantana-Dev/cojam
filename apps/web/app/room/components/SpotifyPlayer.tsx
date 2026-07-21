@@ -10,9 +10,30 @@ import { SpotifyIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
 import { detectSpotifyCanSeek } from '@/lib/playerUtils';
 
+// Minimal structural types for the Spotify Web Playback SDK surface we use.
+export interface SpotifyPlaybackState {
+  position: number;
+  track_window?: { current_track?: { duration_ms?: number } };
+}
+
+export interface SpotifySDKPlayer {
+  connect(): Promise<boolean>;
+  getCurrentState(): Promise<SpotifyPlaybackState | null>;
+  addListener(event: 'ready', cb: (data: { device_id: string }) => void): boolean;
+  addListener(event: string, cb: () => void): boolean;
+}
+
+interface SpotifySDKGlobal {
+  Player: new (opts: {
+    name: string;
+    getOAuthToken: (cb: (token: string) => void) => void;
+    volume?: number;
+  }) => SpotifySDKPlayer;
+}
+
 declare global {
   interface Window {
-    Spotify: any;
+    Spotify?: SpotifySDKGlobal;
     onSpotifyWebPlaybackSDKReady?: () => void;
   }
 }
@@ -43,14 +64,14 @@ async function playUri(deviceId: string, uri: string) {
  * Spotify player adapter implementing IPlayer interface.
  */
 class SpotifyPlayerAdapter implements IPlayer {
-  private player: any;
+  private player: SpotifySDKPlayer;
   private deviceId: string;
   private endedCallbacks: Array<() => void> = [];
   private positionCallbacks: Array<(ms: number) => void> = [];
   private canSeekValue: boolean = false;
   private positionPollInterval: NodeJS.Timeout | null = null;
 
-  constructor(player: any, deviceId: string, canSeek: boolean) {
+  constructor(player: SpotifySDKPlayer, deviceId: string, canSeek: boolean) {
     this.player = player;
     this.deviceId = deviceId;
     this.canSeekValue = canSeek;
@@ -182,7 +203,9 @@ export function SpotifyPlayer({
         }
         await loadSDK();
         if (cancelled) return;
-        const player = new window.Spotify.Player({
+        const Spotify = window.Spotify;
+        if (!Spotify) throw new Error('Spotify SDK failed to initialize');
+        const player = new Spotify.Player({
           name: 'cojam',
           getOAuthToken: (cb: (t: string) => void) => {
             getAccessToken().then((t) => t && cb(t));

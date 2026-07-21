@@ -1,5 +1,4 @@
 import { getClockOffsetMs } from './realtime';
-import type { RoomState } from '@cojam/shared';
 
 /**
  * Drift correction threshold in milliseconds.

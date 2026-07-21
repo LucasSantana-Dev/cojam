@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
-import { fetchLyrics } from '@/lib/realtime';
+import { fetchLyrics, type Lyrics } from '@/lib/realtime';
 import { activeLineIndex } from '@/lib/lyricSync';
 
 interface LyricsPanelProps {
@@ -17,7 +17,7 @@ interface LyricsPanelProps {
 export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: LyricsPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<Lyrics | null>(null);
   const [retry, setRetry] = useState(0);
   const [currentPositionMs, setCurrentPositionMs] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -230,7 +230,7 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
               {/* Synced lyrics (if available) */}
               {data.synced && data.synced.length > 0 ? (
                 <div className="space-y-2" ref={lyricsContentRef}>
-                  {data.synced.map((line: any, idx: number) => {
+                  {data.synced.map((line, idx) => {
                     const isActive = activeLineIndex(data.synced, currentPositionMs) === idx;
                     return (
                       <div

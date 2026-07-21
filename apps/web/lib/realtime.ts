@@ -87,10 +87,6 @@ export function parseConnInfo(info: unknown): { name: string; platform?: 'spotif
   return result;
 }
 
-function nameFromInfo(info: unknown, fallback = 'Listener'): string {
-  return parseConnInfo(info).name || fallback;
-}
-
 let centrifuge: Centrifuge | null = null;
 
 export async function joinRoom(
