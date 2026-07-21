@@ -160,6 +160,10 @@ type Hub struct {
 	lastfmEnrich    LastfmEnrichProvider
 	syncEnabled     bool
 
+	// fanoutLimiter rate-limits RPCs that fan out to third-party APIs
+	// (fanoutMethods) per caller, protecting upstream provider quotas.
+	fanoutLimiter *rateLimiter
+
 	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
 	// up to 200 tracks at once; an unbounded goroutine per track would burst
 	// hundreds of simultaneous YouTube/Spotify requests and trip rate limits.
@@ -245,12 +249,13 @@ func (h *Hub) WithSync(enabled bool) *Hub {
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
 	return &Hub{
-		rooms:        make(map[string]*Room),
-		store:        store.NewMemory(),
-		node:         node,
-		members:      make(map[string]map[string]struct{}),
-		clientUserID: make(map[string]string),
-		enrichSem:    make(chan struct{}, 8),
+		rooms:         make(map[string]*Room),
+		store:         store.NewMemory(),
+		node:          node,
+		members:       make(map[string]map[string]struct{}),
+		clientUserID:  make(map[string]string),
+		enrichSem:     make(chan struct{}, 8),
+		fanoutLimiter: newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
 	}
 }
 
@@ -500,8 +505,22 @@ func (h *Hub) publish(roomID string, state json.RawMessage) error {
 // userID is the authenticated user (empty if anonymous or FEATURE_ROOM_AUTH is off).
 // Instrumented: one slog record + one histogram observation per call.
 func (h *Hub) HandleRPC(method string, data []byte, userID string) (json.RawMessage, error) {
+	return h.handleRPC(method, data, userID, rateLimitKey("", userID))
+}
+
+// handleRPC is HandleRPC with an explicit rate-limit key. The transport layer
+// passes a client-scoped key when no authenticated userID exists so anonymous
+// clients are limited per connection instead of sharing one bucket.
+func (h *Hub) handleRPC(method string, data []byte, userID, rlKey string) (json.RawMessage, error) {
 	start := time.Now()
-	result, err := h.dispatch(method, data, userID)
+	// Fanout RPCs are rate-limited per caller before doing any work; a
+	// rejection surfaces as a UserError (centrifuge code 400) via
+	// rpcClientError and does not touch other methods' budgets.
+	var result json.RawMessage
+	err := h.checkFanoutLimit(method, rlKey)
+	if err == nil {
+		result, err = h.dispatch(method, data, userID)
+	}
 	d := time.Since(start)
 
 	if h.metrics != nil {
@@ -524,6 +543,18 @@ func (h *Hub) HandleRPC(method string, data []byte, userID string) (json.RawMess
 		}
 	}
 	return result, err
+}
+
+// checkFanoutLimit enforces the per-caller token bucket on RPCs that fan out
+// to third-party APIs. Returns nil for unlimited methods.
+func (h *Hub) checkFanoutLimit(method, rlKey string) error {
+	if !fanoutMethods[method] || h.fanoutLimiter == nil {
+		return nil
+	}
+	if !h.fanoutLimiter.allow(rlKey) {
+		return userErrorf("too many requests, slow down")
+	}
+	return nil
 }
 
 func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessage, error) {
@@ -1095,9 +1126,19 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 			cb(centrifuge.RPCReply{}, err)
 			return
 		}
-		reply, err := h.HandleRPC(e.Method, e.Data, userID)
+		reply, err := h.handleRPC(e.Method, e.Data, userID, rateLimitKey(clientID, userID))
 		cb(centrifuge.RPCReply{Data: reply}, rpcClientError(err))
 	})
+}
+
+// rateLimitKey picks the bucket key for fanout RPCs: the authenticated userID
+// when present, else the centrifuge clientID so anonymous clients are limited
+// per connection rather than sharing one global bucket.
+func rateLimitKey(clientID, userID string) string {
+	if userID != "" {
+		return "user:" + userID
+	}
+	return "client:" + clientID
 }
 
 // WithSpotifyMatcher enables async Spotify-source enrichment on queue.add.
