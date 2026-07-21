@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useStore, queueRemove, nowPlayingSet, queueReorder } from '@/lib/realtime';
+import { useStore, queueRemove, nowPlayingSet, queueReorder, rpcErrorMessage } from '@/lib/realtime';
 import {
   SpotifyIcon,
   YouTubeIcon,
@@ -33,18 +33,23 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   const nowPlayingId = state?.nowPlayingId;
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [undoTimers, setUndoTimers] = useState<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const [actionError, setActionError] = useState('');
 
   const handleRemove = async (trackId: string, title: string) => {
     // Second click while an undo window is open would schedule a duplicate
     // timer that bypasses Undo; ignore it.
     if (removingIds.has(trackId)) return;
+    // Clear any stale action error: a successful removal must not leave a
+    // previous failure's alert visible.
+    setActionError('');
     setRemovingIds((prev) => new Set([...prev, trackId]));
     const timer = setTimeout(async () => {
       try {
         await queueRemove(roomId, trackId);
       } catch (error) {
-        // Disconnected/unauthorized: the track stays; just log and restore.
+        // Disconnected/unauthorized: the track stays; restore and say why.
         console.error('queue.remove failed:', error);
+        setActionError(rpcErrorMessage(error, 'Couldn\'t remove that track. Try again.'));
       } finally {
         setRemovingIds((prev) => {
           const next = new Set(prev);
@@ -80,18 +85,32 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   };
 
   const handlePlay = async (trackId: string) => {
-    await nowPlayingSet(roomId, trackId);
+    setActionError('');
+    try {
+      await nowPlayingSet(roomId, trackId);
+    } catch (err) {
+      setActionError(rpcErrorMessage(err, 'Couldn\'t play that track. Try again.'));
+    }
+  };
+
+  const handleMove = async (trackId: string, toIndex: number) => {
+    setActionError('');
+    try {
+      await queueReorder(roomId, trackId, toIndex);
+    } catch (err) {
+      setActionError(rpcErrorMessage(err, 'Couldn\'t reorder the queue. Try again.'));
+    }
   };
 
   const handleMoveUp = async (trackId: string, currentIndex: number) => {
     if (currentIndex > 0) {
-      await queueReorder(roomId, trackId, currentIndex - 1);
+      await handleMove(trackId, currentIndex - 1);
     }
   };
 
   const handleMoveDown = async (trackId: string, currentIndex: number) => {
     if (currentIndex < queue.length - 1) {
-      await queueReorder(roomId, trackId, currentIndex + 1);
+      await handleMove(trackId, currentIndex + 1);
     }
   };
 
@@ -119,6 +138,12 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
         </h3>
         {queue.length > 0 && <p className="queue-agg">{aggregate}</p>}
       </div>
+
+      {actionError && (
+        <p role="alert" aria-live="polite" className="text-sm" style={{ color: 'var(--color-status-error)' }}>
+          {actionError}
+        </p>
+      )}
 
       {queue.length === 0 ? (
         <div className="py-8 text-center">

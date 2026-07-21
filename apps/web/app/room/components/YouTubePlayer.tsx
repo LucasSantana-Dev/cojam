@@ -2,17 +2,70 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useStore, nowPlayingAdvance } from '@/lib/realtime';
+import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
-import { secondsToMs, msToSeconds } from '@/lib/playerUtils';
+import { secondsToMs, msToSeconds, createEndedDetector } from '@/lib/playerUtils';
+
+// Minimal structural types for the YouTube IFrame API surface this adapter uses.
+interface YTPlayerInstance {
+  playVideo(): void;
+  pauseVideo(): void;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
+  getCurrentTime(): number;
+  getDuration(): number;
+  loadVideoById(videoId: string): void;
+}
+
+interface YTGlobal {
+  Player: new (
+    elementId: string,
+    opts: {
+      width?: number;
+      height?: number;
+      events?: {
+        onReady?: () => void;
+        onStateChange?: (event: { data: number }) => void;
+      };
+    }
+  ) => YTPlayerInstance;
+}
+
+// Minimal structural types for the YouTube IFrame API surface this adapter uses.
+interface YTPlayerInstance {
+  playVideo(): void;
+  pauseVideo(): void;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
+  getCurrentTime(): number;
+  getDuration(): number;
+  loadVideoById(videoId: string): void;
+}
+
+interface YTGlobal {
+  Player: new (
+    elementId: string,
+    opts: {
+      width?: number;
+      height?: number;
+      events?: {
+        onReady?: () => void;
+        onStateChange?: (event: { data: number }) => void;
+      };
+    }
+  ) => YTPlayerInstance;
+}
 
 declare global {
   interface Window {
     onYouTubeIframeAPIReady?: () => void;
-    YT: any;
+    YT?: YTGlobal;
   }
 }
 
 const apiReadyCallbacks: Array<() => void> = [];
+
+// Stable empty-queue fallback: `?? []` inline would create a new array identity
+// every render, re-running the player effect below each time.
+const EMPTY_QUEUE: TrackRef[] = [];
 
 function loadYouTubeAPI(onReady: () => void) {
   if (window.YT?.Player) {
@@ -35,12 +88,13 @@ function loadYouTubeAPI(onReady: () => void) {
  * YouTube IFrame API measures time in seconds; we convert to/from milliseconds.
  */
 class YouTubePlayerAdapter implements IPlayer {
-  private ytPlayer: any;
+  private ytPlayer: YTPlayerInstance;
   private endedCallbacks: Array<() => void> = [];
   private positionCallbacks: Array<(ms: number) => void> = [];
   private positionPollInterval: NodeJS.Timeout | null = null;
+  private endedDetector = createEndedDetector();
 
-  constructor(ytPlayer: any) {
+  constructor(ytPlayer: YTPlayerInstance) {
     this.ytPlayer = ytPlayer;
   }
 
@@ -87,7 +141,11 @@ class YouTubePlayerAdapter implements IPlayer {
     if (!this.positionPollInterval) {
       this.positionPollInterval = setInterval(async () => {
         const pos = await this.getCurrentPositionMs();
+        const duration = await this.getDurationMs();
         this.positionCallbacks.forEach((c) => c(pos));
+        if (this.endedDetector(pos, duration)) {
+          this.endedCallbacks.forEach((c) => c());
+        }
       }, 500);
     }
   }
@@ -99,6 +157,7 @@ class YouTubePlayerAdapter implements IPlayer {
     }
     this.endedCallbacks = [];
     this.positionCallbacks = [];
+    this.endedDetector = createEndedDetector();
   }
 }
 
@@ -111,7 +170,7 @@ export function YouTubePlayer({
   onPlayerReady?: (player: IPlayer) => void;
   onPlayerGone?: () => void;
 }) {
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<YTPlayerInstance | null>(null);
   const adapterRef = useRef<YouTubePlayerAdapter | null>(null);
   const playerUsable = useRef(false);
   const pendingVideoId = useRef<string | null>(null);
@@ -127,9 +186,9 @@ export function YouTubePlayer({
     onPlayerGoneRef.current = onPlayerGone;
   });
   const [apiReady, setApiReady] = useState(false);
-  const state = useStore((s) => s.state);
-  const nowPlayingId = state?.nowPlayingId;
-  const queue = state?.queue ?? [];
+  const nowPlayingId = useStore((s) => s.state?.nowPlayingId);
+  const queueMaybe = useStore((s) => s.state?.queue);
+  const queue = queueMaybe ?? EMPTY_QUEUE;
 
   useEffect(() => {
     loadYouTubeAPI(() => setApiReady(true));
@@ -143,39 +202,48 @@ export function YouTubePlayer({
     if (!apiReady) return;
 
     if (!playerRef.current) {
-      playerRef.current = new window.YT.Player('youtube-player', {
+      const YT = window.YT;
+      if (!YT) return;
+      const player = new YT.Player('youtube-player', {
         width: 480,
         height: 270,
         events: {
           onReady: () => {
             playerUsable.current = true;
-            const adapter = new YouTubePlayerAdapter(playerRef.current);
+            const adapter = new YouTubePlayerAdapter(player);
             adapterRef.current = adapter;
             onPlayerReadyRef.current?.(adapter);
             if (pendingVideoId.current) {
-              playerRef.current.loadVideoById(pendingVideoId.current);
+              player.loadVideoById(pendingVideoId.current);
               pendingVideoId.current = null;
             }
           },
-          onStateChange: (event: any) => {
+          onStateChange: (event: { data: number }) => {
             if (event.data === 0 && nowPlayingIdRef.current) {
               nowPlayingAdvance(roomId, nowPlayingIdRef.current);
             }
           },
         },
       });
+      playerRef.current = player;
     }
 
-    const track = nowPlayingId ? queue.find((t) => t.id === nowPlayingId) : undefined;
+    // Read the queue imperatively: this effect must re-run only when apiReady
+    // or nowPlayingId changes, not on every state publication (a fresh queue
+    // array identity per publication used to restart the current video).
+    const queueNow = useStore.getState().state?.queue ?? EMPTY_QUEUE;
+    const track = nowPlayingId ? queueNow.find((t) => t.id === nowPlayingId) : undefined;
     const videoId = track?.sources.youtube?.videoId;
     if (!videoId) return;
 
+    const player = playerRef.current;
+    if (!player) return;
     if (playerUsable.current) {
-      playerRef.current.loadVideoById(videoId);
+      player.loadVideoById(videoId);
     } else {
       pendingVideoId.current = videoId;
     }
-  }, [apiReady, nowPlayingId, queue, roomId, onPlayerReady]);
+  }, [apiReady, nowPlayingId, roomId]);
 
   useEffect(() => {
     return () => {

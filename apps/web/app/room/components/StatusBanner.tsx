@@ -9,20 +9,25 @@ export function StatusBanner() {
   const [showBanner, setShowBanner] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
 
+  // Enter transition: adjust state during render when the store flags flip.
+  if (reconnecting && (!showBanner || isExiting)) {
+    setShowBanner(true);
+    setIsExiting(false);
+  } else if (!reconnecting && connected && showBanner && !isExiting) {
+    // Connection recovered; slide the banner out
+    setIsExiting(true);
+  }
+
+  // Exit transition: only the timer lives in an effect (its setStates run in
+  // the timeout callback, preserving the 300ms slide-out animation).
   useEffect(() => {
-    if (reconnecting) {
-      setShowBanner(true);
+    if (!isExiting) return;
+    const timer = setTimeout(() => {
+      setShowBanner(false);
       setIsExiting(false);
-    } else if (connected && showBanner) {
-      // Connection recovered; slide the banner out
-      setIsExiting(true);
-      const timer = setTimeout(() => {
-        setShowBanner(false);
-        setIsExiting(false);
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [connected, reconnecting, showBanner]);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [isExiting]);
 
   if (!showBanner) return null;
 

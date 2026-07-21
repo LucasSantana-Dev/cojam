@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useStore, parseConnInfo, buildProviderPrefs, joinRoom } from './realtime';
+import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, rpcErrorMessage } from './realtime';
 import type { RoomState } from '@cojam/shared';
 
 // Centrifuge/auth/account mocks for the joinRoom lifecycle tests (B9/B10/B11).
@@ -279,5 +279,24 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
       return Promise.resolve({ data: { serverNowMs: 0 } });
     };
     await expect(joinPromise).rejects.toThrow('room is full');
+  });
+});
+
+describe('rpcErrorMessage', () => {
+  it('returns the message from a real Error', () => {
+    expect(rpcErrorMessage(new Error('boom'), 'fallback')).toBe('boom');
+  });
+
+  it('unwraps centrifuge-style plain {code, message} rejections', () => {
+    expect(rpcErrorMessage({ code: 403, message: 'not the host' }, 'fallback')).toBe('not the host');
+  });
+
+  it('falls back when there is no usable message', () => {
+    expect(rpcErrorMessage({}, 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage(null, 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage(undefined, 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage('string rejection', 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage({ message: '' }, 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage(new Error(''), 'fallback')).toBe('fallback');
   });
 });

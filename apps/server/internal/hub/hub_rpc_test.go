@@ -644,3 +644,65 @@ func TestHandleRPC_TrackSearchForwardsPrefer(t *testing.T) {
 		t.Fatalf("prefer without param = %v, want empty", gotPrefer)
 	}
 }
+
+func TestHandleRPC_QueueAddValidation(t *testing.T) {
+	long := strings.Repeat("x", 301)
+
+	cases := []struct {
+		name    string
+		track   string
+		wantErr string
+	}{
+		{"empty title", `{"title":"","artist":"A"}`, "title"},
+		{"title too long", `{"title":"` + long + `","artist":"A"}`, "title"},
+		{"artist too long", `{"title":"T","artist":"` + long + `"}`, "artist"},
+		{"negative duration", `{"title":"T","artist":"A","durationMs":-5}`, "duration"},
+		{"duration out of range", `{"title":"T","artist":"A","durationMs":99999999}`, "duration"},
+		{"isrc too long", `{"title":"T","artist":"A","isrc":"` + long + `"}`, "isrc"},
+		{"addedBy too long", `{"title":"T","artist":"A","addedBy":"` + long + `"}`, "addedBy"},
+		{"youtube id too long", `{"title":"T","artist":"A","sources":{"youtube":{"videoId":"` + long + `"}}}`, "youtube"},
+		{"apple id too long", `{"title":"T","artist":"A","sources":{"apple":{"songId":"` + long + `"}}}`, "apple"},
+		{"bad spotify uri", `{"title":"T","artist":"A","sources":{"spotify":{"trackUri":"not-a-uri"}}}`, "spotify"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := NewHub(nil)
+			h.Join("client1", "demo")
+			payload := `{"roomId":"demo","track":` + tc.track + `}`
+			_, err := h.HandleRPC("queue.add", []byte(payload), "")
+			if err == nil {
+				t.Fatalf("expected validation error for %s", tc.name)
+			}
+			var ue *UserError
+			if !errors.As(err, &ue) {
+				t.Fatalf("validation error must be user-facing, got %T: %v", err, err)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error %q should mention %q", err.Error(), tc.wantErr)
+			}
+			room := h.GetOrCreateRoom("demo")
+			room.mu.Lock()
+			n := len(room.State.Queue)
+			room.mu.Unlock()
+			if n != 0 {
+				t.Errorf("queue should be empty after rejected add, got %d tracks", n)
+			}
+		})
+	}
+}
+
+func TestHandleRPC_PlaylistImportAddedByTooLong(t *testing.T) {
+	h := NewHub(nil)
+	h.Join("client1", "demo")
+	long := strings.Repeat("x", 301)
+	payload := `{"roomId":"demo","url":"https://open.spotify.com/playlist/abc","addedBy":"` + long + `","tracks":[{"title":"T","artist":"A"}]}`
+	_, err := h.HandleRPC("playlist.import", []byte(payload), "")
+	if err == nil {
+		t.Fatal("expected validation error for addedBy too long")
+	}
+	var ue *UserError
+	if !errors.As(err, &ue) {
+		t.Fatalf("validation error must be user-facing, got %T: %v", err, err)
+	}
+}
