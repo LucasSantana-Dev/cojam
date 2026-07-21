@@ -259,25 +259,36 @@ export function SpotifyPlayer({
     })();
     return () => {
       cancelled = true;
+      // Reset readiness so a later re-init goes idle -> ready again: a bare
+      // setStatus('ready') with an unchanged value is a React no-op and the
+      // load effect below would never re-fire for the new device.
+      deviceId.current = null;
+      setStatus('idle');
       if (playerRef.current) {
         playerRef.current.dispose();
         playerRef.current = null;
         onPlayerGoneRef.current?.();
       }
     };
-  }, [clientId, authorized, status, onAuthorized]);
+    // NOTE: `status` must NOT be a dep here. The ready listener calls
+    // setStatus('ready'), which would re-run this effect and dispose the
+    // adapter immediately after ready.
+  }, [clientId, authorized, onAuthorized]);
 
   useEffect(() => {
-    if (!authorized || !deviceId.current || !spotifyUri) return;
+    if (!authorized || status !== 'ready' || !deviceId.current || !spotifyUri) return;
     // Read the latest room state imperatively: this effect must fire only when
-    // the uri (or auth) changes, not on every state publication.
+    // the uri, device readiness, or auth changes, not on every state
+    // publication. `status` is the reactive readiness signal: a joiner whose
+    // room state arrives before the SDK device is ready gets playUri fired
+    // when status flips to 'ready'.
     const current = useStore.getState().state;
     const track = current?.nowPlayingId
       ? current.queue.find((t) => t.id === current.nowPlayingId)
       : undefined;
     if (!track || pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) !== 'spotify') return;
     playUri(deviceId.current, spotifyUri).catch((e) => console.error('Spotify play failed:', e));
-  }, [authorized, spotifyUri]);
+  }, [authorized, status, spotifyUri]);
 
   if (!clientId) return null;
   if (status === 'error') {
