@@ -400,8 +400,9 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	}
 	h.mu.Unlock()
 
-	// Try to load from store
-	ctx := context.Background()
+	// Try to load from store (bounded: a hung store must not wedge the hub)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	state, err := h.store.Load(ctx, roomID)
 
 	// If found in store, use it
@@ -466,7 +467,8 @@ func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMe
 				h.logger.Error("store_marshal_failed", "room_id", roomID, "err", err.Error())
 			}
 		} else {
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 			if err := h.store.Save(ctx, &stateCopy); err != nil && h.logger != nil {
 				h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
 			}
