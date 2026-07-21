@@ -392,6 +392,12 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 // GetOrCreateRoom retrieves or creates a room, with read-through to the store.
 // If the room is not in the map, Load from store. On ErrNotFound, create a fresh room
 // and persist it. On other errors, log and create a fresh room (best-effort recovery).
+//
+// The store IO runs outside h.mu (never hold the global lock across IO), so
+// concurrent creators for the same roomID race: the final insert re-checks
+// under a single lock and the loser discards its instance. Every caller must
+// share one *Room per roomID; a losing caller keeping its own instance would
+// split room.mu and orphan its mutations (never published, never persisted).
 func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	h.mu.Lock()
 	if room, exists := h.rooms[roomID]; exists {
@@ -404,35 +410,33 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	ctx := context.Background()
 	state, err := h.store.Load(ctx, roomID)
 
-	// If found in store, use it
-	if err == nil && state != nil {
-		h.mu.Lock()
-		room := &Room{State: state}
-		h.rooms[roomID] = room
-		h.mu.Unlock()
+	// If not found or error, create fresh
+	if err != nil || state == nil {
+		if err != nil && err != store.ErrNotFound && h.logger != nil {
+			h.logger.Error("store_load_failed", "room_id", roomID, "err", err.Error())
+		}
+
+		state = &queue.RoomState{
+			RoomID:  roomID,
+			Queue:   []queue.TrackRef{},
+			Version: 0,
+		}
+
+		// Persist the fresh room
+		if err := h.store.Save(ctx, state); err != nil && h.logger != nil {
+			h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+		}
+	}
+
+	// Double-checked insert: another goroutine may have won while we were
+	// doing store IO outside the lock. Prefer the existing instance.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if room, exists := h.rooms[roomID]; exists {
 		return room
 	}
-
-	// If not found or error, create fresh
-	if err != nil && err != store.ErrNotFound && h.logger != nil {
-		h.logger.Error("store_load_failed", "room_id", roomID, "err", err.Error())
-	}
-
-	state = &queue.RoomState{
-		RoomID:  roomID,
-		Queue:   []queue.TrackRef{},
-		Version: 0,
-	}
-
-	// Persist the fresh room
-	if err := h.store.Save(ctx, state); err != nil && h.logger != nil {
-		h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
-	}
-
-	h.mu.Lock()
 	room := &Room{State: state}
 	h.rooms[roomID] = room
-	h.mu.Unlock()
 	return room
 }
 
