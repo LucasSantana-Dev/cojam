@@ -8,6 +8,24 @@ import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
 import { parseSpotifyPlaylistId, fetchSpotifyPlaylistTracks } from '@/lib/spotifyPlaylist';
 import { isAuthed as isSpotifyAuthed, canReadPlaylists } from '@/lib/spotifyAuth';
 
+// planPlaylistImport decides the import route for a pasted playlist URL.
+// Spotify playlists MUST resolve client-side (RFC-0007: server-side client
+// credentials get 403 in dev mode), so an unauthenticated Spotify URL has no
+// working route; the caller shows the connect message instead of firing a
+// doomed server RPC.
+export type PlaylistImportPlan =
+  | { route: 'spotify-client'; playlistId: string }
+  | { route: 'server' }
+  | { route: 'spotify-needs-auth' };
+
+export function planPlaylistImport(url: string, spotifyAuthed: boolean): PlaylistImportPlan {
+  const playlistId = parseSpotifyPlaylistId(url);
+  if (playlistId) {
+    return spotifyAuthed ? { route: 'spotify-client', playlistId } : { route: 'spotify-needs-auth' };
+  }
+  return { route: 'server' };
+}
+
 export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { roomId: string; spotifyAuthorized?: boolean; appleAuthorized?: boolean }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
@@ -141,14 +159,19 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
 
     try {
       // RFC-0007: Spotify playlists are fetched client-side with the user's own
-      // OAuth token (server-side client credentials get 403 in dev mode).
-      const spotifyPlaylistId = parseSpotifyPlaylistId(playlistUrl);
-      if (spotifyPlaylistId && isSpotifyAuthed()) {
+      // OAuth token (server-side client credentials get 403 in dev mode), so an
+      // unauthenticated Spotify URL has no working route: say so instead of
+      // firing a doomed server RPC (the old else-branch failed opaquely).
+      const plan = planPlaylistImport(playlistUrl, isSpotifyAuthed());
+      if (plan.route === 'spotify-needs-auth') {
+        throw new Error('Connect Spotify to import Spotify playlists.');
+      }
+      if (plan.route === 'spotify-client') {
         if (!canReadPlaylists()) {
           // Token predates the playlist-read scopes; only a fresh consent helps.
           throw new Error('Reconnect Spotify to import playlists (a new permission is required).');
         }
-        const tracks = await fetchSpotifyPlaylistTracks(spotifyPlaylistId);
+        const tracks = await fetchSpotifyPlaylistTracks(plan.playlistId);
         await importPlaylist(roomId, playlistUrl, name, tracks);
       } else {
         await importPlaylist(roomId, playlistUrl, name);
