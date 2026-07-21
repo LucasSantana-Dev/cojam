@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore, transportPlay, transportPause, transportSeek } from '@/lib/realtime';
 import type { IPlayer } from '@/lib/playerInterface';
 
@@ -44,6 +44,16 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
     setPrevTransport(transport);
     setDisplayPosition(transport.positionMs);
   }
+
+  // Live position readout while playing. dragRef (not state) keeps the
+  // subscription stable across drag toggles; updates are suppressed mid-drag
+  // so the poll never fights the user's slider.
+  useEffect(() => {
+    if (!activePlayer) return;
+    activePlayer.onPositionChanged((pos) => {
+      if (!dragRef.current) setDisplayPosition(pos);
+    });
+  }, [activePlayer]);
 
   const handlePlayPause = useCallback(async () => {
     try {

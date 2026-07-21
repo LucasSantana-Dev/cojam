@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, joinRoom, setRadio, transportPlay, transportPause, getClockOffsetMs } from '@/lib/realtime';
+import { useStore, joinRoom, setRadio, transportPlay, transportPause, getClockOffsetMs, nowPlayingAdvance } from '@/lib/realtime';
 import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS, serverNow } from '@/lib/playbackSync';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
@@ -248,6 +248,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
       }
     };
   }, [activePlayer, store.state?.transport, store.state?.transport?.state]);
+
+  // Auto-advance at track end for Spotify/Apple (YouTube also advances via its
+  // native onStateChange; the server dedups through AdvanceAfter). onEnded has
+  // no unsubscribe, so track the subscribed adapter instance and never
+  // double-subscribe the same one.
+  const advanceSubscribedRef = useRef<IPlayer | null>(null);
+  useEffect(() => {
+    if (!activePlayer || advanceSubscribedRef.current === activePlayer) return;
+    advanceSubscribedRef.current = activePlayer;
+    activePlayer.onEnded(() => {
+      const id = useStore.getState().state?.nowPlayingId;
+      if (id) nowPlayingAdvance(roomId, id);
+    });
+  }, [activePlayer, roomId]);
 
   if (!joined) {
     return (

@@ -8,7 +8,7 @@ import { decidePlayable } from '@/lib/spotifyAccount';
 import { getRuntimeEnv, pickEnv } from '@/lib/runtimeEnv';
 import { SpotifyIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
-import { detectSpotifyCanSeek } from '@/lib/playerUtils';
+import { detectSpotifyCanSeek, createEndedDetector } from '@/lib/playerUtils';
 
 // Minimal structural types for the Spotify Web Playback SDK surface we use.
 export interface SpotifyPlaybackState {
@@ -73,6 +73,7 @@ class SpotifyPlayerAdapter implements IPlayer {
   private positionCallbacks: Array<(ms: number) => void> = [];
   private canSeekValue: boolean = false;
   private positionPollInterval: NodeJS.Timeout | null = null;
+  private endedDetector = createEndedDetector();
 
   constructor(player: SpotifySDKPlayer, deviceId: string, canSeek: boolean) {
     this.player = player;
@@ -140,8 +141,17 @@ class SpotifyPlayerAdapter implements IPlayer {
     this.positionCallbacks.push(cb);
     if (!this.positionPollInterval) {
       this.positionPollInterval = setInterval(async () => {
-        const pos = await this.getCurrentPositionMs();
-        this.positionCallbacks.forEach((c) => c(pos));
+        try {
+          const state = await this.player.getCurrentState();
+          const pos = state?.position ?? 0;
+          const duration = state?.track_window?.current_track?.duration_ms ?? 0;
+          this.positionCallbacks.forEach((c) => c(pos));
+          if (this.endedDetector(pos, duration)) {
+            this.endedCallbacks.forEach((c) => c());
+          }
+        } catch {
+          // Keep polling; a transient SDK read failure is not fatal.
+        }
       }, 1000);
     }
   }
@@ -153,6 +163,7 @@ class SpotifyPlayerAdapter implements IPlayer {
     }
     this.endedCallbacks = [];
     this.positionCallbacks = [];
+    this.endedDetector = createEndedDetector();
   }
 }
 

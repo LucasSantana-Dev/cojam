@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore, nowPlayingAdvance } from '@/lib/realtime';
 import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
-import { secondsToMs, msToSeconds } from '@/lib/playerUtils';
+import { secondsToMs, msToSeconds, createEndedDetector } from '@/lib/playerUtils';
 
 // Minimal structural types for the YouTube IFrame API surface this adapter uses.
 interface YTPlayerInstance {
@@ -68,6 +68,7 @@ class YouTubePlayerAdapter implements IPlayer {
   private endedCallbacks: Array<() => void> = [];
   private positionCallbacks: Array<(ms: number) => void> = [];
   private positionPollInterval: NodeJS.Timeout | null = null;
+  private endedDetector = createEndedDetector();
 
   constructor(ytPlayer: YTPlayerInstance) {
     this.ytPlayer = ytPlayer;
@@ -116,7 +117,11 @@ class YouTubePlayerAdapter implements IPlayer {
     if (!this.positionPollInterval) {
       this.positionPollInterval = setInterval(async () => {
         const pos = await this.getCurrentPositionMs();
+        const duration = await this.getDurationMs();
         this.positionCallbacks.forEach((c) => c(pos));
+        if (this.endedDetector(pos, duration)) {
+          this.endedCallbacks.forEach((c) => c());
+        }
       }, 500);
     }
   }
@@ -128,6 +133,7 @@ class YouTubePlayerAdapter implements IPlayer {
     }
     this.endedCallbacks = [];
     this.positionCallbacks = [];
+    this.endedDetector = createEndedDetector();
   }
 }
 

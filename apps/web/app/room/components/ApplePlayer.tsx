@@ -5,6 +5,7 @@ import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
 import { features } from '@/lib/features';
 import { AppleMusicIcon } from '@/app/components/icons';
+import { createEndedDetector } from '@/lib/playerUtils';
 import type { IPlayer } from '@/lib/playerInterface';
 
 // Minimal structural types for the MusicKit v3 surface this adapter uses.
@@ -62,6 +63,7 @@ class ApplePlayerAdapter implements IPlayer {
   private endedCallbacks: Array<() => void> = [];
   private positionCallbacks: Array<(ms: number) => void> = [];
   private positionPollInterval: NodeJS.Timeout | null = null;
+  private endedDetector = createEndedDetector();
 
   constructor(music: MusicKitInstance) {
     this.music = music;
@@ -111,7 +113,11 @@ class ApplePlayerAdapter implements IPlayer {
     if (!this.positionPollInterval) {
       this.positionPollInterval = setInterval(async () => {
         const pos = await this.getCurrentPositionMs();
+        const duration = await this.getDurationMs();
         this.positionCallbacks.forEach((c) => c(pos));
+        if (this.endedDetector(pos, duration)) {
+          this.endedCallbacks.forEach((c) => c());
+        }
       }, 1000);
     }
   }
@@ -123,6 +129,7 @@ class ApplePlayerAdapter implements IPlayer {
     }
     this.endedCallbacks = [];
     this.positionCallbacks = [];
+    this.endedDetector = createEndedDetector();
   }
 }
 
