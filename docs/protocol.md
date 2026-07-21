@@ -42,12 +42,14 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 | `queue.add` | any member |
 | `room.join`, `sync.ping`, reads | any member |
 | `now_playing.set` / `now_playing.advance` | host only |
-| `queue.reorder` / `queue.remove` | host only |
+| `queue.reorder` | host only |
+| `queue.remove` | host, or the member who queued the track (`addedByUserId`) |
 | `radio.set`, `playlist.import` | host only |
 | `transport.play` / `transport.pause` / `transport.seek` | host only |
 
-Follow-up: `queue.remove` is host-only in v1; letting listeners remove their own tracks needs
-`TrackRef.addedBy` to carry the stable `userId` (today it is a display name).
+`queue.remove` ownership: the server stamps `TrackRef.addedByUserId` from the connection identity
+on `queue.add` and `playlist.import` (a client-supplied value is overwritten). Tracks queued before
+this existed (or while the flag is off) carry no owner and stay host-only.
 
 ## Server → channel publications
 
@@ -89,6 +91,7 @@ type TrackRef = {
     spotify?: { trackUri: string; confidence: number };
   };
   addedBy: string;     // display name
+  addedByUserId?: string; // authenticated userID of the adder, server-stamped
 };
 
 type RoomState = {
