@@ -34,6 +34,11 @@ type TrackRef struct {
 	ISRC       string  `json:"isrc,omitempty"`
 	Sources    Sources `json:"sources"`
 	AddedBy    string  `json:"addedBy"`
+	// AddedByUserID is the authenticated userID of the client that queued the
+	// track (empty when FEATURE_ROOM_AUTH is off). Populated by the server from
+	// the connection identity on queue.add/playlist.import; a client-supplied
+	// value is always overwritten. Drives the queue.remove owner check (B16).
+	AddedByUserID string `json:"addedByUserId,omitempty"`
 }
 
 // TransportState represents playback transport state

@@ -13,6 +13,9 @@ export type TrackRef = {
   isrc?: string;
   sources: { youtube?: SourceRef; apple?: SourceRef; spotify?: SourceRef };
   addedBy: string;
+  // Server-populated from the connection identity on queue.add/playlist.import;
+  // clients never send this (the server overwrites it). Empty when room auth is off.
+  addedByUserId?: string;
 };
 
 export type TransportState = {

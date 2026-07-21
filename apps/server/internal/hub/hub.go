@@ -196,7 +196,8 @@ var mutatingMethods = map[string]bool{
 // hostOnlyMethods are mutating RPCs that disrupt room control and therefore
 // require the caller to be the room's host (RFC-0005 U4).
 // queue.add and room.join are always allowed for members.
-// TODO(RFC-0005): allow listeners to remove their own tracks once AddedBy carries userID.
+// queue.remove is host-gated with one exception: the track's owner
+// (TrackRef.AddedByUserID) may remove it (B16), enforced in Authorize.
 var hostOnlyMethods = map[string]bool{
 	"now_playing.set":     true,
 	"now_playing.advance": true,
@@ -358,7 +359,8 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 	userID := client.UserID() // UserID is available here for authenticated requests (U4+)
 
 	var probe struct {
-		RoomID string `json:"roomId"`
+		RoomID  string `json:"roomId"`
+		TrackID string `json:"trackId"`
 	}
 	_ = json.Unmarshal(data, &probe)
 
@@ -382,11 +384,39 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 	if hostOnlyMethods[method] {
 		hostUserID := h.GetHostUserID(probe.RoomID)
 		if hostUserID != "" && userID != hostUserID {
+			// B16 (RFC-0005): a listener may remove a track they added.
+			if method == "queue.remove" && h.isTrackOwner(probe.RoomID, probe.TrackID, userID) {
+				return nil
+			}
 			return centrifuge.ErrorPermissionDenied
 		}
 	}
 
 	return nil
+}
+
+// isTrackOwner reports whether userID queued trackID in roomID
+// (TrackRef.AddedByUserID, populated server-side on queue.add). Tracks added
+// before B16 or while FEATURE_ROOM_AUTH is off carry no owner and stay
+// host-only. Read-only: never creates a room.
+func (h *Hub) isTrackOwner(roomID, trackID, userID string) bool {
+	if userID == "" {
+		return false
+	}
+	h.mu.RLock()
+	room, exists := h.rooms[roomID]
+	h.mu.RUnlock()
+	if !exists {
+		return false
+	}
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	for _, t := range room.State.Queue {
+		if t.ID == trackID {
+			return t.AddedByUserID != "" && t.AddedByUserID == userID
+		}
+	}
+	return false
 }
 
 // GetOrCreateRoom retrieves or creates a room, with read-through to the store.
@@ -569,6 +599,8 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("queue.add: roomId required")
 		}
+		// Server-owned identity: never trust a client-supplied addedByUserId.
+		req.Track.AddedByUserID = userID
 		var addedID string
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			if len(s.Queue) >= queue.MaxQueueSize {
@@ -904,6 +936,8 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 
 			for _, track := range toAdd {
 				track.AddedBy = req.AddedBy
+				// Server-owned identity: never trust a client-supplied addedByUserId.
+				track.AddedByUserID = userID
 				s.Add(track)
 			}
 			return nil
