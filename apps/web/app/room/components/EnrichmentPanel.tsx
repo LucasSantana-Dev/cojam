@@ -44,11 +44,14 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
     setLfmError(null);
   }
 
-  // Fetch data when panel opens
+  // Fetch data when panel opens. The cleanup flag drops stale responses: a
+  // fetch for the previous track must not repopulate the panel after a
+  // track change (or after close).
   useEffect(() => {
     if (!open || !track) {
       return;
     }
+    let cancelled = false;
 
     // Fetch ListenBrainz if enabled
     if (features.listenBrainz) {
@@ -57,11 +60,11 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
         setLbError(null);
         try {
           const result = await fetchListenBrainz(roomId, track.isrc || '', track.title, track.artist);
-          setLbData(result);
+          if (!cancelled) setLbData(result);
         } catch (err) {
-          setLbError(err instanceof Error ? err.message : 'Failed to fetch ListenBrainz data');
+          if (!cancelled) setLbError(err instanceof Error ? err.message : 'Failed to fetch ListenBrainz data');
         } finally {
-          setLbLoading(false);
+          if (!cancelled) setLbLoading(false);
         }
       };
       fetchLb();
@@ -74,15 +77,19 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
         setLfmError(null);
         try {
           const result = await fetchLastfmEnrich(roomId, track.artist, track.title);
-          setLfmData(result);
+          if (!cancelled) setLfmData(result);
         } catch (err) {
-          setLfmError(err instanceof Error ? err.message : 'Failed to fetch Last.fm data');
+          if (!cancelled) setLfmError(err instanceof Error ? err.message : 'Failed to fetch Last.fm data');
         } finally {
-          setLfmLoading(false);
+          if (!cancelled) setLfmLoading(false);
         }
       };
       fetchLfm();
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [open, track, roomId]);
 
   // Close on Esc

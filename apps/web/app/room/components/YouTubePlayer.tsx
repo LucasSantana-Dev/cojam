@@ -30,6 +30,30 @@ interface YTGlobal {
   ) => YTPlayerInstance;
 }
 
+// Minimal structural types for the YouTube IFrame API surface this adapter uses.
+interface YTPlayerInstance {
+  playVideo(): void;
+  pauseVideo(): void;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
+  getCurrentTime(): number;
+  getDuration(): number;
+  loadVideoById(videoId: string): void;
+}
+
+interface YTGlobal {
+  Player: new (
+    elementId: string,
+    opts: {
+      width?: number;
+      height?: number;
+      events?: {
+        onReady?: () => void;
+        onStateChange?: (event: { data: number }) => void;
+      };
+    }
+  ) => YTPlayerInstance;
+}
+
 declare global {
   interface Window {
     onYouTubeIframeAPIReady?: () => void;

@@ -5,7 +5,6 @@ import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
 import { features } from '@/lib/features';
 import { AppleMusicIcon } from '@/app/components/icons';
-import { createEndedDetector } from '@/lib/playerUtils';
 import type { IPlayer } from '@/lib/playerInterface';
 
 // Minimal structural types for the MusicKit v3 surface this adapter uses.
@@ -63,7 +62,6 @@ class ApplePlayerAdapter implements IPlayer {
   private endedCallbacks: Array<() => void> = [];
   private positionCallbacks: Array<(ms: number) => void> = [];
   private positionPollInterval: NodeJS.Timeout | null = null;
-  private endedDetector = createEndedDetector();
 
   constructor(music: MusicKitInstance) {
     this.music = music;
@@ -113,11 +111,7 @@ class ApplePlayerAdapter implements IPlayer {
     if (!this.positionPollInterval) {
       this.positionPollInterval = setInterval(async () => {
         const pos = await this.getCurrentPositionMs();
-        const duration = await this.getDurationMs();
         this.positionCallbacks.forEach((c) => c(pos));
-        if (this.endedDetector(pos, duration)) {
-          this.endedCallbacks.forEach((c) => c());
-        }
       }, 1000);
     }
   }
@@ -129,7 +123,6 @@ class ApplePlayerAdapter implements IPlayer {
     }
     this.endedCallbacks = [];
     this.positionCallbacks = [];
-    this.endedDetector = createEndedDetector();
   }
 }
 
@@ -151,16 +144,6 @@ export function ApplePlayer({
   const nowPlaying = state?.nowPlayingId
     ? state.queue.find((t) => t.id === state.nowPlayingId)
     : undefined;
-  const appleSongId = nowPlaying?.sources.apple?.songId;
-  // Callbacks arrive as fresh inline arrows every render; keep them in refs so
-  // the init effect identity stays stable. Otherwise the cleanup below ran on
-  // every parent render, disposing the adapter right after ready.
-  const onPlayerReadyRef = useRef(onPlayerReady);
-  const onPlayerGoneRef = useRef(onPlayerGone);
-  useEffect(() => {
-    onPlayerReadyRef.current = onPlayerReady;
-    onPlayerGoneRef.current = onPlayerGone;
-  });
 
   useEffect(() => {
     let cancelled = false;
@@ -184,7 +167,7 @@ export function ApplePlayer({
         musicRef.current = MusicKit.getInstance();
         const adapter = new ApplePlayerAdapter(musicRef.current);
         adapterRef.current = adapter;
-        onPlayerReadyRef.current?.(adapter);
+        onPlayerReady?.(adapter);
         onAuthorized(musicRef.current.isAuthorized);
         setStatus('ready');
       } catch (e) {
@@ -197,30 +180,25 @@ export function ApplePlayer({
       if (adapterRef.current) {
         adapterRef.current.dispose();
         adapterRef.current = null;
-        onPlayerGoneRef.current?.();
+        onPlayerGone?.();
       }
     };
-  }, [onAuthorized]);
+  }, [onAuthorized, onPlayerReady, onPlayerGone]);
 
   useEffect(() => {
     const music = musicRef.current;
-    if (!music || !authorized || !appleSongId) return;
-    // Read the latest room state imperatively: this effect must fire only when
-    // the song id (or auth) changes, not on every state publication.
-    const current = useStore.getState().state;
-    const track = current?.nowPlayingId
-      ? current.queue.find((t) => t.id === current.nowPlayingId)
-      : undefined;
-    if (!track || pickSource(track, { appleAuthorized: authorized, spotifyAuthorized: false }) !== 'apple') return;
+    if (!music || !authorized || !nowPlaying) return;
+    if (pickSource(nowPlaying, { appleAuthorized: authorized, spotifyAuthorized: false }) !== 'apple') return;
+    const songId = nowPlaying.sources.apple!.songId!;
     (async () => {
       try {
-        await music.setQueue({ songs: [appleSongId] });
+        await music.setQueue({ songs: [songId] });
         await music.play();
       } catch (e) {
         console.error('Apple playback failed:', e);
       }
     })();
-  }, [authorized, appleSongId]);
+  }, [authorized, nowPlaying]);
 
   if (status === 'unconfigured' || status === 'idle') return null;
   if (status === 'error') {
@@ -236,7 +214,10 @@ export function ApplePlayer({
       <button
         onClick={async () => {
           try {
-            await musicRef.current?.authorize();
+            // Optional chaining would resolve undefined on a null ref and
+            // report success; fail loudly instead.
+            if (!musicRef.current) throw new Error('Apple Music is still loading');
+            await musicRef.current.authorize();
             onAuthorized(true);
           } catch (e) {
             console.error('Apple authorize failed:', e);
