@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, joinRoom, setRadio, transportPlay, transportPause, getClockOffsetMs } from '@/lib/realtime';
+import { useStore, joinRoom, setRadio, transportPlay, transportPause, getClockOffsetMs, nowPlayingAdvance } from '@/lib/realtime';
 import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS, serverNow } from '@/lib/playbackSync';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
@@ -11,6 +11,9 @@ import { avatarGradient } from '@/lib/avatar';
 // returns to /callback/spotify then back here) auto-rejoins instead of dropping
 // the user back to the name form. Session-scoped; cleared when the tab closes.
 const NAME_KEY = 'mj_room_name';
+
+// Runtime env (/env.js) never changes after load; nothing to subscribe to.
+const noopSubscribe = () => () => {};
 import { pickSource, isUnavailable } from '@/lib/pickSource';
 import { features } from '@/lib/features';
 import { getRuntimeEnv } from '@/lib/runtimeEnv';
@@ -54,17 +57,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
   const [enrichmentOpen, setEnrichmentOpen] = useState(false);
   // Spotify enable is resolved at runtime (via /env.js), not build time, so the
-  // env-agnostic image can turn it on. Resolve after mount to avoid an SSR
-  // hydration mismatch (server has no window.__COJAM_ENV__).
-  const [spotifyEnabled, setSpotifyEnabled] = useState(features.spotify);
-  useEffect(() => {
-    setSpotifyEnabled(getRuntimeEnv()?.spotifyEnabled ?? features.spotify);
-  }, []);
-  // Accounts link: resolved at runtime after mount (hydration-safe).
-  const [accountsEnabled, setAccountsEnabled] = useState(false);
-  useEffect(() => {
-    setAccountsEnabled(supabaseEnabled());
-  }, []);
+  // env-agnostic image can turn it on. The server snapshot (build-time value)
+  // keeps SSR and the first client render in agreement.
+  const spotifyEnabled = useSyncExternalStore(
+    noopSubscribe,
+    () => getRuntimeEnv()?.spotifyEnabled ?? features.spotify,
+    () => features.spotify,
+  );
+  // Accounts link: resolved at runtime, hydration-safe via the server snapshot.
+  const accountsEnabled = useSyncExternalStore(noopSubscribe, supabaseEnabled, () => false);
 
   // Accounts: when signed in, load persisted connected services into the store
   // (search ranking follows them on any device, even before local OAuth state
@@ -172,6 +173,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   useEffect(() => {
     if (joined) return;
     const saved = sessionStorage.getItem(NAME_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sync of external sessionStorage state into a connection side effect (join) on mount, not a render-driven state update
     if (saved) doJoin(saved);
   }, [joined, doJoin]);
 
@@ -245,7 +247,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
         driftCorrectionIntervalRef.current = null;
       }
     };
-  }, [features.sync, activePlayer, store.state?.transport, store.state?.transport?.state]);
+  }, [activePlayer, store.state?.transport, store.state?.transport?.state]);
+
+  // Auto-advance at track end for Spotify/Apple (YouTube also advances via its
+  // native onStateChange; the server dedups through AdvanceAfter). onEnded has
+  // no unsubscribe, so track the subscribed adapter instance and never
+  // double-subscribe the same one.
+  const advanceSubscribedRef = useRef<IPlayer | null>(null);
+  useEffect(() => {
+    if (!activePlayer || advanceSubscribedRef.current === activePlayer) return;
+    advanceSubscribedRef.current = activePlayer;
+    activePlayer.onEnded(() => {
+      const id = useStore.getState().state?.nowPlayingId;
+      if (id) nowPlayingAdvance(roomId, id);
+    });
+  }, [activePlayer, roomId]);
 
   if (!joined) {
     return (

@@ -462,10 +462,15 @@ func main() {
 	// Prometheus metrics (custom registry from obs)
 	r.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
 
-	// HTTP server setup
+	// HTTP server setup. ReadHeaderTimeout bounds slowloris-style header
+	// trickling; IdleTimeout releases keep-alive connections gone quiet.
+	// Neither affects upgraded websocket conns (hijacked before either
+	// deadline applies).
 	server := &http.Server{
-		Addr:    ":8080",
-		Handler: r,
+		Addr:              ":8080",
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	log.Println("Starting server on :8080")

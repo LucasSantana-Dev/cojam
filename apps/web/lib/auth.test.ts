@@ -161,7 +161,7 @@ describe('auth module', () => {
       const mockLS = mockLocalStorage();
       (global as any).localStorage = mockLS;
       const originalWindow = (global as any).window;
-      // @ts-ignore
+      // Simulate SSR by removing window from the global scope.
       delete (global as any).window;
       
       const auth = await import('./auth');

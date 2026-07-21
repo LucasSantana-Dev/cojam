@@ -55,6 +55,9 @@ func validateImportTracks(tracks []queue.TrackRef) error {
 		if len(t.ISRC) > maxImportFieldLen {
 			return userErrorf("track %d: isrc too long", i+1)
 		}
+		if len(t.AddedBy) > maxImportFieldLen {
+			return userErrorf("track %d: addedBy too long", i+1)
+		}
 		if t.Sources.YouTube != nil && len(t.Sources.YouTube.VideoID) > maxImportFieldLen {
 			return userErrorf("track %d: youtube video id too long", i+1)
 		}
@@ -160,6 +163,10 @@ type Hub struct {
 	lastfmEnrich    LastfmEnrichProvider
 	syncEnabled     bool
 
+	// fanoutLimiter rate-limits RPCs that fan out to third-party APIs
+	// (fanoutMethods) per caller, protecting upstream provider quotas.
+	fanoutLimiter *rateLimiter
+
 	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
 	// up to 200 tracks at once; an unbounded goroutine per track would burst
 	// hundreds of simultaneous YouTube/Spotify requests and trip rate limits.
@@ -245,12 +252,13 @@ func (h *Hub) WithSync(enabled bool) *Hub {
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
 	return &Hub{
-		rooms:        make(map[string]*Room),
-		store:        store.NewMemory(),
-		node:         node,
-		members:      make(map[string]map[string]struct{}),
-		clientUserID: make(map[string]string),
-		enrichSem:    make(chan struct{}, 8),
+		rooms:         make(map[string]*Room),
+		store:         store.NewMemory(),
+		node:          node,
+		members:       make(map[string]map[string]struct{}),
+		clientUserID:  make(map[string]string),
+		enrichSem:     make(chan struct{}, 8),
+		fanoutLimiter: newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
 	}
 }
 
@@ -392,6 +400,12 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 // GetOrCreateRoom retrieves or creates a room, with read-through to the store.
 // If the room is not in the map, Load from store. On ErrNotFound, create a fresh room
 // and persist it. On other errors, log and create a fresh room (best-effort recovery).
+//
+// The store IO runs outside h.mu (never hold the global lock across IO), so
+// concurrent creators for the same roomID race: the final insert re-checks
+// under a single lock and the loser discards its instance. Every caller must
+// share one *Room per roomID; a losing caller keeping its own instance would
+// split room.mu and orphan its mutations (never published, never persisted).
 func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	h.mu.Lock()
 	if room, exists := h.rooms[roomID]; exists {
@@ -400,39 +414,38 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	}
 	h.mu.Unlock()
 
-	// Try to load from store
-	ctx := context.Background()
+	// Try to load from store (bounded: a hung store must not wedge the hub)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	state, err := h.store.Load(ctx, roomID)
 
-	// If found in store, use it
-	if err == nil && state != nil {
-		h.mu.Lock()
-		room := &Room{State: state}
-		h.rooms[roomID] = room
-		h.mu.Unlock()
+	// If not found or error, create fresh
+	if err != nil || state == nil {
+		if err != nil && err != store.ErrNotFound && h.logger != nil {
+			h.logger.Error("store_load_failed", "room_id", roomID, "err", err.Error())
+		}
+
+		state = &queue.RoomState{
+			RoomID:  roomID,
+			Queue:   []queue.TrackRef{},
+			Version: 0,
+		}
+
+		// Persist the fresh room
+		if err := h.store.Save(ctx, state); err != nil && h.logger != nil {
+			h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+		}
+	}
+
+	// Double-checked insert: another goroutine may have won while we were
+	// doing store IO outside the lock. Prefer the existing instance.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if room, exists := h.rooms[roomID]; exists {
 		return room
 	}
-
-	// If not found or error, create fresh
-	if err != nil && err != store.ErrNotFound && h.logger != nil {
-		h.logger.Error("store_load_failed", "room_id", roomID, "err", err.Error())
-	}
-
-	state = &queue.RoomState{
-		RoomID:  roomID,
-		Queue:   []queue.TrackRef{},
-		Version: 0,
-	}
-
-	// Persist the fresh room
-	if err := h.store.Save(ctx, state); err != nil && h.logger != nil {
-		h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
-	}
-
-	h.mu.Lock()
 	room := &Room{State: state}
 	h.rooms[roomID] = room
-	h.mu.Unlock()
 	return room
 }
 
@@ -466,7 +479,8 @@ func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMe
 				h.logger.Error("store_marshal_failed", "room_id", roomID, "err", err.Error())
 			}
 		} else {
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 			if err := h.store.Save(ctx, &stateCopy); err != nil && h.logger != nil {
 				h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
 			}
@@ -500,8 +514,22 @@ func (h *Hub) publish(roomID string, state json.RawMessage) error {
 // userID is the authenticated user (empty if anonymous or FEATURE_ROOM_AUTH is off).
 // Instrumented: one slog record + one histogram observation per call.
 func (h *Hub) HandleRPC(method string, data []byte, userID string) (json.RawMessage, error) {
+	return h.handleRPC(method, data, userID, rateLimitKey("", userID))
+}
+
+// handleRPC is HandleRPC with an explicit rate-limit key. The transport layer
+// passes a client-scoped key when no authenticated userID exists so anonymous
+// clients are limited per connection instead of sharing one bucket.
+func (h *Hub) handleRPC(method string, data []byte, userID, rlKey string) (json.RawMessage, error) {
 	start := time.Now()
-	result, err := h.dispatch(method, data, userID)
+	// Fanout RPCs are rate-limited per caller before doing any work; a
+	// rejection surfaces as a UserError (centrifuge code 400) via
+	// rpcClientError and does not touch other methods' budgets.
+	var result json.RawMessage
+	err := h.checkFanoutLimit(method, rlKey)
+	if err == nil {
+		result, err = h.dispatch(method, data, userID)
+	}
 	d := time.Since(start)
 
 	if h.metrics != nil {
@@ -524,6 +552,18 @@ func (h *Hub) HandleRPC(method string, data []byte, userID string) (json.RawMess
 		}
 	}
 	return result, err
+}
+
+// checkFanoutLimit enforces the per-caller token bucket on RPCs that fan out
+// to third-party APIs. Returns nil for unlimited methods.
+func (h *Hub) checkFanoutLimit(method, rlKey string) error {
+	if !fanoutMethods[method] || h.fanoutLimiter == nil {
+		return nil
+	}
+	if !h.fanoutLimiter.allow(rlKey) {
+		return userErrorf("too many requests, slow down")
+	}
+	return nil
 }
 
 func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessage, error) {
@@ -568,6 +608,14 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		}
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("queue.add: roomId required")
+		}
+		// queue.add crosses the same trust boundary as playlist.import's
+		// client-supplied tracks (RFC-0007): the TrackRef is arbitrary client
+		// input, so run the shared validator. AddedBy stays a client display
+		// name (capped by the validator); identity-grade attribution lands with
+		// RFC-0005's addedByUserId (B16).
+		if err := validateImportTracks([]queue.TrackRef{req.Track}); err != nil {
+			return nil, err
 		}
 		var addedID string
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
@@ -634,8 +682,12 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 
 			// Detect if advance actually changed state and queue is now empty
 			if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" && len(s.Queue) > 0 {
-				// Queue ran dry; capture the last track as seed for refill
-				refillSeed = &s.Queue[len(s.Queue)-1]
+				// Queue ran dry; capture the last track as seed for refill.
+				// Copy the value: a pointer into s.Queue would race with
+				// concurrent queue mutations (Move rewrites elements, Add can
+				// reallocate) once refillRadio reads it after unlock.
+				seed := s.Queue[len(s.Queue)-1]
+				refillSeed = &seed
 			}
 
 			return nil
@@ -858,6 +910,9 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		if req.URL == "" {
 			return nil, userErrorf("enter a playlist URL")
 		}
+		if len(req.AddedBy) > maxImportFieldLen {
+			return nil, userErrorf("addedBy too long (max %d chars)", maxImportFieldLen)
+		}
 
 		var tracks []queue.TrackRef
 		if len(req.Tracks) > 0 {
@@ -890,7 +945,11 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 			}
 		}
 
-		// Add tracks to queue up to capacity, set AddedBy on each
+		// Add tracks to queue up to capacity, set AddedBy on each. Collect the
+		// server-assigned IDs of exactly the tracks that were added so
+		// enrichment below cannot touch pre-existing queue entries when the
+		// queue was partially full (the old last-N heuristic over-enriched).
+		var addedIDs []string
 		res, mutErr := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			remaining := queue.MaxQueueSize - len(s.Queue)
 			if remaining <= 0 {
@@ -904,30 +963,28 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 
 			for _, track := range toAdd {
 				track.AddedBy = req.AddedBy
-				s.Add(track)
+				added := s.Add(track)
+				addedIDs = append(addedIDs, added.ID)
 			}
 			return nil
 		})
 
-		// After successful mutate, enrich tracks that were added
-		if mutErr == nil && len(tracks) > 0 {
-			// Get the updated room state to find the newly added tracks
+		// After successful mutate, enrich exactly the tracks that were added
+		if mutErr == nil && len(addedIDs) > 0 {
 			room := h.GetOrCreateRoom(req.RoomID)
 			room.mu.Lock()
-			addedCount := len(tracks)
-			if len(tracks) > queue.MaxQueueSize {
-				addedCount = queue.MaxQueueSize
+			byID := make(map[string]queue.TrackRef, len(room.State.Queue))
+			for _, t := range room.State.Queue {
+				byID[t.ID] = t
 			}
-			// Get the last N tracks added (they're at the end of the queue)
-			startIdx := len(room.State.Queue) - addedCount
-			if startIdx < 0 {
-				startIdx = 0
-			}
-			newTracks := room.State.Queue[startIdx:]
 			room.mu.Unlock()
 
 			// Launch enrichment for tracks lacking sources
-			for _, track := range newTracks {
+			for _, id := range addedIDs {
+				track, ok := byID[id]
+				if !ok {
+					continue
+				}
 				if h.matcher != nil && track.Sources.YouTube == nil {
 					h.launchEnrich(func() { h.enrichYouTube(req.RoomID, track.ID, track) })
 				}
@@ -1095,9 +1152,19 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 			cb(centrifuge.RPCReply{}, err)
 			return
 		}
-		reply, err := h.HandleRPC(e.Method, e.Data, userID)
+		reply, err := h.handleRPC(e.Method, e.Data, userID, rateLimitKey(clientID, userID))
 		cb(centrifuge.RPCReply{Data: reply}, rpcClientError(err))
 	})
+}
+
+// rateLimitKey picks the bucket key for fanout RPCs: the authenticated userID
+// when present, else the centrifuge clientID so anonymous clients are limited
+// per connection rather than sharing one global bucket.
+func rateLimitKey(clientID, userID string) string {
+	if userID != "" {
+		return "user:" + userID
+	}
+	return "client:" + clientID
 }
 
 // WithSpotifyMatcher enables async Spotify-source enrichment on queue.add.

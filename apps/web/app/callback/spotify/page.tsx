@@ -16,20 +16,17 @@ export default function SpotifyCallback() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     const authErr = params.get('error');
-    
-    if (authErr) {
-      console.error('spotify_auth_error', authErr, params.get('error_description'));
-      setError('Authentication failed. Try again.');
-      setState('error');
+
+    if (authErr || !code) {
+      // Deferred so no setState runs synchronously inside the effect body.
+      Promise.resolve().then(() => {
+        if (authErr) console.error('spotify_auth_error', authErr, params.get('error_description'));
+        setError('Authentication failed. Try again.');
+        setState('error');
+      });
       return;
     }
-    
-    if (!code) {
-      setError('Authentication failed. Try again.');
-      setState('error');
-      return;
-    }
-    
+
     handleCallback(code)
       .then((returnPath) => {
         setState('success');

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { TrackRef } from '@cojam/shared';
-import { fetchTrackDepth } from '@/lib/realtime';
+import { fetchTrackDepth, type TrackDepth } from '@/lib/realtime';
 import { formatTime } from './TransportUI';
 
 interface TrackDepthPanelProps {
@@ -15,30 +15,44 @@ interface TrackDepthPanelProps {
 export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<TrackDepth | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Panel stays mounted while closed; reset loaded data when the open/track
+  // key changes (docs-sanctioned state adjustment during render).
+  const trackKey = open && track ? track.id : null;
+  const [prevTrackKey, setPrevTrackKey] = useState(trackKey);
+  if (trackKey !== prevTrackKey) {
+    setPrevTrackKey(trackKey);
+    setData(null);
+    setError(null);
+  }
 
   useEffect(() => {
     if (!open || !track) {
-      setData(null);
-      setError(null);
       return;
     }
+    // Drop stale responses: a fetch for the previous track must not
+    // repopulate the panel after a track change (or after close).
+    let cancelled = false;
 
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
         const result = await fetchTrackDepth(roomId, track.isrc || '', track.title, track.artist);
-        setData(result);
+        if (!cancelled) setData(result);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch track details');
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch track details');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchData();
+    return () => {
+      cancelled = true;
+    };
   }, [open, track, roomId]);
 
   // Close on Esc
@@ -151,7 +165,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
                     Credits
                   </h3>
                   <div className="space-y-2">
-                    {data.credits.map((credit: any, idx: number) => (
+                    {data.credits.map((credit, idx: number) => (
                       <div key={idx} className="flex gap-3">
                         <span className="text-xs uppercase font-medium flex-shrink-0 w-16" style={{ color: 'var(--color-text-secondary)' }}>
                           {credit.role}

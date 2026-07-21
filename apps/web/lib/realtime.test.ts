@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useStore, parseConnInfo, buildProviderPrefs } from './realtime';
+import { useStore, parseConnInfo, buildProviderPrefs, rpcErrorMessage } from './realtime';
 import type { RoomState } from '@cojam/shared';
 
 const state = (version: number, roomId = 'r1'): RoomState => ({
@@ -123,5 +123,24 @@ describe('buildProviderPrefs', () => {
 
   it('lists both in canonical order when both are connected', () => {
     expect(buildProviderPrefs({ spotify: true, apple: true })).toEqual(['spotify', 'apple']);
+  });
+});
+
+describe('rpcErrorMessage', () => {
+  it('returns the message from a real Error', () => {
+    expect(rpcErrorMessage(new Error('boom'), 'fallback')).toBe('boom');
+  });
+
+  it('unwraps centrifuge-style plain {code, message} rejections', () => {
+    expect(rpcErrorMessage({ code: 403, message: 'not the host' }, 'fallback')).toBe('not the host');
+  });
+
+  it('falls back when there is no usable message', () => {
+    expect(rpcErrorMessage({}, 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage(null, 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage(undefined, 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage('string rejection', 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage({ message: '' }, 'fallback')).toBe('fallback');
+    expect(rpcErrorMessage(new Error(''), 'fallback')).toBe('fallback');
   });
 });

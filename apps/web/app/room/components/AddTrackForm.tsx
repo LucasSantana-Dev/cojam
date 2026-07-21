@@ -1,12 +1,30 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useStore, queueAdd, searchTracks, importPlaylist, type SearchCandidate } from '@/lib/realtime';
+import { useStore, queueAdd, searchTracks, importPlaylist, rpcErrorMessage, type SearchCandidate } from '@/lib/realtime';
 import { mergeProviderPrefs } from '@/lib/account';
 import { features } from '@/lib/features';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
 import { parseSpotifyPlaylistId, fetchSpotifyPlaylistTracks } from '@/lib/spotifyPlaylist';
 import { isAuthed as isSpotifyAuthed, canReadPlaylists } from '@/lib/spotifyAuth';
+
+// planPlaylistImport decides the import route for a pasted playlist URL.
+// Spotify playlists MUST resolve client-side (RFC-0007: server-side client
+// credentials get 403 in dev mode), so an unauthenticated Spotify URL has no
+// working route; the caller shows the connect message instead of firing a
+// doomed server RPC.
+export type PlaylistImportPlan =
+  | { route: 'spotify-client'; playlistId: string }
+  | { route: 'server' }
+  | { route: 'spotify-needs-auth' };
+
+export function planPlaylistImport(url: string, spotifyAuthed: boolean): PlaylistImportPlan {
+  const playlistId = parseSpotifyPlaylistId(url);
+  if (playlistId) {
+    return spotifyAuthed ? { route: 'spotify-client', playlistId } : { route: 'spotify-needs-auth' };
+  }
+  return { route: 'server' };
+}
 
 export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { roomId: string; spotifyAuthorized?: boolean; appleAuthorized?: boolean }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,15 +61,12 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
     }
 
     if (!searchQuery.trim()) {
+      // Invalidate any in-flight search (ref only; state resets live in onChange).
       searchSeqRef.current++;
-      setSearchResults([]);
-      setIsSearching(false);
       return;
     }
 
     const seq = ++searchSeqRef.current;
-    setIsSearching(true);
-    setSearchResults([]); // stale results must not render under the skeleton
     debounceTimerRef.current = setTimeout(async () => {
       try {
         const results = await searchTracks(searchQuery, mergeProviderPrefs(connectedServices, { spotify: spotifyAuthorized, apple: appleAuthorized }));
@@ -70,6 +85,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
 
   const handleSearchResultClick = async (result: SearchCandidate) => {
     setLoading(true);
+    setError('');
     try {
       await queueAdd(roomId, {
         title: result.title,
@@ -83,6 +99,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       });
       setSearchQuery('');
       setSearchResults([]);
+    } catch (err) {
+      setError(rpcErrorMessage(err, 'Couldn\'t add that track. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -124,6 +142,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       setVideoId('');
       setAppleSongId('');
       setSpotifyUri('');
+    } catch (err) {
+      setError(rpcErrorMessage(err, 'Couldn\'t add that track. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -139,14 +159,19 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
 
     try {
       // RFC-0007: Spotify playlists are fetched client-side with the user's own
-      // OAuth token (server-side client credentials get 403 in dev mode).
-      const spotifyPlaylistId = parseSpotifyPlaylistId(playlistUrl);
-      if (spotifyPlaylistId && isSpotifyAuthed()) {
+      // OAuth token (server-side client credentials get 403 in dev mode), so an
+      // unauthenticated Spotify URL has no working route: say so instead of
+      // firing a doomed server RPC (the old else-branch failed opaquely).
+      const plan = planPlaylistImport(playlistUrl, isSpotifyAuthed());
+      if (plan.route === 'spotify-needs-auth') {
+        throw new Error('Connect Spotify to import Spotify playlists.');
+      }
+      if (plan.route === 'spotify-client') {
         if (!canReadPlaylists()) {
           // Token predates the playlist-read scopes; only a fresh consent helps.
           throw new Error('Reconnect Spotify to import playlists (a new permission is required).');
         }
-        const tracks = await fetchSpotifyPlaylistTracks(spotifyPlaylistId);
+        const tracks = await fetchSpotifyPlaylistTracks(plan.playlistId);
         await importPlaylist(roomId, playlistUrl, name, tracks);
       } else {
         await importPlaylist(roomId, playlistUrl, name);
@@ -177,7 +202,23 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
             placeholder="Search for a song"
             aria-label="Search for a song"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              const q = e.target.value;
+              // Invalidate any in-flight search synchronously: an old request
+              // resolving before the debounce effect re-runs must not apply
+              // its results to the new query.
+              searchSeqRef.current++;
+              setSearchQuery(q);
+              // Search-state resets happen here (event handler), not in the
+              // debounce effect.
+              if (q.trim()) {
+                setIsSearching(true);
+                setSearchResults([]); // stale results must not render under the skeleton
+              } else {
+                setIsSearching(false);
+                setSearchResults([]);
+              }
+            }}
             className="w-full px-4 py-2.5 text-sm rounded-lg focus:outline-none transition-all duration-150 border"
             style={{ backgroundColor: 'var(--color-surface-2)', borderColor: searchQuery ? 'var(--color-accent)' : 'var(--color-border)', color: 'var(--color-text-primary)' }}
           />
@@ -309,6 +350,12 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
         </form>
       </div>
 
+      {/* Shared add-track error lives OUTSIDE the manual form: a failed
+          search-result add must stay visible when the details are closed. */}
+      <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171', minHeight: error ? undefined : 0 }}>
+        {error}
+      </p>
+
       <details className="cursor-pointer">
         <summary className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
           Add manually
@@ -366,10 +413,6 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             />
           )}
-
-          <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171', minHeight: error ? undefined : 0 }}>
-            {error}
-          </p>
 
           <button
             type="submit"

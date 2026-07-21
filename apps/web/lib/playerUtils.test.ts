@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { secondsToMs, msToSeconds } from './playerUtils';
+import { secondsToMs, msToSeconds, createEndedDetector } from './playerUtils';
 
 describe('playerUtils', () => {
   describe('secondsToMs', () => {
@@ -51,6 +51,41 @@ describe('playerUtils', () => {
       const seconds = msToSeconds(original);
       const roundTrip = secondsToMs(seconds);
       expect(roundTrip).toBeCloseTo(original, 0);
+    });
+  });
+
+  describe('createEndedDetector', () => {
+    it('fires once when playback reaches the end', () => {
+      const detect = createEndedDetector();
+      expect(detect(179000, 180000)).toBe(false);
+      expect(detect(179600, 180000)).toBe(true);
+    });
+
+    it('does not refire on subsequent polls at the end', () => {
+      const detect = createEndedDetector();
+      expect(detect(179600, 180000)).toBe(true);
+      expect(detect(179700, 180000)).toBe(false);
+      expect(detect(180000, 180000)).toBe(false);
+    });
+
+    it('re-arms when a new track starts (duration changes)', () => {
+      const detect = createEndedDetector();
+      expect(detect(179600, 180000)).toBe(true);
+      expect(detect(0, 200000)).toBe(false);
+      expect(detect(199600, 200000)).toBe(true);
+    });
+
+    it('re-arms when the user rewinds under 50%', () => {
+      const detect = createEndedDetector();
+      expect(detect(179600, 180000)).toBe(true);
+      expect(detect(80000, 180000)).toBe(false);
+      expect(detect(179600, 180000)).toBe(true);
+    });
+
+    it('never fires with zero duration', () => {
+      const detect = createEndedDetector();
+      expect(detect(0, 0)).toBe(false);
+      expect(detect(1000, 0)).toBe(false);
     });
   });
 });
