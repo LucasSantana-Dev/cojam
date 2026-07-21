@@ -239,6 +239,8 @@ export async function joinRoom(
   try {
     joinResult = await centrifuge.rpc('room.join', { roomId, name });
   } catch (err) {
+    // Keep real Errors (network failures) intact, stack and all.
+    if (err instanceof Error) throw err;
     // centrifuge-js rejects with a plain {code, message} object, not an
     // Error; normalize so the join UI can show the server's message.
     const msg = (err as { message?: string })?.message;
