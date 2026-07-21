@@ -176,6 +176,10 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
             value={searchQuery}
             onChange={(e) => {
               const q = e.target.value;
+              // Invalidate any in-flight search synchronously: an old request
+              // resolving before the debounce effect re-runs must not apply
+              // its results to the new query.
+              searchSeqRef.current++;
               setSearchQuery(q);
               // Search-state resets happen here (event handler), not in the
               // debounce effect.

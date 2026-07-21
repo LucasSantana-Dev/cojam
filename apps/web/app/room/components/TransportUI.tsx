@@ -26,7 +26,9 @@ interface TransportUIProps {
 export function TransportUI({ roomId, activePlayer, canControl }: TransportUIProps) {
   const store = useStore();
   const [isDragging, setIsDragging] = useState(false);
-  const [displayPosition, setDisplayPosition] = useState(0);
+  // Seed from any already-known transport position: a client joining
+  // mid-playback must not show 0:00 until the next publication.
+  const [displayPosition, setDisplayPosition] = useState(() => store.state?.transport?.positionMs ?? 0);
   const dragRef = useRef(false);
 
   const transport = store.state?.transport;
