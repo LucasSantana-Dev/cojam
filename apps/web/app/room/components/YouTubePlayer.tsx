@@ -4,7 +4,31 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore, nowPlayingAdvance } from '@/lib/realtime';
 import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
-import { secondsToMs, msToSeconds } from '@/lib/playerUtils';
+import { secondsToMs, msToSeconds, createEndedDetector } from '@/lib/playerUtils';
+
+// Minimal structural types for the YouTube IFrame API surface this adapter uses.
+interface YTPlayerInstance {
+  playVideo(): void;
+  pauseVideo(): void;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
+  getCurrentTime(): number;
+  getDuration(): number;
+  loadVideoById(videoId: string): void;
+}
+
+interface YTGlobal {
+  Player: new (
+    elementId: string,
+    opts: {
+      width?: number;
+      height?: number;
+      events?: {
+        onReady?: () => void;
+        onStateChange?: (event: { data: number }) => void;
+      };
+    }
+  ) => YTPlayerInstance;
+}
 
 // Minimal structural types for the YouTube IFrame API surface this adapter uses.
 interface YTPlayerInstance {
@@ -68,6 +92,7 @@ class YouTubePlayerAdapter implements IPlayer {
   private endedCallbacks: Array<() => void> = [];
   private positionCallbacks: Array<(ms: number) => void> = [];
   private positionPollInterval: NodeJS.Timeout | null = null;
+  private endedDetector = createEndedDetector();
 
   constructor(ytPlayer: YTPlayerInstance) {
     this.ytPlayer = ytPlayer;
@@ -116,7 +141,11 @@ class YouTubePlayerAdapter implements IPlayer {
     if (!this.positionPollInterval) {
       this.positionPollInterval = setInterval(async () => {
         const pos = await this.getCurrentPositionMs();
+        const duration = await this.getDurationMs();
         this.positionCallbacks.forEach((c) => c(pos));
+        if (this.endedDetector(pos, duration)) {
+          this.endedCallbacks.forEach((c) => c());
+        }
       }, 500);
     }
   }
@@ -128,6 +157,7 @@ class YouTubePlayerAdapter implements IPlayer {
     }
     this.endedCallbacks = [];
     this.positionCallbacks = [];
+    this.endedDetector = createEndedDetector();
   }
 }
 
@@ -198,7 +228,11 @@ export function YouTubePlayer({
       playerRef.current = player;
     }
 
-    const track = nowPlayingId ? queue.find((t) => t.id === nowPlayingId) : undefined;
+    // Read the queue imperatively: this effect must re-run only when apiReady
+    // or nowPlayingId changes, not on every state publication (a fresh queue
+    // array identity per publication used to restart the current video).
+    const queueNow = useStore.getState().state?.queue ?? EMPTY_QUEUE;
+    const track = nowPlayingId ? queueNow.find((t) => t.id === nowPlayingId) : undefined;
     const videoId = track?.sources.youtube?.videoId;
     if (!videoId) return;
 
@@ -209,7 +243,7 @@ export function YouTubePlayer({
     } else {
       pendingVideoId.current = videoId;
     }
-  }, [apiReady, nowPlayingId, queue, roomId, onPlayerReady]);
+  }, [apiReady, nowPlayingId, roomId]);
 
   useEffect(() => {
     return () => {

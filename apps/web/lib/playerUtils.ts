@@ -33,3 +33,25 @@ export async function detectSpotifyCanSeek(player: Pick<SpotifySDKPlayer, 'getCu
     return false;
   }
 }
+
+// createEndedDetector returns a poll-time check that fires exactly once when
+// playback reaches the end of a track, re-arming when a new track starts
+// (duration changes) or when the user rewinds (position drops back under 50%).
+export function createEndedDetector(): (positionMs: number, durationMs: number) => boolean {
+  let armed = true;
+  let lastDuration = 0;
+  return (positionMs: number, durationMs: number) => {
+    if (durationMs <= 0) return false;
+    if (durationMs !== lastDuration) {
+      lastDuration = durationMs;
+      armed = true;
+    }
+    if (positionMs < durationMs * 0.5) armed = true;
+    if (!armed) return false;
+    if (positionMs >= durationMs - 500) {
+      armed = false;
+      return true;
+    }
+    return false;
+  };
+}
