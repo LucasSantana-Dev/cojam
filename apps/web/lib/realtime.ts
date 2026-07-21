@@ -93,6 +93,30 @@ function nameFromInfo(info: unknown, fallback = 'Listener'): string {
 
 let centrifuge: Centrifuge | null = null;
 
+// Set after a successful room.join. A later 'connected' (reconnect after a
+// drop) re-joins so the client adopts the server's authoritative state
+// instead of serving the stale pre-disconnect snapshot (B10).
+let activeRoom: { roomId: string; name: string } | null = null;
+
+// joinRoom rejects if 'connected' never fires (unreachable server, rejected
+// token with retry loop): without this the join UI hung forever (B11).
+const JOIN_TIMEOUT_MS = 10_000;
+
+// Connection token precedence: a signed-in Supabase account token wins (the
+// server derives a stable "sb:<uuid>" identity from it); otherwise the
+// anonymous room-auth token; otherwise empty (v0 behavior). Passed to
+// centrifuge as getToken so an expiring token is refreshed transparently
+// instead of the connection dropping when it lapses (B9).
+async function resolveConnectionToken(): Promise<string> {
+  const accountToken = await getAccountToken();
+  if (accountToken) return accountToken;
+  if (features.roomAuth) {
+    const tokenResult = await fetchConnectionToken();
+    if (tokenResult) return tokenResult.token;
+  }
+  return '';
+}
+
 export async function joinRoom(
   roomId: string,
   name: string,
@@ -107,23 +131,17 @@ export async function joinRoom(
   const connInfo: ConnInfo = { name };
   if (platform) connInfo.platform = platform;
 
-  // Connection token precedence: a signed-in Supabase account token wins (the
-  // server derives a stable "sb:<uuid>" identity from it); otherwise the
-  // anonymous room-auth token; otherwise empty (v0 behavior).
-  let token = '';
-  const accountToken = await getAccountToken();
-  if (accountToken) {
-    token = accountToken;
-  } else if (features.roomAuth) {
-    const tokenResult = await fetchConnectionToken();
-    if (tokenResult) {
-      token = tokenResult.token;
-    }
-    // If fetch fails or feature is off, token remains empty (v0 behavior).
-  }
+  // A fresh joinRoom is a new room intent: clear the previous activeRoom so
+  // the reconnect resync below cannot re-join (and adopt the state of) a
+  // room the user has navigated away from. Set again after this join's
+  // room.join succeeds.
+  activeRoom = null;
+
+  const token = await resolveConnectionToken();
 
   centrifuge = new Centrifuge(wsUrl, {
     token,
+    getToken: resolveConnectionToken,
     data: connInfo, // becomes presence ConnInfo server-side
     // Read RPCs like track.lyrics (LRCLIB) and track.depth (MusicBrainz) hit
     // slow crowd-sourced upstreams; the server caps them at ~10s and returns a
@@ -141,6 +159,20 @@ export async function joinRoom(
     measureClockOffset().catch(() => {
       /* clock sync error - not fatal */
     });
+    // Reconnect resync (B10): on the FIRST connect activeRoom is still null
+    // (set only after the initial room.join below), so this fires only on
+    // reconnects: re-join to adopt the authoritative state, healing anything
+    // missed while disconnected. room.join is idempotent server-side.
+    if (activeRoom) {
+      const rejoin = activeRoom;
+      centrifuge!.rpc('room.join', rejoin).then((res) => {
+        if (res.data) {
+          useStore.getState().setState(res.data as RoomState);
+        }
+      }).catch(() => {
+        /* stay on stale state; the next publication heals */
+      });
+    }
   });
 
   centrifuge.on('connecting', () => {
@@ -187,15 +219,37 @@ export async function joinRoom(
 
   centrifuge.connect();
 
-  await new Promise<void>((resolve) => {
-    centrifuge!.on('connected', () => resolve());
-  });
+  // Race 'connected' against a timeout (B11): an unreachable server or a
+  // token the server keeps rejecting never resolves otherwise, and the join
+  // UI would spin forever. On timeout the caller surfaces joinError.
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      centrifuge!.on('connected', () => resolve());
+    }),
+    new Promise<void>((_, reject) => {
+      setTimeout(
+        () => reject(new Error('Could not reach the server. Check your connection and try again.')),
+        JOIN_TIMEOUT_MS,
+      );
+    }),
+  ]);
 
   // RPC result IS the RoomState (docs/protocol.md), not wrapped in {state}
-  const joinResult = await centrifuge.rpc('room.join', { roomId, name });
+  let joinResult;
+  try {
+    joinResult = await centrifuge.rpc('room.join', { roomId, name });
+  } catch (err) {
+    // centrifuge-js rejects with a plain {code, message} object, not an
+    // Error; normalize so the join UI can show the server's message.
+    const msg = (err as { message?: string })?.message;
+    throw new Error(msg || 'Couldn\'t join. Check the room code and try again.');
+  }
   if (joinResult.data) {
     store.setState(joinResult.data as RoomState);
   }
+  // Mark the room active only after the initial join succeeded: the
+  // 'connected' handler keys the reconnect resync off this.
+  activeRoom = { roomId, name };
 
   // Measure initial clock offset (fire-and-forget, non-fatal on error)
   measureClockOffset().catch(() => {
