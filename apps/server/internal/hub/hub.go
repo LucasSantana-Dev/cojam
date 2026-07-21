@@ -890,7 +890,11 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 			}
 		}
 
-		// Add tracks to queue up to capacity, set AddedBy on each
+		// Add tracks to queue up to capacity, set AddedBy on each. Collect the
+		// server-assigned IDs of exactly the tracks that were added so
+		// enrichment below cannot touch pre-existing queue entries when the
+		// queue was partially full (the old last-N heuristic over-enriched).
+		var addedIDs []string
 		res, mutErr := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			remaining := queue.MaxQueueSize - len(s.Queue)
 			if remaining <= 0 {
@@ -904,30 +908,28 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 
 			for _, track := range toAdd {
 				track.AddedBy = req.AddedBy
-				s.Add(track)
+				added := s.Add(track)
+				addedIDs = append(addedIDs, added.ID)
 			}
 			return nil
 		})
 
-		// After successful mutate, enrich tracks that were added
-		if mutErr == nil && len(tracks) > 0 {
-			// Get the updated room state to find the newly added tracks
+		// After successful mutate, enrich exactly the tracks that were added
+		if mutErr == nil && len(addedIDs) > 0 {
 			room := h.GetOrCreateRoom(req.RoomID)
 			room.mu.Lock()
-			addedCount := len(tracks)
-			if len(tracks) > queue.MaxQueueSize {
-				addedCount = queue.MaxQueueSize
+			byID := make(map[string]queue.TrackRef, len(room.State.Queue))
+			for _, t := range room.State.Queue {
+				byID[t.ID] = t
 			}
-			// Get the last N tracks added (they're at the end of the queue)
-			startIdx := len(room.State.Queue) - addedCount
-			if startIdx < 0 {
-				startIdx = 0
-			}
-			newTracks := room.State.Queue[startIdx:]
 			room.mu.Unlock()
 
 			// Launch enrichment for tracks lacking sources
-			for _, track := range newTracks {
+			for _, id := range addedIDs {
+				track, ok := byID[id]
+				if !ok {
+					continue
+				}
 				if h.matcher != nil && track.Sources.YouTube == nil {
 					h.launchEnrich(func() { h.enrichYouTube(req.RoomID, track.ID, track) })
 				}
