@@ -55,6 +55,9 @@ func validateImportTracks(tracks []queue.TrackRef) error {
 		if len(t.ISRC) > maxImportFieldLen {
 			return userErrorf("track %d: isrc too long", i+1)
 		}
+		if len(t.AddedBy) > maxImportFieldLen {
+			return userErrorf("track %d: addedBy too long", i+1)
+		}
 		if t.Sources.YouTube != nil && len(t.Sources.YouTube.VideoID) > maxImportFieldLen {
 			return userErrorf("track %d: youtube video id too long", i+1)
 		}
@@ -604,6 +607,14 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("queue.add: roomId required")
 		}
+		// queue.add crosses the same trust boundary as playlist.import's
+		// client-supplied tracks (RFC-0007): the TrackRef is arbitrary client
+		// input, so run the shared validator. AddedBy stays a client display
+		// name (capped by the validator); identity-grade attribution lands with
+		// RFC-0005's addedByUserId (B16).
+		if err := validateImportTracks([]queue.TrackRef{req.Track}); err != nil {
+			return nil, err
+		}
 		var addedID string
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			if len(s.Queue) >= queue.MaxQueueSize {
@@ -896,6 +907,9 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		}
 		if req.URL == "" {
 			return nil, userErrorf("enter a playlist URL")
+		}
+		if len(req.AddedBy) > maxImportFieldLen {
+			return nil, userErrorf("addedBy too long (max %d chars)", maxImportFieldLen)
 		}
 
 		var tracks []queue.TrackRef
