@@ -13,7 +13,16 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `now_playing.set` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
 | `track.search` | `{ query: string, prefer?: string[] }` | `SearchResult[]` |
+| `track.depth` | `{ roomId, isrc: string, title: string, artist: string }` | `TrackDepth` |
+| `track.lyrics` | `{ roomId, artist: string, title: string, album: string, durationMs: number }` | `LyricsResult` |
+| `track.listenbrainz` | `{ roomId, isrc: string, title: string, artist: string }` | `ListenBrainzResult` |
+| `track.lastfm` | `{ roomId, artist: string, title: string }` | `LastfmEnrich` |
 | `playlist.import` | `{ roomId, url: string, addedBy: string, tracks?: Omit<TrackRef, 'id' \| 'addedBy'>[] }` | `RoomState` |
+| `radio.set` | `{ roomId, enabled: boolean }` | `RoomState` |
+| `transport.play` | `{ roomId, trackId?: string, positionMs: number }` | `RoomState` |
+| `transport.pause` | `{ roomId, positionMs: number }` | `RoomState` |
+| `transport.seek` | `{ roomId, positionMs: number }` | `RoomState` |
+| `sync.ping` | `{}` | `{ serverNowMs: number }` |
 
 `track.search` is a read (not membership-gated). `prefer` lists the caller's connected
 providers (`"spotify"`, `"apple"`); results playable on those providers rank first, other
@@ -29,6 +38,53 @@ the server fetches `url` itself (Deezer, YouTube). Compatibility: old clients se
 no `tracks` and behave as before; old servers ignore the unknown field and fetch
 `url` server-side (Spotify URLs then 403 in dev mode).
 
+`track.depth`, `track.lyrics`, `track.listenbrainz`, and `track.lastfm` are reads
+(not membership-gated). Each fans out to one third-party provider and degrades to
+an empty result with `source` set when its feature flag is off or the lookup
+misses; a miss is logged, never an RPC error. Result shapes:
+
+```ts
+type TrackDepth = {          // source: "musicbrainz" (FEATURE_TRACK_DEPTH, default on)
+  credits: { role: string; name: string }[];
+  releaseYear?: number;
+  label?: string;
+  tags: string[];
+  source: string;
+};
+
+type LyricsResult = {        // source: "lrclib" (FEATURE_LYRICS, default on)
+  synced: { timeMs: number; text: string }[];
+  plain: string;
+  source: string;
+};
+
+type ListenBrainzResult = {  // source: "listenbrainz" (FEATURE_LISTENBRAINZ, default off)
+  mbid?: string;
+  tags: string[];
+  count?: number;            // listen count, when available
+  source: string;
+};
+
+type LastfmEnrich = {        // source: "lastfm" (FEATURE_LASTFM_ENRICH + LASTFM_API_KEY, default off)
+  playcount?: number;
+  listeners?: number;
+  tags: string[];
+  source: string;
+};
+```
+
+`radio.set` toggles `radioEnabled` (host only). When the queue runs dry on
+`now_playing.advance` with radio on, the server refills the queue asynchronously
+from a similar-tracks provider (Last.fm, `FEATURE_RADIO` + `LASTFM_API_KEY`)
+seeded by the last queued track.
+
+`transport.play` / `transport.pause` / `transport.seek` exist only when
+`FEATURE_SYNC` is on; otherwise the server replies `ErrorMethodNotFound`.
+`positionMs` is clamped to `>= 0`. `transport.play` optionally switches
+`nowPlayingId` first. All three stamp `transport.updatedAtServerMs` server-side
+and publish the full `RoomState`. `sync.ping` is a read returning the server
+clock (unix ms) for client offset estimation.
+
 ### Roles & authorization (RFC-0005, behind `FEATURE_ROOM_AUTH`)
 
 When `FEATURE_ROOM_AUTH` is on, connections present a server-signed token (anonymous stable
@@ -40,7 +96,7 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 | RPC | Who may call (flag on) |
 |---|---|
 | `queue.add` | any member |
-| `room.join`, `sync.ping`, reads | any member |
+| `room.join`, `sync.ping`, reads | any caller |
 | `now_playing.set` / `now_playing.advance` | host only |
 | `queue.reorder` | host only |
 | `queue.remove` | host, or the member who queued the track (`addedByUserId`) |
@@ -76,6 +132,60 @@ Account data lives in the Supabase project, written client-direct with row-level
 that Spotify/Apple is connected; OAuth tokens never leave the client). Persisted connected
 services feed the `prefer` parameter of `track.search` on any device.
 
+## Connection token endpoint (`GET /api/connection-token`)
+
+HTTP endpoint on the Go server (`cmd/server/connection_token.go`) that mints the
+anonymous connection token used above. Returns `501 {"error": "connection auth not enabled"}`
+when `FEATURE_ROOM_AUTH` is off.
+
+Query params (both optional):
+
+- `userId`: a previous anonymous identity the caller wants to keep.
+- `token`: the previous connection JWT, proving ownership of that `userId`.
+
+Response `200`: `{ "token": string, "userId": string }`, where `token` is an HS256
+JWT (secret `ROOM_AUTH_SECRET`, claims `{sub, exp, iat}`, TTL 24h) with `sub` = `userId`.
+
+Ownership-proof reissue: the server honors `userId` only when `token` validates
+(correct signature, `sub` matches `userId`, expired no more than 30 days ago; the
+grace lets a returning user keep their identity across longer absences without
+widening the live-token window). Without proof the param is ignored and a fresh
+identity is minted; otherwise anyone could mint a token for any userID (for
+example a room host's, read from presence) and be treated as that user. The
+fail-safe default is always a fresh identity, never an error: clients adopt
+whatever `userId` comes back. The web client (`apps/web/lib/auth.ts`) persists
+both values in localStorage and presents them on the next fetch.
+
+## Web runtime config (`GET /env.js`)
+
+The web image must be host-agnostic, but `NEXT_PUBLIC_*` is inlined at build
+time. The web app therefore serves `app/env.js/route.ts` per request
+(`force-dynamic`, `cache-control: no-store`, content type
+`application/javascript`), loaded via a `beforeInteractive` `<Script>` so it runs
+before the app:
+
+```js
+window.__COJAM_ENV__ = { ... };
+```
+
+Fields (runtime env var in parentheses):
+
+- `wsUrl` (`COJAM_WS_URL`), `spotifyClientId` (`COJAM_SPOTIFY_CLIENT_ID`): always
+  emitted, empty string when unset.
+- `spotifyEnabled` (`COJAM_FEATURE_SPOTIFY`), `roomAuthEnabled`
+  (`COJAM_FEATURE_ROOM_AUTH`): emitted only when the variable is explicitly set,
+  so an unset runtime value falls back to the build-time flag instead of forcing
+  it off.
+- `supabaseUrl` + `supabaseAnonKey` (`COJAM_SUPABASE_URL` +
+  `COJAM_SUPABASE_ANON_KEY`): emitted only as a pair; emitting just one would mix
+  the runtime project with the build-time fallback of the other, pointing the
+  client at two different Supabase projects.
+
+`apps/web/lib/runtimeEnv.ts` consumes the contract: `getRuntimeEnv()` reads
+`window.__COJAM_ENV__` (undefined on the server or before `/env.js` has run) and
+`pickEnv()` resolves a value runtime first, then the build-time `NEXT_PUBLIC_*`,
+then a default; blank or whitespace-only values count as unset.
+
 ## Types
 
 ```ts
@@ -98,7 +208,16 @@ type RoomState = {
   roomId: string;
   queue: TrackRef[];        // ordered; head = now playing
   nowPlayingId?: string;    // queue entry id
+  hostUserId?: string;      // userID of the room host (RFC-0005; empty when room auth is off)
+  radioEnabled: boolean;    // refill the queue with similar tracks when it runs dry
   version: number;          // monotonic, bumps per mutation; clients drop stale
+  transport?: TransportState; // shared play/pause/seek position (FEATURE_SYNC)
+};
+
+type TransportState = {
+  state: 'playing' | 'paused' | 'stopped';
+  positionMs: number;
+  updatedAtServerMs: number; // server clock (unix ms) at last transport mutation
 };
 ```
 
@@ -111,6 +230,6 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `transport.play`, `transport.pause`, `transport.seek`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 Rules: state carries metadata only, never audio. Each client plays the head track through its own platform SDK on explicit user gesture.
