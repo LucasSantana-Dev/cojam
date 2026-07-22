@@ -20,6 +20,9 @@ const HUD_COMMANDS = [';sync', ';queue', ';veto'];
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
 const noopSubscribe = () => () => {};
 
+// ScrollTrigger registration is global; a StrictMode remount must not re-register.
+let scrollTriggerRegistered = false;
+
 // Split a headline into per-word spans wrapped in overflow:hidden masks for reveal animation.
 function Words({ text, start = 0 }: { text: string; start?: number }) {
   return (
@@ -70,13 +73,20 @@ export default function Home() {
     const root = rootRef.current;
     if (!root) return;
     const cleanups: Array<() => void> = [];
+    // React StrictMode double-mount can run the cleanup below before the
+    // dynamic import resolves; a stale init must not attach GSAP after that.
+    let cancelled = false;
 
     // Dynamic import GSAP only client-side, after window is defined.
     const initGsap = async () => {
       try {
         const gsap = await import('gsap');
         const ScrollTrigger = (await import('gsap/ScrollTrigger')).default;
-        gsap.default.registerPlugin(ScrollTrigger);
+        if (cancelled) return;
+        if (!scrollTriggerRegistered) {
+          gsap.default.registerPlugin(ScrollTrigger);
+          scrollTriggerRegistered = true;
+        }
 
         const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -410,6 +420,9 @@ export default function Home() {
         }
       } catch (error) {
         console.error('GSAP initialization failed:', error);
+        // Without GSAP, .reveal.in is never applied; the .no-gsap CSS rule
+        // forces reveals visible instead of leaving sections hidden.
+        if (!cancelled) document.documentElement.classList.add('no-gsap');
       }
     };
 
@@ -458,7 +471,10 @@ export default function Home() {
     window.addEventListener('scroll', onScroll, { passive: true });
     cleanups.push(() => window.removeEventListener('scroll', onScroll));
 
-    return () => cleanups.forEach((fn) => fn());
+    return () => {
+      cancelled = true;
+      cleanups.forEach((fn) => fn());
+    };
   }, []);
 
   const steps = [
