@@ -68,6 +68,20 @@ func MigrateSupabase(ctx context.Context, pool *pgxpool.Pool) error {
 	return migrateFrom(ctx, pool, supabaseMigrationsFS, "migrations-supabase")
 }
 
+// HasAuthSchema reports whether the connected database carries Supabase's
+// auth schema. Split deployments (plain Postgres for rooms, hosted Supabase
+// for accounts) do not have it; callers must skip MigrateSupabase there
+// instead of crashing on the missing schema.
+func HasAuthSchema(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
+	var exists bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth'
+		)
+	`).Scan(&exists)
+	return exists, err
+}
+
 func migrateFrom(ctx context.Context, pool *pgxpool.Pool, fsys embed.FS, dir string) error {
 	// Create schema_migrations table if it doesn't exist. DDL returns no rows, so
 	// use Exec (not QueryRow) and surface a real failure instead of swallowing it.

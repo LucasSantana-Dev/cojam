@@ -149,8 +149,19 @@ func main() {
 
 		// Supabase-only migrations (profiles, connected_services) reference the auth
 		// schema, which plain hosted Postgres lacks; run them only for accounts.
+		// Split deployments (plain Postgres for rooms, hosted Supabase for
+		// accounts) skip them: account tables live in the hosted project.
 		if supabaseAuthEnabled {
-			runMigration(db.MigrateSupabase, "migrate supabase schema")
+			hasAuth, err := db.HasAuthSchema(ctx, pool)
+			if err != nil {
+				pool.Close()
+				log.Fatalf("failed to check for auth schema: %v", err)
+			}
+			if hasAuth {
+				runMigration(db.MigrateSupabase, "migrate supabase schema")
+			} else {
+				logger.Info("supabase_migrations_skipped", "reason", "auth schema not present (split deployment: account tables live in the hosted Supabase project)")
+			}
 		}
 
 		dbPool = pool

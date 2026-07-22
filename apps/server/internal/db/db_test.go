@@ -150,3 +150,45 @@ func TestSupabaseMigrationsReadable(t *testing.T) {
 		}
 	}
 }
+
+func TestHasAuthSchema(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set, skipping database tests")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, err := Open(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer pool.Close()
+
+	// Plain test Postgres has no Supabase auth schema.
+	has, err := HasAuthSchema(ctx, pool)
+	if err != nil {
+		t.Fatalf("HasAuthSchema failed: %v", err)
+	}
+	if has {
+		t.Fatal("HasAuthSchema = true on plain Postgres, want false")
+	}
+
+	if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS auth"); err != nil {
+		t.Fatalf("create auth schema: %v", err)
+	}
+	defer func() {
+		if _, err := pool.Exec(context.Background(), "DROP SCHEMA auth CASCADE"); err != nil {
+			t.Logf("cleanup: drop auth schema: %v", err)
+		}
+	}()
+
+	has, err = HasAuthSchema(ctx, pool)
+	if err != nil {
+		t.Fatalf("HasAuthSchema failed: %v", err)
+	}
+	if !has {
+		t.Fatal("HasAuthSchema = false after creating auth schema, want true")
+	}
+}
