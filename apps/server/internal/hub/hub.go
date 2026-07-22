@@ -581,25 +581,29 @@ func (h *Hub) hasMembersLocked(roomID string) bool {
 // mutate applies fn to the room under its lock, marshals the resulting state while
 // still holding the lock (state is a pointer; marshaling outside would race), releases
 // the lock, then persists to the store and publishes the snapshot to the room channel.
-// The state is deep-copied before releasing the lock to prevent data races.
-// Store errors are logged but non-fatal to the mutation result.
+// When fn leaves Version unchanged the mutation was a no-op (every state change bumps
+// Version, and version-guarded clients would reject an unbumped publication anyway),
+// so the save + broadcast are skipped. The state is deep-copied before releasing the
+// lock to prevent data races. Store errors are logged but non-fatal to the result.
 func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMessage, error) {
 	room := h.GetOrCreateRoom(roomID)
 
 	room.mu.Lock()
+	versionBefore := room.State.Version
 	if fn != nil {
 		if err := fn(room.State); err != nil {
 			room.mu.Unlock()
 			return nil, err
 		}
 	}
+	changed := room.State.Version != versionBefore
 	data, err := json.Marshal(room.State)
 	room.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 
-	if fn != nil {
+	if fn != nil && changed {
 		// Write-through: persist state after releasing room lock.
 		// Unmarshal the JSON to get a deep copy safe for store.Save.
 		var stateCopy queue.RoomState
