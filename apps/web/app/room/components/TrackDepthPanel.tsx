@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { TrackRef } from '@cojam/shared';
 import { fetchTrackDepth, type TrackDepth } from '@/lib/realtime';
 import { formatTime } from './TransportUI';
+import { useDialogFocus } from './useDialogFocus';
 
 interface TrackDepthPanelProps {
   roomId: string;
@@ -16,7 +17,8 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TrackDepth | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(open, onClose, containerRef);
 
   // Panel stays mounted while closed; reset loaded data when the open/track
   // key changes (docs-sanctioned state adjustment during render).
@@ -55,19 +57,6 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
     };
   }, [open, track, roomId]);
 
-  // Close on Esc
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-        triggerRef.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
-
   if (!open || !track) return null;
 
   return (
@@ -88,6 +77,10 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
           backgroundColor: 'var(--color-surface-1)',
           borderColor: 'var(--color-border)',
         }}
+        ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Track details for ${track.title}`}
       >
         {/* Header */}
         <div className="flex-shrink-0 px-6 py-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
