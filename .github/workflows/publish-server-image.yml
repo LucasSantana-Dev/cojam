@@ -1,7 +1,7 @@
 name: Publish server image
 
 # Builds and pushes the Go server image to GHCR so self-managed deployments
-# (which pull rather than build) can consume it. The Fly deploy path is separate.
+# (which pull rather than build) can consume it.
 on:
   push:
     branches: [main]
