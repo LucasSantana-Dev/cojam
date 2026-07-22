@@ -8,7 +8,6 @@ import { avatarGradient } from '@/lib/avatar';
 
 export function PresenceBar() {
   const members = useStore((s) => s.members);
-  const currentName = useStore((s) => s.name);
 
   const deduped = useMemo(() => {
     const seen = new Set<string>();

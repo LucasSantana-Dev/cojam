@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, CheckIcon } from '@/app/components/icons';
@@ -586,10 +587,12 @@ export default function Home() {
                 </span>
               </div>
               <div className="room-card__main">
-                <img
+                <Image
                   src="https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/e8/43/5f/e8435ffa-b6b9-b171-40ab-4ff3959ab661/886443919266.jpg/600x600bb.jpg"
                   alt=""
                   className="room-card__art"
+                  width={52}
+                  height={52}
                   loading="lazy"
                   decoding="async"
                   referrerPolicy="no-referrer"
