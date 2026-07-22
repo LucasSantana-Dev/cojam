@@ -162,7 +162,8 @@ Greenfield MVP (started 2026-07-16), built in public.
 
 - Rooms, shared queue, presence, auto-advance, YouTube playback (MVP core)
 - Per-room authorization and Spotify server-side matching (Phase 3)
-- Planned: Postgres durability, Apple Music (pending Developer Program)
+- Postgres durability (rooms survive restart when `DATABASE_URL` is set)
+- Planned: Apple Music (pending Developer Program)
 
 The Go server emits structured JSON logs to stdout and Prometheus metrics at
 `/metrics`. Implementation plan lives in [`.claude/plans/`](.claude/plans/);
