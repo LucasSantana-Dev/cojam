@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { GET } from './route';
 
-const KEYS = ['COJAM_SUPABASE_URL', 'COJAM_SUPABASE_ANON_KEY'] as const;
+const KEYS = ['COJAM_SUPABASE_URL', 'COJAM_SUPABASE_ANON_KEY', 'COJAM_FEATURE_ROOM_AUTH'] as const;
 
 function parseBody(res: Response): Promise<Record<string, unknown>> {
   return res.text().then((body) => {
@@ -54,5 +54,25 @@ describe('env.js route supabase overrides', () => {
     const env = await parseBody(GET());
     expect(env.supabaseUrl).toBeUndefined();
     expect(env.supabaseAnonKey).toBeUndefined();
+  });
+});
+
+describe('env.js route roomAuthEnabled flag', () => {
+  it('emits roomAuthEnabled true when COJAM_FEATURE_ROOM_AUTH=true', async () => {
+    process.env.COJAM_FEATURE_ROOM_AUTH = 'true';
+    const env = await parseBody(GET());
+    expect(env.roomAuthEnabled).toBe(true);
+  });
+
+  it('emits roomAuthEnabled false when explicitly off', async () => {
+    process.env.COJAM_FEATURE_ROOM_AUTH = 'false';
+    const env = await parseBody(GET());
+    expect(env.roomAuthEnabled).toBe(false);
+  });
+
+  it('omits roomAuthEnabled when unset so the build-time flag applies', async () => {
+    delete process.env.COJAM_FEATURE_ROOM_AUTH;
+    const env = await parseBody(GET());
+    expect(env.roomAuthEnabled).toBeUndefined();
   });
 });

@@ -66,6 +66,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
   );
   // Accounts link: resolved at runtime, hydration-safe via the server snapshot.
   const accountsEnabled = useSyncExternalStore(noopSubscribe, supabaseEnabled, () => false);
+  // Room auth (anonymous identity tokens): resolved at runtime like Spotify,
+  // so the env-agnostic image can turn it on via COJAM_FEATURE_ROOM_AUTH.
+  const roomAuthEnabled = useSyncExternalStore(
+    noopSubscribe,
+    () => getRuntimeEnv()?.roomAuthEnabled ?? features.roomAuth,
+    () => features.roomAuth,
+  );
 
   // Accounts: when signed in, load persisted connected services into the store
   // (search ranking follows them on any device, even before local OAuth state
@@ -123,7 +130,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   // U5: compute room control permission for this user
   const hostControl = canControl({
-    roomAuth: features.roomAuth,
+    roomAuth: roomAuthEnabled,
     myUserId: getStoredUserId(),
     hostUserId: store.state?.hostUserId,
   });

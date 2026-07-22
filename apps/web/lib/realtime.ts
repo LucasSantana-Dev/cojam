@@ -106,7 +106,7 @@ const JOIN_TIMEOUT_MS = 10_000;
 async function resolveConnectionToken(): Promise<string> {
   const accountToken = await getAccountToken();
   if (accountToken) return accountToken;
-  if (features.roomAuth) {
+  if (getRuntimeEnv()?.roomAuthEnabled ?? features.roomAuth) {
     const tokenResult = await fetchConnectionToken();
     if (tokenResult) return tokenResult.token;
   }

@@ -10,7 +10,7 @@ function getStorage(): Storage | null {
   if (typeof window === 'undefined') return null;
   try {
     // Use window.localStorage which is properly mocked in tests
-    return (typeof window !== 'undefined' && window.localStorage) || (global as any).localStorage;
+    return window.localStorage ?? (globalThis as { localStorage?: Storage }).localStorage;
   } catch {
     return null;
   }
