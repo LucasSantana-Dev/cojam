@@ -548,8 +548,9 @@ export default function Home() {
               </span>
             </h1>
             <p className="hero-sub">
-              CoJam keeps a shared queue in sync while everyone plays on their own streaming
-              account. Per-user streams, metadata only, never a rebroadcast.
+              Queued by people, not algorithms. CoJam keeps a shared queue in sync while everyone
+              plays on their own streaming account. Per-user streams, metadata only, never a
+              rebroadcast.
             </p>
             <div className="hero-cta">
               <button onClick={createRoom} className="btn-primary magnetic">
@@ -685,6 +686,11 @@ export default function Home() {
                 <th scope="row">Queue</th>
                 <td>You, alone</td>
                 <td><span className="vs-yes"><CheckIcon size={14} /> Everyone adds, everyone hears</span></td>
+              </tr>
+              <tr>
+                <th scope="row">What plays</th>
+                <td>Whatever the algorithm serves</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Picked by the people in the room</span></td>
               </tr>
               <tr>
                 <th scope="row">Inviting</th>
