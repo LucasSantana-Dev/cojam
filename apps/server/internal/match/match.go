@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -674,7 +675,7 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 		results, err := SearchDeezer(ctx, query, limit)
 		if err != nil {
 			// Log but don't fail the whole search
-			fmt.Fprintf(os.Stderr, "SearchDeezer error: %v\n", err)
+			slog.Warn("search_deezer_failed", "query", query, "err", err.Error())
 			return
 		}
 		mu.Lock()
@@ -691,7 +692,7 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 			defer cancel()
 			results, err := SearchSpotify(ctx, query, limit)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "SearchSpotify error: %v\n", err)
+				slog.Warn("search_spotify_failed", "query", query, "err", err.Error())
 				return
 			}
 			mu.Lock()
