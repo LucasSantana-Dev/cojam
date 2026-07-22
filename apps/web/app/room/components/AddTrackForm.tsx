@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { useStore, queueAdd, searchTracks, importPlaylist, rpcErrorMessage, type SearchCandidate } from '@/lib/realtime';
 import { mergeProviderPrefs } from '@/lib/account';
 import { features } from '@/lib/features';
@@ -30,8 +31,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [showManualForm, setShowManualForm] = useState(false);
-  const [playlistInputRef, setPlaylistInputRef] = useState<HTMLInputElement | null>(null);
+  const [, setPlaylistInputRef] = useState<HTMLInputElement | null>(null);
   const [importErrorShake, setImportErrorShake] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -255,10 +255,15 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
                     >
                       <div className="flex items-center gap-2 flex-1 min-w-0">
                         {result.artworkUrl && (
-                          <img
+                          // Artwork hosts vary by provider (Spotify, Apple, Deezer, YouTube CDNs),
+                          // so they cannot be allow-listed in images.remotePatterns; serve unoptimized.
+                          <Image
                             src={result.artworkUrl}
                             alt=""
                             className="w-10 h-10 rounded object-cover flex-shrink-0"
+                            width={40}
+                            height={40}
+                            unoptimized
                           />
                         )}
                         <div className="flex-1 min-w-0">

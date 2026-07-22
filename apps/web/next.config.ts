@@ -9,6 +9,10 @@ const config: NextConfig = {
   allowedDevOrigins: ['127.0.0.1'],
   // Standalone output for Docker deployments
   output: 'standalone',
+  images: {
+    // Apple Music artwork CDN used by the landing-page demo room cards.
+    remotePatterns: [{ protocol: 'https', hostname: 'is1-ssl.mzstatic.com' }],
+  },
   // outputFileTracingRoot ensures the standalone build includes workspace dependencies
   // (packages/shared) when built from a monorepo root context
   outputFileTracingRoot: path.resolve(__dirname, '../..'),
