@@ -10,6 +10,7 @@ export function GET() {
     wsUrl: string;
     spotifyClientId: string;
     spotifyEnabled?: boolean;
+    roomAuthEnabled?: boolean;
     supabaseUrl?: string;
     supabaseAnonKey?: string;
   } = {
@@ -30,6 +31,11 @@ export function GET() {
   // build-time flag (`?? features.spotify`) instead of forcing it off.
   if (process.env.COJAM_FEATURE_SPOTIFY !== undefined) {
     env.spotifyEnabled = process.env.COJAM_FEATURE_SPOTIFY === 'true';
+  }
+  // Same rationale as spotifyEnabled: room auth must be switchable without a
+  // rebuild (NEXT_PUBLIC_FEATURE_ROOM_AUTH is baked in at build time).
+  if (process.env.COJAM_FEATURE_ROOM_AUTH !== undefined) {
+    env.roomAuthEnabled = process.env.COJAM_FEATURE_ROOM_AUTH === 'true';
   }
   // JSON.stringify keeps the values safely encoded inside the script.
   const body = `window.__COJAM_ENV__ = ${JSON.stringify(env)};`;

@@ -10,6 +10,7 @@ export type RuntimeEnv = {
   wsUrl?: string;
   spotifyClientId?: string;
   spotifyEnabled?: boolean;
+  roomAuthEnabled?: boolean;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
 };
