@@ -118,6 +118,22 @@ func TestHandleRPC_AdvanceAfter(t *testing.T) {
 	if st.NowPlayingID != t2ID {
 		t.Fatalf("after 1st advance, NowPlayingID should be %s, got %s", t2ID, st.NowPlayingID)
 	}
+	// Version must bump or clients reject the publication (setState version guard).
+	if st.Version != 4 {
+		t.Fatalf("1st advance should bump version to 4, got %d", st.Version)
+	}
+
+	// No-op: a stale afterId (NowPlayingID already at t2) is idempotent and must
+	// leave NowPlayingID and Version untouched.
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t1ID+`"}`), "")
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	if st.NowPlayingID != t2ID {
+		t.Fatalf("no-op advance should keep NowPlayingID %s, got %s", t2ID, st.NowPlayingID)
+	}
+	if st.Version != 4 {
+		t.Fatalf("no-op advance should not bump version, got %d", st.Version)
+	}
 
 	// Advance from t2 -> t3
 	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t2ID+`"}`), "")
@@ -126,6 +142,9 @@ func TestHandleRPC_AdvanceAfter(t *testing.T) {
 	if st.NowPlayingID != t3ID {
 		t.Fatalf("after 2nd advance, NowPlayingID should be %s, got %s", t3ID, st.NowPlayingID)
 	}
+	if st.Version != 5 {
+		t.Fatalf("2nd advance should bump version to 5, got %d", st.Version)
+	}
 
 	// Advance from t3 (last track) -> clears NowPlayingID
 	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"demo","afterId":"`+t3ID+`"}`), "")
@@ -133,6 +152,42 @@ func TestHandleRPC_AdvanceAfter(t *testing.T) {
 	_ = json.Unmarshal(res, st)
 	if st.NowPlayingID != "" {
 		t.Fatalf("advance past last track should clear NowPlayingID, got %s", st.NowPlayingID)
+	}
+	if st.Version != 6 {
+		t.Fatalf("advance past last track should bump version to 6, got %d", st.Version)
+	}
+}
+
+func TestHandleRPC_SetNowPlaying(t *testing.T) {
+	h := NewHub(nil)
+
+	// Set up a room with 2 tracks
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"demo","name":"probe"}`), "")
+	st := &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 1","artist":"A1","sources":{},"addedBy":"u1"}}`), "")
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"demo","track":{"title":"Song 2","artist":"A2","sources":{},"addedBy":"u2"}}`), "")
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t2ID := st.Queue[1].ID
+
+	// Set now playing to t2
+	res, err := h.HandleRPC("now_playing.set", []byte(`{"roomId":"demo","trackId":"`+t2ID+`"}`), "")
+	if err != nil {
+		t.Fatalf("now_playing.set: %v", err)
+	}
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	if st.NowPlayingID != t2ID {
+		t.Fatalf("NowPlayingID should be %s, got %s", t2ID, st.NowPlayingID)
+	}
+	// Version must bump or clients reject the publication (setState version guard).
+	if st.Version != 3 {
+		t.Fatalf("now_playing.set should bump version to 3, got %d", st.Version)
 	}
 }
 
