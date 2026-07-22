@@ -23,6 +23,7 @@ func TestRadioToggle(t *testing.T) {
 	if st.RadioEnabled {
 		t.Fatalf("radio should start disabled")
 	}
+	joinVersion := st.Version
 
 	// Enable radio
 	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":true}`), "")
@@ -31,6 +32,10 @@ func TestRadioToggle(t *testing.T) {
 	if !st.RadioEnabled {
 		t.Fatalf("radio.set(true) should enable, got %v", st.RadioEnabled)
 	}
+	// Version must bump or clients reject the publication (setState version guard).
+	if st.Version != joinVersion+1 {
+		t.Fatalf("radio.set(true) should bump version to %d, got %d", joinVersion+1, st.Version)
+	}
 
 	// Disable radio
 	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"radio-test","enabled":false}`), "")
@@ -38,6 +43,9 @@ func TestRadioToggle(t *testing.T) {
 
 	if st.RadioEnabled {
 		t.Fatalf("radio.set(false) should disable, got %v", st.RadioEnabled)
+	}
+	if st.Version != joinVersion+2 {
+		t.Fatalf("radio.set(false) should bump version to %d, got %d", joinVersion+2, st.Version)
 	}
 }
 
