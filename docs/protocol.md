@@ -96,7 +96,7 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 | RPC | Who may call (flag on) |
 |---|---|
 | `queue.add` | any member |
-| `room.join`, `sync.ping`, reads | any member |
+| `room.join`, `sync.ping`, reads | any caller |
 | `now_playing.set` / `now_playing.advance` | host only |
 | `queue.reorder` | host only |
 | `queue.remove` | host, or the member who queued the track (`addedByUserId`) |
