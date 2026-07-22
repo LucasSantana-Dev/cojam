@@ -81,7 +81,7 @@ flowchart TB
 | Matching | ISRC-first · YouTube Data API · Spotify Client Credentials · MusicBrainz fallback |
 | Persistence | Postgres (pgx) when `DATABASE_URL` is set, rooms survive restart · in-memory fallback for local dev |
 | Monorepo | pnpm workspaces (`apps/web`, `packages/shared`) + colocated Go module (`apps/server`) |
-| Deploy | Fly.io via Docker ([`docs/deploy.md`](docs/deploy.md)) |
+| Deploy | Docker images published to GHCR on push to main (`ghcr.io/lucassantana-dev/cojam-web`, `ghcr.io/lucassantana-dev/cojam-server`); run them anywhere |
 
 One centrifuge channel serves each room (`room:<id>`). Clients subscribe to a
 room to be authorized to mutate it; the server is authoritative for queue state.
@@ -162,7 +162,7 @@ Greenfield MVP (started 2026-07-16), built in public.
 
 - Rooms, shared queue, presence, auto-advance, YouTube playback (MVP core)
 - Per-room authorization and Spotify server-side matching (Phase 3)
-- Planned: Postgres durability, Fly.io deploy, Apple Music (pending Developer Program)
+- Planned: Postgres durability, Apple Music (pending Developer Program)
 
 The Go server emits structured JSON logs to stdout and Prometheus metrics at
 `/metrics`. Implementation plan lives in [`.claude/plans/`](.claude/plans/);
