@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/centrifugal/centrifuge"
@@ -142,6 +143,22 @@ type LastfmEnrichProvider func(ctx context.Context, artist, title string) (inter
 type Room struct {
 	mu    sync.Mutex
 	State *queue.RoomState
+
+	// lastActivityUnix is the last time the room was touched (GetOrCreateRoom
+	// hit or create), as Unix nanos. The idle-room evictor only reaps rooms
+	// whose activity is older than the TTL. Atomic: reads and writes happen
+	// under different locks (h.mu, room.mu) depending on the caller.
+	lastActivityUnix atomic.Int64
+}
+
+// touch marks the room active now, resetting the idle-eviction clock.
+func (r *Room) touch() {
+	r.lastActivityUnix.Store(time.Now().UnixNano())
+}
+
+// lastActivity returns when the room was last touched.
+func (r *Room) lastActivity() time.Time {
+	return time.Unix(0, r.lastActivityUnix.Load())
 }
 
 // Hub manages all rooms
@@ -162,6 +179,11 @@ type Hub struct {
 	listenBrainz    ListenBrainzProvider
 	lastfmEnrich    LastfmEnrichProvider
 	syncEnabled     bool
+
+	// roomIdleTTL is how long a room with no connected members may stay idle
+	// before StartRoomEvictor's sweep drops it from memory. <= 0 disables
+	// eviction. State survives in the store and reloads on rejoin.
+	roomIdleTTL time.Duration
 
 	// fanoutLimiter rate-limits RPCs that fan out to third-party APIs
 	// (fanoutMethods) per caller, protecting upstream provider quotas.
@@ -439,6 +461,7 @@ func (h *Hub) isTrackOwner(roomID, trackID, userID string) bool {
 func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	h.mu.Lock()
 	if room, exists := h.rooms[roomID]; exists {
+		room.touch()
 		h.mu.Unlock()
 		return room
 	}
@@ -472,11 +495,87 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if room, exists := h.rooms[roomID]; exists {
+		room.touch()
 		return room
 	}
 	room := &Room{State: state}
+	room.touch()
 	h.rooms[roomID] = room
 	return room
+}
+
+// WithRoomIdleTTL sets how long a room with no connected members may stay
+// idle before the evictor drops it from memory (default: disabled). The store
+// keeps the room state, so an evicted room reloads transparently on the next
+// GetOrCreateRoom. <= 0 disables eviction.
+func (h *Hub) WithRoomIdleTTL(d time.Duration) *Hub {
+	h.roomIdleTTL = d
+	return h
+}
+
+// StartRoomEvictor launches the periodic idle-room sweep and returns a stop
+// function for shutdown. A disabled hub (WithRoomIdleTTL unset or <= 0) gets
+// a no-op stop.
+func (h *Hub) StartRoomEvictor() func() {
+	if h.roomIdleTTL <= 0 {
+		return func() {}
+	}
+	interval := h.roomIdleTTL / 2
+	if interval < time.Second {
+		interval = time.Second
+	}
+	stop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case now := <-ticker.C:
+				h.evictIdleRooms(now)
+			}
+		}
+	}()
+	return func() { close(stop) }
+}
+
+// evictIdleRooms drops rooms with no connected members that have been idle
+// longer than roomIdleTTL. Only the in-memory instance is removed: the store
+// keeps the state and GetOrCreateRoom reloads it on rejoin. Lock order is
+// memberMu then h.mu (the only spot that nests them); Join/Leave take
+// memberMu alone and GetOrCreateRoom takes h.mu alone, so no cycle forms.
+func (h *Hub) evictIdleRooms(now time.Time) {
+	if h.roomIdleTTL <= 0 {
+		return
+	}
+	h.memberMu.RLock()
+	defer h.memberMu.RUnlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for roomID, room := range h.rooms {
+		if h.hasMembersLocked(roomID) {
+			continue
+		}
+		if now.Sub(room.lastActivity()) < h.roomIdleTTL {
+			continue
+		}
+		delete(h.rooms, roomID)
+		if h.logger != nil {
+			h.logger.Info("room_evicted", "room_id", roomID)
+		}
+	}
+}
+
+// hasMembersLocked reports whether any client holds a membership in roomID.
+// Callers must hold memberMu.
+func (h *Hub) hasMembersLocked(roomID string) bool {
+	for _, rooms := range h.members {
+		if _, ok := rooms[roomID]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // mutate applies fn to the room under its lock, marshals the resulting state while
