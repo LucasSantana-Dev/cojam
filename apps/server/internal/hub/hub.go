@@ -890,34 +890,15 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
 		}
-
-		// If track depth provider not configured, return empty result
-		if h.trackDepth == nil {
-			return json.Marshal(map[string]interface{}{
+		return h.enrichQuery("track_depth_failed", req.Title, req.Artist, h.trackDepth != nil,
+			map[string]interface{}{
 				"credits": []interface{}{},
 				"tags":    []string{},
 				"source":  "musicbrainz",
+			},
+			func(ctx context.Context) (interface{}, error) {
+				return h.trackDepth(ctx, req.ISRC, req.Title, req.Artist)
 			})
-		}
-
-		// Use a short timeout for depth lookup
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		result, err := h.trackDepth(ctx, req.ISRC, req.Title, req.Artist)
-		if err != nil {
-			// Log error but return empty result instead of failing the RPC
-			if h.logger != nil {
-				h.logger.Error("track_depth_failed", "title", req.Title, "artist", req.Artist, "err", err.Error())
-			}
-			return json.Marshal(map[string]interface{}{
-				"credits": []interface{}{},
-				"tags":    []string{},
-				"source":  "musicbrainz",
-			})
-		}
-
-		return json.Marshal(result)
 
 	case "track.lyrics":
 		var req struct {
@@ -930,25 +911,11 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
 		}
-
-		empty := map[string]interface{}{"synced": []interface{}{}, "plain": "", "source": "lrclib"}
-		if h.lyrics == nil {
-			return json.Marshal(empty)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		result, err := h.lyrics(ctx, req.Artist, req.Title, req.Album, req.DurationMs)
-		if err != nil {
-			// Log but return empty (a miss is not an RPC failure).
-			if h.logger != nil {
-				h.logger.Error("track_lyrics_failed", "title", req.Title, "artist", req.Artist, "err", err.Error())
-			}
-			return json.Marshal(empty)
-		}
-
-		return json.Marshal(result)
+		return h.enrichQuery("track_lyrics_failed", req.Title, req.Artist, h.lyrics != nil,
+			map[string]interface{}{"synced": []interface{}{}, "plain": "", "source": "lrclib"},
+			func(ctx context.Context) (interface{}, error) {
+				return h.lyrics(ctx, req.Artist, req.Title, req.Album, req.DurationMs)
+			})
 
 	case "track.listenbrainz":
 		var req struct {
@@ -960,34 +927,15 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
 		}
-
-		// If listenbrainz provider not configured, return empty result
-		if h.listenBrainz == nil {
-			return json.Marshal(map[string]interface{}{
+		return h.enrichQuery("listenbrainz_failed", req.Title, req.Artist, h.listenBrainz != nil,
+			map[string]interface{}{
 				"mbid":   "",
 				"tags":   []string{},
 				"source": "listenbrainz",
+			},
+			func(ctx context.Context) (interface{}, error) {
+				return h.listenBrainz(ctx, req.ISRC, req.Title, req.Artist)
 			})
-		}
-
-		// Use a short timeout for listenbrainz lookup
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		result, err := h.listenBrainz(ctx, req.ISRC, req.Title, req.Artist)
-		if err != nil {
-			// Log error but return empty result instead of failing the RPC
-			if h.logger != nil {
-				h.logger.Error("listenbrainz_failed", "title", req.Title, "artist", req.Artist, "err", err.Error())
-			}
-			return json.Marshal(map[string]interface{}{
-				"mbid":   "",
-				"tags":   []string{},
-				"source": "listenbrainz",
-			})
-		}
-
-		return json.Marshal(result)
 
 	case "track.lastfm":
 		var req struct {
@@ -998,36 +946,16 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
 		}
-
-		// If lastfm provider not configured, return empty result
-		if h.lastfmEnrich == nil {
-			return json.Marshal(map[string]interface{}{
+		return h.enrichQuery("lastfm_enrich_failed", req.Title, req.Artist, h.lastfmEnrich != nil,
+			map[string]interface{}{
 				"playcount": 0,
 				"listeners": 0,
 				"tags":      []string{},
 				"source":    "lastfm",
+			},
+			func(ctx context.Context) (interface{}, error) {
+				return h.lastfmEnrich(ctx, req.Artist, req.Title)
 			})
-		}
-
-		// Use a short timeout for lastfm lookup
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		result, err := h.lastfmEnrich(ctx, req.Artist, req.Title)
-		if err != nil {
-			// Log error but return empty result instead of failing the RPC
-			if h.logger != nil {
-				h.logger.Error("lastfm_enrich_failed", "title", req.Title, "artist", req.Artist, "err", err.Error())
-			}
-			return json.Marshal(map[string]interface{}{
-				"playcount": 0,
-				"listeners": 0,
-				"tags":      []string{},
-				"source":    "lastfm",
-			})
-		}
-
-		return json.Marshal(result)
 
 	case "playlist.import":
 		var req struct {
@@ -1244,6 +1172,30 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 	default:
 		return nil, centrifuge.ErrorMethodNotFound
 	}
+}
+
+// enrichQuery runs one track-enrichment provider call (track.depth,
+// track.lyrics, track.listenbrainz, track.lastfm) through the shared
+// scaffold: an unconfigured provider or a lookup error degrades to the empty
+// payload (a miss is not an RPC failure), and the lookup is bounded by a 10s
+// timeout. logEvent names the structured-log event for provider errors.
+func (h *Hub) enrichQuery(logEvent, title, artist string, configured bool, empty map[string]interface{}, fetch func(context.Context) (interface{}, error)) (json.RawMessage, error) {
+	if !configured {
+		return json.Marshal(empty)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := fetch(ctx)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error(logEvent, "title", title, "artist", artist, "err", err.Error())
+		}
+		return json.Marshal(empty)
+	}
+
+	return json.Marshal(result)
 }
 
 // enrichYouTube resolves a YouTube source for a freshly added track and
