@@ -32,7 +32,7 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
 
-	// Deliberately target pooled hosted Postgres (Fly MPG, Neon, Supabase), whose
+	// Deliberately target pooled hosted Postgres (Neon, Supabase), whose
 	// pooled URL sits behind a PgBouncer-style pooler. CacheDescribe caches the
 	// parameter/result metadata and executes via an unnamed extended-protocol
 	// statement, i.e. no persistent server-side named prepared statement, so it is

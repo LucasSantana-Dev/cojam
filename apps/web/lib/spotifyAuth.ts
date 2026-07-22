@@ -46,7 +46,7 @@ function clientId(): string {
 // `localhost:3000`, so window.location.origin would build a redirect_uri Spotify
 // rejects ("redirect_uri: Not matching configuration"). Return the origin Spotify
 // accepts: swap a `localhost` hostname for `127.0.0.1`, keeping protocol + port.
-// Production hosts (e.g. https://cojam.fly.dev) pass through untouched.
+// Production hosts (e.g. https://cojam.example.com) pass through untouched.
 export function canonicalOrigin(loc: {
   protocol: string;
   hostname: string;

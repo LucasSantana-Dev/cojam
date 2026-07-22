@@ -76,10 +76,10 @@ describe('canonicalOrigin', () => {
     expect(
       canonicalOrigin({
         protocol: 'https:',
-        hostname: 'cojam.fly.dev',
+        hostname: 'cojam.example.com',
         port: '',
-        origin: 'https://cojam.fly.dev',
+        origin: 'https://cojam.example.com',
       }),
-    ).toBe('https://cojam.fly.dev');
+    ).toBe('https://cojam.example.com');
   });
 });
