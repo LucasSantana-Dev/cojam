@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
-import { features } from '@/lib/features';
+import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { AppleMusicIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
 
@@ -140,6 +140,7 @@ export function ApplePlayer({
   const musicRef = useRef<MusicKitInstance | null>(null);
   const adapterRef = useRef<ApplePlayerAdapter | null>(null);
   const [status, setStatus] = useState<'idle' | 'unconfigured' | 'ready' | 'error'>('idle');
+  const f = useRuntimeFeatures();
   const state = useStore((s) => s.state);
   const nowPlaying = state?.nowPlayingId
     ? state.queue.find((t) => t.id === state.nowPlayingId)
@@ -149,7 +150,7 @@ export function ApplePlayer({
     let cancelled = false;
     (async () => {
       try {
-        if (!features.apple) {
+        if (!f.apple) {
           setStatus('unconfigured');
           return;
         }
@@ -183,7 +184,7 @@ export function ApplePlayer({
         onPlayerGone?.();
       }
     };
-  }, [onAuthorized, onPlayerReady, onPlayerGone]);
+  }, [onAuthorized, onPlayerReady, onPlayerGone, f.apple]);
 
   useEffect(() => {
     const music = musicRef.current;

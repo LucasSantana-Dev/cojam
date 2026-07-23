@@ -15,8 +15,7 @@ const NAME_KEY = 'mj_room_name';
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
 const noopSubscribe = () => () => {};
 import { pickSource, isUnavailable } from '@/lib/pickSource';
-import { features } from '@/lib/features';
-import { getRuntimeEnv } from '@/lib/runtimeEnv';
+import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { canControl } from '@/lib/roomRole';
 import { getStoredUserId } from '@/lib/auth';
 import { getAccountSession, getConnectedServices, getDisplayName, markServiceConnected } from '@/lib/account';
@@ -56,23 +55,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
   const [enrichmentOpen, setEnrichmentOpen] = useState(false);
-  // Spotify enable is resolved at runtime (via /env.js), not build time, so the
-  // env-agnostic image can turn it on. The server snapshot (build-time value)
-  // keeps SSR and the first client render in agreement.
-  const spotifyEnabled = useSyncExternalStore(
-    noopSubscribe,
-    () => getRuntimeEnv()?.spotifyEnabled ?? features.spotify,
-    () => features.spotify,
-  );
+  // Feature flags resolve at runtime (via /env.js), not build time, so the
+  // env-agnostic image can flip any flag. The hook's server snapshot (build-time
+  // values) keeps SSR and the first client render in agreement.
+  const f = useRuntimeFeatures();
   // Accounts link: resolved at runtime, hydration-safe via the server snapshot.
   const accountsEnabled = useSyncExternalStore(noopSubscribe, supabaseEnabled, () => false);
-  // Room auth (anonymous identity tokens): resolved at runtime like Spotify,
-  // so the env-agnostic image can turn it on via COJAM_FEATURE_ROOM_AUTH.
-  const roomAuthEnabled = useSyncExternalStore(
-    noopSubscribe,
-    () => getRuntimeEnv()?.roomAuthEnabled ?? features.roomAuth,
-    () => features.roomAuth,
-  );
 
   // Accounts: when signed in, load persisted connected services into the store
   // (search ranking follows them on any device, even before local OAuth state
@@ -130,7 +118,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   // U5: compute room control permission for this user
   const hostControl = canControl({
-    roomAuth: roomAuthEnabled,
+    roomAuth: f.roomAuth,
     myUserId: getStoredUserId(),
     hostUserId: store.state?.hostUserId,
   });
@@ -184,10 +172,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
     if (saved) doJoin(saved);
   }, [joined, doJoin]);
 
-  // U4: Drift correction loop (gated by features.sync)
+  // U4: Drift correction loop (gated by the sync feature flag)
   // Monitors transport state and corrects playback position drift.
   useEffect(() => {
-    if (!features.sync || !activePlayer || !store.state?.transport) return;
+    if (!f.sync || !activePlayer || !store.state?.transport) return;
 
     const transport = store.state.transport;
 
@@ -254,7 +242,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         driftCorrectionIntervalRef.current = null;
       }
     };
-  }, [activePlayer, store.state?.transport, store.state?.transport?.state]);
+  }, [activePlayer, store.state?.transport, store.state?.transport?.state, f.sync]);
 
   // Auto-advance at track end for Spotify/Apple (YouTube also advances via its
   // native onStateChange; the server dedups through AdvanceAfter). onEnded has
@@ -415,7 +403,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             {queueEmpty && <OnboardingCard />}
             <div className="panel p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
-                {spotifyEnabled && (
+                {f.spotify && (
                   <SpotifyPlayer
                     authorized={spotifyAuthorized}
                     onAuthorized={setSpotifyAuthorized}
@@ -423,7 +411,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     onPlayerGone={() => activeSource === 'spotify' && setActivePlayer(null)}
                   />
                 )}
-                {features.apple && (
+                {f.apple && (
                   <ApplePlayer
                     authorized={appleAuthorized}
                     onAuthorized={setAppleAuthorized}
@@ -433,7 +421,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 )}
               </div>
 
-              {features.youtube && activeSource === 'youtube' && (
+              {f.youtube && activeSource === 'youtube' && (
                 <div className="pt-4" style={{ borderTop: '1px solid var(--color-border)' }}>
                   <YouTubePlayer
                     roomId={roomId}
@@ -508,7 +496,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                       {/* Fused presence + provenance (R7 + R1): the room's social
                           state lives on the player, not siloed in the header. */}
                       <div className="np-meta">
-                        {features.presence && presence.length > 0 && (
+                        {f.presence && presence.length > 0 && (
                           <>
                             <span className="presence-stack presence-stack--sm" aria-hidden>
                               {presenceStack.map((m) => (
@@ -548,7 +536,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                           Apple
                         </span>
                       )}
-                      {features.trackDepth && nowPlaying && (
+                      {f.trackDepth && nowPlaying && (
                         <button
                           onClick={() => setTrackDepthOpen(true)}
                           className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
@@ -562,7 +550,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                           Details
                         </button>
                       )}
-                      {features.lyrics && nowPlaying && (
+                      {f.lyrics && nowPlaying && (
                         <button
                           onClick={() => setLyricsOpen(true)}
                           className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
@@ -576,7 +564,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                           Lyrics
                         </button>
                       )}
-                      {(features.listenBrainz || features.lastfmEnrich) && nowPlaying && (
+                      {(f.listenBrainz || f.lastfmEnrich) && nowPlaying && (
                         <button
                           onClick={() => setEnrichmentOpen(true)}
                           className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
@@ -593,7 +581,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     </div>
                   </div>
 
-                  {features.sync && (
+                  {f.sync && (
                     <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
                       <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl} />
                     </div>

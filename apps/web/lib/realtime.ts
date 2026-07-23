@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Centrifuge } from 'centrifuge';
-import { pickEnv, getRuntimeEnv } from './runtimeEnv';
+import { pickEnv, getRuntimeEnv, resolveRuntimeFeatures } from './runtimeEnv';
 import { estimateOffset, type PingSample } from './clockSync';
 import { fetchConnectionToken } from './auth';
 import { getAccountToken } from './account';
@@ -106,7 +106,7 @@ const JOIN_TIMEOUT_MS = 10_000;
 async function resolveConnectionToken(): Promise<string> {
   const accountToken = await getAccountToken();
   if (accountToken) return accountToken;
-  if (getRuntimeEnv()?.roomAuthEnabled ?? features.roomAuth) {
+  if (resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomAuth) {
     const tokenResult = await fetchConnectionToken();
     if (tokenResult) return tokenResult.token;
   }

@@ -3,16 +3,17 @@
 // setting COJAM_WS_URL / COJAM_SPOTIFY_CLIENT_ID in the server environment.
 // Loaded via a beforeInteractive <Script> so window.__COJAM_ENV__ is set before
 // the app runs. See lib/runtimeEnv.ts.
+import { FEATURE_ENV_VARS, type FeatureName } from '@/lib/features';
+
 export const dynamic = 'force-dynamic';
 
 export function GET() {
   const env: {
     wsUrl: string;
     spotifyClientId: string;
-    spotifyEnabled?: boolean;
-    roomAuthEnabled?: boolean;
     supabaseUrl?: string;
     supabaseAnonKey?: string;
+    features?: Partial<Record<FeatureName, boolean>>;
   } = {
     wsUrl: process.env.COJAM_WS_URL ?? '',
     spotifyClientId: process.env.COJAM_SPOTIFY_CLIENT_ID ?? '',
@@ -26,17 +27,16 @@ export function GET() {
     env.supabaseAnonKey = process.env.COJAM_SUPABASE_ANON_KEY;
   }
   // Feature flags must be runtime-configurable too: NEXT_PUBLIC_* are inlined at
-  // build time, so the env-agnostic image cannot enable Spotify without this.
-  // Only emit when explicitly set, so an UNSET runtime value falls back to the
-  // build-time flag (`?? features.spotify`) instead of forcing it off.
-  if (process.env.COJAM_FEATURE_SPOTIFY !== undefined) {
-    env.spotifyEnabled = process.env.COJAM_FEATURE_SPOTIFY === 'true';
+  // build time, so the env-agnostic image cannot flip a flag without these. Each
+  // flag is emitted only when its COJAM_FEATURE_* var is explicitly set, so an
+  // UNSET runtime value falls back to the build-time flag instead of forcing it
+  // off. The map itself is omitted when no flag is set.
+  const features: Partial<Record<FeatureName, boolean>> = {};
+  for (const [name, envVar] of Object.entries(FEATURE_ENV_VARS) as [FeatureName, string][]) {
+    const raw = process.env[envVar];
+    if (raw !== undefined) features[name] = raw === 'true';
   }
-  // Same rationale as spotifyEnabled: room auth must be switchable without a
-  // rebuild (NEXT_PUBLIC_FEATURE_ROOM_AUTH is baked in at build time).
-  if (process.env.COJAM_FEATURE_ROOM_AUTH !== undefined) {
-    env.roomAuthEnabled = process.env.COJAM_FEATURE_ROOM_AUTH === 'true';
-  }
+  if (Object.keys(features).length > 0) env.features = features;
   // JSON.stringify keeps the values safely encoded inside the script.
   const body = `window.__COJAM_ENV__ = ${JSON.stringify(env)};`;
   return new Response(body, {

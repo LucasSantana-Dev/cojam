@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveFeatures } from './features';
+import { resolveFeatures, FEATURE_ENV_VARS } from './features';
 
 describe('resolveFeatures', () => {
   it('youtube+presence default on, spotify/apple/listenbrainz/lastfmEnrich/sync default off', () => {
@@ -85,4 +85,13 @@ describe('resolveFeatures', () => {
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_LASTFM_ENRICH: 'on' }).lastfmEnrich).toBe(true);
   });
 
+});
+
+describe('FEATURE_ENV_VARS', () => {
+  it('covers every flag with a COJAM_FEATURE_* runtime counterpart', () => {
+    expect(Object.keys(FEATURE_ENV_VARS).sort()).toEqual(Object.keys(resolveFeatures({})).sort());
+    for (const envVar of Object.values(FEATURE_ENV_VARS)) {
+      expect(envVar).toMatch(/^COJAM_FEATURE_/);
+    }
+  });
 });

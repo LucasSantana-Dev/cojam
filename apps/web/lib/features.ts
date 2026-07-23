@@ -14,6 +14,24 @@ export type Features = {
   roomAuth: boolean;
 };
 
+export type FeatureName = keyof Features;
+
+// Runtime counterparts of the NEXT_PUBLIC_FEATURE_* keys below: /env.js reads
+// these COJAM_FEATURE_* vars per request and emits a `features` map, so one
+// image can flip any flag at deploy time without a rebuild (RFC-0006).
+export const FEATURE_ENV_VARS: Record<FeatureName, string> = {
+  youtube: 'COJAM_FEATURE_YOUTUBE',
+  spotify: 'COJAM_FEATURE_SPOTIFY',
+  apple: 'COJAM_FEATURE_APPLE',
+  presence: 'COJAM_FEATURE_PRESENCE',
+  trackDepth: 'COJAM_FEATURE_TRACK_DEPTH',
+  lyrics: 'COJAM_FEATURE_LYRICS',
+  listenBrainz: 'COJAM_FEATURE_LISTENBRAINZ',
+  lastfmEnrich: 'COJAM_FEATURE_LASTFM_ENRICH',
+  sync: 'COJAM_FEATURE_SYNC',
+  roomAuth: 'COJAM_FEATURE_ROOM_AUTH',
+};
+
 const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
 const FALSY = new Set(['0', 'false', 'off', 'no']);
 
