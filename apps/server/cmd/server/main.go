@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -62,6 +63,20 @@ func parseOrigins(raw string) map[string]bool {
 	return set
 }
 
+// envDurationMinutes reads a duration expressed in whole minutes
+// (unset/invalid/<=0 = dflt). Used for ROOM_IDLE_TTL_MINUTES.
+func envDurationMinutes(key string, dflt time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return dflt
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return dflt
+	}
+	return time.Duration(n) * time.Minute
+}
+
 func main() {
 	var shutdownHooks []func()
 
@@ -95,6 +110,13 @@ func main() {
 	} else {
 		logger.Info("sync_disabled")
 	}
+
+	// Idle-room eviction: rooms with no connected members and no activity past
+	// the TTL are dropped from hub memory; the store reloads them on rejoin.
+	roomIdleTTL := envDurationMinutes("ROOM_IDLE_TTL_MINUTES", 30*time.Minute)
+	h.WithRoomIdleTTL(roomIdleTTL)
+	shutdownHooks = append(shutdownHooks, h.StartRoomEvictor())
+	logger.Info("room_eviction_enabled", "idle_ttl", roomIdleTTL.String())
 
 	// Supabase Auth (accounts): when on, a connection token that validates as a
 	// Supabase access token sets the user id to "sb:<supabase-user-uuid>". Checked
