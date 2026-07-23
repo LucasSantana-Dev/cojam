@@ -2,6 +2,7 @@ package queue
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -39,6 +40,11 @@ type TrackRef struct {
 	// the connection identity on queue.add/playlist.import; a client-supplied
 	// value is always overwritten. Drives the queue.remove owner check (B16).
 	AddedByUserID string `json:"addedByUserId,omitempty"`
+	// AddedAt is the server clock (unix ms) when the track entered the queue.
+	// Stamped by RoomState.Add, which overwrites any client-supplied value
+	// (same trust-boundary posture as AddedByUserID). Zero on tracks queued
+	// before this existed; clients must tolerate that.
+	AddedAt int64 `json:"addedAt,omitempty"`
 }
 
 // TransportState represents playback transport state
@@ -57,12 +63,18 @@ type RoomState struct {
 	RadioEnabled bool            `json:"radioEnabled"`
 	Version      int64           `json:"version"`
 	Transport    *TransportState `json:"transport,omitempty"`
+	// CreatedAt is the server clock (unix ms) at room creation, stamped by the
+	// hub when it first creates the room. Zero on rooms persisted before this
+	// existed; clients must tolerate that.
+	CreatedAt int64 `json:"createdAt,omitempty"`
 }
 
-// Add appends a track to the queue, generates an ID, and bumps the version.
+// Add appends a track to the queue, generates an ID, stamps the server-side
+// AddedAt (overwriting any client-supplied value), and bumps the version.
 // If the queue is empty, sets the track as NowPlayingID.
 func (rs *RoomState) Add(track TrackRef) *TrackRef {
 	track.ID = uuid.New().String()
+	track.AddedAt = time.Now().UnixMilli()
 	rs.Queue = append(rs.Queue, track)
 	rs.Version++
 

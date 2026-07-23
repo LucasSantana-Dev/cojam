@@ -16,6 +16,10 @@ export type TrackRef = {
   // Server-populated from the connection identity on queue.add/playlist.import;
   // clients never send this (the server overwrites it). Empty when room auth is off.
   addedByUserId?: string;
+  // Server clock (unix ms) when the track entered the queue, server-stamped;
+  // clients never send this (the server overwrites it). Absent on tracks
+  // queued before this existed.
+  addedAt?: number;
 };
 
 export type TransportState = {
@@ -32,6 +36,9 @@ export type RoomState = {
   radioEnabled: boolean;
   version: number;
   transport?: TransportState;
+  // Server clock (unix ms) at room creation, server-stamped. Absent on rooms
+  // created before this existed.
+  createdAt?: number;
 };
 
 export type RoomStatePub = {

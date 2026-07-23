@@ -479,9 +479,10 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 		}
 
 		state = &queue.RoomState{
-			RoomID:  roomID,
-			Queue:   []queue.TrackRef{},
-			Version: 0,
+			RoomID:    roomID,
+			Queue:     []queue.TrackRef{},
+			Version:   0,
+			CreatedAt: time.Now().UnixMilli(),
 		}
 
 		// Persist the fresh room

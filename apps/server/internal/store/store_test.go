@@ -223,3 +223,33 @@ func TestMemory_ErrNotFound_IsCorrectError(t *testing.T) {
 		t.Fatalf("expected ErrNotFound via errors.Is, got %v", err)
 	}
 }
+
+// Save/Load must round-trip the server-stamped timestamps (persistence is
+// whole-state marshal; this pins createdAt/addedAt surviving it).
+func TestMemory_SaveLoad_Timestamps(t *testing.T) {
+	m := NewMemory()
+	ctx := context.Background()
+
+	original := &queue.RoomState{
+		RoomID:    "room-ts",
+		Queue:     []queue.TrackRef{{ID: "t1", Title: "T", Artist: "A", Sources: queue.Sources{}, AddedBy: "u", AddedAt: 1721000000000}},
+		Version:   1,
+		CreatedAt: 1721000000000,
+	}
+
+	if err := m.Save(ctx, original); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded, err := m.Load(ctx, "room-ts")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if loaded.CreatedAt != original.CreatedAt {
+		t.Fatalf("createdAt not preserved: got %d, want %d", loaded.CreatedAt, original.CreatedAt)
+	}
+	if len(loaded.Queue) != 1 || loaded.Queue[0].AddedAt != original.Queue[0].AddedAt {
+		t.Fatalf("addedAt not preserved: %+v", loaded.Queue)
+	}
+}
