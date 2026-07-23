@@ -1,9 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
+import { proxyConnectionToken } from './connectionTokenProxy';
 
 // Regression for the tracer-bullet demo: two users in one room, queue syncs
 // live in both directions via centrifuge publications.
 
 async function join(page: Page, roomId: string, name: string) {
+  await proxyConnectionToken(page);
   await page.goto(`/room/${roomId}`);
   // Waiting-room card shows the room code in a chip ("You're about to join <CODE>").
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
@@ -55,9 +57,10 @@ test('two users see each other\'s queue additions live', async ({ browser }) => 
   await expect(lucas.locator('iframe#youtube-player')).toBeVisible({ timeout: 15_000 });
   await expect(ana.locator('iframe#youtube-player')).toBeVisible({ timeout: 15_000 });
 
-  // Remove propagates
-  await ana.getByRole('button', { name: 'Remove' }).nth(1).click();
-  await expect(lucas.getByText('Second Song')).not.toBeVisible();
+  // Remove propagates. With room auth on, removal is host-gated: the host
+  // (Lucas, first joiner) removes and Ana sees the track disappear.
+  await lucas.getByRole('button', { name: 'Remove' }).nth(1).click();
+  await expect(ana.getByText('Second Song')).not.toBeVisible();
 });
 
 test('queue reorder syncs to both clients', async ({ browser }) => {
