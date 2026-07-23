@@ -5,6 +5,7 @@ import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
 import { fetchLyrics, type Lyrics } from '@/lib/realtime';
 import { activeLineIndex } from '@/lib/lyricSync';
+import { useDialogFocus } from './useDialogFocus';
 
 interface LyricsPanelProps {
   roomId: string;
@@ -23,15 +24,8 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
   const containerRef = useRef<HTMLDivElement>(null);
   const lyricsContentRef = useRef<HTMLDivElement>(null);
   const activeLineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-  // Element focused before the panel opened, restored on close.
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
-  // onClose changes identity each parent render; hold it in a ref so the focus
-  // effect can depend on [open] alone and not tear down on every render.
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
   const positionPollingRef = useRef<NodeJS.Timeout | null>(null);
+  useDialogFocus(open, onClose, containerRef);
 
   // Panel stays mounted while closed; reset loaded data when the open/track
   // key changes (docs-sanctioned state adjustment during render).
@@ -120,45 +114,6 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
       block: 'nearest',
     });
   }, [currentPositionMs, open, data?.synced]);
-
-  // Dialog focus management: move focus into the panel on open, trap Tab within
-  // it, close on Esc, and restore focus to the prior element on close.
-  useEffect(() => {
-    if (!open) return;
-    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
-    const focusables = () =>
-      Array.from(
-        containerRef.current?.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      ).filter((el) => !el.hasAttribute('disabled'));
-
-    focusables()[0]?.focus();
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCloseRef.current();
-        return;
-      }
-      if (e.key !== 'Tab') return;
-      const items = focusables();
-      if (items.length === 0) return;
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      previouslyFocusedRef.current?.focus();
-    };
-  }, [open]);
 
   if (!open || !track) return null;
 

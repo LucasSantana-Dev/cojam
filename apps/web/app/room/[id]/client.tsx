@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, joinRoom, setRadio, transportPlay, transportPause, getClockOffsetMs, nowPlayingAdvance } from '@/lib/realtime';
+import { useStore, joinRoom, setRadio, nowPlayingAdvance } from '@/lib/realtime';
 import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS, serverNow } from '@/lib/playbackSync';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';

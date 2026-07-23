@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, PlayIcon, ArrowUpIcon, ArrowDownIcon, TrashIcon } from '@/app/components/icons';
 
 const roomData = {
@@ -163,10 +164,12 @@ export function RoomShowcase() {
           >
             <div className="flex flex-col sm:flex-row items-center gap-4">
               {/* Large album art */}
-              <img
+              <Image
                 src={roomData.nowPlaying.albumArt}
                 alt={roomData.nowPlaying.albumAlt}
                 className="w-24 h-24 rounded-lg object-cover flex-shrink-0"
+                width={96}
+                height={96}
                 loading="lazy"
                 decoding="async"
                 referrerPolicy="no-referrer"
@@ -264,10 +267,12 @@ export function RoomShowcase() {
                         >
                           {idx + 1}
                         </span>
-                        <img
+                        <Image
                           src={item.albumArt}
                           alt={item.albumAlt}
                           className="w-10 h-10 rounded object-cover"
+                          width={40}
+                          height={40}
                           loading="lazy"
                           decoding="async"
                           referrerPolicy="no-referrer"

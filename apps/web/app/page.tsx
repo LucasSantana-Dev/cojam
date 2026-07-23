@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, CheckIcon } from '@/app/components/icons';
@@ -19,6 +20,9 @@ const HUD_COMMANDS = [';sync', ';queue', ';veto'];
 
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
 const noopSubscribe = () => () => {};
+
+// ScrollTrigger registration is global; a StrictMode remount must not re-register.
+let scrollTriggerRegistered = false;
 
 // Split a headline into per-word spans wrapped in overflow:hidden masks for reveal animation.
 function Words({ text, start = 0 }: { text: string; start?: number }) {
@@ -70,13 +74,20 @@ export default function Home() {
     const root = rootRef.current;
     if (!root) return;
     const cleanups: Array<() => void> = [];
+    // React StrictMode double-mount can run the cleanup below before the
+    // dynamic import resolves; a stale init must not attach GSAP after that.
+    let cancelled = false;
 
     // Dynamic import GSAP only client-side, after window is defined.
     const initGsap = async () => {
       try {
         const gsap = await import('gsap');
         const ScrollTrigger = (await import('gsap/ScrollTrigger')).default;
-        gsap.default.registerPlugin(ScrollTrigger);
+        if (cancelled) return;
+        if (!scrollTriggerRegistered) {
+          gsap.default.registerPlugin(ScrollTrigger);
+          scrollTriggerRegistered = true;
+        }
 
         const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -410,6 +421,9 @@ export default function Home() {
         }
       } catch (error) {
         console.error('GSAP initialization failed:', error);
+        // Without GSAP, .reveal.in is never applied; the .no-gsap CSS rule
+        // forces reveals visible instead of leaving sections hidden.
+        if (!cancelled) document.documentElement.classList.add('no-gsap');
       }
     };
 
@@ -458,7 +472,10 @@ export default function Home() {
     window.addEventListener('scroll', onScroll, { passive: true });
     cleanups.push(() => window.removeEventListener('scroll', onScroll));
 
-    return () => cleanups.forEach((fn) => fn());
+    return () => {
+      cancelled = true;
+      cleanups.forEach((fn) => fn());
+    };
   }, []);
 
   const steps = [
@@ -548,8 +565,9 @@ export default function Home() {
               </span>
             </h1>
             <p className="hero-sub">
-              CoJam keeps a shared queue in sync while everyone plays on their own streaming
-              account. Per-user streams, metadata only, never a rebroadcast.
+              Queued by people, not algorithms. CoJam keeps a shared queue in sync while everyone
+              plays on their own streaming account. Per-user streams, metadata only, never a
+              rebroadcast.
             </p>
             <div className="hero-cta">
               <button onClick={createRoom} className="btn-primary magnetic">
@@ -586,10 +604,12 @@ export default function Home() {
                 </span>
               </div>
               <div className="room-card__main">
-                <img
+                <Image
                   src="https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/e8/43/5f/e8435ffa-b6b9-b171-40ab-4ff3959ab661/886443919266.jpg/600x600bb.jpg"
                   alt=""
                   className="room-card__art"
+                  width={52}
+                  height={52}
                   loading="lazy"
                   decoding="async"
                   referrerPolicy="no-referrer"
@@ -685,6 +705,11 @@ export default function Home() {
                 <th scope="row">Queue</th>
                 <td>You, alone</td>
                 <td><span className="vs-yes"><CheckIcon size={14} /> Everyone adds, everyone hears</span></td>
+              </tr>
+              <tr>
+                <th scope="row">What plays</th>
+                <td>Whatever the algorithm serves</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Picked by the people in the room</span></td>
               </tr>
               <tr>
                 <th scope="row">Inviting</th>
