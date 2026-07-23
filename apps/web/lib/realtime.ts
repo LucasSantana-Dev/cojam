@@ -142,7 +142,9 @@ const JOIN_TIMEOUT_MS = 10_000;
 // anonymous room-auth token; otherwise empty (v0 behavior). Passed to
 // centrifuge as getToken so an expiring token is refreshed transparently
 // instead of the connection dropping when it lapses (B9).
-async function resolveConnectionToken(): Promise<string> {
+// Exported for the public-rooms service connection (lib/publicRooms.ts), which
+// resolves identity the same way.
+export async function resolveConnectionToken(): Promise<string> {
   const accountToken = await getAccountToken();
   if (accountToken) return accountToken;
   if (resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomAuth) {
@@ -152,16 +154,22 @@ async function resolveConnectionToken(): Promise<string> {
   return '';
 }
 
+// resolveWsUrl picks the websocket endpoint: runtime injection (/env.js) wins
+// over the build-time NEXT_PUBLIC_* fallback.
+export function resolveWsUrl(): string {
+  return pickEnv(
+    getRuntimeEnv()?.wsUrl,
+    process.env.NEXT_PUBLIC_WS_URL,
+    'ws://localhost:8080/connection/websocket',
+  );
+}
+
 export async function joinRoom(
   roomId: string,
   name: string,
   platform?: 'spotify' | 'apple' | 'youtube' | null,
 ) {
-  const wsUrl = pickEnv(
-    getRuntimeEnv()?.wsUrl,
-    process.env.NEXT_PUBLIC_WS_URL,
-    'ws://localhost:8080/connection/websocket',
-  );
+  const wsUrl = resolveWsUrl();
 
   const connInfo: ConnInfo = { name };
   if (platform) connInfo.platform = platform;
@@ -396,6 +404,16 @@ export async function fetchChatHistory(roomId: string): Promise<ChatMessage[]> {
   if (!centrifuge) throw new Error('Not connected');
   const result = await centrifuge.rpc('chat.history', { roomId });
   return (result.data as { messages: ChatMessage[] }).messages ?? [];
+}
+
+// setRoomPublic toggles the room's public directory listing (host only,
+// FEATURE_PUBLIC_ROOMS). name is the optional directory label: pass a string
+// to set/replace it, an empty string to clear it, or omit to leave it
+// untouched. The server replies with the full RoomState, which arrives via
+// the room channel publication.
+export async function setRoomPublic(roomId: string, isPublic: boolean, name?: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('room.set_public', { roomId, public: isPublic, ...(name !== undefined ? { name } : {}) });
 }
 
 export type SearchCandidate = {

@@ -3,7 +3,7 @@
 // different V8 realm, so parseConnInfo's `instanceof Uint8Array` check
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, rpcErrorMessage } from './realtime';
+import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, rpcErrorMessage, setRoomPublic } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
 
 // Centrifuge/auth/account mocks for the joinRoom lifecycle tests (B9/B10/B11).
@@ -337,6 +337,28 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
       return Promise.resolve({ data: { serverNowMs: 0 } });
     };
     await expect(joinPromise).rejects.toThrow('room is full');
+  });
+
+  it('setRoomPublic sends room.set_public with the right payload', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    // Filter by method: the fire-and-forget clock sync (sync.ping) interleaves
+    // with these calls, so position-based assertions would race.
+    const setPublicCalls = () => instance.rpcCalls.filter((c) => c.method === 'room.set_public');
+
+    await setRoomPublic('room-1', true, 'Neon Room');
+    expect(setPublicCalls().at(-1)?.payload).toEqual({ roomId: 'room-1', public: true, name: 'Neon Room' });
+
+    // name omitted: the key is absent so the server leaves the label untouched.
+    await setRoomPublic('room-1', false);
+    expect(setPublicCalls().at(-1)?.payload).toEqual({ roomId: 'room-1', public: false });
+
+    // Empty string is sent (not omitted): empty after trim clears the label.
+    await setRoomPublic('room-1', true, '');
+    expect(setPublicCalls().at(-1)?.payload).toEqual({ roomId: 'room-1', public: true, name: '' });
   });
 });
 

@@ -87,6 +87,12 @@ type RoomState struct {
 	// client-supplied. Kept off TrackRef so client-supplied tracks need no
 	// extra scrubbing; pruned when a track leaves the queue.
 	Votes map[string][]string `json:"votes,omitempty"`
+	// Public is the host-set directory opt-in (FEATURE_PUBLIC_ROOMS). The zero
+	// value is private, so rooms persisted before this field existed stay
+	// private unless a host explicitly opts in via room.set_public.
+	Public bool `json:"public,omitempty"`
+	// Name is an optional host-set room label shown in the public directory.
+	Name string `json:"name,omitempty"`
 }
 
 // Add appends a track to the queue, generates an ID, stamps the server-side

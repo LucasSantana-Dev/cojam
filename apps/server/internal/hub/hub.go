@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/centrifugal/centrifuge"
 
@@ -29,6 +31,10 @@ const maxImportFieldLen = 300
 
 // maxImportDurationMs bounds track duration (2 hours); longer is a client bug.
 const maxImportDurationMs = 2 * 60 * 60 * 1000
+
+// maxRoomNameLen caps the host-set public room label (room.set_public), in
+// chars. 60 keeps directory cards to a single line.
+const maxRoomNameLen = 60
 
 var spotifyTrackURIRe = regexp.MustCompile(`^spotify:track:[0-9A-Za-z]{22}$`)
 
@@ -187,6 +193,11 @@ type Hub struct {
 	votingEnabled   bool
 	chatEnabled     bool
 
+	// publicRoomsEnabled gates the public room directory RPCs
+	// (room.set_public, room.list; FEATURE_PUBLIC_ROOMS). Dark-shipped off:
+	// when false both RPCs return ErrorMethodNotFound (transport.* precedent).
+	publicRoomsEnabled bool
+
 	// roomIdleTTL is how long a room with no connected members may stay idle
 	// before StartRoomEvictor's sweep drops it from memory. <= 0 disables
 	// eviction. State survives in the store and reloads on rejoin.
@@ -206,6 +217,11 @@ type Hub struct {
 	// canonical spammable RPC, and a per-caller bucket keeps one spammer from
 	// throttling the room.
 	chatLimiter *rateLimiter
+
+	// listLimiter rate-limits the room.list directory read per caller. It is
+	// an unauthenticated read that landing visitors poll, so it gets its own
+	// bucket (no third-party fanout, hence not in fanoutMethods).
+	listLimiter *rateLimiter
 
 	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
 	// up to 200 tracks at once; an unbounded goroutine per track would burst
@@ -238,6 +254,7 @@ var mutatingMethods = map[string]bool{
 	"now_playing.advance": true,
 	"playlist.import":     true,
 	"radio.set":           true,
+	"room.set_public":     true,
 	"transport.play":      true,
 	"transport.pause":     true,
 	"transport.seek":      true,
@@ -257,6 +274,7 @@ var hostOnlyMethods = map[string]bool{
 	"queue.remove":        true,
 	"radio.set":           true,
 	"playlist.import":     true,
+	"room.set_public":     true,
 	"transport.play":      true,
 	"transport.pause":     true,
 	"transport.seek":      true,
@@ -308,6 +326,13 @@ func (h *Hub) WithChat(enabled bool) *Hub {
 	return h
 }
 
+// WithPublicRooms enables the public room directory RPCs (room.set_public,
+// room.list). Default off (dark-ship, same posture as WithSync).
+func (h *Hub) WithPublicRooms(enabled bool) *Hub {
+	h.publicRoomsEnabled = enabled
+	return h
+}
+
 // NewHub creates a new hub with the given centrifuge node (nil in tests: publish is skipped).
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
@@ -321,6 +346,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		fanoutLimiter: newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
 		voteLimiter:   newRateLimiter(voteBurst, voteRefill, time.Now),
 		chatLimiter:   newRateLimiter(chatBurst, chatRefill, time.Now),
+		listLimiter:   newRateLimiter(listBurst, listRefill, time.Now),
 	}
 }
 
@@ -701,7 +727,9 @@ func (h *Hub) handleRPC(method string, data []byte, userID, rlKey string) (json.
 	// Fanout RPCs are rate-limited per caller before doing any work; a
 	// rejection surfaces as a UserError (centrifuge code 400) via
 	// rpcClientError and does not touch other methods' budgets. Vote RPCs get
-	// their own bucket (each toggle republishes the full room state).
+	// their own bucket (each toggle republishes the full room state), and the
+	// room.list directory read gets its own (listMethods): no third-party
+	// fanout, but landing visitors poll it unauthenticated.
 	var result json.RawMessage
 	err := h.checkFanoutLimit(method, rlKey)
 	if err == nil {
@@ -709,6 +737,9 @@ func (h *Hub) handleRPC(method string, data []byte, userID, rlKey string) (json.
 	}
 	if err == nil {
 		err = h.checkChatLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.checkListLimit(method, rlKey)
 	}
 	if err == nil {
 		result, err = h.dispatch(method, data, userID, rlKey)
@@ -756,6 +787,18 @@ func (h *Hub) checkVoteLimit(method, rlKey string) error {
 		return nil
 	}
 	if !h.voteLimiter.allow(rlKey) {
+		return userErrorf("too many requests, slow down")
+	}
+	return nil
+}
+
+// checkListLimit enforces the per-caller token bucket on the room.list
+// directory read. Returns nil for unlimited methods.
+func (h *Hub) checkListLimit(method, rlKey string) error {
+	if !listMethods[method] || h.listLimiter == nil {
+		return nil
+	}
+	if !h.listLimiter.allow(rlKey) {
 		return userErrorf("too many requests, slow down")
 	}
 	return nil
@@ -1167,6 +1210,47 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 			s.Version++ // bump so clients accept the publication (setState version guard)
 			return nil
 		})
+
+	case "room.set_public":
+		if !h.publicRoomsEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		var req struct {
+			RoomID string  `json:"roomId"`
+			Public bool    `json:"public"`
+			Name   *string `json:"name"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("room.set_public: roomId required")
+		}
+		// name is optional: absent leaves the label untouched, present (after
+		// trim) replaces it, and empty-after-trim clears it. Capped at
+		// maxRoomNameLen chars; longer is a client bug (UserError, code 400).
+		var name *string
+		if req.Name != nil {
+			trimmed := strings.TrimSpace(*req.Name)
+			if utf8.RuneCountInString(trimmed) > maxRoomNameLen {
+				return nil, userErrorf("room name too long (max %d chars)", maxRoomNameLen)
+			}
+			name = &trimmed
+		}
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			s.Public = req.Public
+			if name != nil {
+				s.Name = *name
+			}
+			s.Version++ // directory flag changed: bump so version-guarded clients accept it
+			return nil
+		})
+
+	case "room.list":
+		if !h.publicRoomsEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		return h.listPublicRooms()
 
 	case "transport.play":
 		if !h.syncEnabled {

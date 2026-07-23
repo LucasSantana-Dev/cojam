@@ -42,6 +42,21 @@ export type RoomState = {
   // trackId -> server-stamped voter keys ("user:<userID>" or
   // "client:<clientID>"); clients never send these (F4 queue voting).
   votes?: { [trackId: string]: string[] };
+  // Host-set directory opt-in (FEATURE_PUBLIC_ROOMS); absent = private.
+  public?: boolean;
+  // Optional host-set room label shown in the public directory. Not to be
+  // confused with the `name` param of room.join (a member's display name).
+  name?: string;
+};
+
+// PublicRoomSummary is the directory view of a public room returned by
+// room.list. Deliberately narrow: queue contents, host id, transport, and
+// vote data stay room-channel-only.
+export type PublicRoomSummary = {
+  roomId: string;
+  name?: string;          // present only if the host set one
+  memberCount: number;    // connected members (join + subscribe enrollment)
+  nowPlaying?: { title: string; artist: string };
 };
 
 export type RoomStatePub = {

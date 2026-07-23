@@ -20,6 +20,8 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `track.lastfm` | `{ roomId, artist: string, title: string }` | `LastfmEnrich` |
 | `playlist.import` | `{ roomId, url: string, addedBy: string, tracks?: Omit<TrackRef, 'id' \| 'addedBy'>[] }` | `RoomState` |
 | `radio.set` | `{ roomId, enabled: boolean }` | `RoomState` |
+| `room.set_public` | `{ roomId, public: boolean, name?: string }` | `RoomState` |
+| `room.list` | `{}` | `{ rooms: PublicRoomSummary[] }` |
 | `transport.play` | `{ roomId, trackId?: string, positionMs: number }` | `RoomState` |
 | `transport.pause` | `{ roomId, positionMs: number }` | `RoomState` |
 | `transport.seek` | `{ roomId, positionMs: number }` | `RoomState` |
@@ -81,6 +83,34 @@ type LastfmEnrich = {        // source: "lastfm" (FEATURE_LASTFM_ENRICH + LASTFM
 from a similar-tracks provider (Last.fm, `FEATURE_RADIO` + `LASTFM_API_KEY`)
 seeded by the last queued track.
 
+`room.set_public` opts a room into the public directory (member + host only,
+`FEATURE_PUBLIC_ROOMS`, default off). `public` persists on the room until the
+host revokes it; the default is private (zero value), so existing rooms are
+unaffected. `name` is an optional plain-text room label: trimmed, capped at 60
+chars (longer is rejected with a UserError, code 400), empty after trim clears
+the label, and an absent key leaves it untouched. The mutation bumps
+`RoomState.version` like every other mutation.
+
+`room.list` is the directory read: any connected client may call it (not
+membership-gated), rate-limited per caller (burst 5, one token per 2s; a
+rejection is the same code-400 UserError as fanout rejections). It returns
+only rooms currently loaded in the hub with `public == true`, never creates or
+loads rooms, skips dead rooms (0 members AND an empty queue), sorts by
+`memberCount` descending (`roomId` ascending for stability), and caps at 20
+entries. `memberCount` counts connected members (join + subscribe enrollment),
+so one person in two tabs counts twice. Only the summary fields are exposed:
+queue contents, host id, transport, and vote data stay room-channel-only. When
+`FEATURE_PUBLIC_ROOMS` is off, both RPCs reply `ErrorMethodNotFound`.
+
+```ts
+type PublicRoomSummary = {
+  roomId: string;
+  name?: string;          // present only if the host set one
+  memberCount: number;    // connected members
+  nowPlaying?: { title: string; artist: string };
+};
+```
+
 `transport.play` / `transport.pause` / `transport.seek` exist only when
 `FEATURE_SYNC` is on; otherwise the server replies `ErrorMethodNotFound`.
 `positionMs` is clamped to `>= 0`. `transport.play` optionally switches
@@ -119,6 +149,7 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 | `queue.reorder` | host only |
 | `queue.remove` | host, or the member who queued the track (`addedByUserId`) |
 | `radio.set`, `playlist.import` | host only |
+| `room.set_public` | host only |
 | `transport.play` / `transport.pause` / `transport.seek` | host only |
 
 `queue.remove` ownership: the server stamps `TrackRef.addedByUserId` from the connection identity
@@ -257,6 +288,8 @@ type RoomState = {
   transport?: TransportState; // shared play/pause/seek position (FEATURE_SYNC)
   createdAt?: number;       // unix ms at room creation, server-stamped (absent on older rooms)
   votes?: { [trackId: string]: string[] }; // server-stamped voter keys per track (FEATURE_QUEUE_VOTING)
+  public?: boolean;         // directory opt-in (FEATURE_PUBLIC_ROOMS); absent = private
+  name?: string;            // optional host-set room label shown in the directory
 };
 
 type TransportState = {
@@ -284,6 +317,6 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 Rules: state carries metadata only, never audio. Each client plays the head track through its own platform SDK on explicit user gesture.

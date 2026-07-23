@@ -972,6 +972,106 @@ input:focus, textarea:focus, select:focus {
   color: var(--color-text-primary);
 }
 
+/* Live rooms strip (F1): real public rooms in the hero, swapped in for the
+   example-room mock once the directory returns a non-empty list. Same glass
+   panel language as .room-card; the grid holds up to 5 cards. */
+.live-rooms {
+  margin: 2.75rem auto 0;
+  width: min(100%, 46rem);
+  text-align: left;
+  opacity: 0;
+  animation: fade-in 0.9s ease forwards;
+}
+.live-rooms__label {
+  display: block;
+  margin-bottom: 0.65rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.live-rooms__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.6rem;
+}
+.live-room-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, oklch(0.16 0.01 280 / 0.72), oklch(0.12 0.01 280 / 0.72));
+  border: 1px solid oklch(0.3 0.02 280 / 0.6);
+  box-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.04) inset,
+    0 24px 60px -40px oklch(0 0 0 / 0.9);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  text-decoration: none;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.live-room-card:hover {
+  border-color: color-mix(in oklab, var(--color-accent) 45%, transparent);
+  transform: translateY(-2px);
+}
+.live-room-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.live-room-card__name {
+  font-weight: 650;
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-room-card__track {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.live-room-card__title {
+  font-size: 0.82rem;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-room-card__artist {
+  font-size: 0.76rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-room-card__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--color-border);
+}
+.live-room-card__count {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.live-room-card__join {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-accent-2);
+}
+
 /* Buttons ----------------------------------------------------- */
 .btn-primary {
   position: relative;
