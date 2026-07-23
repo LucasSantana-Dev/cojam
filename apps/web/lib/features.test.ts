@@ -17,6 +17,7 @@ describe('resolveFeatures', () => {
       roomAuth: false,
       queueVoting: false,
       roomChat: false,
+      publicRooms: false,
     });
   });
 
@@ -43,6 +44,7 @@ describe('resolveFeatures', () => {
       roomAuth: false,
       queueVoting: false,
       roomChat: false,
+      publicRooms: false,
     });
   });
 
@@ -98,6 +100,12 @@ describe('resolveFeatures', () => {
     expect(resolveFeatures({}).roomChat).toBe(false);
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_ROOM_CHAT: 'on' }).roomChat).toBe(true);
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_ROOM_CHAT: 'maybe' }).roomChat).toBe(false);
+  });
+
+  it('publicRooms defaults off and can be enabled', () => {
+    expect(resolveFeatures({}).publicRooms).toBe(false);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS: 'on' }).publicRooms).toBe(true);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS: 'maybe' }).publicRooms).toBe(false);
   });
 
 });

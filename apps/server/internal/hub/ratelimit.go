@@ -24,6 +24,13 @@ var voteMethods = map[string]bool{
 	"queue.vote": true,
 }
 
+// listMethods are unauthenticated directory reads that landing visitors poll.
+// They get their own rate-limit bucket (separate from fanoutMethods: no
+// third-party fanout, but still per-caller limited).
+var listMethods = map[string]bool{
+	"room.list": true,
+}
+
 // Defaults for the fanout rate limiter. Tests replace h.fanoutLimiter with a
 // shrunken limiter instead of tuning these.
 const (
@@ -38,6 +45,13 @@ const (
 const (
 	voteBurst  = 10              // toggles a caller may fire at once
 	voteRefill = 2 * time.Second // one token regained per interval
+)
+
+// Defaults for the room.list limiter: burst 5, one token per 2s. Tests replace
+// h.listLimiter with a shrunken limiter instead of tuning these.
+const (
+	listBurst  = 5
+	listRefill = 2 * time.Second
 )
 
 // tokenBucket is a single caller's token bucket. Refill is computed lazily

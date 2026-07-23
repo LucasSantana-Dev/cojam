@@ -28,6 +28,7 @@ import { ChatPanel } from '../components/ChatPanel';
 import { AddTrackForm } from '../components/AddTrackForm';
 import { PresenceBar } from '../components/PresenceBar';
 import { ShareRoomButton } from '../components/ShareRoomButton';
+import { PublicRoomToggle } from '../components/PublicRoomToggle';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
@@ -361,6 +362,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <div className="flex items-center gap-3 flex-wrap">
               <PresenceBar />
               <ShareRoomButton />
+              {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
+              {hostControl && f.publicRooms && <PublicRoomToggle roomId={roomId} />}
               {accountsEnabled && (
                 <Link
                   href="/account"

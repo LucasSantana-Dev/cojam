@@ -24,6 +24,8 @@ export default defineConfig({
         FEATURE_QUEUE_VOTING: 'on',
         // Room chat (F8) is dark-shipped off by default; e2e exercises it.
         FEATURE_ROOM_CHAT: 'on',
+        // F1: room.set_public/room.list dark-ship default-off; e2e exercises them.
+        FEATURE_PUBLIC_ROOMS: 'on',
       },
     },
     {
@@ -47,6 +49,7 @@ export default defineConfig({
         NEXT_PUBLIC_WS_URL: 'ws://localhost:8080/connection/websocket',
         NEXT_PUBLIC_FEATURE_QUEUE_VOTING: 'on',
         NEXT_PUBLIC_FEATURE_ROOM_CHAT: 'on',
+        NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS: 'on',
       },
     },
   ],

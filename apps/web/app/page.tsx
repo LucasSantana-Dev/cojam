@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, CheckIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
+import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
 import { LogoMark } from '@/app/components/Logo';
 import { supabaseEnabled } from '@/lib/supabase';
 
@@ -594,48 +595,55 @@ export default function Home() {
             {/* Example room artifact — evidence, not promise (Stationhead
                 steal). Labeled as an example; same people/track as the
                 RoomShowcase below, one consistent story. Decorative
-                illustration, hidden from assistive tech. */}
-            <aside className="room-card" aria-hidden="true">
-              <div className="room-card__top">
-                <span className="room-card__label">Example room · NEON-4821</span>
-                <span className="room-card__live">
-                  <span className="room-card__dot" />
-                  Live
-                </span>
-              </div>
-              <div className="room-card__main">
-                <Image
-                  src="https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/e8/43/5f/e8435ffa-b6b9-b171-40ab-4ff3959ab661/886443919266.jpg/600x600bb.jpg"
-                  alt=""
-                  className="room-card__art"
-                  width={52}
-                  height={52}
-                  loading="lazy"
-                  decoding="async"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="room-card__meta">
-                  <span className="room-card__title">Instant Crush</span>
-                  <span className="room-card__artist">Daft Punk &amp; Julian Casablancas</span>
-                </div>
-                <div className="eq">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-              <div className="room-card__bottom">
-                <span className="room-card__avatars">
-                  <i style={{ background: '#a06bff' }}>L</i>
-                  <i style={{ background: '#60a5fa' }}>M</i>
-                  <i style={{ background: '#34d399' }}>T</i>
-                </span>
-                <span className="room-card__chat">
-                  <b>Maria</b> added Borderline to the queue
-                </span>
-              </div>
-            </aside>
+                illustration, hidden from assistive tech.
+                F1: when FEATURE_PUBLIC_ROOMS is on and the directory returns
+                live rooms, LiveRoomsSlot swaps this mock for the live strip;
+                flag off, empty list, or fetch failure keeps the mock. */}
+            <LiveRoomsSlot
+              fallback={
+                <aside className="room-card" aria-hidden="true">
+                  <div className="room-card__top">
+                    <span className="room-card__label">Example room · NEON-4821</span>
+                    <span className="room-card__live">
+                      <span className="room-card__dot" />
+                      Live
+                    </span>
+                  </div>
+                  <div className="room-card__main">
+                    <Image
+                      src="https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/e8/43/5f/e8435ffa-b6b9-b171-40ab-4ff3959ab661/886443919266.jpg/600x600bb.jpg"
+                      alt=""
+                      className="room-card__art"
+                      width={52}
+                      height={52}
+                      loading="lazy"
+                      decoding="async"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="room-card__meta">
+                      <span className="room-card__title">Instant Crush</span>
+                      <span className="room-card__artist">Daft Punk &amp; Julian Casablancas</span>
+                    </div>
+                    <div className="eq">
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </div>
+                  <div className="room-card__bottom">
+                    <span className="room-card__avatars">
+                      <i style={{ background: '#a06bff' }}>L</i>
+                      <i style={{ background: '#60a5fa' }}>M</i>
+                      <i style={{ background: '#34d399' }}>T</i>
+                    </span>
+                    <span className="room-card__chat">
+                      <b>Maria</b> added Borderline to the queue
+                    </span>
+                  </div>
+                </aside>
+              }
+            />
 
             <div className="hero-claims">
               <span className="claim"><CheckIcon size={13} /> No install</span>

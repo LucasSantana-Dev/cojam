@@ -105,7 +105,8 @@ func main() {
 		WithObservability(logger, metrics).
 		WithSync(featureEnabled("FEATURE_SYNC", false)).
 		WithVoting(featureEnabled("FEATURE_QUEUE_VOTING", false)).
-		WithChat(featureEnabled("FEATURE_ROOM_CHAT", false))
+		WithChat(featureEnabled("FEATURE_ROOM_CHAT", false)).
+		WithPublicRooms(featureEnabled("FEATURE_PUBLIC_ROOMS", false))
 
 	if featureEnabled("FEATURE_SYNC", false) {
 		logger.Info("sync_enabled")
@@ -124,6 +125,12 @@ func main() {
 		logger.Info("chat_enabled")
 	} else {
 		logger.Info("chat_disabled")
+	}
+
+	if featureEnabled("FEATURE_PUBLIC_ROOMS", false) {
+		logger.Info("public_rooms_enabled")
+	} else {
+		logger.Info("public_rooms_disabled")
 	}
 
 	// Idle-room eviction: rooms with no connected members and no activity past
