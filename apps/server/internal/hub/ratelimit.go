@@ -16,6 +16,14 @@ var fanoutMethods = map[string]bool{
 	"track.lastfm":       true,
 }
 
+// voteMethods are vote RPCs (F4). Each accepted toggle republishes the full
+// room state to every subscriber, so they get their own per-caller bucket,
+// separate from fanoutMethods: that budget protects third-party API quotas
+// and votes never leave the server.
+var voteMethods = map[string]bool{
+	"queue.vote": true,
+}
+
 // Defaults for the fanout rate limiter. Tests replace h.fanoutLimiter with a
 // shrunken limiter instead of tuning these.
 const (
@@ -23,6 +31,13 @@ const (
 	fanoutRefill     = 2 * time.Second  // one token regained per interval
 	fanoutIdleTTL    = 10 * time.Minute // buckets idle longer than this are evicted
 	fanoutSweepEvery = time.Minute      // how often the lazy sweep runs
+)
+
+// Defaults for the vote rate limiter. Tests replace h.voteLimiter with a
+// shrunken limiter instead of tuning these.
+const (
+	voteBurst  = 10              // toggles a caller may fire at once
+	voteRefill = 2 * time.Second // one token regained per interval
 )
 
 // tokenBucket is a single caller's token bucket. Refill is computed lazily

@@ -15,6 +15,7 @@ describe('resolveFeatures', () => {
       lastfmEnrich: false,
       sync: false,
       roomAuth: false,
+      queueVoting: false,
     });
   });
 
@@ -39,6 +40,7 @@ describe('resolveFeatures', () => {
       lastfmEnrich: true,
       sync: true,
       roomAuth: false,
+      queueVoting: false,
     });
   });
 
@@ -61,6 +63,11 @@ describe('resolveFeatures', () => {
   it('sync defaults off and can be enabled', () => {
     expect(resolveFeatures({}).sync).toBe(false);
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_SYNC: 'on' }).sync).toBe(true);
+  });
+
+  it('queueVoting defaults off and can be enabled', () => {
+    expect(resolveFeatures({}).queueVoting).toBe(false);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_QUEUE_VOTING: 'on' }).queueVoting).toBe(true);
   });
 
   it('accepts on/yes as enabled', () => {

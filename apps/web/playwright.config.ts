@@ -20,6 +20,8 @@ export default defineConfig({
         // secret only signs throwaway e2e tokens.
         FEATURE_ROOM_AUTH: 'true',
         ROOM_AUTH_SECRET: 'e2e-room-auth-secret',
+        // F4: queue.vote dark-ships default-off; the voting e2e needs it on.
+        FEATURE_QUEUE_VOTING: 'on',
       },
     },
     {
@@ -41,6 +43,7 @@ export default defineConfig({
         // (see e2e/connectionTokenProxy.ts for the CORS bridge).
         NEXT_PUBLIC_FEATURE_ROOM_AUTH: 'on',
         NEXT_PUBLIC_WS_URL: 'ws://localhost:8080/connection/websocket',
+        NEXT_PUBLIC_FEATURE_QUEUE_VOTING: 'on',
       },
     },
   ],

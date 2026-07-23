@@ -179,6 +179,7 @@ type Hub struct {
 	listenBrainz    ListenBrainzProvider
 	lastfmEnrich    LastfmEnrichProvider
 	syncEnabled     bool
+	votingEnabled   bool
 
 	// roomIdleTTL is how long a room with no connected members may stay idle
 	// before StartRoomEvictor's sweep drops it from memory. <= 0 disables
@@ -188,6 +189,12 @@ type Hub struct {
 	// fanoutLimiter rate-limits RPCs that fan out to third-party APIs
 	// (fanoutMethods) per caller, protecting upstream provider quotas.
 	fanoutLimiter *rateLimiter
+
+	// voteLimiter rate-limits queue.vote per caller (voteMethods): each toggle
+	// fans out a full-state publication to the room, so toggle wars are
+	// throttled. Separate from fanoutLimiter, whose budget protects
+	// third-party API quotas; votes never leave the server.
+	voteLimiter *rateLimiter
 
 	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
 	// up to 200 tracks at once; an unbounded goroutine per track would burst
@@ -213,6 +220,7 @@ var mutatingMethods = map[string]bool{
 	"queue.add":           true,
 	"queue.remove":        true,
 	"queue.reorder":       true,
+	"queue.vote":          true,
 	"now_playing.set":     true,
 	"now_playing.advance": true,
 	"playlist.import":     true,
@@ -271,6 +279,13 @@ func (h *Hub) WithSync(enabled bool) *Hub {
 	return h
 }
 
+// WithVoting enables queue voting (queue.vote, F4). Deliberately member-gated,
+// never host-only: voting is the listener's input channel.
+func (h *Hub) WithVoting(enabled bool) *Hub {
+	h.votingEnabled = enabled
+	return h
+}
+
 // NewHub creates a new hub with the given centrifuge node (nil in tests: publish is skipped).
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
@@ -282,6 +297,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		clientUserID:  make(map[string]string),
 		enrichSem:     make(chan struct{}, 8),
 		fanoutLimiter: newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
+		voteLimiter:   newRateLimiter(voteBurst, voteRefill, time.Now),
 	}
 }
 
@@ -653,16 +669,23 @@ func (h *Hub) HandleRPC(method string, data []byte, userID string) (json.RawMess
 
 // handleRPC is HandleRPC with an explicit rate-limit key. The transport layer
 // passes a client-scoped key when no authenticated userID exists so anonymous
-// clients are limited per connection instead of sharing one bucket.
+// clients are limited per connection instead of sharing one bucket. The same
+// key doubles as the queue.vote voter identity: it is exactly "user:<userID>"
+// when authenticated, else "client:<clientID>", so the server stamps identity
+// and clients never send who they are.
 func (h *Hub) handleRPC(method string, data []byte, userID, rlKey string) (json.RawMessage, error) {
 	start := time.Now()
 	// Fanout RPCs are rate-limited per caller before doing any work; a
 	// rejection surfaces as a UserError (centrifuge code 400) via
-	// rpcClientError and does not touch other methods' budgets.
+	// rpcClientError and does not touch other methods' budgets. Vote RPCs get
+	// their own bucket (each toggle republishes the full room state).
 	var result json.RawMessage
 	err := h.checkFanoutLimit(method, rlKey)
 	if err == nil {
-		result, err = h.dispatch(method, data, userID)
+		err = h.checkVoteLimit(method, rlKey)
+	}
+	if err == nil {
+		result, err = h.dispatch(method, data, userID, rlKey)
 	}
 	d := time.Since(start)
 
@@ -700,7 +723,19 @@ func (h *Hub) checkFanoutLimit(method, rlKey string) error {
 	return nil
 }
 
-func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessage, error) {
+// checkVoteLimit enforces the per-caller token bucket on queue.vote. Returns
+// nil for unlimited methods.
+func (h *Hub) checkVoteLimit(method, rlKey string) error {
+	if !voteMethods[method] || h.voteLimiter == nil {
+		return nil
+	}
+	if !h.voteLimiter.allow(rlKey) {
+		return userErrorf("too many requests, slow down")
+	}
+	return nil
+}
+
+func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.RawMessage, error) {
 	switch method {
 	case "room.join":
 		var req struct {
@@ -850,6 +885,34 @@ func (h *Hub) dispatch(method string, data []byte, userID string) (json.RawMessa
 		}
 		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			return s.Move(req.TrackID, req.ToIndex)
+		})
+
+	case "queue.vote":
+		if !h.votingEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		var req struct {
+			RoomID  string `json:"roomId"`
+			TrackID string `json:"trackId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("queue.vote: roomId required")
+		}
+		// The voter key is the rate-limit key computed at the transport
+		// boundary ("user:<userID>" or "client:<clientID>"): the server stamps
+		// identity, clients never send who they are.
+		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			_, err := s.ToggleVote(req.TrackID, rlKey)
+			if errors.Is(err, queue.ErrTrackNotFound) {
+				return userErrorf("track not found")
+			}
+			if errors.Is(err, queue.ErrVoteCapReached) {
+				return userErrorf("too many voters on that track (max %d)", queue.MaxVotersPerTrack)
+			}
+			return err
 		})
 
 	case "track.search":

@@ -2,6 +2,8 @@ package queue
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -381,5 +383,164 @@ func TestRoomState_LegacyJSONWithoutTimestamps(t *testing.T) {
 	}
 	if len(rs.Queue) != 1 || rs.Queue[0].AddedAt != 0 {
 		t.Errorf("expected zero AddedAt on legacy track, got %+v", rs.Queue)
+	}
+}
+
+func TestToggleVote(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
+		},
+		Version: 1,
+	}
+
+	voted, err := rs.ToggleVote("t1", "user:alice")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !voted {
+		t.Error("expected voted=true on first toggle")
+	}
+	if rs.Version != 2 {
+		t.Errorf("expected version 2, got %d", rs.Version)
+	}
+	voters := rs.Votes["t1"]
+	if len(voters) != 1 || voters[0] != "user:alice" {
+		t.Errorf("expected votes[t1] = [user:alice], got %v", voters)
+	}
+}
+
+func TestToggleVoteSecondCallRemoves(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
+		},
+		Version: 1,
+	}
+
+	if _, err := rs.ToggleVote("t1", "user:alice"); err != nil {
+		t.Fatalf("first toggle: %v", err)
+	}
+	voted, err := rs.ToggleVote("t1", "user:alice")
+	if err != nil {
+		t.Fatalf("second toggle: %v", err)
+	}
+	if voted {
+		t.Error("expected voted=false on second toggle (vote off)")
+	}
+	if rs.Version != 3 {
+		t.Errorf("expected version 3, got %d", rs.Version)
+	}
+	if _, ok := rs.Votes["t1"]; ok {
+		t.Errorf("expected votes[t1] entry pruned at zero voters, got %v", rs.Votes["t1"])
+	}
+}
+
+func TestToggleVoteNotFound(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
+		},
+		Version: 1,
+	}
+
+	_, err := rs.ToggleVote("nonexistent", "user:alice")
+	if !errors.Is(err, ErrTrackNotFound) {
+		t.Errorf("expected ErrTrackNotFound, got %v", err)
+	}
+	if rs.Version != 1 {
+		t.Errorf("expected version unchanged at 1, got %d", rs.Version)
+	}
+}
+
+func TestToggleVoteCap(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
+		},
+		Version: 0,
+	}
+
+	for i := 0; i < MaxVotersPerTrack; i++ {
+		if _, err := rs.ToggleVote("t1", fmt.Sprintf("user:%d", i)); err != nil {
+			t.Fatalf("vote %d within cap: %v", i, err)
+		}
+	}
+
+	if _, err := rs.ToggleVote("t1", "user:overflow"); !errors.Is(err, ErrVoteCapReached) {
+		t.Fatalf("expected ErrVoteCapReached past the cap, got %v", err)
+	}
+
+	// Toggling an existing vote OFF must still work at the cap.
+	voted, err := rs.ToggleVote("t1", "user:0")
+	if err != nil {
+		t.Fatalf("unvote at cap: %v", err)
+	}
+	if voted {
+		t.Error("expected voted=false when unvoting at cap")
+	}
+}
+
+func TestToggleVoteVersionOnlyOnChange(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
+		},
+		Version: 1,
+	}
+
+	// Unknown track: no change, no bump.
+	if _, err := rs.ToggleVote("nope", "user:alice"); err == nil {
+		t.Fatal("expected error for unknown track")
+	}
+	if rs.Version != 1 {
+		t.Errorf("no-op toggle bumped version: got %d, want 1", rs.Version)
+	}
+
+	// Distinct voters each bump once.
+	if _, err := rs.ToggleVote("t1", "user:alice"); err != nil {
+		t.Fatalf("alice vote: %v", err)
+	}
+	if _, err := rs.ToggleVote("t1", "user:bob"); err != nil {
+		t.Fatalf("bob vote: %v", err)
+	}
+	if rs.Version != 3 {
+		t.Errorf("expected version 3 after two votes, got %d", rs.Version)
+	}
+	if got := len(rs.Votes["t1"]); got != 2 {
+		t.Errorf("expected 2 distinct voters, got %d", got)
+	}
+}
+
+func TestRemovePrunesVotes(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
+			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
+		},
+		Version: 1,
+	}
+
+	if _, err := rs.ToggleVote("t1", "user:alice"); err != nil {
+		t.Fatalf("vote t1: %v", err)
+	}
+	if _, err := rs.ToggleVote("t2", "user:bob"); err != nil {
+		t.Fatalf("vote t2: %v", err)
+	}
+
+	if err := rs.Remove("t1"); err != nil {
+		t.Fatalf("remove t1: %v", err)
+	}
+	if _, ok := rs.Votes["t1"]; ok {
+		t.Errorf("expected votes for t1 pruned on remove, got %v", rs.Votes["t1"])
+	}
+	if got := len(rs.Votes["t2"]); got != 1 {
+		t.Errorf("expected votes for t2 untouched, got %d voters", got)
 	}
 }

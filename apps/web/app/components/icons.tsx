@@ -44,6 +44,9 @@ export const CheckIcon = svg('M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'
 export const PlusIcon = svg('M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z');
 export const ArrowUpIcon = svg('M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8L6.4 13.4 5 12z');
 export const ArrowDownIcon = svg('M12 19l-7-7 1.4-1.4L11 15.2V4h2v11.2l4.6-4.6L19 12z');
+export const ThumbsUpIcon = svg(
+  'M1 21h4V9H1v12zM23 10c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z',
+);
 export const TrashIcon = svg(
   'M9 3h6l1 2h5v2H3V5h5l1-2zM6 9h12l-1 12H7L6 9z',
 );
