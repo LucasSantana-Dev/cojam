@@ -10,6 +10,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `queue.add` | `{ roomId, track: TrackRef }` | `RoomState` |
 | `queue.remove` | `{ roomId, trackId: string }` | `RoomState` |
 | `queue.reorder` | `{ roomId, trackId: string, toIndex: number }` | `RoomState` |
+| `queue.vote` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.set` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
 | `track.search` | `{ query: string, prefer?: string[] }` | `SearchResult[]` |
@@ -96,6 +97,7 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 | RPC | Who may call (flag on) |
 |---|---|
 | `queue.add` | any member |
+| `queue.vote` | any member (guests included) |
 | `room.join`, `sync.ping`, reads | any caller |
 | `now_playing.set` / `now_playing.advance` | host only |
 | `queue.reorder` | host only |
@@ -111,6 +113,17 @@ Timestamps: the server stamps `TrackRef.addedAt` (unix ms) when a track enters t
 `RoomState.createdAt` (unix ms) at room creation; client-supplied values are overwritten. Rooms
 and tracks persisted before this existed carry no timestamp (absent on the wire); clients must
 tolerate that and stay silent rather than showing a fake time.
+
+`queue.vote` (F4, behind `FEATURE_QUEUE_VOTING`, default off; `ErrorMethodNotFound` when off)
+toggles the caller's upvote on a queued track: absent votes on, present votes off, one vote per
+voter per track. The server stamps the voter key from the connection identity (`user:<userID>`
+when authenticated, else `client:<clientID>`); clients never send who they are. Votes live in a
+separate `RoomState.votes` map (track ID to voter keys), not on `TrackRef`, are pruned when a
+track leaves the queue, and are capped at 200 voters per track. Each toggle bumps `version` and
+publishes the full state; a dedicated per-caller rate limit (10 burst, one token per 2s) throttles
+toggle wars. Voting is member-gated but never host-only, and counts are a reorder suggestion for
+the host, not an automatic reorder: the web client renders counts plus a listeners-pick marker and
+the host acts on them with `queue.reorder`.
 
 ## Server → channel publications
 
@@ -178,7 +191,8 @@ Fields (runtime env var in parentheses):
 - `wsUrl` (`COJAM_WS_URL`), `spotifyClientId` (`COJAM_SPOTIFY_CLIENT_ID`): always
   emitted, empty string when unset.
 - `spotifyEnabled` (`COJAM_FEATURE_SPOTIFY`), `roomAuthEnabled`
-  (`COJAM_FEATURE_ROOM_AUTH`): emitted only when the variable is explicitly set,
+  (`COJAM_FEATURE_ROOM_AUTH`), `queueVotingEnabled` (`COJAM_FEATURE_QUEUE_VOTING`):
+  emitted only when the variable is explicitly set,
   so an unset runtime value falls back to the build-time flag instead of forcing
   it off.
 - `supabaseUrl` + `supabaseAnonKey` (`COJAM_SUPABASE_URL` +
@@ -219,6 +233,7 @@ type RoomState = {
   version: number;          // monotonic, bumps per mutation; clients drop stale
   transport?: TransportState; // shared play/pause/seek position (FEATURE_SYNC)
   createdAt?: number;       // unix ms at room creation, server-stamped (absent on older rooms)
+  votes?: { [trackId: string]: string[] }; // server-stamped voter keys per track (FEATURE_QUEUE_VOTING)
 };
 
 type TransportState = {
@@ -237,6 +252,6 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `transport.play`, `transport.pause`, `transport.seek`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `transport.play`, `transport.pause`, `transport.seek`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 Rules: state carries metadata only, never audio. Each client plays the head track through its own platform SDK on explicit user gesture.

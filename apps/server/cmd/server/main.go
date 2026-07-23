@@ -103,12 +103,20 @@ func main() {
 	// Create hub
 	h := hub.NewHub(node).
 		WithObservability(logger, metrics).
-		WithSync(featureEnabled("FEATURE_SYNC", false))
+		WithSync(featureEnabled("FEATURE_SYNC", false)).
+		WithVoting(featureEnabled("FEATURE_QUEUE_VOTING", false))
 
 	if featureEnabled("FEATURE_SYNC", false) {
 		logger.Info("sync_enabled")
 	} else {
 		logger.Info("sync_disabled")
+	}
+
+	// Queue voting (F4) dark-ships default-off like FEATURE_SYNC.
+	if featureEnabled("FEATURE_QUEUE_VOTING", false) {
+		logger.Info("queue_voting_enabled")
+	} else {
+		logger.Info("queue_voting_disabled")
 	}
 
 	// Idle-room eviction: rooms with no connected members and no activity past

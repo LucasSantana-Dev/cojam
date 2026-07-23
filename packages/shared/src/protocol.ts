@@ -39,6 +39,9 @@ export type RoomState = {
   // Server clock (unix ms) at room creation, server-stamped. Absent on rooms
   // created before this existed.
   createdAt?: number;
+  // trackId -> server-stamped voter keys ("user:<userID>" or
+  // "client:<clientID>"); clients never send these (F4 queue voting).
+  votes?: { [trackId: string]: string[] };
 };
 
 export type RoomStatePub = {

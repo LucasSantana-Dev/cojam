@@ -9,6 +9,7 @@ All notable changes to this project are documented here. Format follows
 ### Added
 
 - Server-stamped `TrackRef.addedAt` / `RoomState.createdAt` timestamps; queue rows show relative added-times (#132)
+- Queue voting (F4): members upvote queued tracks via `queue.vote`, live counts + listeners-pick marker, host keeps order control (#130)
 
 ## [0.2.0] - 2026-07-21
 

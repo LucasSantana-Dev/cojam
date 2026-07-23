@@ -16,12 +16,20 @@ export interface AppStore {
   name: string;
   members: Member[];
   connectedServices: string[];
+  // Tracks this client has upvoted (F4). The published votes map holds
+  // server-stamped voter keys the client cannot map back to itself (the
+  // anonymous clientID is server-assigned), so this local set drives the
+  // pressed-state highlight while the server stays authoritative for counts.
+  // Updated ONLY on RPC success; resets on full reload (self-corrects on the
+  // next click because the server toggles).
+  myVotes: Record<string, true>;
   setName: (name: string) => void;
   setState: (state: RoomState) => void;
   setConnected: (connected: boolean) => void;
   setReconnecting: (reconnecting: boolean) => void;
   setMembers: (members: Member[]) => void;
   setConnectedServices: (services: string[]) => void;
+  markVoted: (trackId: string, voted: boolean) => void;
   addMember: (m: Member) => void;
   removeMember: (clientId: string) => void;
 }
@@ -33,6 +41,7 @@ export const useStore = create<AppStore>((set) => ({
   name: '',
   members: [],
   connectedServices: [],
+  myVotes: {},
   setName: (name) => set({ name }),
   setState: (state) => set((s) => ({
     state: !s.state || state.version > s.state.version ? state : s.state,
@@ -41,6 +50,15 @@ export const useStore = create<AppStore>((set) => ({
   setReconnecting: (reconnecting) => set({ reconnecting }),
   setMembers: (members) => set({ members }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
+  markVoted: (trackId, voted) => set((s) => {
+    const myVotes = { ...s.myVotes };
+    if (voted) {
+      myVotes[trackId] = true;
+    } else {
+      delete myVotes[trackId];
+    }
+    return { myVotes };
+  }),
   addMember: (m) => set((s) =>
     s.members.some((x) => x.clientId === m.clientId) ? s : { members: [...s.members, m] }),
   removeMember: (clientId) => set((s) => ({ members: s.members.filter((x) => x.clientId !== clientId) })),
@@ -274,6 +292,13 @@ export function rpcErrorMessage(err: unknown, fallback: string): string {
 export async function queueRemove(roomId: string, trackId: string) {
   if (!centrifuge) throw new Error('Not connected');
   await centrifuge.rpc('queue.remove', { roomId, trackId });
+}
+
+// queue.vote (F4): toggles this caller's upvote on a queued track. The result
+// is ignored like queue.add: the room.state publication delivers the state.
+export async function voteTrack(roomId: string, trackId: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('queue.vote', { roomId, trackId });
 }
 
 export async function nowPlayingSet(roomId: string, trackId: string) {

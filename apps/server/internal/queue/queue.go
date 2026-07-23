@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,20 @@ import (
 // MaxQueueSize bounds a room's queue so a malicious client can't OOM the server
 // by flooding queue.add. Enforced at the RPC boundary (hub) under the room lock.
 const MaxQueueSize = 500
+
+// MaxVotersPerTrack caps how many distinct voter keys one track may hold
+// (queue.vote, F4). Rooms are small; this only stops abuse of the votes map,
+// which is published in full on every state change.
+const MaxVotersPerTrack = 200
+
+// ErrTrackNotFound is returned by RoomState mutations when no queued track has
+// the requested ID. Sentinel so the hub can map it to a client-visible 400.
+var ErrTrackNotFound = errors.New("track not found")
+
+// ErrVoteCapReached is returned by ToggleVote when the track already holds
+// MaxVotersPerTrack distinct voters. Sentinel so the hub can map it to a
+// client-visible 400.
+var ErrVoteCapReached = errors.New("vote cap reached")
 
 // SourceRef represents a reference to a music source (YouTube or Apple Music)
 type SourceRef struct {
@@ -67,6 +82,11 @@ type RoomState struct {
 	// hub when it first creates the room. Zero on rooms persisted before this
 	// existed; clients must tolerate that.
 	CreatedAt int64 `json:"createdAt,omitempty"`
+	// Votes maps track ID to the voter keys that upvoted it (F4). A voter key
+	// is server-stamped ("user:<userID>" or "client:<clientID>"), never
+	// client-supplied. Kept off TrackRef so client-supplied tracks need no
+	// extra scrubbing; pruned when a track leaves the queue.
+	Votes map[string][]string `json:"votes,omitempty"`
 }
 
 // Add appends a track to the queue, generates an ID, stamps the server-side
@@ -86,11 +106,13 @@ func (rs *RoomState) Add(track TrackRef) *TrackRef {
 }
 
 // Remove removes a track from the queue by ID and bumps the version.
-// If the removed track was NowPlayingID, clears it.
+// If the removed track was NowPlayingID, clears it. The track's votes go with
+// it so counts never outlive the track (F4).
 func (rs *RoomState) Remove(trackID string) error {
 	for i, t := range rs.Queue {
 		if t.ID == trackID {
 			rs.Queue = append(rs.Queue[:i], rs.Queue[i+1:]...)
+			delete(rs.Votes, trackID)
 			rs.Version++
 
 			if rs.NowPlayingID == trackID {
@@ -100,6 +122,42 @@ func (rs *RoomState) Remove(trackID string) error {
 		}
 	}
 	return fmt.Errorf("track not found: %s", trackID)
+}
+
+// ToggleVote flips voter's upvote on trackID (F4): absent appends (vote on),
+// present removes (vote off). One vote per voter per track is structural (set
+// semantics). Returns whether the vote is now on. Bumps Version only when the
+// set actually changes; a no-change toggle would publish a state the
+// version-guarded clients rightly drop.
+func (rs *RoomState) ToggleVote(trackID, voter string) (bool, error) {
+	for _, t := range rs.Queue {
+		if t.ID != trackID {
+			continue
+		}
+		voters := rs.Votes[trackID]
+		for i, v := range voters {
+			if v == voter {
+				voters = append(voters[:i], voters[i+1:]...)
+				if len(voters) == 0 {
+					delete(rs.Votes, trackID)
+				} else {
+					rs.Votes[trackID] = voters
+				}
+				rs.Version++
+				return false, nil
+			}
+		}
+		if len(voters) >= MaxVotersPerTrack {
+			return false, fmt.Errorf("%w: %s", ErrVoteCapReached, trackID)
+		}
+		if rs.Votes == nil {
+			rs.Votes = make(map[string][]string)
+		}
+		rs.Votes[trackID] = append(voters, voter)
+		rs.Version++
+		return true, nil
+	}
+	return false, fmt.Errorf("%w: %s", ErrTrackNotFound, trackID)
 }
 
 // SetNowPlaying sets the now playing track by ID.

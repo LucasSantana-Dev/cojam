@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useStore, queueRemove, nowPlayingSet, queueReorder, rpcErrorMessage } from '@/lib/realtime';
+import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage } from '@/lib/realtime';
+import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import {
   SpotifyIcon,
   YouTubeIcon,
@@ -10,6 +11,7 @@ import {
   ArrowUpIcon,
   ArrowDownIcon,
   TrashIcon,
+  ThumbsUpIcon,
 } from '@/app/components/icons';
 import { formatTime } from './TransportUI';
 import { formatRelativeTime } from '@/lib/relativeTime';
@@ -32,9 +34,28 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   const state = useStore((s) => s.state);
   const queue = state?.queue ?? [];
   const nowPlayingId = state?.nowPlayingId;
+  const connected = useStore((s) => s.connected);
+  const myVotes = useStore((s) => s.myVotes);
+  const markVoted = useStore((s) => s.markVoted);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [undoTimers, setUndoTimers] = useState<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [actionError, setActionError] = useState('');
+  // Queue voting (F4): hydration-safe runtime flag (RFC-0006); the build-time
+  // value is the SSR snapshot, the /env.js runtime map flips it post-mount.
+  const { queueVoting: queueVotingEnabled } = useRuntimeFeatures();
+
+  const handleVote = async (trackId: string) => {
+    setActionError('');
+    const voted = !myVotes[trackId];
+    try {
+      await voteTrack(roomId, trackId);
+      // No optimistic highlight: only the RPC success flips the pressed
+      // state, so a rejection (rate limit, disconnect) leaves it alone.
+      markVoted(trackId, voted);
+    } catch (err) {
+      setActionError(rpcErrorMessage(err, 'Couldn\'t vote for that track. Try again.'));
+    }
+  };
 
   const handleRemove = async (trackId: string, title: string) => {
     // Second click while an undo window is open would schedule a duplicate
@@ -131,6 +152,22 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     `${contributors} ${contributors === 1 ? 'contributor' : 'contributors'}`,
   ].filter(Boolean).join(' · ');
 
+  // Listeners' pick (F4): the queued track with the most votes, excluding now
+  // playing. Pure render-side derivation: a reorder SUGGESTION only, the host
+  // keeps full control of the actual order via queue.reorder.
+  let listenersPickId: string | null = null;
+  if (queueVotingEnabled) {
+    let maxVotes = 0;
+    for (const t of queue) {
+      if (t.id === nowPlayingId) continue;
+      const count = state?.votes?.[t.id]?.length ?? 0;
+      if (count > maxVotes) {
+        maxVotes = count;
+        listenersPickId = t.id;
+      }
+    }
+  }
+
   return (
     <div className="panel p-6 space-y-4 h-fit lg:sticky lg:top-24">
       <div>
@@ -199,6 +236,16 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                       ) : null}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
+                      {track.id === listenersPickId && (
+                        <span
+                          data-testid="listeners-pick"
+                          className="inline-flex items-center text-xs font-semibold"
+                          style={{ color: 'var(--color-accent)' }}
+                          title="Most upvoted by listeners"
+                        >
+                          Listeners&rsquo; pick
+                        </span>
+                      )}
                       {track.sources.youtube && (
                         <span
                           className="badge-source badge-youtube inline-flex items-center text-xs"
@@ -231,6 +278,30 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                     hover-revealed controls. */}
                 {track.durationMs != null && (
                   <span className="queue-duration">{formatTime(track.durationMs)}</span>
+                )}
+
+                {/* Vote (F4): always visible, for every member regardless of
+                    canControl (voting is the listener control); disabled only
+                    while disconnected. The count must stay on screen, so this
+                    sits outside the hover-revealed controls below. */}
+                {queueVotingEnabled && (
+                  <button
+                    onClick={() => handleVote(track.id)}
+                    disabled={!connected}
+                    aria-label="Vote"
+                    aria-pressed={Boolean(myVotes[track.id])}
+                    title={myVotes[track.id] ? 'Remove your vote' : 'Vote for this track'}
+                    className="p-1.5 rounded transition-all duration-150 hover:brightness-110 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 flex-shrink-0"
+                    style={{
+                      backgroundColor: myVotes[track.id] ? 'var(--color-accent)' : 'var(--color-surface-3)',
+                      color: myVotes[track.id] ? 'var(--color-surface-0)' : 'var(--color-text-primary)',
+                    }}
+                  >
+                    <ThumbsUpIcon size={14} />
+                    <span data-testid="vote-count" className="text-xs font-semibold">
+                      {state?.votes?.[track.id]?.length ?? 0}
+                    </span>
+                  </button>
                 )}
 
                 {/* Right side: controls (hidden on desktop hover, always visible on touch) */}

@@ -12,6 +12,7 @@ export type Features = {
   lastfmEnrich: boolean;
   sync: boolean;
   roomAuth: boolean;
+  queueVoting: boolean;
 };
 
 export type FeatureName = keyof Features;
@@ -30,6 +31,7 @@ export const FEATURE_ENV_VARS: Record<FeatureName, string> = {
   lastfmEnrich: 'COJAM_FEATURE_LASTFM_ENRICH',
   sync: 'COJAM_FEATURE_SYNC',
   roomAuth: 'COJAM_FEATURE_ROOM_AUTH',
+  queueVoting: 'COJAM_FEATURE_QUEUE_VOTING',
 };
 
 const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
@@ -55,6 +57,7 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
     lastfmEnrich: flag(env.NEXT_PUBLIC_FEATURE_LASTFM_ENRICH, false),
     sync: flag(env.NEXT_PUBLIC_FEATURE_SYNC, false),
     roomAuth: flag(env.NEXT_PUBLIC_FEATURE_ROOM_AUTH, false),
+    queueVoting: flag(env.NEXT_PUBLIC_FEATURE_QUEUE_VOTING, false),
   };
 }
 
@@ -70,4 +73,5 @@ export const features: Features = resolveFeatures({
   NEXT_PUBLIC_FEATURE_LASTFM_ENRICH: process.env.NEXT_PUBLIC_FEATURE_LASTFM_ENRICH,
   NEXT_PUBLIC_FEATURE_SYNC: process.env.NEXT_PUBLIC_FEATURE_SYNC,
   NEXT_PUBLIC_FEATURE_ROOM_AUTH: process.env.NEXT_PUBLIC_FEATURE_ROOM_AUTH,
+  NEXT_PUBLIC_FEATURE_QUEUE_VOTING: process.env.NEXT_PUBLIC_FEATURE_QUEUE_VOTING,
 });
