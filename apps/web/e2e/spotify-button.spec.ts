@@ -1,10 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
+import { proxyConnectionToken } from './connectionTokenProxy';
 
 // With NEXT_PUBLIC_FEATURE_SPOTIFY on + a client id, a room shows the
 // "Connect Spotify" button. We never click it (that redirects to Spotify OAuth),
 // so no Premium account or real SDK is needed — this asserts the gated UI renders.
 
 async function join(page: Page, roomId: string, name: string) {
+  await proxyConnectionToken(page);
   await page.goto(`/room/${roomId}`);
   // Waiting-room card shows the room code in a chip ("You're about to join <CODE>").
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
