@@ -22,6 +22,8 @@ export default defineConfig({
         ROOM_AUTH_SECRET: 'e2e-room-auth-secret',
         // F4: queue.vote dark-ships default-off; the voting e2e needs it on.
         FEATURE_QUEUE_VOTING: 'on',
+        // Room chat (F8) is dark-shipped off by default; e2e exercises it.
+        FEATURE_ROOM_CHAT: 'on',
       },
     },
     {
@@ -44,6 +46,7 @@ export default defineConfig({
         NEXT_PUBLIC_FEATURE_ROOM_AUTH: 'on',
         NEXT_PUBLIC_WS_URL: 'ws://localhost:8080/connection/websocket',
         NEXT_PUBLIC_FEATURE_QUEUE_VOTING: 'on',
+        NEXT_PUBLIC_FEATURE_ROOM_CHAT: 'on',
       },
     },
   ],

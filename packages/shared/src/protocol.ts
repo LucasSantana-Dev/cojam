@@ -48,3 +48,19 @@ export type RoomStatePub = {
   type: 'room.state';
   state: RoomState;
 };
+
+export type ChatMessage = {
+  id: string;              // server-assigned uuid
+  roomId: string;
+  name: string;            // sender display name (client-supplied, capped; like TrackRef.addedBy)
+  userId?: string;         // server-stamped connection identity; empty when room auth is off
+  text: string;            // trimmed, 1..300 chars
+  sentAtServerMs: number;  // server clock, like TransportState.updatedAtServerMs
+};
+
+// Chat rides the same room:<id> channel as room.state but is ephemeral: never
+// in RoomState, never persisted, so no version guard applies (F8).
+export type ChatMessagePub = {
+  type: 'chat.message';
+  message: ChatMessage;
+};

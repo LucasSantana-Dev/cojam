@@ -4,7 +4,7 @@
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, rpcErrorMessage } from './realtime';
-import type { RoomState } from '@cojam/shared';
+import type { ChatMessage, RoomState } from '@cojam/shared';
 
 // Centrifuge/auth/account mocks for the joinRoom lifecycle tests (B9/B10/B11).
 // The mock records instances so tests can drive 'connected' events and
@@ -24,8 +24,10 @@ const centrifugeMock = vi.hoisted(() => {
   class MockCentrifuge {
     static instances: MockCentrifuge[] = [];
     handlers: Record<string, Array<(ctx?: unknown) => void>> = {};
+    subscriptions: MockSubscription[] = [];
     rpcCalls: Array<{ method: string; payload: unknown }> = [];
     joinResponse: unknown = null;
+    chatHistoryResponse: unknown = null;
     constructor(public url: string, public opts: Record<string, unknown>) {
       MockCentrifuge.instances.push(this);
     }
@@ -37,13 +39,16 @@ const centrifugeMock = vi.hoisted(() => {
       (this.handlers[event] ?? []).forEach((cb) => cb(ctx));
     }
     newSubscription() {
-      return new MockSubscription();
+      const sub = new MockSubscription();
+      this.subscriptions.push(sub);
+      return sub;
     }
     connect() { /* no-op: tests emit 'connected' manually */ }
     rpc(method: string, payload: unknown) {
       this.rpcCalls.push({ method, payload });
       if (method === 'sync.ping') return Promise.resolve({ data: { serverNowMs: 0 } });
       if (method === 'room.join') return Promise.resolve({ data: this.joinResponse });
+      if (method === 'chat.history') return Promise.resolve({ data: this.chatHistoryResponse ?? { messages: [] } });
       return Promise.resolve({ data: null });
     }
   }
@@ -61,6 +66,16 @@ vi.mock('./account', () => ({
 }));
 vi.mock('./auth', () => ({
   fetchConnectionToken: authMocks.fetchConnectionToken,
+}));
+
+// Runtime-env mock so tests can flip runtime-resolved flags (F8 room chat)
+// without a window.__COJAM_ENV__ global (node env has no window).
+const runtimeEnvMocks = vi.hoisted(() => ({
+  env: undefined as { features?: { roomChat?: boolean } } | undefined,
+}));
+vi.mock('./runtimeEnv', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./runtimeEnv')>()),
+  getRuntimeEnv: () => runtimeEnvMocks.env,
 }));
 
 const state = (version: number, roomId = 'r1'): RoomState => ({
@@ -100,6 +115,44 @@ describe('room store', () => {
     useStore.getState().setName('Lucas');
     expect(useStore.getState().connected).toBe(true);
     expect(useStore.getState().name).toBe('Lucas');
+  });
+});
+
+describe('chat store (F8)', () => {
+  const chatMsg = (id: string): ChatMessage => ({
+    id,
+    roomId: 'r1',
+    name: 'Ana',
+    text: `msg ${id}`,
+    sentAtServerMs: 1,
+  });
+
+  beforeEach(() => {
+    useStore.setState({ chat: [] });
+  });
+
+  it('appends live messages and dedupes by id', () => {
+    useStore.getState().addChatMessage(chatMsg('a'));
+    useStore.getState().addChatMessage(chatMsg('b'));
+    // A history refetch overlapping the live publication must not duplicate.
+    useStore.getState().addChatMessage(chatMsg('a'));
+    expect(useStore.getState().chat.map((m) => m.id)).toEqual(['a', 'b']);
+  });
+
+  it('caps the client scrollback at 100, dropping oldest', () => {
+    for (let i = 0; i < 105; i++) {
+      useStore.getState().addChatMessage(chatMsg(`m${i}`));
+    }
+    const chat = useStore.getState().chat;
+    expect(chat).toHaveLength(100);
+    expect(chat[0].id).toBe('m5');
+    expect(chat[chat.length - 1].id).toBe('m104');
+  });
+
+  it('setChat replaces the list (join/rejoin seed)', () => {
+    useStore.getState().addChatMessage(chatMsg('live'));
+    useStore.getState().setChat([chatMsg('h1'), chatMsg('h2')]);
+    expect(useStore.getState().chat.map((m) => m.id)).toEqual(['h1', 'h2']);
   });
 });
 
@@ -192,7 +245,8 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
     centrifugeMock.MockCentrifuge.instances = [];
     authMocks.accountToken = null;
     authMocks.fetchConnectionToken.mockClear();
-    useStore.setState({ state: null, connected: false, reconnecting: false });
+    runtimeEnvMocks.env = undefined;
+    useStore.setState({ state: null, connected: false, reconnecting: false, chat: [] });
   });
 
   // joinRoom resolves the token (async) before constructing Centrifuge, so
@@ -283,6 +337,89 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
       return Promise.resolve({ data: { serverNowMs: 0 } });
     };
     await expect(joinPromise).rejects.toThrow('room is full');
+  });
+});
+
+describe('room chat (F8)', () => {
+  const chatMsg = (id: string, roomId = 'room-1'): ChatMessage => ({
+    id,
+    roomId,
+    name: 'Bob',
+    text: `text ${id}`,
+    sentAtServerMs: 1,
+  });
+
+  beforeEach(() => {
+    centrifugeMock.MockCentrifuge.instances = [];
+    authMocks.accountToken = null;
+    runtimeEnvMocks.env = undefined;
+    useStore.setState({ state: null, connected: false, reconnecting: false, chat: [] });
+  });
+
+  const lastInstance = async () => {
+    await vi.waitFor(() => {
+      expect(centrifugeMock.MockCentrifuge.instances.length).toBeGreaterThan(0);
+    });
+    const instances = centrifugeMock.MockCentrifuge.instances;
+    return instances[instances.length - 1];
+  };
+
+  it('routes chat.message publications to the chat store, room.state to setState', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    const pubHandler = instance.subscriptions[0].handlers['publication'][0];
+    pubHandler({ data: { type: 'room.state', state: state(3, 'room-1') } });
+    expect(useStore.getState().state?.version).toBe(3);
+    // A state publication must not touch chat, and vice versa.
+    expect(useStore.getState().chat).toEqual([]);
+
+    pubHandler({ data: { type: 'chat.message', message: chatMsg('m1') } });
+    expect(useStore.getState().chat.map((m) => m.id)).toEqual(['m1']);
+    expect(useStore.getState().state?.version).toBe(3);
+  });
+
+  it('fetches chat history after join when the flag is on', async () => {
+    runtimeEnvMocks.env = { features: { roomChat: true } };
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.chatHistoryResponse = { messages: [chatMsg('h1'), chatMsg('h2')] };
+    instance.emit('connected');
+    await joinPromise;
+
+    await vi.waitFor(() => {
+      expect(useStore.getState().chat.map((m) => m.id)).toEqual(['h1', 'h2']);
+    });
+    expect(instance.rpcCalls.some((c) => c.method === 'chat.history')).toBe(true);
+  });
+
+  it('does not call chat.history when the flag is off', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    expect(instance.rpcCalls.some((c) => c.method === 'chat.history')).toBe(false);
+  });
+
+  it('refetches chat history on reconnect, healing lines missed during the drop', async () => {
+    runtimeEnvMocks.env = { features: { roomChat: true } };
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    // Live message arrives, then the connection drops with one missed line.
+    const pubHandler = instance.subscriptions[0].handlers['publication'][0];
+    pubHandler({ data: { type: 'chat.message', message: chatMsg('live1') } });
+    instance.chatHistoryResponse = { messages: [chatMsg('live1'), chatMsg('missed2')] };
+
+    instance.emit('connected');
+    await vi.waitFor(() => {
+      expect(useStore.getState().chat.map((m) => m.id)).toEqual(['live1', 'missed2']);
+    });
   });
 });
 

@@ -16,6 +16,7 @@ describe('resolveFeatures', () => {
       sync: false,
       roomAuth: false,
       queueVoting: false,
+      roomChat: false,
     });
   });
 
@@ -41,6 +42,7 @@ describe('resolveFeatures', () => {
       sync: true,
       roomAuth: false,
       queueVoting: false,
+      roomChat: false,
     });
   });
 
@@ -90,6 +92,12 @@ describe('resolveFeatures', () => {
   it('lastfmenrich defaults off and can be enabled', () => {
     expect(resolveFeatures({}).lastfmEnrich).toBe(false);
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_LASTFM_ENRICH: 'on' }).lastfmEnrich).toBe(true);
+  });
+
+  it('roomChat defaults off and can be enabled', () => {
+    expect(resolveFeatures({}).roomChat).toBe(false);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_ROOM_CHAT: 'on' }).roomChat).toBe(true);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_ROOM_CHAT: 'maybe' }).roomChat).toBe(false);
   });
 
 });

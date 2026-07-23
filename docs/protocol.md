@@ -23,6 +23,8 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `transport.play` | `{ roomId, trackId?: string, positionMs: number }` | `RoomState` |
 | `transport.pause` | `{ roomId, positionMs: number }` | `RoomState` |
 | `transport.seek` | `{ roomId, positionMs: number }` | `RoomState` |
+| `chat.send` | `{ roomId, text: string, name: string }` | `{ message: ChatMessage }` |
+| `chat.history` | `{ roomId }` | `{ messages: ChatMessage[] }` |
 | `sync.ping` | `{}` | `{ serverNowMs: number }` |
 
 `track.search` is a read (not membership-gated). `prefer` lists the caller's connected
@@ -86,6 +88,19 @@ seeded by the last queued track.
 and publish the full `RoomState`. `sync.ping` is a read returning the server
 clock (unix ms) for client offset estimation.
 
+`chat.send` / `chat.history` (F8) exist only when `FEATURE_ROOM_CHAT` is on
+(default off); otherwise the server replies `ErrorMethodNotFound`. Chat is
+ephemeral: an in-memory per-room ring of the last 50 messages, never part of
+`RoomState` (no `version` bump, no full-state fan-out) and never persisted (no
+`store.Save`, restart = empty chat). `chat.send` trims `text` (1..300 chars,
+else a 400 UserError), caps `name` at 60 chars, stamps `id`, `userId` (from
+the connection identity, never params), and `sentAtServerMs`, appends to the
+ring, and publishes a `chat.message` publication on the room channel; the RPC
+result is just the stamped message (authoritative delivery is the
+publication, sender included). `chat.history` returns the ring oldest-first
+for late joiners/rejoins. `chat.send` is rate-limited per caller (burst 5,
+one token per 2s; "too many requests, slow down"); `chat.history` is not.
+
 ### Roles & authorization (RFC-0005, behind `FEATURE_ROOM_AUTH`)
 
 When `FEATURE_ROOM_AUTH` is on, connections present a server-signed token (anonymous stable
@@ -98,6 +113,7 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 |---|---|
 | `queue.add` | any member |
 | `queue.vote` | any member (guests included) |
+| `chat.send`, `chat.history` | any member |
 | `room.join`, `sync.ping`, reads | any caller |
 | `now_playing.set` / `now_playing.advance` | host only |
 | `queue.reorder` | host only |
@@ -131,6 +147,13 @@ Every accepted mutation publishes the full `RoomState` (v0 keeps it simple; delt
 
 ```json
 { "type": "room.state", "state": RoomState }
+```
+
+Accepted chat messages publish a per-message shape on the same channel (F8;
+distinguished by `type`, no version guard since chat is not `RoomState`):
+
+```json
+{ "type": "chat.message", "message": ChatMessage }
 ```
 
 Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages.
@@ -241,6 +264,15 @@ type TransportState = {
   positionMs: number;
   updatedAtServerMs: number; // server clock (unix ms) at last transport mutation
 };
+
+type ChatMessage = {       // F8: ephemeral, in-memory only; never in RoomState
+  id: string;              // server-assigned uuid
+  roomId: string;
+  name: string;            // sender display name (client-supplied, capped at 60)
+  userId?: string;         // server-stamped connection identity; empty when room auth is off
+  text: string;            // trimmed, 1..300 chars
+  sentAtServerMs: number;  // server clock (unix ms)
+};
 ```
 
 Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; server replies with current `RoomState`; client replaces local state if `version` is newer.
@@ -252,6 +284,6 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `transport.play`, `transport.pause`, `transport.seek`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 Rules: state carries metadata only, never audio. Each client plays the head track through its own platform SDK on explicit user gesture.

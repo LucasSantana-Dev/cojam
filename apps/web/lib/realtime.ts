@@ -5,9 +5,19 @@ import { estimateOffset, type PingSample } from './clockSync';
 import { fetchConnectionToken } from './auth';
 import { getAccountToken } from './account';
 import { features } from './features';
-import type { RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
+import type { ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = { clientId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' };
+
+// Client-side chat scrollback cap (F8). The server ring holds the last 50;
+// the client keeps a bit more so a long session does not visibly drop lines.
+const MAX_CHAT_MESSAGES = 100;
+
+// roomChatEnabled resolves the F8 flag runtime-first (via /env.js), falling
+// back to the build-time NEXT_PUBLIC_FEATURE_ROOM_CHAT.
+function roomChatEnabled(): boolean {
+  return resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomChat;
+}
 
 export interface AppStore {
   state: RoomState | null;
@@ -23,6 +33,7 @@ export interface AppStore {
   // Updated ONLY on RPC success; resets on full reload (self-corrects on the
   // next click because the server toggles).
   myVotes: Record<string, true>;
+  chat: ChatMessage[];
   setName: (name: string) => void;
   setState: (state: RoomState) => void;
   setConnected: (connected: boolean) => void;
@@ -32,6 +43,8 @@ export interface AppStore {
   markVoted: (trackId: string, voted: boolean) => void;
   addMember: (m: Member) => void;
   removeMember: (clientId: string) => void;
+  setChat: (messages: ChatMessage[]) => void;
+  addChatMessage: (message: ChatMessage) => void;
 }
 
 export const useStore = create<AppStore>((set) => ({
@@ -42,6 +55,7 @@ export const useStore = create<AppStore>((set) => ({
   members: [],
   connectedServices: [],
   myVotes: {},
+  chat: [],
   setName: (name) => set({ name }),
   setState: (state) => set((s) => ({
     state: !s.state || state.version > s.state.version ? state : s.state,
@@ -62,6 +76,13 @@ export const useStore = create<AppStore>((set) => ({
   addMember: (m) => set((s) =>
     s.members.some((x) => x.clientId === m.clientId) ? s : { members: [...s.members, m] }),
   removeMember: (clientId) => set((s) => ({ members: s.members.filter((x) => x.clientId !== clientId) })),
+  setChat: (messages) => set({ chat: messages }),
+  // Chat has no version guard (it is not RoomState): dedupe by id so live
+  // publications and history refetches can overlap safely, and cap the list.
+  addChatMessage: (message) => set((s) =>
+    s.chat.some((m) => m.id === message.id)
+      ? s
+      : { chat: [...s.chat, message].slice(-MAX_CHAT_MESSAGES) }),
 }));
 
 // Presence entry info is the JSON {name, platform?} we set as ConnInfo server-side.
@@ -165,6 +186,9 @@ export async function joinRoom(
 
   const store = useStore.getState();
   store.setName(name);
+  // A fresh joinRoom is a new room intent: clear chat alongside the activeRoom
+  // reset above so switching rooms never shows the previous room's lines.
+  store.setChat([]);
 
   centrifuge.on('connected', () => {
     store.setConnected(true);
@@ -186,6 +210,15 @@ export async function joinRoom(
       }).catch(() => {
         /* stay on stale state; the next publication heals */
       });
+      // Heal chat lines missed during the drop (F8); dedupe by id makes the
+      // refetch idempotent against anything that arrived live.
+      if (roomChatEnabled()) {
+        fetchChatHistory(rejoin.roomId).then((messages) => {
+          messages.forEach((m) => useStore.getState().addChatMessage(m));
+        }).catch(() => {
+          /* chat history is best-effort; the next reconnect retries */
+        });
+      }
     }
   });
 
@@ -201,9 +234,13 @@ export async function joinRoom(
   const sub = centrifuge.newSubscription(`room:${roomId}`);
 
   sub.on('publication', (ctx) => {
-    const pub = ctx.data as RoomStatePub;
+    const pub = ctx.data as RoomStatePub | ChatMessagePub;
     if (pub.type === 'room.state') {
       store.setState(pub.state);
+    } else if (pub.type === 'chat.message') {
+      // Chat appends through its own store path (F8): no version guard, the
+      // room.state guard only applies to state publications.
+      store.addChatMessage(pub.message);
     }
   });
 
@@ -266,6 +303,16 @@ export async function joinRoom(
   // Mark the room active only after the initial join succeeded: the
   // 'connected' handler keys the reconnect resync off this.
   activeRoom = { roomId, name };
+
+  // Seed chat history for late joiners (F8): the server ring holds the last
+  // 50 messages, older ones are gone by design.
+  if (roomChatEnabled()) {
+    fetchChatHistory(roomId).then((messages) => {
+      useStore.getState().setChat(messages);
+    }).catch(() => {
+      /* chat history is best-effort; an empty panel is acceptable */
+    });
+  }
 
   // Measure initial clock offset (fire-and-forget, non-fatal on error)
   measureClockOffset().catch(() => {
@@ -333,6 +380,22 @@ export async function importPlaylist(roomId: string, url: string, addedBy: strin
 export async function setRadio(roomId: string, enabled: boolean) {
   if (!centrifuge) throw new Error('Not connected');
   await centrifuge.rpc('radio.set', { roomId, enabled });
+}
+
+// Room chat (F8). Server-first: no optimistic append; the message appears
+// when the chat.message publication round-trips on the room channel, so there
+// is no duplicate/rollback handling. The RPC result is the stamped message
+// (not RoomState); chat never touches RoomState.Version.
+export async function sendChat(roomId: string, text: string, name: string): Promise<ChatMessage> {
+  if (!centrifuge) throw new Error('Not connected');
+  const result = await centrifuge.rpc('chat.send', { roomId, text, name });
+  return (result.data as { message: ChatMessage }).message;
+}
+
+export async function fetchChatHistory(roomId: string): Promise<ChatMessage[]> {
+  if (!centrifuge) throw new Error('Not connected');
+  const result = await centrifuge.rpc('chat.history', { roomId });
+  return (result.data as { messages: ChatMessage[] }).messages ?? [];
 }
 
 export type SearchCandidate = {
