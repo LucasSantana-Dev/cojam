@@ -1,7 +1,9 @@
 package queue
 
 import (
+	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestAdd(t *testing.T) {
@@ -346,4 +348,38 @@ func TestAdvanceAfterSequence(t *testing.T) {
 		t.Errorf("after advance 3: expected empty, got %s", rs.NowPlayingID)
 	}
 	t.Logf("After 3rd: NowPlayingID=%q", rs.NowPlayingID)
+}
+
+func TestAdd_StampsAddedAt(t *testing.T) {
+	rs := &RoomState{
+		RoomID:  "room1",
+		Queue:   []TrackRef{},
+		Version: 0,
+	}
+
+	// A client-supplied AddedAt must be overwritten with the server clock.
+	before := time.Now().UnixMilli()
+	added := rs.Add(TrackRef{Title: "Song", Artist: "A", AddedBy: "u", Sources: Sources{}, AddedAt: 1})
+	after := time.Now().UnixMilli()
+
+	if added.AddedAt < before || added.AddedAt > after {
+		t.Errorf("expected AddedAt within [%d, %d], got %d", before, after, added.AddedAt)
+	}
+}
+
+// Rooms and tracks persisted before timestamps existed carry no addedAt /
+// createdAt; they must still load (zero value tolerated).
+func TestRoomState_LegacyJSONWithoutTimestamps(t *testing.T) {
+	legacy := `{"roomId":"r","queue":[{"id":"t1","title":"T","artist":"A","sources":{},"addedBy":"u"}],"radioEnabled":false,"version":3}`
+
+	var rs RoomState
+	if err := json.Unmarshal([]byte(legacy), &rs); err != nil {
+		t.Fatalf("legacy state must unmarshal: %v", err)
+	}
+	if rs.CreatedAt != 0 {
+		t.Errorf("expected zero CreatedAt on legacy room, got %d", rs.CreatedAt)
+	}
+	if len(rs.Queue) != 1 || rs.Queue[0].AddedAt != 0 {
+		t.Errorf("expected zero AddedAt on legacy track, got %+v", rs.Queue)
+	}
 }

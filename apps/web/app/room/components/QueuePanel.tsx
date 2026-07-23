@@ -12,6 +12,7 @@ import {
   TrashIcon,
 } from '@/app/components/icons';
 import { formatTime } from './TransportUI';
+import { formatRelativeTime } from '@/lib/relativeTime';
 
 // Deezer-style total duration: "1 hr 23 min" / "42 min" / "< 1 min".
 function formatTotal(ms: number): string {
@@ -188,6 +189,14 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                         {getInitial(track.addedBy)}
                       </span>
                       <span className="flex-shrink-0">{track.addedBy}</span>
+                      {/* Server-stamped addedAt (R1 provenance). Silent when 0/absent
+                          on tracks queued before timestamps existed (honest data). */}
+                      {track.addedAt ? (
+                        <>
+                          <span className="text-opacity-60">·</span>
+                          <span className="flex-shrink-0">added {formatRelativeTime(track.addedAt)}</span>
+                        </>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {track.sources.youtube && (

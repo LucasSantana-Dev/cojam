@@ -107,6 +107,11 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 on `queue.add` and `playlist.import` (a client-supplied value is overwritten). Tracks queued before
 this existed (or while the flag is off) carry no owner and stay host-only.
 
+Timestamps: the server stamps `TrackRef.addedAt` (unix ms) when a track enters the queue and
+`RoomState.createdAt` (unix ms) at room creation; client-supplied values are overwritten. Rooms
+and tracks persisted before this existed carry no timestamp (absent on the wire); clients must
+tolerate that and stay silent rather than showing a fake time.
+
 ## Server → channel publications
 
 Every accepted mutation publishes the full `RoomState` (v0 keeps it simple; deltas later if payloads grow):
@@ -202,6 +207,7 @@ type TrackRef = {
   };
   addedBy: string;     // display name
   addedByUserId?: string; // authenticated userID of the adder, server-stamped
+  addedAt?: number;    // unix ms when queued, server-stamped (absent on older tracks)
 };
 
 type RoomState = {
@@ -212,6 +218,7 @@ type RoomState = {
   radioEnabled: boolean;    // refill the queue with similar tracks when it runs dry
   version: number;          // monotonic, bumps per mutation; clients drop stale
   transport?: TransportState; // shared play/pause/seek position (FEATURE_SYNC)
+  createdAt?: number;       // unix ms at room creation, server-stamped (absent on older rooms)
 };
 
 type TransportState = {

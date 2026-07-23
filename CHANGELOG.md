@@ -6,6 +6,10 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Server-stamped `TrackRef.addedAt` / `RoomState.createdAt` timestamps; queue rows show relative added-times (#132)
+
 ## [0.2.0] - 2026-07-21
 
 ### Added
