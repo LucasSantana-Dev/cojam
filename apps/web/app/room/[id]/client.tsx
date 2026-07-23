@@ -24,6 +24,7 @@ import { YouTubePlayer } from '../components/YouTubePlayer';
 import { ApplePlayer } from '../components/ApplePlayer';
 import { SpotifyPlayer } from '../components/SpotifyPlayer';
 import { QueuePanel } from '../components/QueuePanel';
+import { ChatPanel } from '../components/ChatPanel';
 import { AddTrackForm } from '../components/AddTrackForm';
 import { PresenceBar } from '../components/PresenceBar';
 import { ShareRoomButton } from '../components/ShareRoomButton';
@@ -602,6 +603,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
           <div className="lg:col-span-1 room-arrival lg:sticky lg:top-24 lg:self-start" style={{ ['--i' as string]: 1 }}>
             <QueuePanel roomId={roomId} canControl={hostControl} />
+            {f.roomChat && <ChatPanel roomId={roomId} />}
           </div>
         </div>
       </main>

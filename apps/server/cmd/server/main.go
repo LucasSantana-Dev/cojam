@@ -104,7 +104,8 @@ func main() {
 	h := hub.NewHub(node).
 		WithObservability(logger, metrics).
 		WithSync(featureEnabled("FEATURE_SYNC", false)).
-		WithVoting(featureEnabled("FEATURE_QUEUE_VOTING", false))
+		WithVoting(featureEnabled("FEATURE_QUEUE_VOTING", false)).
+		WithChat(featureEnabled("FEATURE_ROOM_CHAT", false))
 
 	if featureEnabled("FEATURE_SYNC", false) {
 		logger.Info("sync_enabled")
@@ -117,6 +118,12 @@ func main() {
 		logger.Info("queue_voting_enabled")
 	} else {
 		logger.Info("queue_voting_disabled")
+	}
+
+	if featureEnabled("FEATURE_ROOM_CHAT", false) {
+		logger.Info("chat_enabled")
+	} else {
+		logger.Info("chat_disabled")
 	}
 
 	// Idle-room eviction: rooms with no connected members and no activity past

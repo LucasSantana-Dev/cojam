@@ -98,3 +98,36 @@ describe('env.js route features map', () => {
     expect(env.features).toBeUndefined();
   });
 });
+
+describe('env.js route roomChat flag (F8)', () => {
+  let saved: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
+    for (const k of FEATURE_KEYS) delete process.env[k];
+  });
+
+  afterEach(() => {
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it('emits roomChat inside features when COJAM_FEATURE_ROOM_CHAT=true', async () => {
+    process.env.COJAM_FEATURE_ROOM_CHAT = 'true';
+    const env = await parseBody(GET());
+    expect(env.features).toEqual({ roomChat: true });
+  });
+
+  it('emits roomChat false when explicitly off', async () => {
+    process.env.COJAM_FEATURE_ROOM_CHAT = 'false';
+    const env = await parseBody(GET());
+    expect(env.features).toEqual({ roomChat: false });
+  });
+
+  it('omits roomChat when unset so the build-time flag applies', async () => {
+    const env = await parseBody(GET());
+    expect(env.features).toBeUndefined();
+  });
+});

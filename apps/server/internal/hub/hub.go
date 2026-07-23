@@ -144,6 +144,11 @@ type Room struct {
 	mu    sync.Mutex
 	State *queue.RoomState
 
+	// chat is the room's ephemeral message ring (F8), guarded by mu. Never in
+	// RoomState and never persisted: appends skip the mutate path entirely, so
+	// no Version bump and no store.Save per message.
+	chat []ChatMessage
+
 	// lastActivityUnix is the last time the room was touched (GetOrCreateRoom
 	// hit or create), as Unix nanos. The idle-room evictor only reaps rooms
 	// whose activity is older than the TTL. Atomic: reads and writes happen
@@ -180,6 +185,7 @@ type Hub struct {
 	lastfmEnrich    LastfmEnrichProvider
 	syncEnabled     bool
 	votingEnabled   bool
+	chatEnabled     bool
 
 	// roomIdleTTL is how long a room with no connected members may stay idle
 	// before StartRoomEvictor's sweep drops it from memory. <= 0 disables
@@ -195,6 +201,11 @@ type Hub struct {
 	// throttled. Separate from fanoutLimiter, whose budget protects
 	// third-party API quotas; votes never leave the server.
 	voteLimiter *rateLimiter
+
+	// chatLimiter rate-limits chat.send per caller (chatMethods): chat is the
+	// canonical spammable RPC, and a per-caller bucket keeps one spammer from
+	// throttling the room.
+	chatLimiter *rateLimiter
 
 	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
 	// up to 200 tracks at once; an unbounded goroutine per track would burst
@@ -213,9 +224,11 @@ type Hub struct {
 	clientUserID   map[string]string // clientID -> userID
 }
 
-// mutatingMethods are RPCs that change room state and therefore require the
-// caller to be a member of the target room. room.join enrolls (see Authorize);
-// reads and unknown methods fall through to dispatch.
+// mutatingMethods are the membership-gated RPCs: the caller must be a member
+// of the target room. Most change room state; chat.send/chat.history do not
+// (chat is ephemeral, never in RoomState) but need the same membership gate.
+// room.join enrolls (see Authorize); reads and unknown methods fall through
+// to dispatch.
 var mutatingMethods = map[string]bool{
 	"queue.add":           true,
 	"queue.remove":        true,
@@ -228,6 +241,8 @@ var mutatingMethods = map[string]bool{
 	"transport.play":      true,
 	"transport.pause":     true,
 	"transport.seek":      true,
+	"chat.send":           true,
+	"chat.history":        true,
 }
 
 // hostOnlyMethods are mutating RPCs that disrupt room control and therefore
@@ -286,6 +301,13 @@ func (h *Hub) WithVoting(enabled bool) *Hub {
 	return h
 }
 
+// WithChat enables ephemeral room chat RPCs (chat.send/chat.history, F8).
+// Off returns ErrorMethodNotFound, same as transport.* (dark-ship default).
+func (h *Hub) WithChat(enabled bool) *Hub {
+	h.chatEnabled = enabled
+	return h
+}
+
 // NewHub creates a new hub with the given centrifuge node (nil in tests: publish is skipped).
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
@@ -298,6 +320,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		enrichSem:     make(chan struct{}, 8),
 		fanoutLimiter: newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
 		voteLimiter:   newRateLimiter(voteBurst, voteRefill, time.Now),
+		chatLimiter:   newRateLimiter(chatBurst, chatRefill, time.Now),
 	}
 }
 
@@ -683,6 +706,9 @@ func (h *Hub) handleRPC(method string, data []byte, userID, rlKey string) (json.
 	err := h.checkFanoutLimit(method, rlKey)
 	if err == nil {
 		err = h.checkVoteLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.checkChatLimit(method, rlKey)
 	}
 	if err == nil {
 		result, err = h.dispatch(method, data, userID, rlKey)
@@ -1229,6 +1255,38 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 			s.Version++
 			return nil
 		})
+
+	case "chat.send":
+		if !h.chatEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		var req struct {
+			RoomID string `json:"roomId"`
+			Text   string `json:"text"`
+			Name   string `json:"name"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("chat.send: roomId required")
+		}
+		return h.chatSend(req.RoomID, req.Text, req.Name, userID)
+
+	case "chat.history":
+		if !h.chatEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		var req struct {
+			RoomID string `json:"roomId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("chat.history: roomId required")
+		}
+		return h.chatHistoryRPC(req.RoomID)
 
 	case "sync.ping":
 		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})
