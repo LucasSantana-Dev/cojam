@@ -63,6 +63,8 @@ export function LiveRoomsSlot({ fallback }: { fallback: React.ReactNode }) {
     return subscribePublicRooms(setRooms);
   }, [f.publicRooms]);
 
-  if (rooms.length === 0) return <>{fallback}</>;
+  // Flag flipped off mid-session: fall back even if a stale list is still in
+  // state (flags resolve once per session, but the guard is cheap).
+  if (!f.publicRooms || rooms.length === 0) return <>{fallback}</>;
   return <LiveRoomsStrip rooms={rooms} />;
 }
