@@ -1,3 +1,7 @@
+// @vitest-environment node
+// Node env: under jsdom the Uint8Array/TextEncoder globals come from a
+// different V8 realm, so parseConnInfo's `instanceof Uint8Array` check
+// misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, rpcErrorMessage } from './realtime';
 import type { RoomState } from '@cojam/shared';

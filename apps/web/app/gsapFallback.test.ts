@@ -1,3 +1,7 @@
+// @vitest-environment node
+// Node env: this suite reads globals.css via `new URL(..., import.meta.url)`;
+// under jsdom the module URL is not a file: URL, so readFileSync rejects it
+// (ERR_INVALID_URL_SCHEME).
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
