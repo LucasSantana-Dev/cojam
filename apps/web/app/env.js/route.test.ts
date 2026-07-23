@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { FEATURE_ENV_VARS } from '@/lib/features';
 import { GET } from './route';
 
-const KEYS = ['COJAM_SUPABASE_URL', 'COJAM_SUPABASE_ANON_KEY', 'COJAM_FEATURE_ROOM_AUTH'] as const;
+const FEATURE_KEYS = Object.values(FEATURE_ENV_VARS);
+const KEYS = ['COJAM_SUPABASE_URL', 'COJAM_SUPABASE_ANON_KEY', ...FEATURE_KEYS];
 
 function parseBody(res: Response): Promise<Record<string, unknown>> {
   return res.text().then((body) => {
@@ -57,22 +59,42 @@ describe('env.js route supabase overrides', () => {
   });
 });
 
-describe('env.js route roomAuthEnabled flag', () => {
-  it('emits roomAuthEnabled true when COJAM_FEATURE_ROOM_AUTH=true', async () => {
+describe('env.js route features map', () => {
+  let saved: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
+    for (const k of FEATURE_KEYS) delete process.env[k];
+  });
+
+  afterEach(() => {
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it('emits a flag inside features when its COJAM_FEATURE_* var is set', async () => {
     process.env.COJAM_FEATURE_ROOM_AUTH = 'true';
     const env = await parseBody(GET());
-    expect(env.roomAuthEnabled).toBe(true);
+    expect(env.features).toEqual({ roomAuth: true });
   });
 
-  it('emits roomAuthEnabled false when explicitly off', async () => {
+  it('emits false when a flag is explicitly off', async () => {
     process.env.COJAM_FEATURE_ROOM_AUTH = 'false';
     const env = await parseBody(GET());
-    expect(env.roomAuthEnabled).toBe(false);
+    expect(env.features).toEqual({ roomAuth: false });
   });
 
-  it('omits roomAuthEnabled when unset so the build-time flag applies', async () => {
-    delete process.env.COJAM_FEATURE_ROOM_AUTH;
+  it('emits only the flags that are set', async () => {
+    process.env.COJAM_FEATURE_SPOTIFY = 'true';
+    process.env.COJAM_FEATURE_SYNC = 'false';
     const env = await parseBody(GET());
-    expect(env.roomAuthEnabled).toBeUndefined();
+    expect(env.features).toEqual({ spotify: true, sync: false });
+  });
+
+  it('omits the features map when no COJAM_FEATURE_* var is set, so build-time flags apply', async () => {
+    const env = await parseBody(GET());
+    expect(env.features).toBeUndefined();
   });
 });

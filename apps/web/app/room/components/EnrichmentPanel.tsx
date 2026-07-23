@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { TrackRef } from '@cojam/shared';
 import { fetchListenBrainz, fetchLastfmEnrich, type ListenBrainzEnrichment, type LastfmEnrich } from '@/lib/realtime';
-import { features } from '@/lib/features';
+import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { useDialogFocus } from './useDialogFocus';
 
 interface EnrichmentPanelProps {
@@ -21,6 +21,7 @@ function formatCount(num: number): string {
 }
 
 export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPanelProps) {
+  const f = useRuntimeFeatures();
   // ListenBrainz section state
   const [lbLoading, setLbLoading] = useState(false);
   const [lbError, setLbError] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
     let cancelled = false;
 
     // Fetch ListenBrainz if enabled
-    if (features.listenBrainz) {
+    if (f.listenBrainz) {
       const fetchLb = async () => {
         setLbLoading(true);
         setLbError(null);
@@ -73,7 +74,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
     }
 
     // Fetch Last.fm if enabled
-    if (features.lastfmEnrich) {
+    if (f.lastfmEnrich) {
       const fetchLfm = async () => {
         setLfmLoading(true);
         setLfmError(null);
@@ -92,12 +93,12 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
     return () => {
       cancelled = true;
     };
-  }, [open, track, roomId]);
+  }, [open, track, roomId, f.listenBrainz, f.lastfmEnrich]);
 
   if (!open || !track) return null;
 
   // Don't show panel at all if both providers are disabled
-  if (!features.listenBrainz && !features.lastfmEnrich) return null;
+  if (!f.listenBrainz && !f.lastfmEnrich) return null;
 
   return (
     <>
@@ -148,7 +149,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {/* ListenBrainz Section */}
-          {features.listenBrainz && (
+          {f.listenBrainz && (
             <div>
               <h3 className="text-sm font-semibold mb-3 uppercase" style={{ color: 'var(--color-accent)', letterSpacing: '0.05em' }}>
                 ListenBrainz
@@ -210,7 +211,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
           )}
 
           {/* Last.fm Section */}
-          {features.lastfmEnrich && (
+          {f.lastfmEnrich && (
             <div>
               <h3 className="text-sm font-semibold mb-3 uppercase" style={{ color: 'var(--color-accent)', letterSpacing: '0.05em' }}>
                 Last.fm

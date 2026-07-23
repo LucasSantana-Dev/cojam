@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useStore, queueAdd, searchTracks, importPlaylist, rpcErrorMessage, type SearchCandidate } from '@/lib/realtime';
 import { mergeProviderPrefs } from '@/lib/account';
-import { features } from '@/lib/features';
+import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
 import { parseSpotifyPlaylistId, fetchSpotifyPlaylistTracks } from '@/lib/spotifyPlaylist';
 import { isAuthed as isSpotifyAuthed, canReadPlaylists } from '@/lib/spotifyAuth';
@@ -28,6 +28,7 @@ export function planPlaylistImport(url: string, spotifyAuthed: boolean): Playlis
 }
 
 export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { roomId: string; spotifyAuthorized?: boolean; appleAuthorized?: boolean }) {
+  const f = useRuntimeFeatures();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -385,7 +386,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
             style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
           />
 
-          {features.youtube && (
+          {f.youtube && (
             <input
               type="text"
               placeholder="YouTube link or video ID (optional)"
@@ -396,7 +397,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             />
           )}
-          {features.apple && (
+          {f.apple && (
             <input
               type="text"
               placeholder="Apple Music Song ID (optional)"
@@ -407,7 +408,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             />
           )}
-          {features.spotify && (
+          {f.spotify && (
             <input
               type="text"
               placeholder="Spotify link or track URI (optional)"

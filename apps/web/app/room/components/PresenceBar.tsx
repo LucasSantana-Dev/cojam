@@ -2,11 +2,12 @@
 
 import { useMemo } from 'react';
 import { useStore } from '@/lib/realtime';
-import { features } from '@/lib/features';
+import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { platformIcon } from '@/app/components/icons';
 import { avatarGradient } from '@/lib/avatar';
 
 export function PresenceBar() {
+  const f = useRuntimeFeatures();
   const members = useStore((s) => s.members);
 
   const deduped = useMemo(() => {
@@ -23,7 +24,7 @@ export function PresenceBar() {
   const hiddenCount = Math.max(0, members.length - 6);
 
   // Don't render if presence is disabled
-  if (!features.presence) {
+  if (!f.presence) {
     return null;
   }
 
