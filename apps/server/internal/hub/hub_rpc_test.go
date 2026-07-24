@@ -33,7 +33,7 @@ func TestHandleRPC_RoomRouting(t *testing.T) {
 	}
 
 	// queue.add routes to the same room and returns full RoomState with bumped version
-	res, err = h.HandleRPC("queue.add", []byte(`{"roomId":"demo42","track":{"title":"Me at the zoo","artist":"jawed","sources":{"youtube":{"videoId":"jNQXAC9IVRw","confidence":1}},"addedBy":"probe"}}`), "")
+	res, err = h.HandleRPC("queue.add", []byte(`{"roomId":"demo42","track":{"title":"Me at the zoo","artist":"jawed","artworkUrl":"https://i.ytimg.com/vi/jNQXAC9IVRw/mqdefault.jpg","sources":{"youtube":{"videoId":"jNQXAC9IVRw","confidence":1}},"addedBy":"probe"}}`), "")
 	if err != nil {
 		t.Fatalf("queue.add: %v", err)
 	}
@@ -42,6 +42,9 @@ func TestHandleRPC_RoomRouting(t *testing.T) {
 	}
 	if st.RoomID != "demo42" || len(st.Queue) != 1 || st.Version != 1 {
 		t.Fatalf("add result = roomId %q len %d version %d, want demo42/1/1", st.RoomID, len(st.Queue), st.Version)
+	}
+	if st.Queue[0].ArtworkURL != "https://i.ytimg.com/vi/jNQXAC9IVRw/mqdefault.jpg" {
+		t.Fatalf("artworkUrl did not pass through, got %q", st.Queue[0].ArtworkURL)
 	}
 	if st.NowPlayingID != st.Queue[0].ID {
 		t.Fatalf("first add should auto-set nowPlaying")
@@ -718,6 +721,9 @@ func TestHandleRPC_QueueAddValidation(t *testing.T) {
 		{"youtube id too long", `{"title":"T","artist":"A","sources":{"youtube":{"videoId":"` + long + `"}}}`, "youtube"},
 		{"apple id too long", `{"title":"T","artist":"A","sources":{"apple":{"songId":"` + long + `"}}}`, "apple"},
 		{"bad spotify uri", `{"title":"T","artist":"A","sources":{"spotify":{"trackUri":"not-a-uri"}}}`, "spotify"},
+		{"artwork url too long", `{"title":"T","artist":"A","artworkUrl":"https://` + strings.Repeat("x", 513) + `"}`, "artwork"},
+		{"artwork url not https", `{"title":"T","artist":"A","artworkUrl":"http://img.example.com/x.jpg"}`, "artwork"},
+		{"artwork url javascript scheme", `{"title":"T","artist":"A","artworkUrl":"javascript:alert(1)"}`, "artwork"},
 	}
 
 	for _, tc := range cases {

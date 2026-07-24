@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { useStore, queueAdd, searchTracks, importPlaylist, rpcErrorMessage, type SearchCandidate } from '@/lib/realtime';
+import { useStore, queueAdd, importPlaylist, rpcErrorMessage, type SearchCandidate } from '@/lib/realtime';
+import { searchAllTracks } from '@/lib/spotifySearch';
 import { mergeProviderPrefs } from '@/lib/account';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { parseYouTube, parseSpotify } from '@/lib/parseTrackInput';
@@ -70,7 +71,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
     const seq = ++searchSeqRef.current;
     debounceTimerRef.current = setTimeout(async () => {
       try {
-        const results = await searchTracks(searchQuery, mergeProviderPrefs(connectedServices, { spotify: spotifyAuthorized, apple: appleAuthorized }));
+        const results = await searchAllTracks(searchQuery, mergeProviderPrefs(connectedServices, { spotify: spotifyAuthorized, apple: appleAuthorized }));
         if (searchSeqRef.current === seq) setSearchResults(results);
       } catch {
         if (searchSeqRef.current === seq) setSearchResults([]);
@@ -93,6 +94,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
         artist: result.artist,
         durationMs: result.durationMs,
         isrc: result.isrc,
+        artworkUrl: result.artworkUrl || undefined,
         sources: {
           ...(result.spotifyUri ? { spotify: { trackUri: result.spotifyUri, confidence: 1 } } : {}),
         },

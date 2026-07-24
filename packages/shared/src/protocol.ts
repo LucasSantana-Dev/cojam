@@ -13,6 +13,11 @@ export type TrackRef = {
   isrc?: string;
   sources: { youtube?: SourceRef; apple?: SourceRef; spotify?: SourceRef };
   addedBy: string;
+  // Album/track artwork URL, client-supplied at queue.add/playlist.import time
+  // from the search/playlist provider response (server validates https + length).
+  // Absent on manual adds and tracks queued before this existed; clients render
+  // a fallback tile (or derive a YouTube thumb from sources.youtube.videoId).
+  artworkUrl?: string;
   // Server-populated from the connection identity on queue.add/playlist.import;
   // clients never send this (the server overwrites it). Empty when room auth is off.
   addedByUserId?: string;

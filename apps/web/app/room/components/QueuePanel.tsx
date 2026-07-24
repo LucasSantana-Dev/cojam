@@ -1,8 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
+import type { TrackRef } from '@cojam/shared';
 import {
   SpotifyIcon,
   YouTubeIcon,
@@ -12,6 +14,7 @@ import {
   ArrowDownIcon,
   TrashIcon,
   ThumbsUpIcon,
+  MusicNoteIcon,
 } from '@/app/components/icons';
 import { formatTime } from './TransportUI';
 import { formatRelativeTime } from '@/lib/relativeTime';
@@ -23,6 +26,16 @@ function formatTotal(ms: number): string {
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return h > 0 ? `${h} hr ${m.toString().padStart(2, '0')} min` : `${m} min`;
+}
+
+// queueArtwork resolves the row thumb: the stored artwork URL first (search
+// adds + Spotify playlist imports carry it), then a derived YouTube thumb
+// (deterministic from the video id, no stored data needed), else null and the
+// caller renders the fallback tile. Exported for unit tests.
+export function queueArtwork(track: TrackRef): string | null {
+  if (track.artworkUrl) return track.artworkUrl;
+  const videoId = track.sources.youtube?.videoId;
+  return videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null;
 }
 
 interface QueuePanelProps {
@@ -43,6 +56,19 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   // Queue voting (F4): hydration-safe runtime flag (RFC-0006); the build-time
   // value is the SSR snapshot, the /env.js runtime map flips it post-mount.
   const { queueVoting: queueVotingEnabled } = useRuntimeFeatures();
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Keep the now-playing row in view when it advances (Vibrdrome steal: the
+  // queue auto-scrolls to now playing). Guarded for jsdom (no scrollIntoView /
+  // matchMedia) and reduced-motion users (instant, not smooth).
+  useEffect(() => {
+    if (!nowPlayingId || !listRef.current) return;
+    const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(nowPlayingId) : nowPlayingId;
+    const el = listRef.current.querySelector(`[data-track-id="${escaped}"]`);
+    if (!el || typeof el.scrollIntoView !== 'function') return;
+    const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, [nowPlayingId]);
 
   const handleVote = async (trackId: string) => {
     setActionError('');
@@ -57,7 +83,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     }
   };
 
-  const handleRemove = async (trackId: string, title: string) => {
+  const handleRemove = async (trackId: string) => {
     // Second click while an undo window is open would schedule a duplicate
     // timer that bypasses Undo; ignore it.
     if (removingIds.has(trackId)) return;
@@ -188,6 +214,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
 
       {queue.length === 0 ? (
         <div className="py-8 text-center">
+          <div className="flex justify-center mb-2" style={{ color: 'var(--color-text-muted)' }}>
+            <MusicNoteIcon size={28} />
+          </div>
           <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
             Queue is empty
           </p>
@@ -196,84 +225,109 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
           </p>
         </div>
       ) : (
-        <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-          {queue.map((track, index) => (
+        <div ref={listRef} className="space-y-2 max-h-96 overflow-y-auto pr-2">
+          {queue.map((track, index) => {
+            const art = queueArtwork(track);
+            return (
             <div
               key={track.id}
               data-testid="queue-item"
+              data-track-id={track.id}
               className={`queue-item-row animate-fade-in-up group${track.id === nowPlayingId ? ' is-now' : ''}${removingIds.has(track.id) ? ' removing' : ''}`}
-              style={track.id === nowPlayingId ? { borderLeft: '3px solid var(--color-accent)' } : {}}
             >
-              <div className="flex w-full items-center justify-between gap-2 p-2.5 rounded-lg transition-all duration-150 hover:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)] focus-within:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)]">
-                {/* Left side: position + track info */}
-                <div className="flex-1 min-w-0 flex items-center gap-2">
-                  <div className="text-xs font-semibold flex-shrink-0 w-6 text-center" style={{ color: track.id === nowPlayingId ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}>
-                    {track.id === nowPlayingId && isPlaying ? (
-                      <span className="inline-flex gap-0.5">
-                        <span className="inline-block w-1 h-2 rounded-sm bg-current" style={{ animation: 'eq-bounce 0.9s ease-in-out infinite' }} />
-                        <span className="inline-block w-1 h-3 rounded-sm bg-current" style={{ animation: 'eq-bounce 0.9s ease-in-out infinite', animationDelay: '-0.5s' }} />
-                        <span className="inline-block w-1 h-2 rounded-sm bg-current" style={{ animation: 'eq-bounce 0.9s ease-in-out infinite', animationDelay: '-0.1s' }} />
-                      </span>
-                    ) : (
-                      index + 1
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
+              <div className="flex w-full items-center gap-2.5 p-2.5 rounded-lg transition-all duration-150 hover:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)] focus-within:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)]">
+                {/* Position: plain number, accent when now playing. The eq moved
+                    onto the thumb (Spotify-style overlay). */}
+                <div className="text-xs font-semibold flex-shrink-0 w-5 text-center" style={{ color: track.id === nowPlayingId ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>
+                  {index + 1}
+                </div>
+
+                {/* Thumb: album art (stored or YouTube-derived) or a fallback
+                    tile. Now-playing gets the eq overlay only while actually
+                    playing (state honesty, DESIGN.md R6). */}
+                <div className="queue-thumb-wrap">
+                  {art ? (
+                    // Artwork hosts vary by provider (Spotify, Apple, Deezer,
+                    // YouTube CDNs); serve unoptimized like the search dropdown.
+                    <Image
+                      src={art}
+                      alt=""
+                      className="queue-thumb"
+                      width={40}
+                      height={40}
+                      unoptimized
+                    />
+                  ) : (
+                    <span className="queue-thumb queue-thumb-fallback" aria-hidden="true">
+                      <MusicNoteIcon size={16} />
+                    </span>
+                  )}
+                  {track.id === nowPlayingId && isPlaying && (
+                    <span className="queue-thumb-eq" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  )}
+                </div>
+
+                {/* Title + one meta line. Source icons and provenance fold into
+                    the meta line; the listeners' pick rides the title row. */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
                     <div data-testid="queue-title" className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
                       {track.title}
                     </div>
-                    <div className="text-xs truncate flex items-center gap-1" style={{ color: 'var(--color-text-secondary)' }}>
-                      {track.artist}
-                      <span className="text-opacity-60">·</span>
-                      <span className="avatar-chip-sm inline-flex" style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)', width: '18px', height: '18px', fontSize: '0.6rem', padding: 0 }}>
-                        {getInitial(track.addedBy)}
+                    {track.id === listenersPickId && (
+                      <span
+                        data-testid="listeners-pick"
+                        className="inline-flex items-center text-xs font-semibold flex-shrink-0"
+                        style={{ color: 'var(--color-accent)' }}
+                        title="Most upvoted by listeners"
+                      >
+                        Listeners&rsquo; pick
                       </span>
-                      <span className="flex-shrink-0">{track.addedBy}</span>
-                      {/* Server-stamped addedAt (R1 provenance). Silent when 0/absent
-                          on tracks queued before timestamps existed (honest data). */}
-                      {track.addedAt ? (
-                        <>
-                          <span className="text-opacity-60">·</span>
-                          <span className="flex-shrink-0">added {formatRelativeTime(track.addedAt)}</span>
-                        </>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {track.id === listenersPickId && (
-                        <span
-                          data-testid="listeners-pick"
-                          className="inline-flex items-center text-xs font-semibold"
-                          style={{ color: 'var(--color-accent)' }}
-                          title="Most upvoted by listeners"
-                        >
-                          Listeners&rsquo; pick
-                        </span>
-                      )}
-                      {track.sources.youtube && (
-                        <span
-                          className="badge-source badge-youtube inline-flex items-center text-xs"
-                          title={`YouTube match ${Math.round(track.sources.youtube.confidence * 100)}%`}
-                        >
-                          <YouTubeIcon size={10} />
-                        </span>
-                      )}
-                      {track.sources.apple && (
-                        <span
-                          className="badge-source badge-apple inline-flex items-center text-xs"
-                          title={`Apple Music match ${Math.round(track.sources.apple.confidence * 100)}%`}
-                        >
-                          <AppleMusicIcon size={10} />
-                        </span>
-                      )}
-                      {track.sources.spotify && (
-                        <span
-                          className="badge-source badge-spotify inline-flex items-center text-xs"
-                          title={`Spotify match ${Math.round(track.sources.spotify.confidence * 100)}%`}
-                        >
-                          <SpotifyIcon size={10} />
-                        </span>
-                      )}
-                    </div>
+                    )}
+                  </div>
+                  <div className="queue-meta">
+                    <span className="truncate">{track.artist}</span>
+                    {track.sources.youtube && (
+                      <span
+                        className="badge-source badge-youtube inline-flex items-center flex-shrink-0"
+                        title={`YouTube match ${Math.round(track.sources.youtube.confidence * 100)}%`}
+                      >
+                        <YouTubeIcon size={10} />
+                      </span>
+                    )}
+                    {track.sources.apple && (
+                      <span
+                        className="badge-source badge-apple inline-flex items-center flex-shrink-0"
+                        title={`Apple Music match ${Math.round(track.sources.apple.confidence * 100)}%`}
+                      >
+                        <AppleMusicIcon size={10} />
+                      </span>
+                    )}
+                    {track.sources.spotify && (
+                      <span
+                        className="badge-source badge-spotify inline-flex items-center flex-shrink-0"
+                        title={`Spotify match ${Math.round(track.sources.spotify.confidence * 100)}%`}
+                      >
+                        <SpotifyIcon size={10} />
+                      </span>
+                    )}
+                    <span className="queue-meta-sep" aria-hidden="true">·</span>
+                    <span className="avatar-chip-sm inline-flex flex-shrink-0" style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)', width: '16px', height: '16px', fontSize: '0.55rem', padding: 0 }}>
+                      {getInitial(track.addedBy)}
+                    </span>
+                    <span className="flex-shrink-0">{track.addedBy}</span>
+                    {/* Server-stamped addedAt (R1 provenance). Silent when 0/absent
+                        on tracks queued before timestamps existed (honest data). */}
+                    {track.addedAt ? (
+                      <>
+                        <span className="queue-meta-sep" aria-hidden="true">·</span>
+                        <span className="flex-shrink-0">{formatRelativeTime(track.addedAt)}</span>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
@@ -340,7 +394,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                     <ArrowDownIcon size={14} />
                   </button>
                   <button
-                    onClick={() => handleRemove(track.id, track.title)}
+                    onClick={() => handleRemove(track.id)}
                     disabled={!canControl}
                     aria-label="Remove"
                     title={canControl ? 'Remove' : 'Only the host can remove tracks'}
@@ -367,7 +421,8 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
