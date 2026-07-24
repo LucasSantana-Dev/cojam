@@ -45,6 +45,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: ./scripts/check_web_drift.sh
+      # Types + lint are documented local gates (AGENTS.md) and must run in CI:
+      # the eslint 10 bump passed this job green while breaking `pnpm lint`.
+      - run: pnpm --filter web exec tsc --noEmit
+      - run: pnpm --filter web lint
       - run: pnpm --filter web exec vitest run
       - run: pnpm --filter web build
 
