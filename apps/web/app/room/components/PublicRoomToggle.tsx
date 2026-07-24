@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useStore, setRoomPublic, rpcErrorMessage } from '@/lib/realtime';
 
 // Host-only directory opt-in (F1): toggles the room's public listing and
@@ -15,10 +15,15 @@ export function PublicRoomToggle({ roomId }: { roomId: string }) {
   const [error, setError] = useState('');
 
   // Prefill the label from the room state once it is known; never overwrite
-  // what the host is typing.
-  useEffect(() => {
+  // what the host is typing. Render-time adjust (React's sanctioned
+  // prop-change pattern), not an effect: an effect would schedule a second
+  // render and trip react-hooks/set-state-in-effect. `prev` starts neutral so
+  // the first render with a public room prefills, like an effect's mount run.
+  const [prev, setPrev] = useState({ isPublic: false, savedName: '' });
+  if (isPublic !== prev.isPublic || savedName !== prev.savedName) {
+    setPrev({ isPublic, savedName });
     if (isPublic) setLabel((l) => (l === '' ? savedName : l));
-  }, [isPublic, savedName]);
+  }
 
   const send = async (next: boolean, name?: string) => {
     setBusy(true);
