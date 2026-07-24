@@ -28,6 +28,7 @@ type PlaylistItem = {
     duration_ms?: number;
     artists?: { name?: string }[];
     external_ids?: { isrc?: string };
+    album?: { images?: { url?: string }[] };
   } | null;
 };
 
@@ -41,6 +42,7 @@ export function toTrackRef(item: PlaylistItem): ImportTrack | null {
     artist: t.artists?.[0]?.name ?? '',
     durationMs: t.duration_ms,
     isrc: t.external_ids?.isrc,
+    artworkUrl: t.album?.images?.[0]?.url,
     sources: { spotify: { trackUri: t.uri, confidence: 1 } },
   };
 }
@@ -60,7 +62,7 @@ export async function fetchSpotifyPlaylistTracks(
   const tracks: ImportTrack[] = [];
   let next: string | null =
     `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100` +
-    '&fields=items(track(name,uri,duration_ms,artists(name),external_ids)),next';
+    '&fields=items(track(name,uri,duration_ms,artists(name),external_ids,album(images))),next';
 
   while (next && tracks.length < MAX_IMPORT_TRACKS) {
     const res = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });

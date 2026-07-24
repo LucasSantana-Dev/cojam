@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act, within, waitFor } from '@testing-library/react';
-import { QueuePanel } from './QueuePanel';
+import { QueuePanel, queueArtwork } from './QueuePanel';
 import { useStore } from '@/lib/realtime';
 import type { RoomState, TrackRef } from '@cojam/shared';
 
@@ -47,6 +47,49 @@ const roomState = (queue: TrackRef[]): RoomState => ({
   queue,
   radioEnabled: false,
   version: 1,
+});
+
+describe('queueArtwork', () => {
+  const base: TrackRef = { id: 't1', title: 'T', artist: 'A', sources: {}, addedBy: 'Ana' };
+
+  it('prefers the stored artwork URL', () => {
+    expect(queueArtwork({ ...base, artworkUrl: 'https://img/x.jpg' })).toBe('https://img/x.jpg');
+  });
+
+  it('derives a YouTube thumb from the video id when no artwork is stored', () => {
+    expect(queueArtwork({ ...base, sources: { youtube: { videoId: 'jNQXAC9IVRw', confidence: 1 } } }))
+      .toBe('https://i.ytimg.com/vi/jNQXAC9IVRw/mqdefault.jpg');
+  });
+
+  it('returns null when nothing can provide art (fallback tile)', () => {
+    expect(queueArtwork(base)).toBeNull();
+  });
+});
+
+describe('QueuePanel thumbs', () => {
+  beforeEach(() => {
+    useStore.setState({
+      state: {
+        roomId: 'r1',
+        queue: [
+          { id: 't1', title: 'With Art', artist: 'A', sources: {}, addedBy: 'Ana', artworkUrl: 'https://img/art.jpg' },
+          { id: 't2', title: 'No Art', artist: 'A', sources: {}, addedBy: 'Ana' },
+        ],
+        radioEnabled: false,
+        version: 1,
+      },
+    });
+  });
+
+  it('renders album art when present and a fallback tile otherwise', () => {
+    const { container } = render(<QueuePanel roomId="r1" canControl />);
+    const rows = screen.getAllByTestId('queue-item');
+    const img = rows[0].querySelector('img.queue-thumb');
+    expect(img).not.toBeNull();
+    expect(img).toHaveAttribute('src', expect.stringContaining('https://img/art.jpg'));
+    expect(rows[1].querySelector('img.queue-thumb')).toBeNull();
+    expect(container.querySelectorAll('.queue-thumb-fallback')).toHaveLength(1);
+  });
 });
 
 describe('QueuePanel undo window', () => {

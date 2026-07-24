@@ -60,6 +60,10 @@ type TrackRef struct {
 	// (same trust-boundary posture as AddedByUserID). Zero on tracks queued
 	// before this existed; clients must tolerate that.
 	AddedAt int64 `json:"addedAt,omitempty"`
+	// ArtworkURL is the album/track art URL, client-supplied at add time from
+	// the provider response (validated https + length in validateImportTracks).
+	// Empty on manual adds and tracks queued before this existed.
+	ArtworkURL string `json:"artworkUrl,omitempty"`
 }
 
 // TransportState represents playback transport state

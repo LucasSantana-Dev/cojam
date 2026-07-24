@@ -63,6 +63,17 @@ describe('toTrackRef', () => {
     expect(ref?.artist).toBe('');
     expect(ref?.isrc).toBeUndefined();
   });
+
+  it('maps album art to artworkUrl for the queue thumb', () => {
+    const ref = toTrackRef({
+      track: {
+        name: 'S',
+        uri: 'spotify:track:4uLU6hMCjMI75M1A2tKUQC',
+        album: { images: [{ url: 'https://i.scdn.co/image/large' }, { url: 'https://i.scdn.co/image/small' }] },
+      },
+    });
+    expect(ref?.artworkUrl).toBe('https://i.scdn.co/image/large');
+  });
 });
 
 describe('fetchSpotifyPlaylistTracks', () => {
@@ -79,7 +90,7 @@ describe('fetchSpotifyPlaylistTracks', () => {
   it('pages until next is null', async () => {
     const page1 =
       'https://api.spotify.com/v1/playlists/p/tracks?limit=100' +
-      '&fields=items(track(name,uri,duration_ms,artists(name),external_ids)),next';
+      '&fields=items(track(name,uri,duration_ms,artists(name),external_ids,album(images))),next';
     const pages: Record<string, object> = {
       [page1]: {
         items: [item(1)],

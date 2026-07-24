@@ -50,6 +50,7 @@ export const ThumbsUpIcon = svg(
 export const TrashIcon = svg(
   'M9 3h6l1 2h5v2H3V5h5l1-2zM6 9h12l-1 12H7L6 9z',
 );
+export const MusicNoteIcon = svg('M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z');
 
 export const platformIcon = {
   youtube: YouTubeIcon,

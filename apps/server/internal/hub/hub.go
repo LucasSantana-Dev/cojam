@@ -32,6 +32,10 @@ const maxImportFieldLen = 300
 // maxImportDurationMs bounds track duration (2 hours); longer is a client bug.
 const maxImportDurationMs = 2 * 60 * 60 * 1000
 
+// maxArtworkURLLen caps client-supplied artwork URLs. Provider CDN URLs are
+// well under this; longer is a client bug or an attempt to bloat RoomState.
+const maxArtworkURLLen = 512
+
 // maxRoomNameLen caps the host-set public room label (room.set_public), in
 // chars. 60 keeps directory cards to a single line.
 const maxRoomNameLen = 60
@@ -74,6 +78,14 @@ func validateImportTracks(tracks []queue.TrackRef) error {
 		if t.Sources.Spotify != nil && t.Sources.Spotify.TrackURI != "" &&
 			!spotifyTrackURIRe.MatchString(t.Sources.Spotify.TrackURI) {
 			return userErrorf("track %d: invalid spotify track URI", i+1)
+		}
+		// Artwork is rendered as <img src> by every client: https only, so a
+		// client-supplied URL can never become a javascript:/data: vector.
+		if len(t.ArtworkURL) > maxArtworkURLLen {
+			return userErrorf("track %d: artwork url too long", i+1)
+		}
+		if t.ArtworkURL != "" && !strings.HasPrefix(t.ArtworkURL, "https://") {
+			return userErrorf("track %d: artwork url must be https", i+1)
 		}
 	}
 	return nil
