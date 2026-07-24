@@ -27,6 +27,10 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         versions: [">=23"]
+      # eslint 10 breaks eslint-plugin-react (7.37.5, peer ^9.7 max: crashes on
+      # the removed context API). Hold 10+ until the plugin ships support.
+      - dependency-name: "eslint"
+        versions: [">=10"]
 
   # GitHub Actions (keeps the SHA-pinned actions current with version-comment PRs)
   - package-ecosystem: github-actions
