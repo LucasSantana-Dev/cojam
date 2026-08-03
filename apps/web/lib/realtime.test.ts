@@ -3,7 +3,7 @@
 // different V8 realm, so parseConnInfo's `instanceof Uint8Array` check
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, rpcErrorMessage, setRoomPublic } from './realtime';
+import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
 
 // Centrifuge/auth/account mocks for the joinRoom lifecycle tests (B9/B10/B11).
@@ -337,6 +337,31 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
       return Promise.resolve({ data: { serverNowMs: 0 } });
     };
     await expect(joinPromise).rejects.toThrow('room is full');
+  });
+
+  it('retryConnection re-establishes the connection and resyncs state (#187)', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    // Terminal disconnect: centrifuge stops retrying (e.g. rejected token).
+    instance.emit('disconnected');
+    expect(useStore.getState().connected).toBe(false);
+
+    const retryPromise = retryConnection();
+    await vi.waitFor(() => {
+      expect(centrifugeMock.MockCentrifuge.instances.length).toBe(2);
+    });
+    const instance2 = centrifugeMock.MockCentrifuge.instances[1];
+    expect(instance2).not.toBe(instance);
+    instance2.joinResponse = state(2, 'room-1');
+    instance2.emit('connected');
+    await retryPromise;
+
+    expect(useStore.getState().connected).toBe(true);
+    expect(instance2.rpcCalls.some((c) => c.method === 'room.join')).toBe(true);
+    expect(useStore.getState().state?.version).toBe(2);
   });
 
   it('setRoomPublic sends room.set_public with the right payload', async () => {
