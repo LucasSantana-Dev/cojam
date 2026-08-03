@@ -13,9 +13,13 @@ RUN go mod download
 # Copy source code
 COPY . .
 
+# Release version stamped into the binary (surfaced in /healthz); CI passes
+# <ref>@<sha> via build-arg, local builds fall back to "dev".
+ARG VERSION=dev
+
 # Build static binary: no CGO, reproducible paths stripped, symbols stripped.
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -trimpath -ldflags="-s -w" \
+    -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
     -o server ./cmd/server
 
 # Stage 2: Runtime (minimal, pinned; never `latest`)

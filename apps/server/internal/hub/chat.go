@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -72,18 +73,20 @@ func (r *Room) chatHistory() []ChatMessage {
 // newChatMessage validates client input and stamps the server-owned fields.
 // text must trim to 1..maxChatTextLen chars; name is trimmed and truncated to
 // maxChatNameLen (a display label, not identity, so over-long input is capped
-// rather than rejected). Violations are user-facing (UserError -> 400).
+// rather than rejected). Both limits count runes, not bytes, matching
+// maxRoomNameLen semantics — byte slicing would split multi-byte runes.
+// Violations are user-facing (UserError -> 400).
 func newChatMessage(roomID, text, name, userID string) (ChatMessage, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ChatMessage{}, userErrorf("message cannot be empty")
 	}
-	if len(text) > maxChatTextLen {
+	if utf8.RuneCountInString(text) > maxChatTextLen {
 		return ChatMessage{}, userErrorf("message too long (max %d chars)", maxChatTextLen)
 	}
 	name = strings.TrimSpace(name)
-	if len(name) > maxChatNameLen {
-		name = name[:maxChatNameLen]
+	if utf8.RuneCountInString(name) > maxChatNameLen {
+		name = string([]rune(name)[:maxChatNameLen])
 	}
 	if name == "" {
 		name = "Listener"

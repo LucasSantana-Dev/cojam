@@ -144,7 +144,7 @@ func TestTrackSearch_TrimAndPreferCap(t *testing.T) {
 // queue.add on a full queue is a routine mistake: UserError, code 400.
 func TestQueueAdd_QueueFullIsUserError(t *testing.T) {
 	h := NewHub(nil)
-	room := h.GetOrCreateRoom("full")
+	room := mustRoom(t, h, "full")
 	room.mu.Lock()
 	for i := 0; i < queue.MaxQueueSize; i++ {
 		room.State.Add(queue.TrackRef{Title: "t", Artist: "a"})
