@@ -344,7 +344,7 @@ export async function joinRoom(
     }),
     new Promise<void>((_, reject) => {
       centrifuge!.on('disconnected', (ctx) => {
-        if ((ctx as { code?: number }).code === 103) {
+        if ((ctx as { code?: number } | undefined)?.code === 103) {
           reject(new Error('The server rejected the session as unauthorized. Try joining again.'));
         }
       });
