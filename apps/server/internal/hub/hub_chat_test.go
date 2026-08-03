@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/centrifugal/centrifuge"
 
@@ -292,5 +293,51 @@ func TestChat_DisabledReturnsMethodNotFound(t *testing.T) {
 	}
 	if _, err := h.HandleRPC("chat.history", []byte(`{"roomId":"x"}`), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
 		t.Fatalf("chat.history with flag off: got %v, want ErrorMethodNotFound", err)
+	}
+}
+
+// TestChatSend_MultiByteTruncation pins rune-count semantics for the length
+// caps (#185): a multi-byte display name truncates to maxChatNameLen runes
+// without splitting a rune, and text length is counted in runes like
+// maxRoomNameLen — not bytes, which would reject/slice mid-rune.
+func TestChatSend_MultiByteTruncation(t *testing.T) {
+	h := newChatTestHub(t)
+
+	// 70 CJK runes (> maxChatNameLen runes, > 3x that in bytes).
+	longName := strings.Repeat("名", maxChatNameLen+10) + "🎧"
+	payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": "hi", "name": longName})
+	res, err := h.HandleRPC("chat.send", payload, "")
+	if err != nil {
+		t.Fatalf("multi-byte long-name send: %v", err)
+	}
+	var out struct {
+		Message ChatMessage `json:"message"`
+	}
+	if err := json.Unmarshal(res, &out); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if got := utf8.RuneCountInString(out.Message.Name); got != maxChatNameLen {
+		t.Fatalf("name must cap at %d runes, got %d (%q)", maxChatNameLen, got, out.Message.Name)
+	}
+	if !utf8.ValidString(out.Message.Name) {
+		t.Fatalf("truncated name must stay valid UTF-8: %q", out.Message.Name)
+	}
+
+	// 300 emoji are 300 runes but 1200 bytes: must be accepted (rune count).
+	emojiText := strings.Repeat("🎵", maxChatTextLen)
+	payload, _ = json.Marshal(map[string]string{"roomId": "v", "text": emojiText, "name": "a"})
+	if _, err := h.HandleRPC("chat.send", payload, ""); err != nil {
+		t.Fatalf("300-rune multi-byte text must be accepted: %v", err)
+	}
+
+	// 301 runes of CJK must still be rejected.
+	payload, _ = json.Marshal(map[string]string{"roomId": "v", "text": strings.Repeat("曲", maxChatTextLen+1), "name": "a"})
+	if _, err := h.HandleRPC("chat.send", payload, ""); err == nil {
+		t.Fatal("301-rune text must be rejected")
+	} else {
+		var ue *UserError
+		if !errors.As(err, &ue) {
+			t.Fatalf("over-long text: got %v (%T), want a *UserError", err, err)
+		}
 	}
 }

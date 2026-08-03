@@ -33,6 +33,12 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/supauth"
 )
 
+// version is stamped at build time via
+// -ldflags "-X main.version=<tag-or-sha>" (see Dockerfile / publish-server-image.yml);
+// "dev" marks local builds. Surfaced in /healthz so "what's deployed" is
+// answerable in a browser during an incident.
+var version = "dev"
+
 // featureEnabled reads a FEATURE_* toggle (1/true/on/yes = on, 0/false/off/no = off,
 // unset/unrecognized = dflt). Mirrors the web lib/features.ts convention.
 func featureEnabled(key string, dflt bool) bool {
@@ -464,11 +470,7 @@ func main() {
 	// Liveness: the process is up. Readiness (/readyz) additionally gates on the
 	// database when one is configured, so a deploy does not take traffic until the
 	// store it needs is reachable.
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	})
+	r.Get("/healthz", healthzHandler())
 	r.Get("/readyz", readyzHandler(dbPool))
 
 	// Apple token endpoint
@@ -481,9 +483,12 @@ func main() {
 			return
 		}
 		if err != nil {
+			// Never echo err.Error() to clients (no-upstream-bodies rule); the
+			// detail goes to logs only.
+			logger.Error("apple dev-token failed", "err", err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to build apple developer token"})
 			return
 		}
 
@@ -515,8 +520,25 @@ func main() {
 	})
 	r.Handle("/connection/websocket", wsHandler)
 
-	// Prometheus metrics (custom registry from obs)
-	r.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
+	// Prometheus metrics (custom registry from obs). Served only on a dedicated
+	// listener when METRICS_ADDR is set (e.g. 127.0.0.1:9090), never on the
+	// public port — see docs/adr/0004-metrics-listener-not-public-port.md.
+	if addr := strings.TrimSpace(os.Getenv("METRICS_ADDR")); addr != "" {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
+		metricsServer := &http.Server{
+			Addr:              addr,
+			Handler:           metricsMux,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("metrics listener failed", "addr", addr, "err", err)
+			}
+		}()
+		shutdownHooks = append(shutdownHooks, func() { metricsServer.Close() })
+		logger.Info("metrics listener started", "addr", addr)
+	}
 
 	// HTTP server setup. ReadHeaderTimeout bounds slowloris-style header
 	// trickling; IdleTimeout releases keep-alive connections gone quiet.
@@ -563,6 +585,17 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+// healthzHandler reports liveness plus the build-stamped version (ldflags
+// -X main.version; "dev" for local builds) so "what's deployed" is answerable
+// in a browser during an incident.
+func healthzHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": version})
+	}
 }
 
 // readyzHandler reports readiness. In memory mode (nil pool) the server is always
