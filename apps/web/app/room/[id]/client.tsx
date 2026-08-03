@@ -34,6 +34,7 @@ import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
 import { EnrichmentPanel } from '../components/EnrichmentPanel';
 import { UnavailableTrack } from '../components/UnavailableTrack';
+import { PlayFailedTrack } from '../components/PlayFailedTrack';
 import { TransportUI } from '../components/TransportUI';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
@@ -56,6 +57,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [trackDepthOpen, setTrackDepthOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
+  // Per-user playback failure: id of the now-playing track this client's
+  // provider failed to play, reported by the player adapters. Local-only;
+  // never touches transport state or other members.
+  const [playFailedId, setPlayFailedId] = useState<string | null>(null);
   const [enrichmentOpen, setEnrichmentOpen] = useState(false);
   // Feature flags resolve at runtime (via /env.js), not build time, so the
   // env-agnostic image can flip any flag. The hook's server snapshot (build-time
@@ -344,6 +349,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     onAuthorized={setSpotifyAuthorized}
                     onPlayerReady={(player) => activeSource === 'spotify' && setActivePlayer(player)}
                     onPlayerGone={() => activeSource === 'spotify' && setActivePlayer(null)}
+                    onPlayError={setPlayFailedId}
                   />
                 )}
                 {f.apple && (
@@ -352,6 +358,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     onAuthorized={setAppleAuthorized}
                     onPlayerReady={(player) => activeSource === 'apple' && setActivePlayer(player)}
                     onPlayerGone={() => activeSource === 'apple' && setActivePlayer(null)}
+                    onPlayError={setPlayFailedId}
                   />
                 )}
               </div>
@@ -362,6 +369,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     roomId={roomId}
                     onPlayerReady={setActivePlayer}
                     onPlayerGone={() => setActivePlayer(null)}
+                    onPlayError={setPlayFailedId}
                   />
                 </div>
               )}
@@ -418,6 +426,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
               </div>
               {nowPlaying && isUnavailable(nowPlaying, { appleAuthorized, spotifyAuthorized }) ? (
                 <UnavailableTrack />
+              ) : nowPlaying && playFailedId === nowPlaying.id ? (
+                <PlayFailedTrack />
               ) : nowPlaying ? (
                 <>
                   <div className="flex items-start justify-between gap-4">

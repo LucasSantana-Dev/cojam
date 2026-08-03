@@ -25,6 +25,7 @@ interface YTGlobal {
       events?: {
         onReady?: () => void;
         onStateChange?: (event: { data: number }) => void;
+        onError?: (event: { data: number }) => void;
       };
     }
   ) => YTPlayerInstance;
@@ -38,6 +39,12 @@ declare global {
 }
 
 const apiReadyCallbacks: Array<() => void> = [];
+
+// YT embed error codes for tracks that can never play in the iframe: 100 =
+// removed/private, 101 and 150 = embedding disabled by the owner.
+export function isUnplayableYtError(code: number): boolean {
+  return code === 100 || code === 101 || code === 150;
+}
 
 // Stable empty-queue fallback: `?? []` inline would create a new array identity
 // every render, re-running the player effect below each time.
@@ -141,10 +148,14 @@ export function YouTubePlayer({
   roomId,
   onPlayerReady,
   onPlayerGone,
+  onPlayError,
 }: {
   roomId: string;
   onPlayerReady?: (player: IPlayer) => void;
   onPlayerGone?: () => void;
+  // Per-user playback failure surface: called with the track id when this
+  // client can't play the now-playing track, null when playback (re)starts.
+  onPlayError?: (trackId: string | null) => void;
 }) {
   const playerRef = useRef<YTPlayerInstance | null>(null);
   const adapterRef = useRef<YouTubePlayerAdapter | null>(null);
@@ -157,9 +168,11 @@ export function YouTubePlayer({
   // onPlayerReady set it (Play button permanently disabled).
   const onPlayerReadyRef = useRef(onPlayerReady);
   const onPlayerGoneRef = useRef(onPlayerGone);
+  const onPlayErrorRef = useRef(onPlayError);
   useEffect(() => {
     onPlayerReadyRef.current = onPlayerReady;
     onPlayerGoneRef.current = onPlayerGone;
+    onPlayErrorRef.current = onPlayError;
   });
   const [apiReady, setApiReady] = useState(false);
   const nowPlayingId = useStore((s) => s.state?.nowPlayingId);
@@ -195,8 +208,15 @@ export function YouTubePlayer({
             }
           },
           onStateChange: (event: { data: number }) => {
+            // PLAYING: playback actually started, clear any prior failure.
+            if (event.data === 1) onPlayErrorRef.current?.(null);
             if (event.data === 0 && nowPlayingIdRef.current) {
               nowPlayingAdvance(roomId, nowPlayingIdRef.current);
+            }
+          },
+          onError: (event: { data: number }) => {
+            if (isUnplayableYtError(event.data) && nowPlayingIdRef.current) {
+              onPlayErrorRef.current?.(nowPlayingIdRef.current);
             }
           },
         },

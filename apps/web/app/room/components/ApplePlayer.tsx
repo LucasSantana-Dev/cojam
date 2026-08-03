@@ -131,11 +131,15 @@ export function ApplePlayer({
   onAuthorized,
   onPlayerReady,
   onPlayerGone,
+  onPlayError,
 }: {
   authorized: boolean;
   onAuthorized: (v: boolean) => void;
   onPlayerReady?: (player: IPlayer) => void;
   onPlayerGone?: () => void;
+  // Per-user playback failure surface: called with the track id when this
+  // client can't play the now-playing track, null when playback (re)starts.
+  onPlayError?: (trackId: string | null) => void;
 }) {
   const musicRef = useRef<MusicKitInstance | null>(null);
   const adapterRef = useRef<ApplePlayerAdapter | null>(null);
@@ -145,6 +149,12 @@ export function ApplePlayer({
   const nowPlaying = state?.nowPlayingId
     ? state.queue.find((t) => t.id === state.nowPlayingId)
     : undefined;
+  // Fresh-inline-arrow prop kept in a ref so the play effect below doesn't
+  // re-run (and re-queue the song) on every parent render.
+  const onPlayErrorRef = useRef(onPlayError);
+  useEffect(() => {
+    onPlayErrorRef.current = onPlayError;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -195,8 +205,10 @@ export function ApplePlayer({
       try {
         await music.setQueue({ songs: [songId] });
         await music.play();
+        onPlayErrorRef.current?.(null);
       } catch (e) {
         console.error('Apple playback failed:', e);
+        onPlayErrorRef.current?.(nowPlaying.id);
       }
     })();
   }, [authorized, nowPlaying]);
