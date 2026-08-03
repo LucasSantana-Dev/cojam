@@ -103,17 +103,25 @@ Behavior, in order:
    cannot be host under RFC-0005, so return immediately.
 2. For each room the client was a member of, read `RoomState.HostUserID`. Skip rooms where
    it does not equal the leaving userID. This is the common case and must stay cheap.
-3. If the room has no remaining members (`hasMembersLocked`, hub.go:650-657), return without
-   mutating. The room will be reaped by `evictIdleRooms`.
-4. Select the remaining member with the smallest `memberJoinTimes[roomID][userID]`. Skip
-   clients whose `clientUserID` entry is empty, since guests are not eligible.
+3. Exclude `clientID` from the membership check. `PromoteOnDisconnect` runs before
+   `h.Leave`, so `hasMembersLocked` (hub.go:650-657) still counts the departing client;
+   an unfiltered check would never see the room as empty and could reselect the departing
+   host. If no other member remains, return without mutating. The room will be reaped by
+   `evictIdleRooms`.
+4. Select the remaining member other than `clientID` with the smallest
+   `memberJoinTimes[roomID][userID]`. Skip clients whose `clientUserID` entry is empty,
+   since guests are not eligible.
 5. If no authenticated member remains (an all-guest room), clear `HostUserID` to the empty
    string. This restores the pre-host equal-member behavior rather than leaving a dangling
    pointer to a departed user.
 6. Apply through the existing `h.mutate` path so the Version bump and publish follow the
    established convention (AGENTS.md gotcha 2). Re-check inside the closure that
    `HostUserID` still equals the leaving userID, so a concurrent promotion cannot be
-   overwritten.
+   overwritten. The closure also revalidates the selected successor: membership and
+   authenticated identity are re-read at commit time, and if the candidate disconnected or
+   lost its authenticated identity between selection and mutation, the closure aborts
+   without mutating. The candidate's own disconnect hook (or the next join's lazy reclaim)
+   then runs the promotion again, so a departed user is never persisted as host.
 
 Locking: acquire `memberMu` for the membership and join-time reads, release before calling
 `h.mutate`, which takes the room lock. Do not hold `memberMu` across `mutate`. Holding both
@@ -183,6 +191,9 @@ Server (`cd apps/server && go test -race ./...`, `go vet ./...`):
     disconnects, B is promoted (not A).
   - Concurrent: two disconnects processed against the same room produce exactly one
     promotion.
+  - Concurrent: the host and the selected successor disconnect together; the commit-time
+    revalidation in step 6 aborts the stale promotion, and the departed successor is never
+    persisted as `HostUserID`.
   - Chained: promoted host disconnects, the next member is promoted.
   - Lazy reclaim at hub.go:840-843 is a no-op after a proactive promotion (no
     double-promote).

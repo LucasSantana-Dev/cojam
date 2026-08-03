@@ -2,7 +2,9 @@
 
 Issue: #165 (https://github.com/LucasSantana-Dev/cojam/issues/165)
 Parent: #141
-Status: spec, ready for implementation
+Status: partially shipped. Server-side attribution (section 5) merged as PR #214 on
+2026-08-03, and that section is updated below to match what shipped. Presence identity
+(section 3) and web dedupe (section 4) are still pending.
 Date: 2026-08-01
 Scope note: internal design doc, committed alongside docs/rfc/ and docs/adr/ (precedent: PR #146).
 
@@ -79,36 +81,50 @@ not merged into it.
 ## 5. Server stamps addedBy
 
 The hub needs the display name per connection. It already tracks authenticated identity per
-connection in `clientUserID` (hub.go:252, written at hub.go:409-412, cleaned at
-hub.go:418-420). Add a parallel `clientName map[string]string` under the same mutex, written
-and cleaned at the same two points, so the two maps cannot drift.
+connection in `clientUserID`; the shipped change adds a parallel `clientName
+map[string]string` under the same `clientUserIDMu` mutex, written by `RecordClientName`
+from the connect-time ConnInfo name in `RegisterClient` and cleared alongside
+`clientUserID` in `RemoveClientUserID`, so the two maps cannot drift.
 
-In the `queue.add` case (hub.go:851-878), after `validateImportTracks` and next to the
-existing `req.Track.AddedByUserID = userID` line at hub.go:871:
+`clientID` is threaded from `RegisterClient` through `handleRPC` and `dispatch` as a
+first-class parameter. `rlKey` alone cannot recover a per-connection name: for an
+authenticated caller it is `user:<userID>`, shared by every connection that user holds.
+The identity key is the right dedupe key, but it is not a substitute for the connection id
+when resolving that connection's display name.
+
+In the `queue.add` case, validation runs first and the stamp second (as shipped):
 
 ```go
+if err := validateImportTracks([]queue.TrackRef{req.Track}); err != nil {
+    return nil, err
+}
+// Server-owned attribution: the display name comes from this connection's
+// connect-time name, never from the request body.
+if name := h.displayName(clientID); name != "" {
+    req.Track.AddedBy = name
+}
 // Server-owned identity: never trust a client-supplied addedByUserId.
 req.Track.AddedByUserID = userID
-// Server-owned attribution: the display name comes from this connection's
-// presence identity, not from the request body.
-req.Track.AddedBy = h.displayNameFor(clientID)
 ```
 
-`validateImportTracks` (hub.go:38-73) keeps its length cap on `AddedBy`. The cap now only
-ever sees server-supplied values, but leaving it in place costs nothing and keeps the
-validator honest about the shape of a `TrackRef` regardless of its origin.
+The ordering is deliberate. `validateImportTracks` keeps its length cap on `AddedBy`, and
+the cap still sees client input: an oversized client-supplied `addedBy` is rejected
+outright rather than silently truncated. Only after validation does the stamp override the
+value with the server-known name. When the connection recorded no name (room auth off and
+no connect-data name), the validated client value stands, so pre-#165 clients are
+unaffected.
 
 `playlist.import` takes the same treatment: it crosses the same trust boundary (RFC-0007)
-and every imported track must carry the importer's server-known name.
+and every imported track is stamped with the importer's server-known name the same way.
 
 ## 6. Edge cases and failure modes
 
 - Track persisted before this change: `AddedBy` still holds whatever name the client sent.
   It renders unchanged. No migration, no placeholder. This is the payoff for not redefining
   the field.
-- Connection with no recorded name (rejoin race where the RPC lands before the name is
-  recorded): fall back to the existing default `"Listener"` rather than an empty string, so
-  attribution is never blank.
+- Connection with no recorded name (room auth off, or connect data carried no name): the
+  validated client-supplied `addedBy` stands. This is the shipped fallback and keeps legacy
+  clients working unchanged.
 - Two guests with the same name: both tracks now show the same `AddedBy` string, and both
   are truthful. #170 makes them visually distinct.
 - Anonymous connection: identity key is `client:<clientID>`, which changes on reconnect.
@@ -116,8 +132,10 @@ and every imported track must carry the importer's server-known name.
   time and is not recomputed.
 - `FEATURE_ROOM_AUTH` off: every connection is anonymous, every key is `client:<clientID>`,
   and both the dedupe and the stamping work unchanged.
-- A client that keeps sending `addedBy`: silently ignored. No error, since a rejection would
-  break older clients for no security gain once the value is discarded.
+- A client that keeps sending `addedBy`: a well-formed value is validated and then
+  overridden by the stamp, with no error, since a rejection would break older clients for
+  no security gain. An oversized value still fails validation, because the cap runs before
+  the stamp.
 
 ## 7. Acceptance criteria (mapped to verify commands)
 
@@ -128,10 +146,13 @@ Server (`cd apps/server && go test -race ./...`, `go vet ./...`):
     server-known display name, not the spoofed value. This is the regression test for the
     trust boundary and must fail if the stamping line is removed.
   - `playlist.import` stamps every imported track the same way.
-  - A connection with no recorded name stamps `"Listener"` rather than an empty string.
-  - `AddedByUserID` behavior at hub.go:871 is unchanged.
-  - `clientName` is cleaned on disconnect alongside `clientUserID`, verified by asserting
-    the map is empty after the existing cleanup path runs.
+  - A connection with no recorded name keeps the validated client-supplied `addedBy`
+    (legacy behavior), and a connection with a recorded name has it overridden.
+  - `AddedByUserID` remains server-stamped from the connection userID, never from the
+    request body.
+  - `clientName` is cleaned on disconnect alongside `clientUserID` (both under
+    `clientUserIDMu`, cleared by `RemoveClientUserID`), verified by asserting the map is
+    empty after the existing cleanup path runs.
 - Connection info assembled at main.go:333-341 includes `id` and `name`, with `id` equal to
   `rateLimitKey` for both an authenticated and an anonymous connection.
 - Race detector clean under `-race` with concurrent connect, add, and disconnect.

@@ -33,15 +33,19 @@ Non-goals:
 A single line below the join control, shown only when accounts are available and the visitor
 is not signed in.
 
-Copy: "Your identity is stored in this browser. Sign in to keep your room role on any
-device."
+Copy: "Your identity is stored in this browser. Sign in before leaving this room to keep
+your room role across devices."
 
-Three things about the wording are deliberate:
+Four things about the wording are deliberate:
 
 - "this browser" is the accurate scope. Not device, not account. localStorage is per browser
   profile, and a user with two browsers open will observe exactly that.
 - "room role" names the concrete stake, which is host status and the ability to remove your
   own tracks. "Your data" would overclaim, since the queue itself is shared and persists.
+- "before leaving this room" is the honest timing. The upgrade path (#172) rebinds only the
+  room the guest is in, so a sign-in after leaving — or after clearing storage and joining
+  fresh elsewhere — cannot recover the role. Implying that any later sign-in preserves it
+  would promise a recovery the app does not have.
 - It states a fact and offers a remedy. No warning icon, no "careful", no alarm styling. The
   situation is normal, and treating it as a hazard would misrepresent it.
 

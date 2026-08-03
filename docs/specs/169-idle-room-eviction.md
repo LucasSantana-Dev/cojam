@@ -90,15 +90,22 @@ immediately recreated on the next save, with no data the member could observe.
 
 ## 5. Config
 
-New env var alongside the existing room TTL handling in `apps/server/cmd/server/main.go`,
-following the same parsing convention already used there.
+New env var `ROOM_PERSIST_IDLE_TTL_MINUTES`, alongside the existing `ROOM_IDLE_TTL_MINUTES`
+handling in `apps/server/cmd/server/main.go` (main.go:138) and parsed with the same
+`envDurationMinutes` convention (main.go:67-69), which already treats unset, invalid, or
+non-positive values uniformly.
 
 - Value is a duration in minutes.
-- Unset, invalid, or non-positive disables persistent eviction entirely, matching how
-  `roomIdleTTL` guards itself at hub.go:598 and hub.go:627.
+- Unset, invalid, or non-positive disables persistent eviction entirely (a default of 0),
+  matching how `roomIdleTTL` guards itself at hub.go:598 and hub.go:627.
 - Default: disabled. This is a destructive background job on the operator's only database,
   and defaulting it on would delete rooms on the next deploy without anyone opting in. The
   runbook can turn it on deliberately once a value has been chosen.
+
+The name `ROOM_PERSIST_IDLE_TTL_MINUTES` is the single configuration contract. Use it
+verbatim in the config parsing, in the server documentation, in the acceptance criteria
+below, and in the rollout runbook entry; do not abbreviate or rename it in any of those
+places.
 
 The persistent TTL should be set well above the in-memory TTL. The two are independent, and
 setting the persistent one shorter would delete rows for rooms still resident, which the
@@ -106,15 +113,29 @@ membership gate would catch only while members are connected.
 
 ## 6. Store interface
 
-The `Store` interface at `apps/server/internal/store/store.go:16` gains one method that
-deletes rows older than a cutoff, excluding a caller-supplied set of protected room ids, and
-returns how many rows it removed.
+The `Store` interface at `apps/server/internal/store/store.go:16` gains one method:
 
+```go
+// DeleteIdleRooms removes every room row whose updated_at is older than cutoff,
+// skipping the room ids in protected, and returns how many rows it removed.
+// A nil protected set is an error: the caller must state explicitly which live
+// rooms to protect (section 4). An allocated empty set is valid and means "no
+// rooms currently have members".
+DeleteIdleRooms(ctx context.Context, cutoff time.Time, protected map[string]struct{}) (int64, error)
+```
+
+- `cutoff` is a `time.Time`; rows with `updated_at` strictly older than it are candidates.
+- `protected` is a `map[string]struct{}` of room ids to skip, built from
+  `hasMembersLocked` by the evictor.
+- The return value is the number of rows actually removed, which feeds the metric in
+  section 7.
+- Nil-versus-empty is semantic, not cosmetic: nil means the caller forgot the membership
+  gate and gets an error; an allocated empty map means the gate ran and found nothing to
+  protect.
 - The memory store implements it as a no-op returning zero. There is nothing to reclaim, and
   the in-memory evictor already handles residency.
 - The Postgres store issues a single parameterized delete. The exclusion list is bound as
   parameters, never interpolated.
-- Passing a nil exclusion set is an error, not an empty exclusion. See section 4.
 
 An index on `updated_at` is not required at current scale, since the table is small and the
 sweep is infrequent. Note it as the first thing to add if the sweep ever shows up in query
@@ -146,9 +167,13 @@ Logging via the existing `log/slog` structured logger:
 - Persistent eviction disabled: the sweep returns immediately, before touching the store.
 - Room recreated after deletion: a rejoin creates a fresh row with a current `updated_at`.
   Nothing observable is lost, because a memberless room past a long TTL had no live state.
-- Concurrent instances: not applicable today (single container per
-  `docs/runbooks/feature-rollout-plan.md`), and harmless if it ever changes, since the second
-  delete simply affects zero rows.
+- Concurrent instances: single-instance deployment is a hard prerequisite for enabling this
+  sweep. The protected-id set comes from process-local membership, so with two instances a
+  room whose members are connected to instance A is invisible to instance B, and B can
+  delete its live row. Today there is one container per
+  `docs/runbooks/feature-rollout-plan.md`, which satisfies the prerequisite. Do not enable
+  `ROOM_PERSIST_IDLE_TTL_MINUTES` on a multi-instance deployment without first adding
+  distributed membership or a lease so every sweeper sees every live room.
 - Mutation racing a delete: the room is memberless and past TTL, so no mutation is in flight.
   If one somehow arrives, the room is not found, is recreated at version zero, and persists
   normally.
@@ -171,7 +196,7 @@ the gate removed, which is the failure mode of a test that looks thorough and pr
 
 Server (`cd apps/server && go test -race ./...`, `go vet ./...`):
 
-- Store interface gains the delete method; the memory store returns zero and no error.
+- Store interface gains `DeleteIdleRooms`; the memory store returns zero and no error.
 - The store method returns an error when given a nil exclusion set, asserted directly.
 - Postgres implementation deletes rows older than the cutoff, skips excluded room ids, and
   returns an accurate count. Exclusion ids are bound as parameters.
@@ -190,5 +215,5 @@ Server (`cd apps/server && go test -race ./...`, `go vet ./...`):
 
 Config:
 
-- The env var is documented alongside the existing room TTL setting, including that it is
-  disabled by default and why.
+- `ROOM_PERSIST_IDLE_TTL_MINUTES` is documented alongside the existing room TTL setting,
+  including that it is disabled by default and why.

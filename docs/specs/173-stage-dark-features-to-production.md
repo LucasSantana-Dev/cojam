@@ -79,11 +79,17 @@ if something breaks, one flag flipped means one suspect.
 
 For each flag, in order, following the runbook's procedure:
 
-**Enable.** Set the variable in the host `.env` and recreate the web container. One flag
-only.
+**Enable.** Set both variables for the flag in the host `.env` — the server flag
+(`FEATURE_PUBLIC_ROOMS`, `FEATURE_QUEUE_VOTING`, or `FEATURE_ROOM_CHAT`, gated at
+`apps/server/cmd/server/main.go:106-109`) and its web counterpart (`COJAM_FEATURE_*`, per
+`apps/web/lib/features.ts`) — and recreate both the server and the web container. One flag
+only. Setting only the web flag is the worst available state: `/env.js` reports the feature
+enabled and the UI renders it, while the server still rejects its RPCs with
+`centrifuge.ErrorMethodNotFound`.
 
-**0 to 2 min.** Container healthy and not restarting, public URL still 200, `/env.js`
-shows the intended flag. This proves the flip, not the feature.
+**0 to 2 min.** Both containers healthy and not restarting, public URL still 200, `/env.js`
+shows the intended flag, and the server startup log shows the feature enabled. This proves
+both layers of the flip, not the feature.
 
 **2 to 5 min.** Open the product and observe the feature's own behavioral signal from the
 runbook. Check the browser console for React hydration warnings, per the RFC-0006
@@ -122,9 +128,11 @@ must not trigger a rollback.
 Trigger on any of: hydration or render breakage, connections rejected, the feature's RPCs
 erroring, cross-browser sync failing, or wrong identity attribution.
 
-The command is the runbook's per-flag rollback: remove the variable and recreate the web
-container. Recovery is seconds. Verify `/env.js` has returned to the pre-flip flag set
-recorded in section 3.
+The command is the runbook's per-flag rollback: remove both variables (server and web) and
+recreate both containers. Recovery is seconds. Verify `/env.js` has returned to the
+pre-flip flag set recorded in section 3 and that the server startup log no longer shows
+the feature enabled; a rollback that reverts only the web flag leaves the server half of
+the feature live with no UI to reach it.
 
 Roll back one flag, the most recent one. Do not clear every flag in response to one failure;
 that discards verified progress and obscures which change caused the problem.
@@ -138,8 +146,9 @@ These flags do not migrate data.
 - Update the project memory note for the rollout, replacing the "dark in production" status
   with what is now live.
 - Skim server logs once more for accumulated errors.
-- Confirm the flags survive a deliberate container restart, which is the check that proves
-  the variable was persisted to `.env` and not just injected into a running container.
+- Confirm the flags survive a deliberate restart of both containers, which is the check
+  that proves the variables were persisted to `.env` and not just injected into running
+  containers.
 - Keep the database snapshot for a week.
 
 ## 10. Decisions for the operator

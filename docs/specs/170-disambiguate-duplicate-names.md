@@ -34,21 +34,33 @@ Non-goals:
 
 Group members by `name`. Any group of one renders unchanged, with no suffix. For a group of
 more than one, sort by `id` and assign in order: the first gets no suffix, the second
-` (2)`, the third ` (3)`.
+`" (2)"`, the third `" (3)"`.
 
-Sorting by `id` rather than by arrival order is what makes the assignment stable. Identity
-keys do not change during a session, so every client computes the same answer from the same
-member list without coordination, and a re-render cannot shuffle the labels.
+Sorting by `id` makes the assignment **deterministic**, not stable. The contract is:
 
-Stability under membership change is a consequence worth stating explicitly, because it is
-the property that makes the feature usable rather than annoying:
+- For a fixed member list, every client computes the same labels without coordination, and
+  a re-render cannot shuffle them. Identity keys do not change during a session, so the
+  sort order is well-defined.
+- Labels may change when membership changes. A new same-named member whose `id` sorts
+  before existing members renumbers them; the newcomer does not necessarily get `" (3)"`.
+  This is the price of a pure client-side function with no shared assignment state, and it
+  is accepted: a rename here is a cosmetic relabel, not a correctness failure, and every
+  client converges on the same new labels because the function is deterministic.
 
-- A member joining with an unrelated name does not touch any existing suffix.
-- A third "Alice" joining appends ` (3)` and leaves the first two labels alone, since sort
-  position by `id` is unchanged for members already present.
-- A middle member leaving does renumber those sorted after them. A room where a name
+What membership changes do and do not disturb:
+
+- A member joining with an unrelated name does not touch any existing suffix, since
+  suffixes are computed per name group.
+- A third "Alice" joining can renumber the existing Alices when its `id` sorts earlier.
+  Both clients still agree on the result.
+- A middle member leaving also renumbers those sorted after them. A room where a name
   collision partially resolves is rare enough that renumbering is acceptable, and the
   alternative (holding retired slots open) would leak state for the life of the session.
+
+The rejected alternative is stable labels. Guaranteeing that a newcomer always gets the
+next unused suffix requires a shared, ordered assignment — server-side allocation with
+republish on every join and leave — which is exactly the `RoomState` churn section 1 rules
+out for a presentation concern.
 
 ## 3. Web implementation
 
@@ -75,7 +87,7 @@ track, not which of two same-named listeners is currently connected.
 ## 4. Edge cases
 
 - All names unique: every suffix is empty and rendering is byte-identical to today.
-- Three or more collisions: numbering continues, ` (2)`, ` (3)`, ` (4)`.
+- Three or more collisions: numbering continues, `" (2)"`, `" (3)"`, `" (4)"`.
 - A member leaves and rejoins: an authenticated member keeps their `user:<userID>` key and
   therefore their sort position and suffix. An anonymous member gets a fresh
   `client:<clientID>` on reconnect and may sort differently, so their suffix can change.
@@ -97,7 +109,9 @@ Web (`cd apps/web && npx tsc --noEmit`, `pnpm lint`, `npx vitest run`):
   - Unique names produce `""`.
   - Repeated calls on the same input produce identical output (determinism).
   - Adding an unrelated member leaves existing suffixes untouched.
-  - Adding a third same-named member leaves the first two untouched.
+  - Adding a third same-named member whose `id` sorts earlier renumbers deterministically:
+    the new labels follow the new sorted-`id` order, and every client computing from the
+    same member list gets the same labels. Renumbering is asserted, not just tolerated.
 - Compose helper returns `name` when the suffix is empty and `name + suffix` otherwise.
 - PresenceBar renders "Alice" and "Alice (2)" for two same-named members, and reverts to a
   bare "Alice" after one leaves.

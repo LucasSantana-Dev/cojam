@@ -13,8 +13,8 @@ Goal: a guest signs in from inside the room and keeps what they already did. The
 and their ownership of tracks they queued move from the anonymous identity to the
 authenticated one.
 
-#167 tells the guest their identity is browser-local. This slice is the escape hatch that
-makes that message actionable rather than merely honest.
+Issue `#167` tells the guest their identity is browser-local. This slice is the escape hatch
+that makes that message actionable rather than merely honest.
 
 Non-goals:
 
@@ -72,15 +72,33 @@ server trusting client-supplied identity. Accepting a client-declared "this used
 would reintroduce the hole one slice after closing it, and it is a worse hole: a client
 could name another guest's identity and claim their tracks and host role.
 
-The server does not need it. `dispatch` already receives `rlKey` at `hub.go:819`, computed
-from the live connection at `hub.go:1462` via `rateLimitKey(clientID, userID)`, and
-`clientUserID` at `hub.go:252` holds the mapping. The old identity for this connection is
-therefore already server-known at the moment the RPC arrives. The same pattern the queue
-voting spec used for its voter key applies unchanged.
+The equally obvious-looking fallback is that the server already knows the old identity from
+connection state. Reject that too. Signing in means reconnecting with a Supabase token — a
+centrifuge connection's identity is fixed at connect time, so by the time the rebind RPC
+arrives the old anonymous connection is gone. `rlKey` and `clientUserID` on the new
+connection hold only the authenticated identity, and the captured `userID` in
+`RegisterClient` cannot reach back to the previous connection.
+
+The handoff state that survives the reconnect is the anonymous connection JWT itself.
+`/api/connection-token` (`apps/server/cmd/server/connection_token.go:27`) mints a
+server-signed token whose `sub` is the guest's durable anonymous userID, and the web
+client already stores it (`apps/web/lib/auth.ts`). So the rebind RPC carries exactly one
+field besides the room: that stored token. The server verifies it with
+`connauth.ValidateForRefresh` — the same proof-of-ownership check the token endpoint uses
+for identity continuity (connection_token.go:37-47) — and reads the old identity from the
+verified `sub`.
+
+This is not a client-declared identity. The signature is server-issued, so a client can
+prove only the anonymous identity it actually held; a token naming another guest's
+identity fails verification exactly the way a forged refresh does. Holding the token *is*
+the ownership proof, which is the same trust model the refresh path already ships.
 
 Guard: reject when the caller is not authenticated, since there is nothing to upgrade to,
-and reject when the caller was already authenticated, since there is nothing to upgrade
-from.
+and reject when the proof token is missing or fails verification, since there is nothing
+to upgrade from — an always-authenticated caller has no prior guest identity. A repeat
+call after a successful rebind is not an error: the proof still verifies but nothing in
+the room is owned by the old identity, so the RPC reports success with zero changes, bumps
+no Version, and publishes nothing. Retries are therefore safe by construction.
 
 ## 5. Behavior
 
@@ -93,9 +111,10 @@ On an accepted rebind, within one mutation:
   every other member converge without a reload.
 
 Idempotent by construction. A repeat call finds nothing owned by the previous identity and
-nothing to move, makes no change, and therefore bumps no version and publishes nothing. A
-call under a *different* authenticated identity is a real change and does publish, which is
-correct: it represents an actual identity change and the room should see it.
+nothing to move, so it returns success with zero changes, bumps no version, and publishes
+nothing — the same shape as any other retry, not a special case. A call under a *different*
+authenticated identity is a real change and does publish, which is correct: it represents
+an actual identity change and the room should see it.
 
 `AddedBy`, the display name, is not rewritten. #165 stamped it at add time from the name the
 member was using, and that remains a true record. Only the identity-grade ownership moves.
@@ -109,8 +128,10 @@ member was using, and that remains a true record. Only the identity-grade owners
 - Guest host signs in: the host role moves to the durable identity, which is the strongest
   reason to want this feature. A closed tab can now be recovered by signing in again rather
   than depending on #166 promoting someone else.
-- Guest clears localStorage immediately after signing in: the anonymous keys are gone, but
-  the authenticated identity is what the connection now carries. Rejoining re-authenticates.
+- Guest clears localStorage immediately after signing in: the anonymous keys and the proof
+  token are gone, so a rebind attempted afterward fails the guard. The rebind must fire at
+  sign-in time, while the stored token is still present, and the client discards the
+  anonymous token only after a successful rebind.
 - Rebind arrives while another member is mid-join: both run through the standard mutate path
   and serialize on the room lock. The joiner observes either the pre or post state, both of
   which are consistent.
@@ -122,19 +143,24 @@ member was using, and that remains a true record. Only the identity-grade owners
 Server (`cd apps/server && go test -race ./...`, `go vet ./...`):
 
 - Unauthenticated caller is rejected.
-- Already-authenticated caller is rejected.
+- Missing or forged proof token is rejected: an always-authenticated caller has nothing to
+  upgrade from, and a token that fails `connauth.ValidateForRefresh` proves nothing.
 - Collision: the authenticated identity is already in the room on another connection, so the
   call is rejected and no state changes, asserted by an unchanged Version.
-- Happy path: a guest queues two tracks, signs in, rebinds, and both tracks are owned by the
+- Happy path across the reconnect: a guest queues two tracks, signs in (new connection
+  carrying the authenticated identity, old anonymous connection gone), and rebinds by
+  presenting the stored anonymous connection JWT. Both tracks are owned by the
   authenticated identity. Version bumps exactly once.
 - Happy path: a guest host rebinds and the host role moves, verified by the authenticated
   identity passing a host-only check afterward.
-- **The client cannot name someone else's identity.** There is no request field carrying a
-  previous identity, asserted by a test that the handler resolves ownership only from
-  connection state. This is the regression test for decision C and must fail if a
-  client-supplied identity field is ever added.
-- Idempotency: a second identical call changes nothing and bumps no Version.
-- A second call under a different authenticated identity does rebind and does bump.
+- **The client cannot name someone else's identity.** The request carries no identity
+  string, only the anonymous connection JWT, and a test asserts the handler derives the old
+  identity solely from the signature-verified `sub`. This is the regression test for
+  decision C and must fail if a client-supplied identity field is ever added.
+- Idempotency: a second identical call returns success, changes nothing, and bumps no
+  Version.
+- A second call under a different authenticated identity holding the same proof does rebind
+  and does bump, provided the old identity still owns state.
 - Rooms the guest has previously left are unaffected, per decision A.
 - `AddedBy` display strings are unchanged by the rebind.
 - Race detector clean under `-race` with concurrent join, add, and rebind.
@@ -142,8 +168,8 @@ Server (`cd apps/server && go test -race ./...`, `go vet ./...`):
 
 Web (`cd apps/web && npx tsc --noEmit`, `pnpm lint`, `npx vitest run`):
 
-- The RPC wrapper sends only the room, carrying no identity field, asserted directly so the
-  trust boundary is enforced on both sides.
+- The RPC wrapper sends the room and the stored anonymous connection token, carrying no raw
+  identity field, asserted directly so the trust boundary is enforced on both sides.
 - Post-rebind state arrives through the normal room-state publication, so no local store
   surgery is required and none is added.
 - The in-room entry point renders only for a guest with accounts enabled, matching #167.
