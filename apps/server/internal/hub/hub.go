@@ -229,6 +229,7 @@ type Hub struct {
 	rooms           map[string]*Room
 	store           store.Store
 	node            *centrifuge.Node
+	publishFn       func(roomID string, state json.RawMessage) error // test seam; nil = publish via node
 	logger          *slog.Logger
 	metrics         *obs.Metrics
 	matcher         Matcher
@@ -1093,7 +1094,10 @@ func (h *Hub) hasMembersLocked(roomID string) bool {
 // When fn leaves Version unchanged the mutation was a no-op (every state change bumps
 // Version, and version-guarded clients would reject an unbumped publication anyway),
 // so the save + broadcast are skipped. The state is deep-copied before releasing the
-// lock to prevent data races. Store errors are logged but non-fatal to the result.
+// lock to prevent data races. Store errors are logged but non-fatal to the result,
+// and a publish failure post-commit is logged + counted but still returns the new
+// state (#178): the mutation already succeeded, so an RPC error would invite a
+// retry that duplicates it.
 func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMessage, error) {
 	room, err := h.GetOrCreateRoom(roomID)
 	if err != nil {
@@ -1136,15 +1140,26 @@ func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMe
 			}
 		}
 
-		// Publish to room channel
+		// Publish to room channel. Post-commit (#178): the mutation is already
+		// applied and persisted, so a failed broadcast must NOT surface as the
+		// RPC error — clients would retry and duplicate the mutation. Log +
+		// metric; the RPC still returns the new state.
 		if err := h.publish(roomID, data); err != nil {
-			return nil, err
+			if h.logger != nil {
+				h.logger.Error("publish_failed", "room_id", roomID, "err", err.Error())
+			}
+			if h.metrics != nil {
+				h.metrics.PublishError()
+			}
 		}
 	}
 	return data, nil
 }
 
 func (h *Hub) publish(roomID string, state json.RawMessage) error {
+	if h.publishFn != nil { // test seam
+		return h.publishFn(roomID, state)
+	}
 	if h.node == nil { // test mode
 		return nil
 	}
@@ -1153,15 +1168,9 @@ func (h *Hub) publish(roomID string, state json.RawMessage) error {
 		"state": state,
 	})
 	if err != nil {
-		if h.metrics != nil {
-			h.metrics.PublishError()
-		}
 		return err
 	}
 	_, err = h.node.Publish("room:"+roomID, payload)
-	if err != nil && h.metrics != nil {
-		h.metrics.PublishError()
-	}
 	return err
 }
 
