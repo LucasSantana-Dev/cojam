@@ -283,8 +283,12 @@ type Hub struct {
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
 	// disconnect. Separate mutex from rooms to avoid contention.
-	memberMu sync.RWMutex
-	members  map[string]map[string]struct{} // clientID -> set of roomIDs
+	// roomMembers is the same index inverted (roomID -> set of clientIDs),
+	// maintained by Join/Leave so member counts and room-scoped lookups are
+	// O(1)/O(room members) instead of scanning every connected client (#197).
+	memberMu    sync.RWMutex
+	members     map[string]map[string]struct{} // clientID -> set of roomIDs
+	roomMembers map[string]map[string]struct{} // roomID -> set of clientIDs
 
 	// clientUserID tracks the authenticated userID per clientID for host
 	// assignment (U3+); clientName tracks the display name the connection
@@ -398,6 +402,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		store:         store.NewMemory(),
 		node:          node,
 		members:       make(map[string]map[string]struct{}),
+		roomMembers:   make(map[string]map[string]struct{}),
 		clientUserID:  make(map[string]string),
 		clientName:    make(map[string]string),
 		enrichSem:     make(chan struct{}, enrichConcurrency),
@@ -452,13 +457,54 @@ func (h *Hub) Join(clientID, roomID string) {
 		h.members[clientID] = make(map[string]struct{})
 	}
 	h.members[clientID][roomID] = struct{}{}
+	if h.roomMembers[roomID] == nil {
+		h.roomMembers[roomID] = make(map[string]struct{})
+	}
+	h.roomMembers[roomID][clientID] = struct{}{}
 }
 
 // Leave drops all of a client's memberships (called on disconnect).
 func (h *Hub) Leave(clientID string) {
 	h.memberMu.Lock()
 	defer h.memberMu.Unlock()
+	for roomID := range h.members[clientID] {
+		delete(h.roomMembers[roomID], clientID)
+		if len(h.roomMembers[roomID]) == 0 {
+			delete(h.roomMembers, roomID)
+		}
+	}
 	delete(h.members, clientID)
+}
+
+// PruneGuestVotes removes the ephemeral "client:<clientID>" voter key from
+// every room the client is enrolled in (called on disconnect, before Leave
+// clears the membership list). A guest's votes die with the connection: the
+// clientID is never reused, so keeping the keys would inflate counts and let
+// a reconnecting guest double-vote (#183). Each prune goes through mutate, so
+// a room where the client actually voted gets a Version bump + save +
+// publish; rooms where it never voted are untouched. Authenticated
+// "user:<userID>" keys are deliberately kept — that identity survives
+// reconnects.
+func (h *Hub) PruneGuestVotes(clientID string) {
+	if clientID == "" {
+		return
+	}
+	h.memberMu.RLock()
+	rooms := make([]string, 0, len(h.members[clientID]))
+	for roomID := range h.members[clientID] {
+		rooms = append(rooms, roomID)
+	}
+	h.memberMu.RUnlock()
+
+	voterKey := "client:" + clientID
+	for _, roomID := range rooms {
+		if _, err := h.mutate(roomID, func(s *queue.RoomState) error {
+			s.PruneVoter(voterKey)
+			return nil
+		}); err != nil && h.logger != nil {
+			h.logger.Info("guest_votes_prune_failed", "room_id", roomID, "err", err.Error())
+		}
+	}
 }
 
 // IsMember reports whether a client has joined/subscribed to a room.
@@ -515,6 +561,8 @@ func (h *Hub) RemoveClientUserID(clientID string) {
 }
 
 // IsUserIDInRoom checks if a given userID has an active member in the room.
+// Scans only the room's own members via the inverted index, not every
+// connected client (#197).
 func (h *Hub) IsUserIDInRoom(roomID, userID string) bool {
 	if userID == "" {
 		return false
@@ -525,12 +573,9 @@ func (h *Hub) IsUserIDInRoom(roomID, userID string) bool {
 	h.clientUserIDMu.RLock()
 	defer h.clientUserIDMu.RUnlock()
 
-	// Iterate through all members and check if any have the target userID in this room
-	for clientID, rooms := range h.members {
-		if _, inRoom := rooms[roomID]; inRoom {
-			if h.clientUserID[clientID] == userID {
-				return true
-			}
+	for clientID := range h.roomMembers[roomID] {
+		if h.clientUserID[clientID] == userID {
+			return true
 		}
 	}
 	return false
@@ -760,12 +805,7 @@ func (h *Hub) evictIdleRooms(now time.Time) {
 // hasMembersLocked reports whether any client holds a membership in roomID.
 // Callers must hold memberMu.
 func (h *Hub) hasMembersLocked(roomID string) bool {
-	for _, rooms := range h.members {
-		if _, ok := rooms[roomID]; ok {
-			return true
-		}
-	}
-	return false
+	return len(h.roomMembers[roomID]) > 0
 }
 
 // mutate applies fn to the room under its lock, marshals the resulting state while

@@ -32,9 +32,10 @@ type PublicRoomSummary struct {
 // queue) are filtered as dead; the hub only evicts on a TTL, so without this
 // filter a dead public room would linger in the directory until eviction.
 //
-// memberCount inverts h.members (clientID -> roomIDs), which Join enrolls on
-// both room.join and channel subscribe and Leave clears on disconnect. It
-// counts connections, so one person in two tabs counts twice (accepted).
+// memberCount reads h.roomMembers (roomID -> clientIDs), the inverted index
+// Join enrolls on both room.join and channel subscribe and Leave clears on
+// disconnect. It counts connections, so one person in two tabs counts twice
+// (accepted).
 func (h *Hub) listPublicRooms() (json.RawMessage, error) {
 	// Lock order is memberMu then h.mu (the order evictIdleRooms establishes;
 	// Join/Leave take memberMu alone and GetOrCreateRoom takes h.mu alone).
@@ -86,11 +87,5 @@ func (h *Hub) listPublicRooms() (json.RawMessage, error) {
 // memberCountLocked counts connected clients enrolled in roomID.
 // Callers must hold memberMu.
 func (h *Hub) memberCountLocked(roomID string) int {
-	n := 0
-	for _, rooms := range h.members {
-		if _, ok := rooms[roomID]; ok {
-			n++
-		}
-	}
-	return n
+	return len(h.roomMembers[roomID])
 }
