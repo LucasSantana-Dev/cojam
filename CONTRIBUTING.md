@@ -36,12 +36,10 @@ not `localhost` (see gotcha 3 below).
 Run all of these; they are the same gates CI runs.
 
 ```bash
-cd apps/server && go test -race ./...   # 1a. server tests
-cd apps/server && go vet ./...          # 1b. server vet
-cd apps/web && npx tsc --noEmit         # 2a. web types
-cd apps/web && pnpm lint                # 2b. web lint (ESLint 9 flat config)
-cd apps/web && npx vitest run           # 3. web unit tests
-pnpm --filter web e2e                   # 4. web e2e (frees :3000 itself)
+(cd apps/server && go test -race ./... && go vet ./...)   # 1. server tests + vet
+(cd apps/web && npx tsc --noEmit && pnpm lint)            # 2. web types + lint (ESLint 9 flat config)
+(cd apps/web && npx vitest run)                           # 3. web unit tests
+pnpm --filter web e2e                                     # 4. web e2e, from repo root (frees :3000 itself)
 ```
 
 If you touched CSS, animations, or classnames, also run

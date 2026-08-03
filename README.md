@@ -65,7 +65,7 @@ flowchart TB
 | Spotify | Supported | Web Playback SDK | Premium per user; Dev Mode capped at 5 |
 | Apple Music | Stubbed | MusicKit JS | Needs Apple Developer Program; behind a toggle |
 | YouTube Music | Unsupported | — | No official API |
-| Deezer | Unsupported | — | API closed to new apps since 2024 |
+| Deezer | Search/identity (default) | — | Keyless public search API; playback SDK closed to new apps since 2024 |
 | Tidal | Unsupported | SDK | Full-catalog license agreement required |
 
 > [!NOTE]
