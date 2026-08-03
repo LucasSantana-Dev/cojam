@@ -258,20 +258,35 @@ Fields (runtime env var in parentheses):
 
 - `wsUrl` (`COJAM_WS_URL`), `spotifyClientId` (`COJAM_SPOTIFY_CLIENT_ID`): always
   emitted, empty string when unset.
-- `spotifyEnabled` (`COJAM_FEATURE_SPOTIFY`), `roomAuthEnabled`
-  (`COJAM_FEATURE_ROOM_AUTH`), `queueVotingEnabled` (`COJAM_FEATURE_QUEUE_VOTING`):
-  emitted only when the variable is explicitly set,
-  so an unset runtime value falls back to the build-time flag instead of forcing
-  it off.
+- `features`: a map of feature-flag overrides, one key per flag defined in
+  `apps/web/lib/features.ts` (`youtube`, `spotify`, `apple`, `presence`,
+  `trackDepth`, `lyrics`, `listenBrainz`, `lastfmEnrich`, `sync`, `roomAuth`,
+  `queueVoting`, `roomChat`, `publicRooms`). Each flag's runtime var is
+  `COJAM_FEATURE_<SCREAMING_SNAKE>` (the mapping is the `FEATURE_ENV_VARS`
+  const). A key is emitted only when its variable is explicitly set, so an
+  unset runtime value falls back to the build-time `NEXT_PUBLIC_FEATURE_*`
+  flag instead of forcing it off; the whole map is omitted when no flag is
+  set. Runtime parsing is strict: only the exact string `true` enables a flag,
+  any other set value disables it.
 - `supabaseUrl` + `supabaseAnonKey` (`COJAM_SUPABASE_URL` +
   `COJAM_SUPABASE_ANON_KEY`): emitted only as a pair; emitting just one would mix
   the runtime project with the build-time fallback of the other, pointing the
   client at two different Supabase projects.
 
+Example: a host with `COJAM_FEATURE_SYNC=true` and `COJAM_FEATURE_LYRICS=false`
+set serves `window.__COJAM_ENV__ = { wsUrl: ..., spotifyClientId: ...,
+features: { sync: true, lyrics: false } }`, and every other flag keeps its
+build-time value.
+
 `apps/web/lib/runtimeEnv.ts` consumes the contract: `getRuntimeEnv()` reads
-`window.__COJAM_ENV__` (undefined on the server or before `/env.js` has run) and
-`pickEnv()` resolves a value runtime first, then the build-time `NEXT_PUBLIC_*`,
-then a default; blank or whitespace-only values count as unset.
+`window.__COJAM_ENV__` (undefined on the server or before `/env.js` has run),
+`pickEnv()` resolves a scalar runtime first, then the build-time
+`NEXT_PUBLIC_*`, then a default (blank or whitespace-only values count as
+unset), and `resolveRuntimeFeatures()` merges the runtime `features` map over
+the build-time flags (a key present in the map wins, an absent key keeps the
+build-time value). Client components read flags through the hydration-safe
+`useRuntimeFeatures()` hook; reading the module-level `features` const in
+render misses runtime overrides.
 
 ## Types
 
