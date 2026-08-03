@@ -1,26 +1,19 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useStore } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
+import { memberLabel } from '@/lib/nameSuffix';
 import { platformIcon } from '@/app/components/icons';
 import { avatarGradient } from '@/lib/avatar';
 
 export function PresenceBar() {
   const f = useRuntimeFeatures();
   const members = useStore((s) => s.members);
+  const nameSuffixes = useStore((s) => s.nameSuffixes);
 
-  const deduped = useMemo(() => {
-    const seen = new Set<string>();
-    return members
-      .filter((m) => {
-        if (seen.has(m.name)) return false;
-        seen.add(m.name);
-        return true;
-      })
-      .slice(0, 6);
-  }, [members]);
-
+  // Presence entries are per connection (#165): no name dedupe — two listeners
+  // that picked the same name are two people, disambiguated by the label suffix.
+  const visible = members.slice(0, 6);
   const hiddenCount = Math.max(0, members.length - 6);
 
   // Don't render if presence is disabled
@@ -31,7 +24,8 @@ export function PresenceBar() {
   return (
     <div className="flex items-center gap-3">
       <div className="flex items-center flex-wrap gap-2">
-        {deduped.map((member) => {
+        {visible.map((member) => {
+          const label = memberLabel(member, nameSuffixes);
           const initial = member.name.charAt(0).toUpperCase();
           const Icon = member.platform ? platformIcon[member.platform] : null;
           return (
@@ -39,7 +33,7 @@ export function PresenceBar() {
               key={member.clientId}
               className="avatar-chip animate-fade-in relative group"
               style={{ background: avatarGradient(member.clientId || member.name) }}
-              title={member.name}
+              title={label}
             >
               {initial}
               {Icon && (
