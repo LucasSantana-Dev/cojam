@@ -60,7 +60,9 @@ test('two users see each other\'s queue additions live', async ({ browser }) => 
   // Remove propagates. With room auth on, removal is host-gated: the host
   // (Lucas, first joiner) removes and Ana sees the track disappear.
   await lucas.getByRole('button', { name: 'Remove' }).nth(1).click();
-  await expect(ana.getByText('Second Song')).not.toBeVisible();
+  // Scope to queue rows: the activity rail keeps a historical "added Second
+  // Song" entry after removal, so an unscoped text match never disappears.
+  await expect(ana.getByTestId('queue-title').filter({ hasText: 'Second Song' })).not.toBeVisible();
 });
 
 test('queue reorder syncs to both clients', async ({ browser }) => {

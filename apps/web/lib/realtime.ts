@@ -42,6 +42,9 @@ export interface AppStore {
   // (room.kick, #181): the room page shows "removed by host" instead of the
   // reconnect flow. Reset on every fresh joinRoom.
   kicked: boolean;
+  // Whether an account session (Supabase) is active. Drives the guest-identity
+  // signals (#167): guests see them, signed-in members never do.
+  signedIn: boolean;
   // Tracks this client has upvoted (F4). The published votes map holds
   // server-stamped voter keys the client cannot map back to itself (the
   // anonymous clientID is server-assigned), so this local set drives the
@@ -58,6 +61,7 @@ export interface AppStore {
   setKicked: (kicked: boolean) => void;
   setMembers: (members: Member[]) => void;
   setConnectedServices: (services: string[]) => void;
+  setSignedIn: (signedIn: boolean) => void;
   setMyVotes: (votes: Record<string, true>) => void;
   markVoted: (trackId: string, voted: boolean) => void;
   addMember: (m: Member) => void;
@@ -77,6 +81,7 @@ export const useStore = create<AppStore>((set) => ({
   nameSuffixes: {},
   connectedServices: [],
   kicked: false,
+  signedIn: false,
   myVotes: {},
   chat: [],
   setName: (name) => set({ name }),
@@ -89,6 +94,7 @@ export const useStore = create<AppStore>((set) => ({
   setKicked: (kicked) => set({ kicked }),
   setMembers: (members) => set({ members, nameSuffixes: computeNameSuffixes(members) }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
+  setSignedIn: (signedIn) => set({ signedIn }),
   setMyVotes: (myVotes) => set({ myVotes }),
   markVoted: (trackId, voted) => set((s) => {
     const myVotes = { ...s.myVotes };

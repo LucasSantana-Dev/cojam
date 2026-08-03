@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage } from '@/lib/realtime';
+import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import type { TrackRef } from '@cojam/shared';
 import {
@@ -18,6 +18,12 @@ import {
 } from '@/app/components/icons';
 import { formatTime } from './TransportUI';
 import { formatRelativeTime } from '@/lib/relativeTime';
+
+// addedAt is server time; apply the measured sync.ping offset before diffing
+// so skewed client clocks agree on the age (same pattern as ChatPanel).
+function addedAgo(addedAt: number): string {
+  return formatRelativeTime(addedAt, Date.now() + getClockOffsetMs()) ?? '';
+}
 
 // Deezer-style total duration: "1 hr 23 min" / "42 min" / "< 1 min".
 function formatTotal(ms: number): string {
@@ -321,11 +327,12 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                     </span>
                     <span className="flex-shrink-0">{track.addedBy}</span>
                     {/* Server-stamped addedAt (R1 provenance). Silent when 0/absent
-                        on tracks queued before timestamps existed (honest data). */}
+                        on tracks queued before timestamps existed (honest data). The
+                        sync.ping offset keeps the age right on skewed client clocks. */}
                     {track.addedAt ? (
                       <>
                         <span className="queue-meta-sep" aria-hidden="true">·</span>
-                        <span className="flex-shrink-0">{formatRelativeTime(track.addedAt)}</span>
+                        <span className="flex-shrink-0">{addedAgo(track.addedAt)}</span>
                       </>
                     ) : null}
                   </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, joinRoom, setRadio, nowPlayingAdvance } from '@/lib/realtime';
+import { useStore, joinRoom, setRadio, nowPlayingAdvance, getClockOffsetMs } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
@@ -24,6 +24,7 @@ import { YouTubePlayer } from '../components/YouTubePlayer';
 import { ApplePlayer } from '../components/ApplePlayer';
 import { SpotifyPlayer } from '../components/SpotifyPlayer';
 import { QueuePanel } from '../components/QueuePanel';
+import { ActivityRail } from '../components/ActivityRail';
 import { ChatPanel } from '../components/ChatPanel';
 import { AddTrackForm } from '../components/AddTrackForm';
 import { PresenceBar } from '../components/PresenceBar';
@@ -41,7 +42,7 @@ import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons
 import { LogoMark } from '@/app/components/Logo';
 import type { IPlayer } from '@/lib/playerInterface';
 
-// mm:ss for the per-client "in room" clock on the now-playing card.
+// mm:ss for the shared room-age clock on the now-playing card.
 function formatElapsed(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
   const s = totalSeconds % 60;
@@ -73,11 +74,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // Accounts: when signed in, load persisted connected services into the store
   // (search ranking follows them on any device, even before local OAuth state
   // settles) and prefill the join name from the profile. Guests skip all of this.
+  // The signedIn flag drives the guest-identity signals (#167).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const session = await getAccountSession();
-      if (!session || cancelled) return;
+      if (cancelled) return;
+      useStore.getState().setSignedIn(!!session);
+      if (!session) return;
       const [services, displayName] = await Promise.all([getConnectedServices(), getDisplayName()]);
       if (cancelled) return;
       useStore.getState().setConnectedServices(services);
@@ -114,14 +118,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
     : null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
 
-  // Per-client "in room" clock (honest: elapsed since this tab joined).
-  const [roomElapsedS, setRoomElapsedS] = useState(0);
+  // Shared room-age clock: RoomState.createdAt is server-stamped, so every
+  // client shows the same age once the measured sync.ping offset is applied.
+  // Rooms created before timestamps existed carry no createdAt; stay silent
+  // rather than show a fake time (honest-data lock).
+  const createdAt = store.state?.createdAt;
+  const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
-    if (!joined) return;
-    const startedAt = Date.now();
-    const id = setInterval(() => setRoomElapsedS(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    if (!joined || !createdAt) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [joined]);
+  }, [joined, createdAt]);
+  const roomAgeS = createdAt
+    ? Math.max(0, Math.floor((nowMs + getClockOffsetMs() - createdAt) / 1000))
+    : null;
 
   // U5: compute room control permission for this user
   const hostControl = canControl({
@@ -258,6 +268,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
             </span>
           </button>
 
+          {/* Guest-identity signal (#167): guests' identity lives in this
+              browser's localStorage only. Hidden from signed-in members and
+              when accounts are not deployed (no remedy to point at). */}
+          {accountsEnabled && !store.signedIn && (
+            <p className="text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
+              Your identity is stored in this browser. Sign in before leaving this room to keep
+              your room role across devices.
+            </p>
+          )}
+
           {/* Error state */}
           {joinError && (
             <p className="join-error" role="alert">
@@ -310,6 +330,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 <span className="room-code-chip">{roomId}</span>
                 <span aria-hidden style={{ opacity: 0.5 }}>·</span>
                 <span className="truncate">you&rsquo;re {store.name}</span>
+                {accountsEnabled && !store.signedIn && <span className="guest-chip">Guest</span>}
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
@@ -460,7 +481,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                       <div className="np-meta">
                         <PresenceMeta />
                         <span>added by {nowPlaying.addedBy}</span>
-                        <span className="np-timer">in room {formatElapsed(roomElapsedS)}</span>
+                        {roomAgeS !== null && (
+                          <span className="np-timer">in room {formatElapsed(roomAgeS)}</span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -548,6 +571,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
           <div className="lg:col-span-1 room-arrival lg:sticky lg:top-24 lg:self-start" style={{ ['--i' as string]: 1 }}>
             <QueuePanel roomId={roomId} canControl={hostControl} />
+            <ActivityRail />
             {f.roomChat && <ChatPanel roomId={roomId} canControl={hostControl} />}
           </div>
         </div>
