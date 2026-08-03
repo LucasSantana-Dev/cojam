@@ -204,7 +204,7 @@ distinguished by `type`, no version guard since chat is not `RoomState`):
 { "type": "chat.message", "message": ChatMessage }
 ```
 
-Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated), never on display name: two connections that picked the same name are two distinct entries and count as two listeners.
+Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated), never on display name: two connections that picked the same name are two distinct entries and count as two listeners. Each entry's ConnInfo is `{"name": string, "platform"?: "spotify"|"apple"|"youtube"}` — the name and playback platform the client presented at connect; the server drops unrecognized platform values, so presence only carries platforms the UI can render. Display concerns stay client-side: colliding names get a deterministic suffix ("Alice", "Alice (2)") derived from the member list (sorted by clientId), recomputed on every membership change; presence is centrifuge-level, so none of this touches `RoomState` or `Version`.
 
 ## Accounts (Supabase Auth, behind `FEATURE_SUPABASE_AUTH`)
 
