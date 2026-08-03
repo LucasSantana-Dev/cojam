@@ -455,7 +455,8 @@ func main() {
 
 		client.OnSubscribe(func(e centrifuge.SubscribeEvent, cb centrifuge.SubscribeCallback) {
 			logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
-			// Subscribing to room:<id> enrolls the client so it may mutate that room.
+			// Subscribing to room:<id> enrolls the client so it may mutate that room
+			// (link = capability; see docs/protocol.md "Trust model", #180).
 			// centrifuge re-subscribes on reconnect, so membership survives reconnects.
 			if roomID, ok := strings.CutPrefix(e.Channel, "room:"); ok {
 				h.Join(client.ID(), roomID)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,42 @@ func TestHandleRPC_NoObservabilityConfigured_StillWorks(t *testing.T) {
 	h := NewHub(nil)
 	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"obs2","name":"x"}`), ""); err != nil {
 		t.Fatalf("room.join without obs: %v", err)
+	}
+}
+
+// #180: the first time a room gains a second concurrent member (its first
+// non-creator member) the hub emits a structured log and bumps
+// music_jam_rooms_shared_total — exactly once per room instance.
+func TestJoin_FirstNonCreatorMember_EmitsLogAndMetricOnce(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	metrics := obs.New()
+	h := NewHub(nil).WithObservability(logger, metrics)
+
+	// The shared flag lives on the Room instance, so the room must exist.
+	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"shared1","name":"host"}`), "c1"); err != nil {
+		t.Fatalf("room.join: %v", err)
+	}
+
+	h.Join("c1", "shared1")
+	if got := testutil.ToFloat64(metrics.RoomsShared); got != 0 {
+		t.Fatalf("rooms_shared_total after solo member = %v, want 0", got)
+	}
+
+	h.Join("c2", "shared1")
+	if got := testutil.ToFloat64(metrics.RoomsShared); got != 1 {
+		t.Fatalf("rooms_shared_total after second member = %v, want 1", got)
+	}
+	if !strings.Contains(buf.String(), `"msg":"room_first_non_creator_member"`) ||
+		!strings.Contains(buf.String(), `"room_id":"shared1"`) {
+		t.Fatalf("missing room_first_non_creator_member log, buf=%q", buf.String())
+	}
+
+	// Re-joins and further members must not re-emit.
+	h.Join("c2", "shared1")
+	h.Join("c3", "shared1")
+	if got := testutil.ToFloat64(metrics.RoomsShared); got != 1 {
+		t.Fatalf("rooms_shared_total after extra joins = %v, want 1 (emit once)", got)
 	}
 }
 
