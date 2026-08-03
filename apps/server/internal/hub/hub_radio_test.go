@@ -118,6 +118,80 @@ func TestRadioAutoRefillOnAdvance(t *testing.T) {
 	if got := atomic.LoadInt32(&similarCallCount); got != 1 {
 		t.Errorf("SimilarProvider should be called once on refill, got %d calls", got)
 	}
+
+	// #175: refill into a drained room must start the FIRST refilled track
+	// (Queue[2] here, after the 2 played entries), not track 1 of history.
+	room := h.GetOrCreateRoom("radio-test")
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		room.mu.Lock()
+		queueLen := len(room.State.Queue)
+		nowPlaying := room.State.NowPlayingID
+		firstRefilledID := ""
+		if queueLen >= 3 {
+			firstRefilledID = room.State.Queue[2].ID
+		}
+		room.mu.Unlock()
+
+		if queueLen == 5 {
+			if nowPlaying != firstRefilledID {
+				t.Fatalf("refill should start first refilled track %s, got %s", firstRefilledID, nowPlaying)
+			}
+			if nowPlaying == t1ID {
+				t.Fatalf("refill reset NowPlaying to history head %s", t1ID)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("refill never applied: queue len %d, nowPlaying %q", queueLen, nowPlaying)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestQueueAddIntoDrainedRoomStartsNewTrack pins #175 for the manual path: a
+// queue.add into a drained room (history kept, NowPlayingID cleared) starts
+// the new track, not track 1 of the already-played history.
+func TestQueueAddIntoDrainedRoomStartsNewTrack(t *testing.T) {
+	h := NewHub(nil)
+
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"drain-test","name":"u1"}`), "")
+	st := &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"drain-test","track":{"title":"T1","artist":"A1","sources":{},"addedBy":"u1"}}`), "")
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t1ID := st.Queue[0].ID
+
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"drain-test","track":{"title":"T2","artist":"A2","sources":{},"addedBy":"u1"}}`), "")
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	t2ID := st.Queue[1].ID
+
+	// Play through both tracks: queue drained, history kept (radio off).
+	if _, err := h.HandleRPC("now_playing.advance", []byte(`{"roomId":"drain-test","afterId":"`+t1ID+`"}`), ""); err != nil {
+		t.Fatalf("advance t1: %v", err)
+	}
+	res, _ = h.HandleRPC("now_playing.advance", []byte(`{"roomId":"drain-test","afterId":"`+t2ID+`"}`), "")
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	if st.NowPlayingID != "" {
+		t.Fatalf("queue should be drained, got NowPlayingID %s", st.NowPlayingID)
+	}
+
+	// Manual add into the drained room starts the new track.
+	res, _ = h.HandleRPC("queue.add", []byte(`{"roomId":"drain-test","track":{"title":"T3","artist":"A3","sources":{},"addedBy":"u1"}}`), "")
+	st = &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+
+	newID := st.Queue[2].ID
+	if st.NowPlayingID != newID {
+		t.Fatalf("queue.add into drained room should start the new track %s, got %s", newID, st.NowPlayingID)
+	}
+	if st.NowPlayingID == t1ID {
+		t.Fatalf("queue.add reset NowPlaying to history head %s", t1ID)
+	}
 }
 
 // TestRadioIdempotentRefill verifies that advancing past the last track

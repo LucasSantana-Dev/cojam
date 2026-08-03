@@ -101,15 +101,18 @@ type RoomState struct {
 
 // Add appends a track to the queue, generates an ID, stamps the server-side
 // AddedAt (overwriting any client-supplied value), and bumps the version.
-// If the queue is empty, sets the track as NowPlayingID.
+// If nothing is playing (NowPlayingID empty), the new track starts playing.
+// Played tracks are never removed (clients only advance the pointer), so an
+// empty NowPlayingID with a non-empty queue means every prior entry is
+// history; pointing at Queue[0] there would restart the oldest played track.
 func (rs *RoomState) Add(track TrackRef) *TrackRef {
 	track.ID = uuid.New().String()
 	track.AddedAt = time.Now().UnixMilli()
 	rs.Queue = append(rs.Queue, track)
 	rs.Version++
 
-	if rs.NowPlayingID == "" && len(rs.Queue) > 0 {
-		rs.NowPlayingID = rs.Queue[0].ID
+	if rs.NowPlayingID == "" {
+		rs.NowPlayingID = track.ID
 	}
 
 	return &rs.Queue[len(rs.Queue)-1]

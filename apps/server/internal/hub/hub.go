@@ -240,6 +240,13 @@ type Hub struct {
 	// hundreds of simultaneous YouTube/Spotify requests and trip rate limits.
 	enrichSem chan struct{}
 
+	// enrichPending bounds total enrich goroutines (live + parked on
+	// enrichSem). Without it the semaphore caps live lookups but not spawned
+	// goroutines, so import spam parks hundreds of waiters that enrich
+	// long-since-removed tracks. Jobs arriving when pending is full are
+	// dropped (and logged) instead.
+	enrichPending chan struct{}
+
 	// members gates mutating RPCs: a client may only mutate rooms it has joined
 	// (via room.join) or subscribed to. Populated on join/subscribe, cleared on
 	// disconnect. Separate mutex from rooms to avoid contention.
@@ -354,7 +361,8 @@ func NewHub(node *centrifuge.Node) *Hub {
 		node:          node,
 		members:       make(map[string]map[string]struct{}),
 		clientUserID:  make(map[string]string),
-		enrichSem:     make(chan struct{}, 8),
+		enrichSem:     make(chan struct{}, enrichConcurrency),
+		enrichPending: make(chan struct{}, enrichMaxPending),
 		fanoutLimiter: newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
 		voteLimiter:   newRateLimiter(voteBurst, voteRefill, time.Now),
 		chatLimiter:   newRateLimiter(chatBurst, chatRefill, time.Now),
@@ -362,10 +370,31 @@ func NewHub(node *centrifuge.Node) *Hub {
 	}
 }
 
+const (
+	// enrichConcurrency caps live outbound matcher lookups.
+	enrichConcurrency = 8
+	// enrichMaxPending caps total enrich goroutines (live + parked on
+	// enrichSem). A 200-track import otherwise parks 2 goroutines per track
+	// with no timeout on the wait; beyond this bound jobs are dropped, not
+	// queued.
+	enrichMaxPending = 32
+)
+
 // launchEnrich runs fn in a goroutine gated by enrichSem so bulk imports cannot
-// fire unbounded concurrent matcher lookups.
+// fire unbounded concurrent matcher lookups. Admission is bounded and
+// non-blocking: when enrichPending is full the job is dropped and logged
+// rather than parking another goroutine (#196).
 func (h *Hub) launchEnrich(fn func()) {
+	select {
+	case h.enrichPending <- struct{}{}:
+	default:
+		if h.logger != nil {
+			h.logger.Info("enrich_dropped", "reason", "pending_full")
+		}
+		return
+	}
 	go func() {
+		defer func() { <-h.enrichPending }()
 		h.enrichSem <- struct{}{}
 		defer func() { <-h.enrichSem }()
 		fn()
