@@ -80,11 +80,54 @@ func TestRemove(t *testing.T) {
 	if rs.Version != 2 {
 		t.Errorf("expected version 2, got %d", rs.Version)
 	}
-	if rs.NowPlayingID != "" {
-		t.Errorf("expected NowPlayingID to be cleared, got %s", rs.NowPlayingID)
+	if rs.NowPlayingID != "t2" {
+		t.Errorf("expected NowPlayingID to advance to successor t2, got %q", rs.NowPlayingID)
 	}
 	if len(rs.Queue) != 1 {
 		t.Errorf("expected queue length 1, got %d", len(rs.Queue))
+	}
+}
+
+func TestRemoveCurrentWithQueuedSuccessorThenAdd(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "played", Title: "Old", AddedBy: "u1", Sources: Sources{}},
+			{ID: "current", Title: "Now", AddedBy: "u1", Sources: Sources{}},
+			{ID: "queued", Title: "Next", AddedBy: "u1", Sources: Sources{}},
+		},
+		NowPlayingID: "current",
+		Version:      1,
+	}
+
+	if err := rs.Remove("current"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rs.NowPlayingID != "queued" {
+		t.Fatalf("expected advance to queued, got %q", rs.NowPlayingID)
+	}
+
+	added := rs.Add(TrackRef{Title: "New", AddedBy: "u2", Sources: Sources{}})
+	if rs.NowPlayingID != "queued" {
+		t.Errorf("add after advance must not hijack NowPlayingID, got %q", rs.NowPlayingID)
+	}
+	if added.ID == "" {
+		t.Error("expected added track to get an ID")
+	}
+}
+
+func TestRemoveCurrentLastClearsNowPlaying(t *testing.T) {
+	rs := &RoomState{
+		RoomID:       "room1",
+		Queue:        []TrackRef{{ID: "t1", Title: "Only", AddedBy: "u1", Sources: Sources{}}},
+		NowPlayingID: "t1",
+		Version:      1,
+	}
+	if err := rs.Remove("t1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rs.NowPlayingID != "" {
+		t.Errorf("expected NowPlayingID cleared when nothing follows, got %q", rs.NowPlayingID)
 	}
 }
 
@@ -542,5 +585,59 @@ func TestRemovePrunesVotes(t *testing.T) {
 	}
 	if got := len(rs.Votes["t2"]); got != 1 {
 		t.Errorf("expected votes for t2 untouched, got %d voters", got)
+	}
+}
+
+// TestAddToDrainedRoomStartsNewTrack pins #175: after the queue runs dry
+// (NowPlayingID cleared by AdvanceAfter, played tracks kept as history),
+// adding a track must start THAT track, not Queue[0] (the oldest played
+// track). The old `rs.NowPlayingID = rs.Queue[0].ID` made every client jump
+// back and replay the whole history.
+func TestAddToDrainedRoomStartsNewTrack(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "t1", Title: "Played 1", AddedBy: "u1", Sources: Sources{}},
+			{ID: "t2", Title: "Played 2", AddedBy: "u1", Sources: Sources{}},
+		},
+		NowPlayingID: "", // drained: both entries are history
+		Version:      3,
+	}
+
+	added := rs.Add(TrackRef{Title: "New Song", Artist: "A", AddedBy: "u2", Sources: Sources{}})
+
+	if rs.NowPlayingID != added.ID {
+		t.Errorf("expected NowPlayingID to start the new track %s, got %s (history replay bug)", added.ID, rs.NowPlayingID)
+	}
+	if rs.Version != 4 {
+		t.Errorf("expected version 4, got %d", rs.Version)
+	}
+}
+
+// TestAddRefillKeepsFirstRefilledTrack pins the radio-refill shape of #175:
+// refill appends several tracks in a row into a drained room; only the first
+// one sets NowPlayingID, the rest just queue up behind it.
+func TestAddRefillKeepsFirstRefilledTrack(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "t1", Title: "Played", AddedBy: "u1", Sources: Sources{}},
+		},
+		NowPlayingID: "",
+		Version:      2,
+	}
+
+	first := rs.Add(TrackRef{Title: "Similar 1", AddedBy: "radio", Sources: Sources{}})
+	rs.Add(TrackRef{Title: "Similar 2", AddedBy: "radio", Sources: Sources{}})
+	rs.Add(TrackRef{Title: "Similar 3", AddedBy: "radio", Sources: Sources{}})
+
+	if rs.NowPlayingID != first.ID {
+		t.Errorf("expected NowPlayingID to be the first refilled track %s, got %s", first.ID, rs.NowPlayingID)
+	}
+	if rs.Version != 5 {
+		t.Errorf("expected version 5, got %d", rs.Version)
+	}
+	if len(rs.Queue) != 4 {
+		t.Errorf("expected queue length 4, got %d", len(rs.Queue))
 	}
 }
