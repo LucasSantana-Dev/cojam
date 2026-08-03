@@ -3,7 +3,7 @@
 // different V8 realm, so parseConnInfo's `instanceof Uint8Array` check
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic } from './realtime';
+import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
 
 // Centrifuge/auth/account mocks for the joinRoom lifecycle tests (B9/B10/B11).
@@ -155,6 +155,17 @@ describe('chat store (F8)', () => {
     useStore.getState().addChatMessage(chatMsg('live'));
     useStore.getState().setChat([chatMsg('h1'), chatMsg('h2')]);
     expect(useStore.getState().chat.map((m) => m.id)).toEqual(['h1', 'h2']);
+  });
+
+  it('removeChatMessage drops the line by id (chat.delete tombstone, #181)', () => {
+    useStore.getState().setChat([chatMsg('a'), chatMsg('b'), chatMsg('c')]);
+    useStore.getState().removeChatMessage('b');
+    expect(useStore.getState().chat.map((m) => m.id)).toEqual(['a', 'c']);
+  });
+
+  it('addChatMessage never adds a tombstoned line (#181)', () => {
+    useStore.getState().addChatMessage({ ...chatMsg('t1'), deleted: true, text: '' });
+    expect(useStore.getState().chat).toEqual([]);
   });
 });
 
@@ -519,6 +530,36 @@ describe('room chat (F8)', () => {
       expect(useStore.getState().chat.map((m) => m.id)).toEqual(['live1', 'missed2']);
     });
   });
+
+  it('routes chat.delete publications to the chat store (#181)', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    const pubHandler = instance.subscriptions[0].handlers['publication'][0];
+    pubHandler({ data: { type: 'chat.message', message: chatMsg('m1') } });
+    pubHandler({ data: { type: 'chat.message', message: chatMsg('m2') } });
+    expect(useStore.getState().chat.map((m) => m.id)).toEqual(['m1', 'm2']);
+
+    pubHandler({ data: { type: 'chat.delete', messageId: 'm1' } });
+    expect(useStore.getState().chat.map((m) => m.id)).toEqual(['m2']);
+  });
+
+  it('filters tombstoned lines out of the history seed (#181)', async () => {
+    runtimeEnvMocks.env = { features: { roomChat: true } };
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.chatHistoryResponse = {
+      messages: [chatMsg('h1'), { ...chatMsg('dead'), deleted: true, text: '' }, chatMsg('h2')],
+    };
+    instance.emit('connected');
+    await joinPromise;
+
+    await vi.waitFor(() => {
+      expect(useStore.getState().chat.map((m) => m.id)).toEqual(['h1', 'h2']);
+    });
+  });
 });
 
 describe('rpcErrorMessage', () => {
@@ -537,5 +578,78 @@ describe('rpcErrorMessage', () => {
     expect(rpcErrorMessage('string rejection', 'fallback')).toBe('fallback');
     expect(rpcErrorMessage({ message: '' }, 'fallback')).toBe('fallback');
     expect(rpcErrorMessage(new Error(''), 'fallback')).toBe('fallback');
+  });
+});
+
+describe('host moderation (#181)', () => {
+  beforeEach(() => {
+    centrifugeMock.MockCentrifuge.instances = [];
+    authMocks.accountToken = null;
+    runtimeEnvMocks.env = undefined;
+    useStore.setState({ state: null, connected: false, reconnecting: false, chat: [], kicked: false, clientId: '' });
+  });
+
+  const lastInstance = async () => {
+    await vi.waitFor(() => {
+      expect(centrifugeMock.MockCentrifuge.instances.length).toBeGreaterThan(0);
+    });
+    const instances = centrifugeMock.MockCentrifuge.instances;
+    return instances[instances.length - 1];
+  };
+
+  it('marks the store kicked when the server disconnects with the kicked code', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+    expect(useStore.getState().kicked).toBe(false);
+
+    instance.emit('disconnected', { code: DISCONNECT_CODE_KICKED, reason: 'removed by host' });
+    expect(useStore.getState().kicked).toBe(true);
+    expect(useStore.getState().connected).toBe(false);
+  });
+
+  it('does not mark kicked for ordinary disconnects', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    instance.emit('disconnected', { code: 3000, reason: 'connection closed' });
+    expect(useStore.getState().kicked).toBe(false);
+  });
+
+  it('resets kicked on a fresh joinRoom', async () => {
+    useStore.setState({ kicked: true });
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+    expect(useStore.getState().kicked).toBe(false);
+  });
+
+  it('records the server-assigned client id on connect', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected', { client: 'srv-client-1', transport: 'websocket' });
+    await joinPromise;
+    expect(useStore.getState().clientId).toBe('srv-client-1');
+  });
+
+  it('sends chat.delete and room.kick with the right payloads', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    // Filter by method: the fire-and-forget clock sync (sync.ping) interleaves
+    // with these calls, so position-based assertions would race.
+    const callsFor = (method: string) => instance.rpcCalls.filter((c) => c.method === method);
+
+    await deleteChatMessage('room-1', 'msg-9');
+    expect(callsFor('chat.delete').at(-1)?.payload).toEqual({ roomId: 'room-1', messageId: 'msg-9' });
+
+    await kickMember('room-1', 'client-7');
+    expect(callsFor('room.kick').at(-1)?.payload).toEqual({ roomId: 'room-1', clientId: 'client-7' });
   });
 });

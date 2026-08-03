@@ -273,7 +273,8 @@ type Hub struct {
 
 	// chatLimiter rate-limits chat.send per caller (chatMethods): chat is the
 	// canonical spammable RPC, and a per-caller bucket keeps one spammer from
-	// throttling the room.
+	// throttling the room. The host moderation RPCs (chat.delete, room.kick,
+	// #181) share the bucket.
 	chatLimiter *rateLimiter
 
 	// listLimiter rate-limits the room.list directory read per caller. It is
@@ -335,11 +336,13 @@ var mutatingMethods = map[string]bool{
 	"playlist.import":     true,
 	"radio.set":           true,
 	"room.set_public":     true,
+	"room.kick":           true,
 	"transport.play":      true,
 	"transport.pause":     true,
 	"transport.seek":      true,
 	"chat.send":           true,
 	"chat.history":        true,
+	"chat.delete":         true,
 }
 
 // hostOnlyMethods are mutating RPCs that disrupt room control and therefore
@@ -538,6 +541,22 @@ func (h *Hub) Leave(clientID string) {
 		}
 	}
 	delete(h.members, clientID)
+}
+
+// leaveRoom drops one client's membership in one room (room.kick, #181);
+// Leave drops every membership at disconnect. Idempotent: unknown pairs are
+// no-ops. The kicked client's own disconnect still runs Leave afterwards.
+func (h *Hub) leaveRoom(clientID, roomID string) {
+	h.memberMu.Lock()
+	defer h.memberMu.Unlock()
+	delete(h.members[clientID], roomID)
+	if len(h.members[clientID]) == 0 {
+		delete(h.members, clientID)
+	}
+	delete(h.roomMembers[roomID], clientID)
+	if len(h.roomMembers[roomID]) == 0 {
+		delete(h.roomMembers, roomID)
+	}
 }
 
 // PruneGuestVotes removes the ephemeral "client:<clientID>" voter key from
@@ -1848,6 +1867,51 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, fmt.Errorf("chat.history: roomId required")
 		}
 		return h.chatHistoryRPC(req.RoomID)
+
+	case "chat.delete":
+		if !h.chatEnabled {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		var req struct {
+			RoomID    string `json:"roomId"`
+			MessageID string `json:"messageId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("chat.delete: roomId required")
+		}
+		if req.MessageID == "" {
+			return nil, userErrorf("message id required")
+		}
+		// Host gate in dispatch, not Authorize: a non-host attempt is a
+		// client-visible mistake (UserError, code 400), not PermissionDenied.
+		if err := h.requireHost(req.RoomID, userID, "delete messages"); err != nil {
+			return nil, err
+		}
+		return h.chatDelete(req.RoomID, req.MessageID)
+
+	case "room.kick":
+		var req struct {
+			RoomID   string `json:"roomId"`
+			ClientID string `json:"clientId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("room.kick: roomId required")
+		}
+		if req.ClientID == "" {
+			return nil, userErrorf("client id required")
+		}
+		// Host gate in dispatch, not Authorize: same UserError (400) rationale
+		// as chat.delete.
+		if err := h.requireHost(req.RoomID, userID, "kick members"); err != nil {
+			return nil, err
+		}
+		return h.roomKick(req.RoomID, req.ClientID)
 
 	case "sync.ping":
 		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})

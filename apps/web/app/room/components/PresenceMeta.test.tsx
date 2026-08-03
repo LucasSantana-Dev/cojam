@@ -16,7 +16,7 @@ describe('PresenceMeta (fused now-playing chip)', () => {
 
   it('renders the same labels as PresenceBar for the same member list', () => {
     useStore.getState().setMembers(FIXTURE);
-    const bar = render(<PresenceBar />);
+    const bar = render(<PresenceBar roomId="r" />);
     const barTitles = Array.from(bar.container.querySelectorAll('[title]'))
       .map((el) => el.getAttribute('title'))
       .sort();
