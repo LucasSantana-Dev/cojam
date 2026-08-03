@@ -53,11 +53,12 @@ async function loadSDK(): Promise<void> {
 async function playUri(deviceId: string, uri: string) {
   const token = await getAccessToken();
   if (!token) return;
-  await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+  const res = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ uris: [uri] }),
   });
+  if (!res.ok) throw new Error(`Spotify play failed: ${res.status}`);
 }
 
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
@@ -172,11 +173,15 @@ export function SpotifyPlayer({
   onAuthorized,
   onPlayerReady,
   onPlayerGone,
+  onPlayError,
 }: {
   authorized: boolean;
   onAuthorized: (v: boolean) => void;
   onPlayerReady?: (player: IPlayer) => void;
   onPlayerGone?: () => void;
+  // Per-user playback failure surface: called with the track id when this
+  // client can't play the now-playing track, null when playback (re)starts.
+  onPlayError?: (trackId: string | null) => void;
 }) {
   const deviceId = useRef<string | null>(null);
   const playerRef = useRef<SpotifyPlayerAdapter | null>(null);
@@ -191,9 +196,11 @@ export function SpotifyPlayer({
   // every parent render, disposing the adapter right after ready.
   const onPlayerReadyRef = useRef(onPlayerReady);
   const onPlayerGoneRef = useRef(onPlayerGone);
+  const onPlayErrorRef = useRef(onPlayError);
   useEffect(() => {
     onPlayerReadyRef.current = onPlayerReady;
     onPlayerGoneRef.current = onPlayerGone;
+    onPlayErrorRef.current = onPlayError;
   });
 
   // Client id resolves from runtime (/env.js) first so the env-agnostic image
@@ -287,7 +294,12 @@ export function SpotifyPlayer({
       ? current.queue.find((t) => t.id === current.nowPlayingId)
       : undefined;
     if (!track || pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) !== 'spotify') return;
-    playUri(deviceId.current, spotifyUri).catch((e) => console.error('Spotify play failed:', e));
+    playUri(deviceId.current, spotifyUri)
+      .then(() => onPlayErrorRef.current?.(null))
+      .catch((e) => {
+        console.error('Spotify play failed:', e);
+        onPlayErrorRef.current?.(track.id);
+      });
   }, [authorized, status, spotifyUri]);
 
   if (!clientId) return null;
