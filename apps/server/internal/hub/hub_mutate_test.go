@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
@@ -24,6 +25,10 @@ func (s *saveCountingStore) Load(ctx context.Context, roomID string) (*queue.Roo
 func (s *saveCountingStore) Save(ctx context.Context, state *queue.RoomState) error {
 	atomic.AddInt32(&s.saves, 1)
 	return s.inner.Save(ctx, state)
+}
+
+func (s *saveCountingStore) DeleteIdleRooms(ctx context.Context, cutoff time.Time, protected map[string]struct{}) (int64, error) {
+	return s.inner.DeleteIdleRooms(ctx, cutoff, protected)
 }
 
 func (s *saveCountingStore) saveCount() int32 { return atomic.LoadInt32(&s.saves) }

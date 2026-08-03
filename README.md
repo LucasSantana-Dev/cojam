@@ -129,6 +129,7 @@ NEXT_PUBLIC_WS_URL=ws://localhost:8080/connection/websocket
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 FEATURE_MATCHING=true
 ROOM_IDLE_TTL_MINUTES=30               # evict memberless rooms idle this long
+ROOM_PERSIST_IDLE_TTL_MINUTES=0        # delete memberless room ROWS idle this long (0=disabled, opt-in; single-instance only)
 YOUTUBE_API_KEY=<key>                  # YouTube matching
 SPOTIFY_CLIENT_ID=<id>                 # Spotify matching (client credentials)
 SPOTIFY_CLIENT_SECRET=<secret>

@@ -47,6 +47,7 @@ func TestFailureAndAdoptionCounters(t *testing.T) {
 	m.StoreVersionGuardReject()
 	m.RateLimitReject("queue.vote")
 	m.RoomEvicted()
+	m.RoomPersistedEvicted(3)
 	m.PublishError()
 	m.VoteCast()
 	m.ChatMessageSent()
@@ -65,6 +66,9 @@ func TestFailureAndAdoptionCounters(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(m.RateLimitRejected.WithLabelValues("queue.vote")); got != 1 {
 		t.Fatalf("rate_limit_rejected_total{method=queue.vote} = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.RoomsPersistedEvicted); got != 3 {
+		t.Fatalf("rooms_persisted_evicted_total = %v, want 3", got)
 	}
 	for name, c := range map[string]prometheus.Counter{
 		"rooms_evicted":      m.RoomsEvicted,

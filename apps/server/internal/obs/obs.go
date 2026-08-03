@@ -25,6 +25,7 @@ type Metrics struct {
 	StoreVersionGuardRejected prometheus.Counter
 	RateLimitRejected         *prometheus.CounterVec
 	RoomsEvicted              prometheus.Counter
+	RoomsPersistedEvicted     prometheus.Counter
 	PublishErrors             prometheus.Counter
 
 	// Adoption counters (F1/F4/F8 usage signal).
@@ -76,6 +77,10 @@ func New() *Metrics {
 			Name: "music_jam_rooms_evicted_total",
 			Help: "Total idle rooms evicted from hub memory.",
 		}),
+		RoomsPersistedEvicted: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_rooms_persisted_evicted_total",
+			Help: "Total idle room rows deleted from the persistent store.",
+		}),
 		PublishErrors: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "music_jam_publish_errors_total",
 			Help: "Total room-channel publication failures.",
@@ -98,8 +103,8 @@ func New() *Metrics {
 		}, []string{"public"}),
 	}
 	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
-		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.PublishErrors,
-		m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic)
+		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.RoomsPersistedEvicted,
+		m.PublishErrors, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic)
 	return m
 }
 
@@ -140,6 +145,11 @@ func (m *Metrics) PublishError()    { m.PublishErrors.Inc() }
 func (m *Metrics) VoteCast()        { m.VotesCast.Inc() }
 func (m *Metrics) ChatMessageSent() { m.ChatMessagesSent.Inc() }
 func (m *Metrics) RoomListed()      { m.RoomsListed.Inc() }
+
+// RoomPersistedEvicted counts n room rows deleted by the persistent idle
+// sweep (#169). Named distinctly from the counter field it wraps, matching
+// RoomEvicted/RoomsEvicted.
+func (m *Metrics) RoomPersistedEvicted(n int64) { m.RoomsPersistedEvicted.Add(float64(n)) }
 
 // RoomSetPublic counts one room.set_public toggle by target visibility.
 func (m *Metrics) RoomSetPublic(public bool) {

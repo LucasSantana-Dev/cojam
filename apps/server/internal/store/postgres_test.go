@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
@@ -71,6 +72,9 @@ func TestStoreInterface(t *testing.T) {
 			})
 			t.Run("CopyIsolationQueueMutation", func(t *testing.T) {
 				testCopyIsolationQueueMutation(t, tt.store(t))
+			})
+			t.Run("DeleteIdleRoomsNilProtected", func(t *testing.T) {
+				testDeleteIdleRoomsNilProtected(t, tt.store(t))
 			})
 		})
 	}
@@ -305,6 +309,84 @@ func testCopyIsolationQueueMutation(t *testing.T, store Store) {
 	loaded, _ := store.Load(ctx, "room5")
 	if loaded.Queue[0].Title != "Original" {
 		t.Fatalf("Mutation of queue after Save affected stored state: title = %q, want Original", loaded.Queue[0].Title)
+	}
+}
+
+// #169: a nil protected set is an error on every implementation — the
+// membership gate must be stated explicitly, never defaulted.
+func testDeleteIdleRoomsNilProtected(t *testing.T, store Store) {
+	_, err := store.DeleteIdleRooms(context.Background(), time.Now(), nil)
+	if !errors.Is(err, ErrNilProtected) {
+		t.Fatalf("nil protected set must return ErrNilProtected, got %v", err)
+	}
+}
+
+// TestPostgresDeleteIdleRooms exercises the real delete: rows older than the
+// cutoff are removed, protected room ids survive however old their rows are,
+// rows inside the TTL survive, and the returned count is accurate. Skips if
+// TEST_DATABASE_URL is not set.
+func TestPostgresDeleteIdleRooms(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+
+	ctx := context.Background()
+	pool, err := db.Open(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer pool.Close()
+
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("failed to migrate database: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx, "TRUNCATE TABLE rooms"); err != nil {
+		t.Fatalf("failed to truncate rooms table: %v", err)
+	}
+
+	store := NewPostgres(pool)
+	for _, id := range []string{"old-memberless", "old-protected", "fresh"} {
+		if err := store.Save(ctx, &queue.RoomState{RoomID: id, Queue: []queue.TrackRef{}, Version: 1}); err != nil {
+			t.Fatalf("Save %s: %v", id, err)
+		}
+	}
+	// Age two rows past the TTL; "fresh" keeps a current updated_at.
+	if _, err := pool.Exec(ctx,
+		"UPDATE rooms SET updated_at = now() - interval '2 hours' WHERE room_id IN ('old-memberless', 'old-protected')"); err != nil {
+		t.Fatalf("failed to age rows: %v", err)
+	}
+
+	removed, err := store.DeleteIdleRooms(ctx, time.Now().Add(-time.Hour), map[string]struct{}{"old-protected": {}})
+	if err != nil {
+		t.Fatalf("DeleteIdleRooms: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed = %d, want 1 (only old-memberless)", removed)
+	}
+
+	var remaining int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM rooms").Scan(&remaining); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if remaining != 2 {
+		t.Fatalf("remaining rows = %d, want 2 (old-protected + fresh)", remaining)
+	}
+	if _, err := store.Load(ctx, "old-protected"); err != nil {
+		t.Fatalf("protected room must survive however old its row is: %v", err)
+	}
+	if _, err := store.Load(ctx, "fresh"); err != nil {
+		t.Fatalf("room inside the TTL must survive: %v", err)
+	}
+
+	// An allocated empty set is a legitimate "nothing to protect" answer.
+	removed, err = store.DeleteIdleRooms(ctx, time.Now().Add(-time.Hour), map[string]struct{}{})
+	if err != nil {
+		t.Fatalf("DeleteIdleRooms (empty protected): %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("second sweep removed = %d, want 1 (old-protected now unprotected)", removed)
 	}
 }
 

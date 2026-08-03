@@ -5,12 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
 // ErrNotFound is returned by Load when a room does not exist in the store.
 var ErrNotFound = errors.New("store: room not found")
+
+// ErrNilProtected is returned by DeleteIdleRooms when the protected set is
+// nil. The membership gate is the only thing standing between the sweep and
+// a live room's row (#169), so the caller must state it explicitly; an
+// allocated empty set is valid and means "no rooms currently have members".
+var ErrNilProtected = errors.New("store: DeleteIdleRooms requires an explicit protected set")
 
 // Store persists and retrieves room state.
 type Store interface {
@@ -22,6 +29,12 @@ type Store interface {
 	// Save persists a room's state. The store makes a deep copy so the caller's
 	// subsequent mutations do not affect what is stored.
 	Save(ctx context.Context, state *queue.RoomState) error
+
+	// DeleteIdleRooms removes every room row whose updated_at is older than
+	// cutoff, skipping the room ids in protected, and returns how many rows
+	// it removed (#169). A nil protected set is an error (ErrNilProtected):
+	// the caller must state explicitly which live rooms to protect.
+	DeleteIdleRooms(ctx context.Context, cutoff time.Time, protected map[string]struct{}) (int64, error)
 }
 
 // Memory is an in-memory Store implementation using a RWMutex-guarded map.
@@ -84,4 +97,14 @@ func (m *Memory) Save(ctx context.Context, state *queue.RoomState) error {
 	m.mu.Unlock()
 
 	return nil
+}
+
+// DeleteIdleRooms is a no-op for the in-memory store: there is nothing to
+// reclaim, and the hub's in-memory evictor already handles residency. It
+// still enforces the explicit-protected-set contract.
+func (m *Memory) DeleteIdleRooms(ctx context.Context, cutoff time.Time, protected map[string]struct{}) (int64, error) {
+	if protected == nil {
+		return 0, ErrNilProtected
+	}
+	return 0, nil
 }
