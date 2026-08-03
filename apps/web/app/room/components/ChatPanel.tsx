@@ -71,12 +71,24 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
 
   // Host tombstone (#181): server-first like send — the line disappears when
   // the chat.delete publication round-trips, so a rejection needs no rollback.
+  // deletingIds guards the window until the publication arrives: a second
+  // click would send a duplicate delete and surface "message not found" for
+  // an action that succeeded.
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const handleDelete = async (messageId: string) => {
+    if (deletingIds.has(messageId)) return;
+    setDeletingIds((prev) => new Set(prev).add(messageId));
     setActionError('');
     try {
       await deleteChatMessage(roomId, messageId);
     } catch (err) {
       setActionError(rpcErrorMessage(err, 'Couldn\'t delete that message. Try again.'));
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(messageId);
+        return next;
+      });
     }
   };
 
@@ -133,9 +145,10 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                 <button
                   type="button"
                   onClick={() => handleDelete(m.id)}
+                  disabled={deletingIds.has(m.id)}
                   title="Delete message (host)"
                   aria-label={`Delete message from ${m.name}`}
-                  className="flex-shrink-0 px-1 text-sm leading-none rounded transition-all duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:brightness-125 focus:outline-none"
+                  className="flex-shrink-0 px-1 text-sm leading-none rounded transition-all duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:brightness-125 focus:outline-none disabled:opacity-30"
                   style={{ color: 'var(--color-text-muted)' }}
                 >
                   ×

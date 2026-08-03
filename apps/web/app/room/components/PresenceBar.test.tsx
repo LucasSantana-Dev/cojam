@@ -16,7 +16,7 @@ describe('PresenceBar', () => {
 
   it('disambiguates two members sharing a name by sorted clientId', () => {
     useStore.getState().setMembers([m('b', 'Alice'), m('a', 'Alice')]);
-    render(<PresenceBar />);
+    render(<PresenceBar roomId="r" />);
 
     expect(screen.getByTitle('Alice')).toBeInTheDocument();
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();
@@ -24,7 +24,7 @@ describe('PresenceBar', () => {
 
   it('renders a unique name with no suffix', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
-    render(<PresenceBar />);
+    render(<PresenceBar roomId="r" />);
 
     expect(screen.getByTitle('Alice')).toBeInTheDocument();
     expect(screen.getByTitle('Bob')).toBeInTheDocument();
@@ -33,7 +33,7 @@ describe('PresenceBar', () => {
 
   it('keeps suffixes stable when an unrelated member joins', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
-    render(<PresenceBar />);
+    render(<PresenceBar roomId="r" />);
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();
 
     act(() => useStore.getState().addMember(m('c', 'Carol')));
@@ -44,7 +44,7 @@ describe('PresenceBar', () => {
 
   it('reverts to a bare name after the collision resolves', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
-    render(<PresenceBar />);
+    render(<PresenceBar roomId="r" />);
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();
 
     act(() => useStore.getState().removeMember('b'));
@@ -54,7 +54,7 @@ describe('PresenceBar', () => {
 
   it('does not dedupe by name: two same-named members render two chips and count twice', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
-    render(<PresenceBar />);
+    render(<PresenceBar roomId="r" />);
 
     expect(screen.getByText('2 listening')).toBeInTheDocument();
   });
@@ -65,7 +65,7 @@ describe('PresenceBar', () => {
       m('1', 'Alice'), m('2', 'Alice'), m('3', 'Bo'), m('4', 'Cy'),
       m('5', 'Di'), m('6', 'Ed'), m('7', 'Fi'), m('8', 'Gus'),
     ]);
-    render(<PresenceBar />);
+    render(<PresenceBar roomId="r" />);
 
     expect(screen.getByText('+2')).toBeInTheDocument();
     expect(screen.getByText('8 listening')).toBeInTheDocument();
@@ -76,7 +76,7 @@ describe('PresenceBar', () => {
 
   it('renders the platform indicator from presence data, and none when unreported', () => {
     useStore.getState().setMembers([m('a', 'Alice', 'spotify'), m('b', 'Bob')]);
-    render(<PresenceBar />);
+    render(<PresenceBar roomId="r" />);
 
     expect(screen.getByTitle('spotify')).toBeInTheDocument();
     expect(screen.queryByTitle('apple')).not.toBeInTheDocument();

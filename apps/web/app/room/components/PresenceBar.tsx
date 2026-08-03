@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useStore, kickMember, rpcErrorMessage } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { memberLabel } from '@/lib/nameSuffix';
@@ -21,7 +22,10 @@ export function PresenceBar({ roomId, canControl = false }: PresenceBarProps) {
 
   // Presence entries are per connection (#165): no name dedupe — two listeners
   // that picked the same name are two people, disambiguated by the label suffix.
-  const visible = members.slice(0, 6);
+  // Host moderation (#181): the host can expand the list to reach every
+  // member — the +N overflow otherwise hides kick targets.
+  const [expanded, setExpanded] = useState(false);
+  const visible = canControl && expanded ? members : members.slice(0, 6);
   const hiddenCount = Math.max(0, members.length - 6);
 
   // Don't render if presence is disabled
@@ -81,7 +85,23 @@ export function PresenceBar({ roomId, canControl = false }: PresenceBarProps) {
             </div>
           );
         })}
-        {hiddenCount > 0 && (
+        {hiddenCount > 0 && canControl && (
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            className="avatar-chip animate-fade-in"
+            style={{
+              backgroundColor: 'var(--color-surface-2)',
+              color: 'var(--color-text-secondary)',
+              border: '2px solid var(--color-surface-1)',
+            }}
+            title={expanded ? 'Show fewer members' : 'Show all members (host)'}
+            aria-expanded={expanded}
+          >
+            {expanded ? '−' : `+${hiddenCount}`}
+          </button>
+        )}
+        {hiddenCount > 0 && !canControl && (
           <div
             className="avatar-chip animate-fade-in"
             style={{

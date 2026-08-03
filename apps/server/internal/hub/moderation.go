@@ -101,8 +101,13 @@ func (h *Hub) publishChatDelete(roomID, messageID string) error {
 // OnDisconnect cleanup in main.go (host handoff, guest-vote prune, identity
 // tracking); remaining members see the departure through centrifuge's presence
 // leave event, so no custom publication is needed. The membership drop here is
-// idempotent with Leave running on disconnect.
+// idempotent with Leave running on disconnect. The disconnect is scoped to
+// membership in THIS room: a non-member target is a no-op, so a host cannot
+// kill connections that only share a client id seen elsewhere.
 func (h *Hub) roomKick(roomID, targetClientID string) (json.RawMessage, error) {
+	if !h.IsMember(targetClientID, roomID) {
+		return nil, userErrorf("that member is not in this room")
+	}
 	h.leaveRoom(targetClientID, roomID)
 	if h.node != nil {
 		if c, ok := h.node.Hub().Connections()[targetClientID]; ok {

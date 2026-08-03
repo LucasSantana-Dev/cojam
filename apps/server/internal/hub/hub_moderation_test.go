@@ -183,7 +183,8 @@ func TestModeration_MembershipGate(t *testing.T) {
 // TestRoomKick_DropsMembership pins the kick effect: the target's membership
 // and user-presence are gone (the live presence leave rides centrifuge's
 // disconnect path, which a nil-node test cannot observe). A repeat kick of an
-// already-gone client is a no-op success, not an error.
+// already-gone client is rejected as a user error, and a host cannot kick a
+// client id that is not a member of THEIR room (cross-room disconnect guard).
 func TestRoomKick_DropsMembership(t *testing.T) {
 	h := newModerationTestHub(t, "r", "u-host")
 
@@ -205,9 +206,27 @@ func TestRoomKick_DropsMembership(t *testing.T) {
 		t.Fatal("kicked user must leave room presence")
 	}
 
-	// Repeat kick: idempotent success.
-	if _, err := h.HandleRPC("room.kick", kick, "u-host"); err != nil {
-		t.Fatalf("repeat kick must be a no-op success: %v", err)
+	// Repeat kick: the target is gone, so this is a user error, not a success.
+	if _, err := h.HandleRPC("room.kick", kick, "u-host"); err == nil {
+		t.Fatal("repeat kick of a non-member must be rejected")
+	}
+}
+
+// TestRoomKick_CrossRoomRejected pins the scoping guard: a host of room "r"
+// must not be able to disconnect a client that is only a member of room
+// "other" (CodeRabbit #227).
+func TestRoomKick_CrossRoomRejected(t *testing.T) {
+	h := newModerationTestHub(t, "r", "u-host")
+
+	h.RecordClientUserID("c-user", "u-user")
+	h.Join("c-user", "other") // member of a different room only
+
+	kick := []byte(`{"roomId":"r","clientId":"c-user"}`)
+	if _, err := h.HandleRPC("room.kick", kick, "u-host"); err == nil {
+		t.Fatal("kick of a non-member must be rejected")
+	}
+	if !h.IsMember("c-user", "other") {
+		t.Fatal("cross-room kick must not disturb the other room's membership")
 	}
 }
 
@@ -240,6 +259,8 @@ func TestModeration_RateLimited(t *testing.T) {
 
 	// room.kick draws from the same bucket.
 	h.chatLimiter = newRateLimiter(1, time.Hour, clock.Now)
+	h.RecordClientUserID("c-x", "u-x")
+	h.Join("c-x", "r")
 	kick := []byte(`{"roomId":"r","clientId":"c-x"}`)
 	if _, err := h.HandleRPC("room.kick", kick, "u-host"); err != nil {
 		t.Fatalf("kick within burst: %v", err)
