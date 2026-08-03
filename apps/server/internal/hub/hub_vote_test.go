@@ -93,7 +93,7 @@ func TestQueueVote_BumpsVersion(t *testing.T) {
 	h := NewHub(nil).WithVoting(true)
 	trackID := setupVotingRoom(t, h, "vote_ver")
 
-	room := h.GetOrCreateRoom("vote_ver")
+	room := mustRoom(t, h, "vote_ver")
 	room.mu.Lock()
 	before := room.State.Version
 	room.mu.Unlock()
@@ -194,7 +194,7 @@ func TestQueueVote_PersistsAcrossRestart(t *testing.T) {
 
 	// A fresh hub on the same store reloads the room from disk, not memory.
 	h2 := NewHub(nil).WithStore(s).WithVoting(true)
-	room := h2.GetOrCreateRoom("vote_persist")
+	room := mustRoom(t, h2, "vote_persist")
 	room.mu.Lock()
 	defer room.mu.Unlock()
 	voters := room.State.Votes[trackID]

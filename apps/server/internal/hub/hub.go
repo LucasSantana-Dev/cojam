@@ -528,19 +528,23 @@ func (h *Hub) isTrackOwner(roomID, trackID, userID string) bool {
 
 // GetOrCreateRoom retrieves or creates a room, with read-through to the store.
 // If the room is not in the map, Load from store. On ErrNotFound, create a fresh room
-// and persist it. On other errors, log and create a fresh room (best-effort recovery).
+// and persist it. Any other Load error is treated as transient (DB hiccup): the call
+// fails with a retryable error instead of forking the room at version 0 (#194) — a
+// fresh v0 room's saves would be silently dropped by the store's version-guarded
+// upsert until the in-memory version overtook the stored one, diverging live state
+// from persistence.
 //
 // The store IO runs outside h.mu (never hold the global lock across IO), so
 // concurrent creators for the same roomID race: the final insert re-checks
 // under a single lock and the loser discards its instance. Every caller must
 // share one *Room per roomID; a losing caller keeping its own instance would
 // split room.mu and orphan its mutations (never published, never persisted).
-func (h *Hub) GetOrCreateRoom(roomID string) *Room {
+func (h *Hub) GetOrCreateRoom(roomID string) (*Room, error) {
 	h.mu.Lock()
 	if room, exists := h.rooms[roomID]; exists {
 		room.touch()
 		h.mu.Unlock()
-		return room
+		return room, nil
 	}
 	h.mu.Unlock()
 
@@ -549,12 +553,18 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	defer cancel()
 	state, err := h.store.Load(ctx, roomID)
 
-	// If not found or error, create fresh
-	if err != nil || state == nil {
-		if err != nil && err != store.ErrNotFound && h.logger != nil {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		if h.logger != nil {
 			h.logger.Error("store_load_failed", "room_id", roomID, "err", err.Error())
 		}
+		if h.metrics != nil {
+			h.metrics.StoreError("load")
+		}
+		return nil, userErrorf("could not load the room, please retry")
+	}
 
+	// If not found, create fresh
+	if state == nil {
 		state = &queue.RoomState{
 			RoomID:    roomID,
 			Queue:     []queue.TrackRef{},
@@ -563,8 +573,13 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 		}
 
 		// Persist the fresh room
-		if err := h.store.Save(ctx, state); err != nil && h.logger != nil {
-			h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+		if err := h.store.Save(ctx, state); err != nil {
+			if h.logger != nil {
+				h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+			}
+			if h.metrics != nil {
+				h.metrics.StoreError("save")
+			}
 		}
 	}
 
@@ -574,12 +589,12 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 	defer h.mu.Unlock()
 	if room, exists := h.rooms[roomID]; exists {
 		room.touch()
-		return room
+		return room, nil
 	}
 	room := &Room{State: state}
 	room.touch()
 	h.rooms[roomID] = room
-	return room
+	return room, nil
 }
 
 // WithRoomIdleTTL sets how long a room with no connected members may stay
@@ -642,6 +657,9 @@ func (h *Hub) evictIdleRooms(now time.Time) {
 		if h.logger != nil {
 			h.logger.Info("room_evicted", "room_id", roomID)
 		}
+		if h.metrics != nil {
+			h.metrics.RoomEvicted()
+		}
 	}
 }
 
@@ -664,7 +682,10 @@ func (h *Hub) hasMembersLocked(roomID string) bool {
 // so the save + broadcast are skipped. The state is deep-copied before releasing the
 // lock to prevent data races. Store errors are logged but non-fatal to the result.
 func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMessage, error) {
-	room := h.GetOrCreateRoom(roomID)
+	room, err := h.GetOrCreateRoom(roomID)
+	if err != nil {
+		return nil, err
+	}
 
 	room.mu.Lock()
 	versionBefore := room.State.Version
@@ -692,8 +713,13 @@ func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMe
 		} else {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := h.store.Save(ctx, &stateCopy); err != nil && h.logger != nil {
-				h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+			if err := h.store.Save(ctx, &stateCopy); err != nil {
+				if h.logger != nil {
+					h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+				}
+				if h.metrics != nil {
+					h.metrics.StoreError("save")
+				}
 			}
 		}
 
@@ -714,9 +740,15 @@ func (h *Hub) publish(roomID string, state json.RawMessage) error {
 		"state": state,
 	})
 	if err != nil {
+		if h.metrics != nil {
+			h.metrics.PublishError()
+		}
 		return err
 	}
 	_, err = h.node.Publish("room:"+roomID, payload)
+	if err != nil && h.metrics != nil {
+		h.metrics.PublishError()
+	}
 	return err
 }
 
@@ -787,6 +819,9 @@ func (h *Hub) checkFanoutLimit(method, rlKey string) error {
 		return nil
 	}
 	if !h.fanoutLimiter.allow(rlKey) {
+		if h.metrics != nil {
+			h.metrics.RateLimitReject(method)
+		}
 		return userErrorf("too many requests, slow down")
 	}
 	return nil
@@ -799,6 +834,9 @@ func (h *Hub) checkVoteLimit(method, rlKey string) error {
 		return nil
 	}
 	if !h.voteLimiter.allow(rlKey) {
+		if h.metrics != nil {
+			h.metrics.RateLimitReject(method)
+		}
 		return userErrorf("too many requests, slow down")
 	}
 	return nil
@@ -811,6 +849,9 @@ func (h *Hub) checkListLimit(method, rlKey string) error {
 		return nil
 	}
 	if !h.listLimiter.allow(rlKey) {
+		if h.metrics != nil {
+			h.metrics.RateLimitReject(method)
+		}
 		return userErrorf("too many requests, slow down")
 	}
 	return nil
@@ -985,7 +1026,7 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 		// The voter key is the rate-limit key computed at the transport
 		// boundary ("user:<userID>" or "client:<clientID>"): the server stamps
 		// identity, clients never send who they are.
-		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			_, err := s.ToggleVote(req.TrackID, rlKey)
 			if errors.Is(err, queue.ErrTrackNotFound) {
 				return userErrorf("track not found")
@@ -995,6 +1036,10 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 			}
 			return err
 		})
+		if err == nil && h.metrics != nil {
+			h.metrics.VoteCast()
+		}
+		return res, err
 
 	case "track.search":
 		var req struct {
@@ -1181,7 +1226,10 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 
 		// After successful mutate, enrich exactly the tracks that were added
 		if mutErr == nil && len(addedIDs) > 0 {
-			room := h.GetOrCreateRoom(req.RoomID)
+			room, err := h.GetOrCreateRoom(req.RoomID)
+			if err != nil {
+				return res, mutErr
+			}
 			room.mu.Lock()
 			byID := make(map[string]queue.TrackRef, len(room.State.Queue))
 			for _, t := range room.State.Queue {
@@ -1249,7 +1297,7 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 			}
 			name = &trimmed
 		}
-		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			s.Public = req.Public
 			if name != nil {
 				s.Name = *name
@@ -1257,12 +1305,20 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 			s.Version++ // directory flag changed: bump so version-guarded clients accept it
 			return nil
 		})
+		if err == nil && h.metrics != nil {
+			h.metrics.RoomSetPublic(req.Public)
+		}
+		return res, err
 
 	case "room.list":
 		if !h.publicRoomsEnabled {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
-		return h.listPublicRooms()
+		res, err := h.listPublicRooms()
+		if err == nil && h.metrics != nil {
+			h.metrics.RoomListed()
+		}
+		return res, err
 
 	case "transport.play":
 		if !h.syncEnabled {

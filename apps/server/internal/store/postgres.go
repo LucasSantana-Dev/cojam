@@ -16,6 +16,10 @@ import (
 // does not affect what a subsequent Load returns.
 type Postgres struct {
 	pool *pgxpool.Pool
+
+	// onVersionGuardReject, when set, is invoked each time the version-guarded
+	// upsert drops a stale write (RowsAffected == 0). Observability seam (#194).
+	onVersionGuardReject func()
 }
 
 // NewPostgres creates a new PostgreSQL store backed by the given connection pool.
@@ -23,6 +27,15 @@ func NewPostgres(pool *pgxpool.Pool) *Postgres {
 	return &Postgres{
 		pool: pool,
 	}
+}
+
+// WithVersionGuardObserver registers a callback invoked every time the
+// version guard rejects a save (a stale write affecting zero rows). The save
+// still returns nil — the rejection is intentional (RFC-0001) — but it is no
+// longer invisible.
+func (p *Postgres) WithVersionGuardObserver(fn func()) *Postgres {
+	p.onVersionGuardReject = fn
+	return p
 }
 
 // Load retrieves a room by ID, returning a deep copy (via marshal/unmarshal).
@@ -74,9 +87,9 @@ func (p *Postgres) Save(ctx context.Context, state *queue.RoomState) error {
 	// out-of-order saves from concurrent mutations are expected, and the older one
 	// must be dropped silently rather than surfaced as a failure. Correctness does
 	// not depend on which save wins; the row always converges to the highest
-	// version, so no data is lost. If a caller ever needs to observe a rejection,
-	// the command tag's RowsAffected is the seam to expose it.
-	_, err = p.pool.Exec(ctx, `
+	// version, so no data is lost. The drop is still observed: the command tag's
+	// RowsAffected is the seam, surfaced via WithVersionGuardObserver (#194).
+	tag, err := p.pool.Exec(ctx, `
 		INSERT INTO rooms (room_id, state, version, updated_at)
 		VALUES ($1, $2, $3, now())
 		ON CONFLICT (room_id) DO UPDATE
@@ -86,6 +99,12 @@ func (p *Postgres) Save(ctx context.Context, state *queue.RoomState) error {
 
 	if err != nil {
 		return fmt.Errorf("failed to save room %s: %w", state.RoomID, err)
+	}
+
+	// Zero rows affected means the conflict guard rejected the write (an INSERT
+	// always affects one). Notify the observer without failing the save.
+	if tag.RowsAffected() == 0 && p.onVersionGuardReject != nil {
+		p.onVersionGuardReject()
 	}
 
 	return nil
