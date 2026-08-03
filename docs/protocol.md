@@ -157,6 +157,20 @@ check happens in dispatch: a non-host attempt is rejected with a UserError
 rate limit as `chat.send`. `chat.delete` shares the `FEATURE_ROOM_CHAT` gate
 (`ErrorMethodNotFound` when chat is off); `room.kick` has no feature flag.
 
+The server also publishes **system messages** (#205): `chat.message`
+publications with `kind: "system"` and no member identity (`name`/`userId`
+empty) — `Now playing: <title> — <artist>` when `now_playing.advance` actually
+moves to a next track (not on the idempotent no-op, not when the queue ends),
+and `<name> joined` / `<name> left` on membership enrollment/disconnect (the
+name is the connect-time display name, falling back to `Someone`). System
+messages share the ring and the ephemeral guarantees (no `version` bump, no
+`store.Save`) and never draw from the chat rate limiter — they are
+server-generated, bounded by the ring and by the events themselves. The first
+join of a brand-new room is silent: the room exists only once the `room.join`
+RPC creates it. Clients render system rows distinctly (mono, muted, no
+avatar).
+
+
 ### Roles & authorization (RFC-0005, behind `FEATURE_ROOM_AUTH`)
 
 When `FEATURE_ROOM_AUTH` is on, connections present a server-signed token (anonymous stable
@@ -366,6 +380,7 @@ type ChatMessage = {       // F8: ephemeral, in-memory only; never in RoomState
   name: string;            // sender display name (client-supplied, capped at 60)
   userId?: string;         // server-stamped connection identity; empty when room auth is off
   text: string;            // trimmed, 1..300 chars; redacted ("") once deleted
+  kind?: 'system';         // #205: server announcement (advance, join/leave); absent on user messages
   sentAtServerMs: number;  // server clock (unix ms)
   deleted?: boolean;       // host tombstone (chat.delete, #181); clients must not render it
 };

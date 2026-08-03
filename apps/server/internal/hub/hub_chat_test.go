@@ -341,3 +341,175 @@ func TestChatSend_MultiByteTruncation(t *testing.T) {
 		}
 	}
 }
+
+// chatHistoryTexts fetches the ring and flattens it to (kind, text) pairs for
+// compact assertions on system-event content.
+func chatHistoryKindsTexts(t *testing.T, h *Hub, roomID string) []ChatMessage {
+	t.Helper()
+	res, err := h.HandleRPC("chat.history", []byte(fmt.Sprintf(`{"roomId":%q}`, roomID)), "")
+	if err != nil {
+		t.Fatalf("chat.history: %v", err)
+	}
+	var out struct {
+		Messages []ChatMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(res, &out); err != nil {
+		t.Fatalf("unmarshal history: %v", err)
+	}
+	return out.Messages
+}
+
+// TestChatSystem_AdvanceAnnouncesOnce pins the #205 acceptance criterion: a
+// real advance appends exactly one kind=system message naming the new track,
+// the announcement itself bumps no RoomState.Version and performs no
+// store.Save beyond the advance's own write-through, and the idempotent
+// re-advance adds nothing.
+func TestChatSystem_AdvanceAnnouncesOnce(t *testing.T) {
+	st := &saveCountingStore{inner: store.NewMemory()}
+	h := NewHub(nil).WithStore(st).WithChat(true)
+	h.chatLimiter = nil
+
+	joinRes, err := h.HandleRPC("room.join", []byte(`{"roomId":"sys","name":"ana"}`), "")
+	if err != nil {
+		t.Fatalf("room.join: %v", err)
+	}
+	var joined queue.RoomState
+	if err := json.Unmarshal(joinRes, &joined); err != nil {
+		t.Fatalf("unmarshal join: %v", err)
+	}
+
+	add := func(title, artist string) string {
+		t.Helper()
+		payload := fmt.Sprintf(`{"roomId":"sys","track":{"title":%q,"artist":%q,"sources":{},"addedBy":"ana"}}`, title, artist)
+		res, err := h.HandleRPC("queue.add", []byte(payload), "")
+		if err != nil {
+			t.Fatalf("queue.add %s: %v", title, err)
+		}
+		var s queue.RoomState
+		if err := json.Unmarshal(res, &s); err != nil {
+			t.Fatalf("unmarshal add: %v", err)
+		}
+		return s.Queue[len(s.Queue)-1].ID
+	}
+	firstID := add("Song One", "A")
+	add("Song Two", "B")
+
+	savesBefore := st.saveCount()
+	advRes, err := h.HandleRPC("now_playing.advance",
+		[]byte(fmt.Sprintf(`{"roomId":"sys","afterId":%q}`, firstID)), "")
+	if err != nil {
+		t.Fatalf("now_playing.advance: %v", err)
+	}
+	var advanced queue.RoomState
+	if err := json.Unmarshal(advRes, &advanced); err != nil {
+		t.Fatalf("unmarshal advance: %v", err)
+	}
+
+	// Exactly one save from the advance's own write-through; the system
+	// message added none.
+	if got := st.saveCount(); got != savesBefore+1 {
+		t.Fatalf("advance saves = %d, want %d (advance only, system message must not save)", got, savesBefore+1)
+	}
+
+	msgs := chatHistoryKindsTexts(t, h, "sys")
+	if len(msgs) != 1 {
+		t.Fatalf("history len = %d, want exactly 1 system message: %+v", len(msgs), msgs)
+	}
+	m := msgs[0]
+	if m.Kind != ChatKindSystem {
+		t.Fatalf("kind = %q, want %q", m.Kind, ChatKindSystem)
+	}
+	if m.Text != "Now playing: Song Two — B" {
+		t.Fatalf("text = %q, want %q", m.Text, "Now playing: Song Two — B")
+	}
+	if m.Name != "" || m.UserID != "" {
+		t.Fatalf("system message must carry no member identity: name=%q userId=%q", m.Name, m.UserID)
+	}
+
+	// The announcement bumps no Version: a rejoin returns the same version the
+	// advance produced.
+	rejoinRes, err := h.HandleRPC("room.join", []byte(`{"roomId":"sys","name":"ana"}`), "")
+	if err != nil {
+		t.Fatalf("rejoin: %v", err)
+	}
+	var rejoined queue.RoomState
+	if err := json.Unmarshal(rejoinRes, &rejoined); err != nil {
+		t.Fatalf("unmarshal rejoin: %v", err)
+	}
+	if rejoined.Version != advanced.Version {
+		t.Fatalf("system message bumped Version: advance %d, after %d", advanced.Version, rejoined.Version)
+	}
+
+	// Idempotent re-advance (stale afterId) is a no-op: no second message, no
+	// further save.
+	if _, err := h.HandleRPC("now_playing.advance",
+		[]byte(fmt.Sprintf(`{"roomId":"sys","afterId":%q}`, firstID)), ""); err != nil {
+		t.Fatalf("idempotent advance: %v", err)
+	}
+	if got := st.saveCount(); got != savesBefore+1 {
+		t.Fatalf("idempotent advance saved: saves = %d, want %d", got, savesBefore+1)
+	}
+	if msgs := chatHistoryKindsTexts(t, h, "sys"); len(msgs) != 1 {
+		t.Fatalf("idempotent advance added a message: history len = %d, want 1", len(msgs))
+	}
+}
+
+// TestChatSystem_JoinLeaveAnnounces pins membership announcements (#205): a
+// new enrollment says "joined" once (re-join while still enrolled is silent),
+// disconnect says "left", and the name is the server-recorded connect-time
+// display name, never client params.
+func TestChatSystem_JoinLeaveAnnounces(t *testing.T) {
+	h := newChatTestHub(t)
+
+	// Create the room via the RPC path (HandleRPC is transport-independent and
+	// does not enroll, so no announcement fires for the creator here).
+	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"jl","name":"host"}`), ""); err != nil {
+		t.Fatalf("room.join: %v", err)
+	}
+
+	h.RecordClientName("c-bia", "Bia")
+	h.Join("c-bia", "jl")
+	h.Join("c-bia", "jl") // already enrolled: must stay silent
+
+	h.Join("c-anon", "jl") // no connect-time name recorded
+
+	h.Leave("c-bia")
+	h.Leave("c-ghost") // never enrolled: must stay silent
+
+	msgs := chatHistoryKindsTexts(t, h, "jl")
+	want := []string{"Bia joined", "Someone joined", "Bia left"}
+	if len(msgs) != len(want) {
+		t.Fatalf("history len = %d, want %d: %+v", len(msgs), len(want), msgs)
+	}
+	for i, w := range want {
+		if msgs[i].Kind != ChatKindSystem {
+			t.Fatalf("msg %d kind = %q, want system", i, msgs[i].Kind)
+		}
+		if msgs[i].Text != w {
+			t.Fatalf("msg %d text = %q, want %q", i, msgs[i].Text, w)
+		}
+	}
+}
+
+// TestChatSystem_DisabledStaysSilent pins the flag gate: with chat off,
+// membership changes and advances produce no ring entries (and chat.history
+// stays MethodNotFound).
+func TestChatSystem_DisabledStaysSilent(t *testing.T) {
+	h := NewHub(nil)
+
+	h.RecordClientName("c1", "Ana")
+	h.Join("c1", "off")
+	h.Leave("c1")
+	h.publishSystemChat("off", "Now playing: X — Y")
+
+	room, err := h.GetOrCreateRoom("off")
+	if err != nil {
+		t.Fatalf("GetOrCreateRoom: %v", err)
+	}
+	room.mu.Lock()
+	n := len(room.chat)
+	room.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("chat disabled but ring has %d messages", n)
+	}
+}

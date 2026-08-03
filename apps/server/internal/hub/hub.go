@@ -475,12 +475,16 @@ func (h *Hub) launchEnrich(fn func()) {
 // zero join time and selectSuccessor would treat it as the oldest member.
 // A rejoin resets the timestamp: seniority measures continuous presence.
 // When the room reaches two concurrent members for the first time, Join emits
-// the first-non-creator-member signal (structured log + metric, #180).
+// the first-non-creator-member signal (structured log + metric, #180). A
+// brand-new enrollment also announces the join in chat (#205); the
+// announcement runs after memberMu is released (announcements take
+// h.mu/room.mu, which nest the other way).
 func (h *Hub) Join(clientID, roomID string) {
 	if clientID == "" || roomID == "" {
 		return
 	}
 	h.memberMu.Lock()
+	_, alreadyMember := h.members[clientID][roomID]
 	if h.members[clientID] == nil {
 		h.members[clientID] = make(map[string]struct{})
 	}
@@ -504,6 +508,9 @@ func (h *Hub) Join(clientID, roomID string) {
 
 	if memberCount >= 2 {
 		h.observeFirstShared(roomID)
+	}
+	if !alreadyMember {
+		h.announceMembership(roomID, h.displayName(clientID), "joined")
 	}
 }
 
@@ -530,17 +537,29 @@ func (h *Hub) observeFirstShared(roomID string) {
 	}
 }
 
-// Leave drops all of a client's memberships (called on disconnect).
+// Leave drops all of a client's memberships (called on disconnect) and
+// announces the departure in each room's chat (#205). Runs before
+// RemoveClientUserID on the disconnect path, so the display name is still
+// available here.
 func (h *Hub) Leave(clientID string) {
 	h.memberMu.Lock()
-	defer h.memberMu.Unlock()
+	rooms := make([]string, 0, len(h.members[clientID]))
 	for roomID := range h.members[clientID] {
 		delete(h.roomMembers[roomID], clientID)
 		if len(h.roomMembers[roomID]) == 0 {
 			delete(h.roomMembers, roomID)
 		}
+		rooms = append(rooms, roomID)
 	}
 	delete(h.members, clientID)
+	h.memberMu.Unlock()
+
+	if len(rooms) > 0 {
+		name := h.displayName(clientID)
+		for _, roomID := range rooms {
+			h.announceMembership(roomID, name, "left")
+		}
+	}
 }
 
 // leaveRoom drops one client's membership in one room (room.kick, #181);
@@ -1370,6 +1389,9 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		// Capture seed for potential radio refill (if queue runs dry)
 		var refillSeed *queue.TrackRef
 
+		// Capture the newly playing track for the chat announcement (#205).
+		var announced *queue.TrackRef
+
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			// Store old NowPlayingID to detect if advance actually changed state
 			oldNowPlayingID := s.NowPlayingID
@@ -1388,12 +1410,31 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 				refillSeed = &seed
 			}
 
+			// A real advance to a next track (not the idempotent no-op, not
+			// queue-end) announces the change in chat. Copy the value for the
+			// same racing reason as refillSeed above.
+			if s.NowPlayingID != oldNowPlayingID && s.NowPlayingID != "" {
+				for i := range s.Queue {
+					if s.Queue[i].ID == s.NowPlayingID {
+						track := s.Queue[i]
+						announced = &track
+						break
+					}
+				}
+			}
+
 			return nil
 		})
 
 		// After successful mutate, trigger refill if needed (async, outside the lock)
 		if err == nil && refillSeed != nil && h.similar != nil {
 			go h.refillRadio(req.RoomID, refillSeed)
+		}
+
+		// The system message rides chat, not RoomState: no Version bump, no
+		// store.Save beyond the advance's own write-through (#205).
+		if err == nil && announced != nil {
+			h.publishSystemChat(req.RoomID, fmt.Sprintf("Now playing: %s — %s", announced.Title, announced.Artist))
 		}
 
 		return res, err

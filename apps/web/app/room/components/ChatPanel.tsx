@@ -120,6 +120,18 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
       ) : (
         <div ref={listRef} onScroll={handleScroll} className="space-y-3 max-h-80 overflow-y-auto pr-2" aria-live="polite">
           {chat.map((m) => (
+            m.kind === 'system' ? (
+              // Server announcements (#205): no avatar/identity, mono + muted
+              // so track changes and join/leave read as room events, not chat.
+              <div key={m.id} data-testid="chat-system-message" className="flex items-baseline gap-2">
+                <p className="flex-1 min-w-0 font-mono text-xs break-words" style={{ color: 'var(--color-text-muted)' }}>
+                  {m.text}
+                </p>
+                <span className="font-mono text-xs flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                  {chatTime(m.sentAtServerMs)}
+                </span>
+              </div>
+            ) : (
             <div key={m.id} data-testid="chat-message" className="flex items-start gap-2 group">
               <span
                 className="avatar-chip flex-shrink-0"
@@ -155,6 +167,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                 </button>
               )}
             </div>
+            )
           ))}
         </div>
       )}

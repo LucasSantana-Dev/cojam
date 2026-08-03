@@ -80,6 +80,24 @@ describe('ChatPanel', () => {
     expect(rpcMocks.sendChat).not.toHaveBeenCalled();
   });
 
+  it('renders system messages distinctly: mono, muted, no avatar or name', () => {
+    const systemMsg: ChatMessage = {
+      ...msg('s1', 'Now playing: Song Two — B', ''),
+      kind: 'system',
+    };
+    useStore.setState({ chat: [msg('m1', 'hello room'), systemMsg] });
+    render(<ChatPanel roomId="r1" />);
+
+    const row = screen.getByTestId('chat-system-message');
+    expect(row).toHaveTextContent('Now playing: Song Two — B');
+    // Mono font marks the row as a room event, not a member's line.
+    expect(row.querySelector('.font-mono')).not.toBeNull();
+    // No avatar chip and no sender-name header for system rows.
+    expect(row.querySelector('.avatar-chip')).toBeNull();
+    // User rows keep the regular rendering alongside.
+    expect(screen.getByTestId('chat-message')).toHaveTextContent('hello room');
+  });
+
   it('shows the server error inline on rejection and keeps the draft', async () => {
     rpcMocks.sendChat.mockRejectedValueOnce({ code: 400, message: 'too many requests, slow down' });
     render(<ChatPanel roomId="r1" />);
