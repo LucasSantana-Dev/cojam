@@ -2,6 +2,7 @@ package hub
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -47,6 +48,11 @@ var chatMethods = map[string]bool{
 	"room.kick":   true,
 }
 
+// ChatKindSystem marks a server-generated announcement (track change, member
+// join/leave) rather than a member's chat line. User messages leave Kind
+// empty so the wire shape is unchanged for them.
+const ChatKindSystem = "system"
+
 // ChatMessage is one room chat line. userID is always server-stamped from the
 // connection identity, never trusted from params (the AddedByUserID pattern).
 // Deleted marks a host tombstone (chat.delete, #181): the ring slot is kept
@@ -57,6 +63,7 @@ type ChatMessage struct {
 	Name           string `json:"name"`
 	UserID         string `json:"userId,omitempty"`
 	Text           string `json:"text"`
+	Kind           string `json:"kind,omitempty"`
 	SentAtServerMs int64  `json:"sentAtServerMs"`
 	Deleted        bool   `json:"deleted,omitempty"`
 }
@@ -193,4 +200,50 @@ func (h *Hub) chatHistoryRPC(roomID string) (json.RawMessage, error) {
 	msgs := room.chatHistory()
 	room.mu.Unlock()
 	return json.Marshal(map[string][]ChatMessage{"messages": msgs})
+}
+
+// publishSystemChat appends and publishes a server-generated system message
+// (#205): track changes on now_playing.advance and member join/leave. System
+// messages are chat like any other line — same ring, same publication — so
+// they inherit the ephemeral guarantees (no RoomState.Version bump, no
+// store.Save). They never draw from the chat rate limiter: they are
+// server-generated, bounded by the ring (maxChatHistory) and by the events
+// themselves (one per advance/enrollment). No-op when chat is disabled or the
+// room is not in memory: a departing member must not resurrect an evicted
+// room via GetOrCreateRoom, and the first join of a brand-new room is silent
+// by design (nobody is there to hear it; the room exists only after the
+// room.join RPC creates it).
+func (h *Hub) publishSystemChat(roomID, text string) {
+	if !h.chatEnabled {
+		return
+	}
+	h.mu.RLock()
+	room, ok := h.rooms[roomID]
+	h.mu.RUnlock()
+	if !ok {
+		return
+	}
+	msg := ChatMessage{
+		ID:             uuid.New().String(),
+		RoomID:         roomID,
+		Text:           text,
+		Kind:           ChatKindSystem,
+		SentAtServerMs: time.Now().UnixMilli(),
+	}
+	room.mu.Lock()
+	room.appendChat(msg)
+	room.mu.Unlock()
+	if err := h.publishChat(roomID, msg); err != nil && h.logger != nil {
+		h.logger.Info("system_chat_publish_failed", "room_id", roomID, "err", err.Error())
+	}
+}
+
+// announceMembership publishes the join/leave system line for a membership
+// change (#205). Names come from the connect-time display name
+// (RecordClientName), the same server-owned identity stamped on queue.add.
+func (h *Hub) announceMembership(roomID, name, verb string) {
+	if name == "" {
+		name = "Someone"
+	}
+	h.publishSystemChat(roomID, fmt.Sprintf("%s %s", name, verb))
 }

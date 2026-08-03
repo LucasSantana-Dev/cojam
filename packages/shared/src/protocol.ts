@@ -78,6 +78,10 @@ export type ChatMessage = {
   name: string;            // sender display name (client-supplied, capped; like TrackRef.addedBy)
   userId?: string;         // server-stamped connection identity; empty when room auth is off
   text: string;            // trimmed, 1..300 chars; redacted ("") once deleted
+  // 'system' marks a server-generated announcement (#205: track change on
+  // now_playing.advance, member join/leave) — rendered distinctly, carries no
+  // member identity. Absent on user messages.
+  kind?: 'system';
   sentAtServerMs: number;  // server clock, like TransportState.updatedAtServerMs
   // Tombstone set by chat.delete (host moderation, #181): the ring slot is
   // kept (history is never rewritten) but clients must not render the entry.
