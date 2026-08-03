@@ -58,6 +58,10 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   const markVoted = useStore((s) => s.markVoted);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [undoTimers, setUndoTimers] = useState<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Authoritative timer handles, mutated synchronously. React state mirrors
+  // this for rendering only; cancellation paths must not depend on a queued
+  // updater flushing before the 4s timer fires (CodeRabbit #230).
+  const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [actionError, setActionError] = useState('');
   // Queue voting (F4): hydration-safe runtime flag (RFC-0006); the build-time
   // value is the SSR snapshot, the /env.js runtime map flips it post-mount.
@@ -83,10 +87,12 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     return useStore.subscribe((s, prev) => {
       const id = s.state?.nowPlayingId;
       if (!id || id === prev.state?.nowPlayingId) return;
+      const timer = timersRef.current.get(id);
+      if (!timer) return;
+      clearTimeout(timer);
+      timersRef.current.delete(id);
       setUndoTimers((timers) => {
-        const timer = timers.get(id);
-        if (!timer) return timers;
-        clearTimeout(timer);
+        if (!timers.has(id)) return timers;
         const next = new Map(timers);
         next.delete(id);
         return next;
@@ -125,6 +131,23 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     setActionError('');
     setRemovingIds((prev) => new Set([...prev, trackId]));
     const timer = setTimeout(async () => {
+      // Last-moment guard against the now-playing race: even if the store
+      // subscription's cancellation has not run, never remove the track that
+      // is currently playing.
+      if (useStore.getState().state?.nowPlayingId === trackId) {
+        timersRef.current.delete(trackId);
+        setRemovingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(trackId);
+          return next;
+        });
+        setUndoTimers((prev) => {
+          const next = new Map(prev);
+          next.delete(trackId);
+          return next;
+        });
+        return;
+      }
       try {
         await queueRemove(roomId, trackId);
       } catch (error) {
@@ -137,6 +160,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
           setActionError(rpcErrorMessage(error, 'Couldn\'t remove that track. Try again.'));
         }
       } finally {
+        timersRef.current.delete(trackId);
         setRemovingIds((prev) => {
           const next = new Set(prev);
           next.delete(trackId);
@@ -150,14 +174,16 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
       }
     }, 4000);
 
+    timersRef.current.set(trackId, timer);
     setUndoTimers((prev) => new Map(prev).set(trackId, timer));
   };
 
   const handleUndo = (trackId: string) => {
-    const timer = undoTimers.get(trackId);
+    const timer = timersRef.current.get(trackId) ?? undoTimers.get(trackId);
     if (timer) {
       clearTimeout(timer);
     }
+    timersRef.current.delete(trackId);
     setRemovingIds((prev) => {
       const next = new Set(prev);
       next.delete(trackId);
