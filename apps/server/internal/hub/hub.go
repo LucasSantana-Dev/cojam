@@ -205,6 +205,12 @@ type Room struct {
 	// whose activity is older than the TTL. Atomic: reads and writes happen
 	// under different locks (h.mu, room.mu) depending on the caller.
 	lastActivityUnix atomic.Int64
+
+	// sharedObserved flips once, the first time the room reaches two concurrent
+	// members — the first non-creator member under the link-is-capability trust
+	// model (#180); Join emits the log/metric on the flip. The flag dies with
+	// the room on idle eviction, so a re-loaded room may emit again.
+	sharedObserved atomic.Bool
 }
 
 // touch marks the room active now, resetting the idle-eviction clock.
@@ -465,12 +471,13 @@ func (h *Hub) launchEnrich(fn func()) {
 // a client that subscribes without sending room.join would otherwise have a
 // zero join time and selectSuccessor would treat it as the oldest member.
 // A rejoin resets the timestamp: seniority measures continuous presence.
+// When the room reaches two concurrent members for the first time, Join emits
+// the first-non-creator-member signal (structured log + metric, #180).
 func (h *Hub) Join(clientID, roomID string) {
 	if clientID == "" || roomID == "" {
 		return
 	}
 	h.memberMu.Lock()
-	defer h.memberMu.Unlock()
 	if h.members[clientID] == nil {
 		h.members[clientID] = make(map[string]struct{})
 	}
@@ -488,6 +495,35 @@ func (h *Hub) Join(clientID, roomID string) {
 			h.memberJoinTimes[roomID] = make(map[string]int64)
 		}
 		h.memberJoinTimes[roomID][userID] = time.Now().UnixNano()
+	}
+	memberCount := len(h.roomMembers[roomID])
+	h.memberMu.Unlock()
+
+	if memberCount >= 2 {
+		h.observeFirstShared(roomID)
+	}
+}
+
+// observeFirstShared emits the "room became shared" signal exactly once per
+// room instance: the first time a second concurrent member joins (the first
+// non-creator member under the link-is-capability trust model, #180). The flag
+// lives on the Room, so it survives member churn but resets if the room is
+// evicted and re-loaded. Nil-safe when observability is not wired (tests).
+func (h *Hub) observeFirstShared(roomID string) {
+	h.mu.RLock()
+	room, exists := h.rooms[roomID]
+	h.mu.RUnlock()
+	if !exists {
+		return // room not loaded yet; the room.join Join re-fires the check
+	}
+	if !room.sharedObserved.CompareAndSwap(false, true) {
+		return
+	}
+	if h.logger != nil {
+		h.logger.Info("room_first_non_creator_member", "room_id", roomID)
+	}
+	if h.metrics != nil {
+		h.metrics.RoomShared()
 	}
 }
 

@@ -33,6 +33,10 @@ type Metrics struct {
 	ChatMessagesSent prometheus.Counter
 	RoomsListed      prometheus.Counter
 	RoomsSetPublic   *prometheus.CounterVec
+
+	// RoomsShared counts rooms that gained their first non-creator member
+	// (second concurrent member) — the link-sharing adoption signal (#180).
+	RoomsShared prometheus.Counter
 }
 
 func New() *Metrics {
@@ -101,10 +105,15 @@ func New() *Metrics {
 			Name: "music_jam_rooms_set_public_total",
 			Help: "Total room.set_public toggles applied, by target visibility.",
 		}, []string{"public"}),
+		RoomsShared: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_rooms_shared_total",
+			Help: "Total rooms that gained their first non-creator member.",
+		}),
 	}
 	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
 		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.RoomsPersistedEvicted,
-		m.PublishErrors, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic)
+		m.PublishErrors, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared)
+
 	return m
 }
 
@@ -150,6 +159,9 @@ func (m *Metrics) RoomListed()      { m.RoomsListed.Inc() }
 // sweep (#169). Named distinctly from the counter field it wraps, matching
 // RoomEvicted/RoomsEvicted.
 func (m *Metrics) RoomPersistedEvicted(n int64) { m.RoomsPersistedEvicted.Add(float64(n)) }
+
+// RoomShared counts a room gaining its first non-creator member (#180).
+func (m *Metrics) RoomShared() { m.RoomsShared.Inc() }
 
 // RoomSetPublic counts one room.set_public toggle by target visibility.
 func (m *Metrics) RoomSetPublic(public bool) {

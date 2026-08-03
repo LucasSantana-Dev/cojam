@@ -9,11 +9,7 @@ import { RoomShowcase } from '@/app/components/RoomShowcase';
 import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
 import { LogoMark } from '@/app/components/Logo';
 import { supabaseEnabled } from '@/lib/supabase';
-
-
-function generateRoomId() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
-}
+import { generateRoomId } from '@/lib/roomId';
 
 // Protocol commands cycled in the HUD readout. The product is a protocol
 // (RoomState, RPC dispatch, version bumps) — this is its voice.

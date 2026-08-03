@@ -352,4 +352,16 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
+### Trust model (#180)
+
+Room access is a **link capability**: subscribing to `room:<id>` *is* the access grant — there is deliberately no separate join-approval step. Mutation rights follow membership (subscribe or `room.join`), so anyone holding the link can read state, read chat history, and mutate the room. This is the product: share-a-link must keep working for guests with no account, and public rooms (`FEATURE_PUBLIC_ROOMS`) are listable and joinable by design.
+
+Consequences of that decision:
+
+- The privacy boundary of a **private** room is the unguessability of its room ID, not a server-side access check. Room IDs are generated client-side with crypto entropy (`crypto.getRandomValues`, 12 uppercase base36 chars ≈ 62 bits, `apps/web/lib/roomId.ts`). Room IDs minted by the pre-#180 generator (6 chars, `Math.random`) remain valid for existing links but must be treated as guessable.
+- Subscribing alone is sufficient for mutation rights *by decision* — the membership gate exists to bind RPCs to a room-scoped subscription (and to reconnect survival), not to keep link-holders out.
+- Opting into the public directory (`room.set_public`) trades exactly this obscurity for discoverability; `room.list` exposes only summary fields.
+
+As an adoption signal for link sharing, the server emits a structured log (`room_first_non_creator_member`) and the `music_jam_rooms_shared_total` counter the first time a room gains a second concurrent member — its first non-creator member. The flag lives on the in-memory room instance, so an evicted-and-reloaded room may emit again.
+
 Rules: state carries metadata only, never audio. Each client plays the head track through its own platform SDK on explicit user gesture.
