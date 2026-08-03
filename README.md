@@ -65,7 +65,7 @@ flowchart TB
 | Spotify | Supported | Web Playback SDK | Premium per user; Dev Mode capped at 5 |
 | Apple Music | Stubbed | MusicKit JS | Needs Apple Developer Program; behind a toggle |
 | YouTube Music | Unsupported | — | No official API |
-| Deezer | Unsupported | — | API closed to new apps since 2024 |
+| Deezer | Search/identity (default) | — | Keyless public search API; playback SDK closed to new apps since 2024 |
 | Tidal | Unsupported | SDK | Full-catalog license agreement required |
 
 > [!NOTE]
@@ -142,8 +142,14 @@ APPLE_PRIVATE_KEY_PATH=/path/to/key
 ```bash
 pnpm test:server                       # Go: go test -race ./...
 pnpm --filter web exec vitest run      # web unit
-pnpm --filter web exec playwright test # web e2e (two-browser room sync)
+pnpm --filter web e2e                  # web e2e (two-browser room sync)
 ```
+
+> [!WARNING]
+> Always use `pnpm --filter web e2e`, never raw `playwright test`. The e2e
+> script frees port 3000 first; a stale dev server on :3000 makes Playwright's
+> web server hang and report "0 tests". Details in
+> [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Project layout
 
@@ -153,7 +159,9 @@ cojam/
 │   ├── web/              # Next.js 16 frontend (app/, lib/, e2e/)
 │   └── server/           # Go server (cmd/server, internal/hub|match|queue|obs)
 ├── packages/shared/      # TS protocol types: TrackRef, RoomState
-├── docs/                 # ADRs, protocol, deploy runbook
+├── docs/                 # protocol + specs; ADRs and runbooks
+│                         # (launch-readiness, feature-rollout-plan, feature-flags,
+│                         # backup-restore) are local-only, gitignored
 └── pnpm-workspace.yaml
 ```
 
@@ -166,6 +174,6 @@ Greenfield MVP (started 2026-07-16), built in public.
 - Postgres durability (rooms survive restart when `DATABASE_URL` is set)
 - Planned: Apple Music (pending Developer Program)
 
-The Go server emits structured JSON logs to stdout and Prometheus metrics at
-`/metrics`. Implementation plan lives in [`.claude/plans/`](.claude/plans/);
-architecture decisions in [`docs/adr/`](docs/adr/).
+The Go server emits structured JSON logs to stdout; Prometheus metrics are
+served at `/metrics` on a dedicated listener when `METRICS_ADDR` is set (never
+on the public port). Architecture decisions live in `docs/adr/` (local-only).
