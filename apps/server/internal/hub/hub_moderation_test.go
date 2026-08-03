@@ -77,10 +77,17 @@ func TestModeration_NonHostRejected(t *testing.T) {
 		t.Fatalf("non-host room.kick: got %v (%T), want a *UserError (client-visible 400)", err, err)
 	}
 
-	// The rejected attempts must be no-ops: the message survives and the
-	// member is still enrolled.
+	// The rejected attempts must be no-ops: the user message survives and the
+	// member is still enrolled. The ring also holds system join announcements
+	// (#205) from the joins above; filter those out for this assertion.
 	msgs := chatHistoryOf(t, h, "r")
-	if len(msgs) != 1 || msgs[0].Deleted || msgs[0].Text != "keep me" {
+	var userMsgs []ChatMessage
+	for _, m := range msgs {
+		if m.Kind != ChatKindSystem {
+			userMsgs = append(userMsgs, m)
+		}
+	}
+	if len(userMsgs) != 1 || userMsgs[0].Deleted || userMsgs[0].Text != "keep me" {
 		t.Fatalf("non-host delete mutated the ring: %+v", msgs)
 	}
 	if !h.IsMember("c-troll", "r") {
