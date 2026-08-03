@@ -59,19 +59,21 @@ vi.mock('centrifuge', () => ({ Centrifuge: centrifugeMock.MockCentrifuge }));
 
 const authMocks = vi.hoisted(() => ({
   accountToken: null as string | null,
-  fetchConnectionToken: vi.fn(async () => ({ token: 'anon-token' })),
+  fetchConnectionToken: vi.fn(async (): Promise<{ token: string } | null> => ({ token: 'anon-token' })),
+  lastTokenFetchError: null as string | null,
 }));
 vi.mock('./account', () => ({
   getAccountToken: vi.fn(async () => authMocks.accountToken),
 }));
 vi.mock('./auth', () => ({
   fetchConnectionToken: authMocks.fetchConnectionToken,
+  getLastTokenFetchError: () => authMocks.lastTokenFetchError,
 }));
 
 // Runtime-env mock so tests can flip runtime-resolved flags (F8 room chat)
 // without a window.__COJAM_ENV__ global (node env has no window).
 const runtimeEnvMocks = vi.hoisted(() => ({
-  env: undefined as { features?: { roomChat?: boolean } } | undefined,
+  env: undefined as { features?: { roomChat?: boolean; roomAuth?: boolean } } | undefined,
 }));
 vi.mock('./runtimeEnv', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./runtimeEnv')>()),
@@ -244,6 +246,7 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
   beforeEach(() => {
     centrifugeMock.MockCentrifuge.instances = [];
     authMocks.accountToken = null;
+    authMocks.lastTokenFetchError = null;
     authMocks.fetchConnectionToken.mockClear();
     runtimeEnvMocks.env = undefined;
     useStore.setState({ state: null, connected: false, reconnecting: false, chat: [] });
@@ -315,17 +318,65 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
     expect(joinCalls).toHaveLength(1);
   });
 
-  it('rejects when the server is unreachable instead of hanging forever (B11)', async () => {
+  it('rejects as unreachable when the transport fails instead of hanging forever (B11, #190)', async () => {
     vi.useFakeTimers();
     try {
       const joinPromise = joinRoom('room-1', 'Alice');
-      // Never emit 'connected': the timeout must fire.
+      // Flush the async token resolution so the instance exists, then fail the transport.
+      await vi.advanceTimersByTimeAsync(0);
+      const instance = centrifugeMock.MockCentrifuge.instances.at(-1)!;
+      instance.emit('error', { type: 'transport', error: { code: 4, message: 'transport closed' } });
+      // Never emit 'connected': the timeout must fire with the unreachable state.
       const assertion = expect(joinPromise).rejects.toThrow(/reach the server/);
       await vi.advanceTimersByTimeAsync(10_000);
       await assertion;
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('rejects with a distinct timeout state when no connection failure is observed (#190)', async () => {
+    vi.useFakeTimers();
+    try {
+      const joinPromise = joinRoom('room-1', 'Alice');
+      // No transport error and no 'connected': a pure timeout, not "unreachable".
+      const assertion = expect(joinPromise).rejects.toThrow(/timed out/);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects with a session-token state when the token fetch fails while room auth is on (#190)', async () => {
+    runtimeEnvMocks.env = { features: { roomAuth: true } };
+    authMocks.fetchConnectionToken.mockResolvedValueOnce(null);
+    authMocks.lastTokenFetchError = 'HTTP 500';
+
+    await expect(joinRoom('room-1', 'Alice')).rejects.toThrow(/session token/);
+    // Fail fast: no connection is attempted against a token we know is missing.
+    expect(centrifugeMock.MockCentrifuge.instances).toHaveLength(0);
+  });
+
+  it('still joins anonymously when the token endpoint is 501 (feature off) while room auth is on (#190)', async () => {
+    runtimeEnvMocks.env = { features: { roomAuth: true } };
+    authMocks.fetchConnectionToken.mockResolvedValueOnce(null);
+    // 501 records no fetch error: the anonymous fallback is legitimate.
+    authMocks.lastTokenFetchError = null;
+
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    expect(instance.opts.token).toBe('');
+  });
+
+  it('rejects as unauthorized when the server rejects the connect (code 103) without waiting for the timeout (#190)', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('disconnected', { code: 103, reason: 'unauthorized' });
+    await expect(joinPromise).rejects.toThrow(/unauthorized/);
   });
 
   it('normalizes a plain {code, message} room.join rejection into an Error (B11)', async () => {

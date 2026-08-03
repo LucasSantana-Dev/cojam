@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { Centrifuge } from 'centrifuge';
 import { pickEnv, getRuntimeEnv, resolveRuntimeFeatures } from './runtimeEnv';
 import { estimateOffset, type PingSample } from './clockSync';
-import { fetchConnectionToken } from './auth';
+import { fetchConnectionToken, getLastTokenFetchError } from './auth';
 import { getAccountToken } from './account';
 import { features } from './features';
 import type { ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
@@ -182,6 +182,14 @@ export async function joinRoom(
 
   const token = await resolveConnectionToken();
 
+  // Fail fast when the token fetch failed while room auth is on (#190): the
+  // server would reject the connect as Unauthorized and the user would only
+  // see the generic join timeout. A null fetch error means the feature is off
+  // server-side (501), where the anonymous fallback is legitimate.
+  if (!token && resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomAuth && getLastTokenFetchError()) {
+    throw new Error('Could not get a session token from the server (auth service issue). Try again in a moment.');
+  }
+
   centrifuge = new Centrifuge(wsUrl, {
     token,
     getToken: resolveConnectionToken,
@@ -278,16 +286,34 @@ export async function joinRoom(
 
   centrifuge.connect();
 
-  // Race 'connected' against a timeout (B11): an unreachable server or a
-  // token the server keeps rejecting never resolves otherwise, and the join
-  // UI would spin forever. On timeout the caller surfaces joinError.
+  // Race 'connected' against the failure signals (B11, #190) so the join UI
+  // can tell the distinct causes apart instead of showing one generic timeout:
+  // - unreachable: the transport errored (server down, wrong WS URL)
+  // - unauthorized: the server rejected the connect (code 103) and will not
+  //   retry, so reject immediately rather than waiting out the timeout
+  // - timeout: neither happened within JOIN_TIMEOUT_MS
+  let transportFailed = false;
+  centrifuge.on('error', (ctx) => {
+    if ((ctx as { type?: string }).type === 'transport') transportFailed = true;
+  });
   await Promise.race([
     new Promise<void>((resolve) => {
       centrifuge!.on('connected', () => resolve());
     }),
     new Promise<void>((_, reject) => {
+      centrifuge!.on('disconnected', (ctx) => {
+        if ((ctx as { code?: number }).code === 103) {
+          reject(new Error('The server rejected the session as unauthorized. Try joining again.'));
+        }
+      });
+    }),
+    new Promise<void>((_, reject) => {
       setTimeout(
-        () => reject(new Error('Could not reach the server. Check your connection and try again.')),
+        () => reject(new Error(
+          transportFailed
+            ? 'Could not reach the server. Check your connection and try again.'
+            : 'Joining timed out. The server is taking too long to respond. Try again.',
+        )),
         JOIN_TIMEOUT_MS,
       );
     }),
