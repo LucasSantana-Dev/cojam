@@ -181,6 +181,34 @@ func (rs *RoomState) ToggleVote(trackID, voter string) (bool, error) {
 	return false, fmt.Errorf("%w: %s", ErrTrackNotFound, trackID)
 }
 
+// PruneVoter removes voter from every track's voter set. Used when an
+// ephemeral guest connection drops: its "client:<clientID>" keys must not
+// outlive the connection, or a reconnecting guest (new clientID) could vote
+// twice on the same track (#183). Authenticated "user:<userID>" keys persist
+// by design — identity survives reconnects. Bumps Version only when a vote
+// was actually removed; reports whether anything changed.
+func (rs *RoomState) PruneVoter(voter string) bool {
+	pruned := false
+	for trackID, voters := range rs.Votes {
+		for i, v := range voters {
+			if v == voter {
+				voters = append(voters[:i], voters[i+1:]...)
+				pruned = true
+				break // set semantics: one entry per voter per track
+			}
+		}
+		if len(voters) == 0 {
+			delete(rs.Votes, trackID)
+		} else {
+			rs.Votes[trackID] = voters
+		}
+	}
+	if pruned {
+		rs.Version++
+	}
+	return pruned
+}
+
 // SetNowPlaying sets the now playing track by ID.
 // Returns an error if the track is not in the queue.
 func (rs *RoomState) SetNowPlaying(trackID string) error {
