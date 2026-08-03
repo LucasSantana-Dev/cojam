@@ -71,8 +71,8 @@ export function PresenceBar({ roomId, canControl = false }: PresenceBarProps) {
                 <button
                   type="button"
                   onClick={() => handleKick(member)}
-                  title={`Remove ${member.name} from the room`}
-                  aria-label={`Remove ${member.name} from the room`}
+                  title={`Kick ${member.name} from the room`}
+                  aria-label={`Kick ${member.name} from the room`}
                   className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-150 focus:outline-none"
                   style={{
                     backgroundColor: 'var(--color-status-error)',
