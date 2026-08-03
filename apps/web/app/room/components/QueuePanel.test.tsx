@@ -97,9 +97,11 @@ describe('QueuePanel undo window', () => {
     vi.useFakeTimers();
     useStore.setState({ state: roomState([track('t1', 'First Song')]) });
     rpcMocks.queueRemove.mockClear();
+    rpcMocks.voteTrack.mockClear();
   });
 
   afterEach(() => {
+    setQueueVotingEnv(undefined);
     vi.useRealTimers();
   });
 
@@ -138,6 +140,80 @@ describe('QueuePanel undo window', () => {
 
     expect(rpcMocks.queueRemove).toHaveBeenCalledWith('r1', 't1');
     expect(screen.queryByText('Removed First Song')).not.toBeInTheDocument();
+  });
+
+  // #179: the window must not race concurrent room activity.
+  it('cancels the pending remove when the track becomes now playing', async () => {
+    render(<QueuePanel roomId="r1" canControl />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+
+    // The track starts playing mid-window: the pending removal is cancelled
+    // and the undo affordance clears.
+    act(() => {
+      useStore.setState({
+        state: { ...roomState([track('t1', 'First Song')]), nowPlayingId: 't1', version: 2 },
+      });
+    });
+    expect(screen.queryByText('Removed First Song')).not.toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(rpcMocks.queueRemove).not.toHaveBeenCalled();
+  });
+
+  it('blocks vote, play, and reorder on a pending-removal row', () => {
+    setQueueVotingEnv(true);
+    useStore.setState({
+      state: roomState([track('t1', 'First Song'), track('t2', 'Second Song')]),
+      connected: true,
+      myVotes: {},
+    });
+    render(<QueuePanel roomId="r1" canControl />);
+
+    const rows = screen.getAllByTestId('queue-item');
+    fireEvent.click(within(rows[1]).getByRole('button', { name: 'Remove' }));
+
+    // The pending row's interactions are disabled (move-up would otherwise be
+    // enabled for the second row), the unaffected row stays interactive.
+    const vote = within(rows[1]).getByRole('button', { name: 'Vote' });
+    expect(vote).toBeDisabled();
+    expect(within(rows[1]).getByRole('button', { name: 'Play' })).toBeDisabled();
+    expect(within(rows[1]).getByRole('button', { name: 'Move up' })).toBeDisabled();
+    expect(within(rows[0]).getByRole('button', { name: 'Vote' })).toBeEnabled();
+
+    // A dispatched click on the blocked row still reaches no RPC.
+    fireEvent.click(vote);
+    expect(rpcMocks.voteTrack).not.toHaveBeenCalled();
+  });
+
+  it('shows no error when the removal fails because the track is already gone', async () => {
+    // #211: the server reports an unknown track as a code-400 UserError with
+    // the recognizable "track not found" message.
+    rpcMocks.queueRemove.mockRejectedValueOnce({ code: 400, message: 'track not found' });
+    render(<QueuePanel roomId="r1" canControl />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+
+    expect(rpcMocks.queueRemove).toHaveBeenCalledWith('r1', 't1');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('still surfaces a real removal failure after the window', async () => {
+    rpcMocks.queueRemove.mockRejectedValueOnce(new Error('connection closed'));
+    render(<QueuePanel roomId="r1" canControl />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('connection closed');
   });
 });
 
