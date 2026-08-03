@@ -6,6 +6,7 @@ import type { IPlayer } from '@/lib/playerInterface';
 import { fetchLyrics, type Lyrics } from '@/lib/realtime';
 import { activeLineIndex } from '@/lib/lyricSync';
 import { useDialogFocus } from './useDialogFocus';
+import { ErrorRetry } from './ErrorRetry';
 
 interface LyricsPanelProps {
   roomId: string;
@@ -174,20 +175,14 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
           )}
 
           {error && (
-            <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-secondary)' }}>
-              <p>{error}</p>
-              <button
-                onClick={() => {
-                  setError(null);
-                  setData(null);
-                  setRetry((n) => n + 1);
-                }}
-                className="mt-2 text-xs underline hover:opacity-70 transition-opacity"
-                style={{ color: 'var(--color-accent)' }}
-              >
-                Retry
-              </button>
-            </div>
+            <ErrorRetry
+              error={error}
+              onRetry={() => {
+                setError(null);
+                setData(null);
+                setRetry((n) => n + 1);
+              }}
+            />
           )}
 
           {data && !loading && (
