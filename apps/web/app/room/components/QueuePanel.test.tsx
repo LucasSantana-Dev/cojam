@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act, within, waitFor } from '@testing-library/react';
 import { QueuePanel, queueArtwork } from './QueuePanel';
-import { useStore } from '@/lib/realtime';
+import { useStore, restoreMyVotes } from '@/lib/realtime';
 import type { RoomState, TrackRef } from '@cojam/shared';
 
 // Only the RPC functions are mocked; the component drives the real zustand
@@ -153,6 +153,7 @@ describe('QueuePanel voting (F4)', () => {
 
   beforeEach(() => {
     setQueueVotingEnv(true);
+    sessionStorage.clear();
     useStore.setState({
       state: votingState({ t2: ['user:a', 'user:b'] }),
       connected: true,
@@ -213,6 +214,25 @@ describe('QueuePanel voting (F4)', () => {
     expect(alert).toHaveTextContent('too many requests, slow down');
     expect(useStore.getState().myVotes.t1).toBeUndefined();
     expect(within(row).getByRole('button', { name: 'Vote' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('restores the pressed state after a reload, so toggling un-votes (#188)', async () => {
+    // Simulate a full reload: the in-memory set is gone and only the
+    // sessionStorage entry survives; join restores it before render.
+    sessionStorage.setItem('mj_room_votes:r1', JSON.stringify({ t2: true }));
+    restoreMyVotes('r1');
+    render(<QueuePanel roomId="r1" canControl />);
+
+    const rows = screen.getAllByTestId('queue-item');
+    const button = within(rows[1]).getByRole('button', { name: 'Vote' });
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+
+    // The control is no longer inverted: clicking a pressed button removes
+    // the vote, matching what the server does with the toggle.
+    fireEvent.click(button);
+    await waitFor(() => expect(useStore.getState().myVotes.t2).toBeUndefined());
+    expect(rpcMocks.voteTrack).toHaveBeenCalledWith('r1', 't2');
+    expect(button).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('marks the most-voted queued track as the listeners pick, excluding now playing', () => {

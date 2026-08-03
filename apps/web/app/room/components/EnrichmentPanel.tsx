@@ -5,6 +5,7 @@ import type { TrackRef } from '@cojam/shared';
 import { fetchListenBrainz, fetchLastfmEnrich, type ListenBrainzEnrichment, type LastfmEnrich } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { useDialogFocus } from './useDialogFocus';
+import { ErrorRetry } from './ErrorRetry';
 
 interface EnrichmentPanelProps {
   roomId: string;
@@ -26,11 +27,13 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
   const [lbLoading, setLbLoading] = useState(false);
   const [lbError, setLbError] = useState<string | null>(null);
   const [lbData, setLbData] = useState<ListenBrainzEnrichment | null>(null);
+  const [lbRetry, setLbRetry] = useState(0);
 
   // Last.fm section state
   const [lfmLoading, setLfmLoading] = useState(false);
   const [lfmError, setLfmError] = useState<string | null>(null);
   const [lfmData, setLfmData] = useState<LastfmEnrich | null>(null);
+  const [lfmRetry, setLfmRetry] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
   useDialogFocus(open, onClose, containerRef);
@@ -47,53 +50,59 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
     setLfmError(null);
   }
 
-  // Fetch data when panel opens. The cleanup flag drops stale responses: a
-  // fetch for the previous track must not repopulate the panel after a
-  // track change (or after close).
+  // Fetch data when panel opens, one effect per provider so a retry re-fires
+  // only the failed section. The cleanup flag drops stale responses: a fetch
+  // for the previous track must not repopulate the panel after a track change
+  // (or after close).
   useEffect(() => {
-    if (!open || !track) {
+    if (!open || !track || !f.listenBrainz) {
       return;
     }
     let cancelled = false;
 
-    // Fetch ListenBrainz if enabled
-    if (f.listenBrainz) {
-      const fetchLb = async () => {
-        setLbLoading(true);
-        setLbError(null);
-        try {
-          const result = await fetchListenBrainz(roomId, track.isrc || '', track.title, track.artist);
-          if (!cancelled) setLbData(result);
-        } catch (err) {
-          if (!cancelled) setLbError(err instanceof Error ? err.message : 'Failed to fetch ListenBrainz data');
-        } finally {
-          if (!cancelled) setLbLoading(false);
-        }
-      };
-      fetchLb();
-    }
-
-    // Fetch Last.fm if enabled
-    if (f.lastfmEnrich) {
-      const fetchLfm = async () => {
-        setLfmLoading(true);
-        setLfmError(null);
-        try {
-          const result = await fetchLastfmEnrich(roomId, track.artist, track.title);
-          if (!cancelled) setLfmData(result);
-        } catch (err) {
-          if (!cancelled) setLfmError(err instanceof Error ? err.message : 'Failed to fetch Last.fm data');
-        } finally {
-          if (!cancelled) setLfmLoading(false);
-        }
-      };
-      fetchLfm();
-    }
+    const fetchLb = async () => {
+      setLbLoading(true);
+      setLbError(null);
+      try {
+        const result = await fetchListenBrainz(roomId, track.isrc || '', track.title, track.artist);
+        if (!cancelled) setLbData(result);
+      } catch (err) {
+        if (!cancelled) setLbError(err instanceof Error ? err.message : 'Failed to fetch ListenBrainz data');
+      } finally {
+        if (!cancelled) setLbLoading(false);
+      }
+    };
+    fetchLb();
 
     return () => {
       cancelled = true;
     };
-  }, [open, track, roomId, f.listenBrainz, f.lastfmEnrich]);
+  }, [open, track, roomId, f.listenBrainz, lbRetry]);
+
+  useEffect(() => {
+    if (!open || !track || !f.lastfmEnrich) {
+      return;
+    }
+    let cancelled = false;
+
+    const fetchLfm = async () => {
+      setLfmLoading(true);
+      setLfmError(null);
+      try {
+        const result = await fetchLastfmEnrich(roomId, track.artist, track.title);
+        if (!cancelled) setLfmData(result);
+      } catch (err) {
+        if (!cancelled) setLfmError(err instanceof Error ? err.message : 'Failed to fetch Last.fm data');
+      } finally {
+        if (!cancelled) setLfmLoading(false);
+      }
+    };
+    fetchLfm();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, track, roomId, f.lastfmEnrich, lfmRetry]);
 
   if (!open || !track) return null;
 
@@ -163,9 +172,14 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
               )}
 
               {lbError && (
-                <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-secondary)' }}>
-                  <p>{lbError}</p>
-                </div>
+                <ErrorRetry
+                  error={lbError}
+                  onRetry={() => {
+                    setLbError(null);
+                    setLbData(null);
+                    setLbRetry((n) => n + 1);
+                  }}
+                />
               )}
 
               {lbData && !lbLoading && (
@@ -225,9 +239,14 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
               )}
 
               {lfmError && (
-                <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-secondary)' }}>
-                  <p>{lfmError}</p>
-                </div>
+                <ErrorRetry
+                  error={lfmError}
+                  onRetry={() => {
+                    setLfmError(null);
+                    setLfmData(null);
+                    setLfmRetry((n) => n + 1);
+                  }}
+                />
               )}
 
               {lfmData && !lfmLoading && (

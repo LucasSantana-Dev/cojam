@@ -15,6 +15,10 @@ function chatTime(sentAtServerMs: number): string {
   return formatRelativeTime(sentAtServerMs, Date.now() + getClockOffsetMs()) ?? '';
 }
 
+// Auto-scroll follows new messages only when the user is already within this
+// distance of the bottom (#189); anyone reading scrollback keeps their spot.
+const NEAR_BOTTOM_PX = 80;
+
 interface ChatPanelProps {
   roomId: string;
 }
@@ -27,11 +31,20 @@ export function ChatPanel({ roomId }: ChatPanelProps) {
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottom = useRef(true);
 
-  // Auto-scroll to the newest line whenever the list grows.
+  // Recompute the pin on every scroll: near the bottom means follow new
+  // messages; further up means the user is reading scrollback (#189).
+  const handleScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    pinnedToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
+  };
+
+  // Auto-scroll to the newest line on append only when pinned to the bottom.
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
   }, [chat.length]);
 
   const handleSend = async (e: FormEvent) => {
@@ -79,7 +92,7 @@ export function ChatPanel({ roomId }: ChatPanelProps) {
           )}
         </div>
       ) : (
-        <div ref={listRef} className="space-y-3 max-h-80 overflow-y-auto pr-2" aria-live="polite">
+        <div ref={listRef} onScroll={handleScroll} className="space-y-3 max-h-80 overflow-y-auto pr-2" aria-live="polite">
           {chat.map((m) => (
             <div key={m.id} data-testid="chat-message" className="flex items-start gap-2">
               <span

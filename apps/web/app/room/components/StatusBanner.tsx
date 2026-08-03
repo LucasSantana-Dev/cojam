@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useStore } from '@/lib/realtime';
+import { useStore, retryConnection } from '@/lib/realtime';
 
 export function StatusBanner() {
   const connected = useStore((s) => s.connected);
@@ -31,6 +31,17 @@ export function StatusBanner() {
 
   if (!showBanner) return null;
 
+  // Terminal disconnect (#187): reconnecting stopped without recovering, so
+  // offer a way out. Guarded on !connected so the slide-out after recovery
+  // (reconnecting=false, connected=true) never flashes the buttons.
+  const lost = !reconnecting && !connected;
+
+  // Retry re-runs the full join (reconnect + resync); on failure the banner
+  // stays up so the user can try again or reload.
+  const handleRetry = () => {
+    retryConnection().catch(() => { /* banner stays up for another attempt */ });
+  };
+
   return (
     <div
       className={`fixed top-0 left-0 right-0 px-4 py-3 text-center text-sm font-medium z-50 status-banner${isExiting ? ' slide-up-exit' : ''}`}
@@ -52,6 +63,26 @@ export function StatusBanner() {
         <span style={{ color: reconnecting ? 'var(--color-status-warn)' : 'var(--color-status-error)' }}>
           {reconnecting ? 'Reconnecting...' : 'Connection lost'}
         </span>
+        {lost && (
+          <>
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="px-3 py-1 text-xs font-semibold rounded-md transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
+              style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-3 py-1 text-xs font-semibold rounded-md transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
+              style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+            >
+              Reload
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

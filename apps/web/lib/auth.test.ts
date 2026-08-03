@@ -197,4 +197,76 @@ describe('auth module', () => {
       expect(global.fetch).toHaveBeenCalledWith('http://app.local:3000/api/connection-token');
     });
   });
+
+  // #190: a failed fetch must never be a silent null. The reason is recorded
+  // for joinRoom to classify the failure, and a client-visible hint is logged.
+  describe('failure tracking (#190)', () => {
+    const setupStorage = () => {
+      const mockLS = mockLocalStorage();
+      (global as any).localStorage = mockLS;
+      (global as any).window = (global as any).window || {};
+      (global as any).window.localStorage = mockLS;
+    };
+
+    it('records the status and logs a hint on HTTP errors', async () => {
+      setupStorage();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const auth = await import('./auth');
+
+      (global.fetch as any).mockResolvedValueOnce({ ok: false, status: 500 });
+
+      const result = await auth.fetchConnectionToken('http://localhost:8080');
+
+      expect(result).toBeNull();
+      expect(auth.getLastTokenFetchError()).toBe('HTTP 500');
+      expect(warn).toHaveBeenCalledWith('[auth] connection-token fetch failed:', 'HTTP 500');
+      warn.mockRestore();
+    });
+
+    it('records the error message and logs a hint on network errors', async () => {
+      setupStorage();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const auth = await import('./auth');
+
+      (global.fetch as any).mockRejectedValueOnce(new Error('Network error'));
+
+      const result = await auth.fetchConnectionToken('http://localhost:8080');
+
+      expect(result).toBeNull();
+      expect(auth.getLastTokenFetchError()).toBe('Network error');
+      expect(warn).toHaveBeenCalledWith('[auth] connection-token fetch failed:', 'Network error');
+      warn.mockRestore();
+    });
+
+    it('records nothing on 501 (feature off is a legitimate fallback, not a failure)', async () => {
+      setupStorage();
+      const auth = await import('./auth');
+
+      (global.fetch as any).mockResolvedValueOnce({ ok: false, status: 501 });
+
+      const result = await auth.fetchConnectionToken('http://localhost:8080');
+
+      expect(result).toBeNull();
+      expect(auth.getLastTokenFetchError()).toBeNull();
+    });
+
+    it('clears the recorded error on the next successful fetch', async () => {
+      setupStorage();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const auth = await import('./auth');
+
+      (global.fetch as any).mockResolvedValueOnce({ ok: false, status: 500 });
+      await auth.fetchConnectionToken('http://localhost:8080');
+      expect(auth.getLastTokenFetchError()).toBe('HTTP 500');
+
+      (global.fetch as any).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ token: 'jwt-ok', userId: 'u-1' }),
+      });
+      await auth.fetchConnectionToken('http://localhost:8080');
+
+      expect(auth.getLastTokenFetchError()).toBeNull();
+      warn.mockRestore();
+    });
+  });
 });

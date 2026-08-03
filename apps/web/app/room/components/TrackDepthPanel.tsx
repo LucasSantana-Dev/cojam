@@ -5,6 +5,7 @@ import type { TrackRef } from '@cojam/shared';
 import { fetchTrackDepth, type TrackDepth } from '@/lib/realtime';
 import { formatTime } from './TransportUI';
 import { useDialogFocus } from './useDialogFocus';
+import { ErrorRetry } from './ErrorRetry';
 
 interface TrackDepthPanelProps {
   roomId: string;
@@ -17,6 +18,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TrackDepth | null>(null);
+  const [retry, setRetry] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   useDialogFocus(open, onClose, containerRef);
 
@@ -55,7 +57,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
     return () => {
       cancelled = true;
     };
-  }, [open, track, roomId]);
+  }, [open, track, roomId, retry]);
 
   if (!open || !track) return null;
 
@@ -118,9 +120,14 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
           )}
 
           {error && (
-            <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-secondary)' }}>
-              <p>{error}</p>
-            </div>
+            <ErrorRetry
+              error={error}
+              onRetry={() => {
+                setError(null);
+                setData(null);
+                setRetry((n) => n + 1);
+              }}
+            />
           )}
 
           {/* Metadata rail (R8): mono LABEL / value pairs from data the room
