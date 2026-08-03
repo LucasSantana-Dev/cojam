@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Release version stamped into the binary (surfaced in /healthz); CI passes
-# <ref>-<sha> via build-arg, local builds fall back to "dev".
+# <ref>@<sha> via build-arg, local builds fall back to "dev".
 ARG VERSION=dev
 
 # Build static binary: no CGO, reproducible paths stripped, symbols stripped.

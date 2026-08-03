@@ -121,7 +121,7 @@ func TestRadioAutoRefillOnAdvance(t *testing.T) {
 
 	// #175: refill into a drained room must start the FIRST refilled track
 	// (Queue[2] here, after the 2 played entries), not track 1 of history.
-	room := h.GetOrCreateRoom("radio-test")
+	room := mustRoom(t, h, "radio-test")
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		room.mu.Lock()

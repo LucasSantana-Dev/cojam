@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,7 +35,7 @@ import (
 )
 
 // version is stamped at build time via
-// -ldflags "-X main.version=<tag-or-sha>" (see Dockerfile / publish-server-image.yml);
+// -ldflags "-X main.version=<ref>@<sha>" (see Dockerfile / publish-server-image.yml);
 // "dev" marks local builds. Surfaced in /healthz so "what's deployed" is
 // answerable in a browser during an incident.
 var version = "dev"
@@ -530,14 +531,25 @@ func main() {
 			Addr:              addr,
 			Handler:           metricsMux,
 			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      10 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		}
+		// Bind before goroutine so a bad METRICS_ADDR fails startup loudly
+		// instead of leaving /readyz green with no metrics.
+		metricsLn, err := net.Listen("tcp", addr)
+		if err != nil {
+			log.Fatalf("metrics listener bind failed on %s: %v", addr, err)
 		}
 		go func() {
-			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := metricsServer.Serve(metricsLn); err != nil && err != http.ErrServerClosed {
 				logger.Error("metrics listener failed", "addr", addr, "err", err)
 			}
 		}()
 		shutdownHooks = append(shutdownHooks, func() { metricsServer.Close() })
 		logger.Info("metrics listener started", "addr", addr)
+	} else {
+		logger.Info("metrics_listener_disabled")
 	}
 
 	// HTTP server setup. ReadHeaderTimeout bounds slowloris-style header

@@ -18,11 +18,17 @@ func TestBuildToken_CachesUntilTTL(t *testing.T) {
 	current := base
 	restoreNow := now
 	now = func() time.Time { return current }
+	// Isolate from any cache state a prior test populated, and restore it
+	// after so later tests are unaffected either way.
+	cache.mu.Lock()
+	savedKey, savedToken, savedExpiry := cache.key, cache.token, cache.expiry
+	cache.key, cache.token = "", ""
+	cache.expiry = time.Time{}
+	cache.mu.Unlock()
 	t.Cleanup(func() {
 		now = restoreNow
 		cache.mu.Lock()
-		cache.key, cache.token = "", ""
-		cache.expiry = time.Time{}
+		cache.key, cache.token, cache.expiry = savedKey, savedToken, savedExpiry
 		cache.mu.Unlock()
 	})
 
