@@ -42,6 +42,22 @@ func roomState(room *Room) (host string, version int64) {
 // #166: a host disconnect promotes the longest-present remaining
 // authenticated member, bumps Version exactly once, and the new host is
 // persisted + published through the standard mutate path.
+// #166: a member who subscribes without sending room.join still gets a join
+// time (CodeRabbit on #223): otherwise their zero timestamp would outrank
+// genuinely older members in selectSuccessor.
+func TestJoin_StampsJoinTimeOnSubscribePath(t *testing.T) {
+	h := NewHub(nil)
+	h.RecordClientUserID("c-sub", "u-sub")
+	h.Join("c-sub", "room") // subscribe path: no room.join RPC
+
+	h.memberMu.RLock()
+	join, ok := h.memberJoinTimes["room"]["u-sub"]
+	h.memberMu.RUnlock()
+	if !ok || join == 0 {
+		t.Fatalf("expected join time stamped by Join, got %d (ok=%v)", join, ok)
+	}
+}
+
 func TestPromoteOnDisconnect_PromotesLongestPresent(t *testing.T) {
 	h := NewHub(nil)
 	room := setupHandoffRoom(t, h, "room", "c-host", "u-host",

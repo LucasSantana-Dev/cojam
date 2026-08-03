@@ -460,7 +460,11 @@ func (h *Hub) launchEnrich(fn func()) {
 }
 
 // Join enrolls a client as a member of a room (called on room.join and on
-// channel subscribe, so membership survives centrifuge reconnects).
+// channel subscribe, so membership survives centrifuge reconnects). Also
+// stamps the join time for authenticated members here, not only in room.join:
+// a client that subscribes without sending room.join would otherwise have a
+// zero join time and selectSuccessor would treat it as the oldest member.
+// A rejoin resets the timestamp: seniority measures continuous presence.
 func (h *Hub) Join(clientID, roomID string) {
 	if clientID == "" || roomID == "" {
 		return
@@ -475,6 +479,16 @@ func (h *Hub) Join(clientID, roomID string) {
 		h.roomMembers[roomID] = make(map[string]struct{})
 	}
 	h.roomMembers[roomID][clientID] = struct{}{}
+
+	h.clientUserIDMu.RLock()
+	userID := h.clientUserID[clientID]
+	h.clientUserIDMu.RUnlock()
+	if userID != "" {
+		if h.memberJoinTimes[roomID] == nil {
+			h.memberJoinTimes[roomID] = make(map[string]int64)
+		}
+		h.memberJoinTimes[roomID][userID] = time.Now().UnixNano()
+	}
 }
 
 // Leave drops all of a client's memberships (called on disconnect).
@@ -975,16 +989,17 @@ func (h *Hub) evictPersistedIdleRooms(now time.Time) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	removed, err := h.store.DeleteIdleRooms(ctx, now.Add(-h.roomPersistIdleTTL), protected)
+	cutoff := now.Add(-h.roomPersistIdleTTL)
+	removed, err := h.store.DeleteIdleRooms(ctx, cutoff, protected)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Error("room_persist_evict_failed", "err", err.Error())
+			h.logger.Error("room_persist_evict_failed", "err", err.Error(), "cutoff", cutoff.UTC(), "ttl", h.roomPersistIdleTTL.String())
 		}
 		return
 	}
 	if removed > 0 {
 		if h.logger != nil {
-			h.logger.Info("room_persist_evicted", "removed", removed)
+			h.logger.Info("room_persist_evicted", "removed", removed, "cutoff", cutoff.UTC(), "ttl", h.roomPersistIdleTTL.String(), "protected", len(protected))
 		}
 		if h.metrics != nil {
 			h.metrics.RoomPersistedEvicted(removed)
