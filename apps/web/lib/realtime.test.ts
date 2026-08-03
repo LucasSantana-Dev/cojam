@@ -833,3 +833,70 @@ describe('guest-to-account rebind (#172)', () => {
     expect(useStore.getState().rebindNotice).toBeNull();
   });
 });
+
+// Regression: a rejoin inside the confirm window supersedes the first waiter;
+// the stale timeout must never clear or settle its successor (identity
+// comparison, not field comparison).
+describe('rebind waiter supersede (#172)', () => {
+  beforeEach(() => {
+    centrifugeMock.MockCentrifuge.instances = [];
+    authMocks.accountToken = null;
+    authMocks.session = null;
+    authMocks.proofToken = null;
+    authMocks.cleared = false;
+    authMocks.lastTokenFetchError = null;
+    runtimeEnvMocks.env = { features: { roomAuth: true } };
+    useStore.setState({ state: null, connected: false, reconnecting: false, chat: [], rebindNotice: null });
+  });
+
+  it('stale waiter timeout does not clear the successor waiter', async () => {
+    vi.useFakeTimers();
+    try {
+      authMocks.session = { userId: 'u1', email: null, accessToken: 'sb-token' };
+      authMocks.accountToken = 'sb-token';
+      authMocks.proofToken = 'proof-jwt';
+      const flush = () => vi.advanceTimersByTimeAsync(0);
+
+      const join1 = joinRoom('room-1', 'Alice');
+      await flush();
+      const inst1 = centrifugeMock.MockCentrifuge.instances.at(-1)!;
+      inst1.emit('connected');
+      await join1;
+      await flush();
+      expect(inst1.rpcCalls.filter((c) => c.method === 'room.rebind')).toHaveLength(1);
+
+      // Rejoin 4s later, inside the first waiter's 5s confirm window.
+      await vi.advanceTimersByTimeAsync(4_000);
+      const join2 = joinRoom('room-1', 'Alice');
+      await flush();
+      const inst2 = centrifugeMock.MockCentrifuge.instances.at(-1)!;
+      expect(inst2).not.toBe(inst1);
+      inst2.emit('connected');
+      await join2;
+      await flush();
+      expect(inst2.rpcCalls.filter((c) => c.method === 'room.rebind')).toHaveLength(1);
+
+      // t=5s: the FIRST waiter's timeout fires. It must not touch the second.
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      const pubHandler = inst2.subscriptions[0].handlers['publication'][0];
+      pubHandler({
+        data: {
+          type: 'room.state',
+          state: {
+            roomId: 'room-1',
+            queue: [
+              { id: 't1', title: 'T', artist: 'A', sources: {}, addedBy: 'Alice', addedByUserId: 'sb:u1' },
+            ],
+            radioEnabled: false,
+            version: 3,
+          },
+        },
+      });
+      await flush();
+      expect(authMocks.cleared).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -319,12 +319,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
       <StatusBanner />
       {/* Rebind soft notice (#172): proof verification failed (secret rotation
           or expiry), so guest contributions could not be linked. The room and
-          the sign-in keep working; only the attribution handoff is lost. */}
-      {store.rebindNotice && (
-        <p role="status" className="text-xs text-center px-4 py-2" style={{ color: 'var(--color-text-muted)' }}>
-          {store.rebindNotice}
-        </p>
-      )}
+          the sign-in keep working; only the attribution handoff is lost. The
+          live region stays mounted (empty when there is no notice) so screen
+          readers announce the text when it appears. */}
+      <p role="status" className="text-xs text-center px-4 py-2" style={{ color: 'var(--color-text-muted)' }}>
+        {store.rebindNotice}
+      </p>
       <header className="room-header">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">

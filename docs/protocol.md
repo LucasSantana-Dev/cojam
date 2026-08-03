@@ -173,11 +173,16 @@ retry."), and the sub must be unconsumed. One mutation bumps `version` once:
 track ownership (`addedByUserId`) moves to the account, the host role moves
 if the guest held it, voter keys rewrite from `user:<anonSub>` to
 `user:sb:<uuid>` (deduped, so no double vote), and join-time seniority
-transfers so longest-present host promotion keeps the guest's standing.
-`addedBy` display strings stay untouched. A successful rebind consumes the
-sub: it is recorded in `rebound_subs` (in-memory when no database is
-configured), later rebinds presenting it are rejected ("this guest identity
-was already upgraded"), and `/api/connection-token` refuses to reissue it.
+transfers so longest-present host promotion keeps the guest's standing (the
+transfer runs inside the same serialized mutation, before the state
+publishes). `addedBy` display strings stay untouched. A successful rebind
+consumes the sub: it is recorded in `rebound_subs`, later rebinds presenting
+it are rejected ("this guest identity was already upgraded"), and
+`/api/connection-token` refuses to reissue it. The in-memory fallback (no
+`DATABASE_URL`) is dev/test-only: production must run with Postgres or the
+single-use guarantee does not survive restarts. The burn claim lands
+immediately after the mutation commits, with a pre-mutation check rejecting
+already-consumed subs.
 The rebound sub's remaining connections in the room are force-disconnected
 via the `room.kick` mechanism so a still-open anonymous tab cannot keep
 accumulating attribution under the dead sub. The RPC exists only when

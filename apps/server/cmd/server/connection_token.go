@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -42,8 +43,11 @@ func connectionTokenHandler(roomAuthEnabled bool, roomAuthSecret string, burns r
 				userID = ""
 			} else if burns != nil {
 				// Burn gate (#172): a consumed sub must never be reissued. On a
-				// burn-list error, fail safe to a fresh identity as well.
-				consumed, cerr := burns.Consumed(r.Context(), sub)
+				// burn-list error, fail safe to a fresh identity as well. The 5s
+				// deadline matches the store timeout convention in hub.mutate.
+				ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+				consumed, cerr := burns.Consumed(ctx, sub)
+				cancel()
 				if cerr != nil || consumed {
 					userID = ""
 				}

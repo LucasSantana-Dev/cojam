@@ -112,7 +112,9 @@ Burn amendment (consumption): a successful rebind consumes the anonymous sub. Th
 records consumed subs and rejects any later rebind that presents one, and
 `/api/connection-token` rejects refresh for a consumed sub as well. Storage is the
 implementer's call: a small `rebound_subs` table, or a documented in-memory set with
-Postgres persistence; pick the simpler option that survives restart. Without the burn, a
+Postgres persistence; pick the simpler option that survives restart. The in-memory
+fallback is dev/test-only: production deployments must run with `DATABASE_URL` so
+the single-use guarantee survives restarts. Without the burn, a
 retained or leaked token lets its holder claim whatever state a zombie anonymous
 connection accumulates later, indefinitely. With it, the token is single-use end to end.
 The burn supersedes the original repeat-call semantics: after a confirmed success the
@@ -122,9 +124,11 @@ path, not a normal retry.
 Guard: reject when the caller is not authenticated, since there is nothing to upgrade to,
 and reject when the proof token is missing or fails verification, since there is nothing
 to upgrade from, since an always-authenticated caller has no prior guest identity. Before
-consumption, whichever authenticated identity presents the valid proof first claims the
-state; after consumption, all reuse is rejected. In-flight retries of an unconfirmed
-rebind still present an unconsumed sub (the burn lands at commit), so the client's
+consumption, the first rebind to commit claims the state; after consumption, all reuse is
+rejected. A pre-mutation check rejects already-consumed subs, and the atomic claim lands
+immediately after the mutation commits (a claim inside the mutation could otherwise burn
+the sub while the persisted room state never recorded the rebind). In-flight retries of
+an unconfirmed rebind still present an unconsumed sub, so the client's
 retry-while-unconfirmed loop is safe by construction.
 
 ## 5. Behavior
@@ -141,7 +145,8 @@ On an accepted rebind, within one mutation:
   prunes `client:<id>` voter keys, which never match room-auth guests, so the #183 prune is
   a no-op under `FEATURE_ROOM_AUTH`.
 - Seniority: transfer `memberJoinTimes[room][old]` to `[new]` (`hub.go:312`,
-  `recordJoinTime` at `hub.go:502`) so the upgraded member keeps longest-present standing
+  `recordJoinTime` at `hub.go:502`) inside the same serialized mutation, before the
+  versioned state publishes, so the upgraded member keeps longest-present standing
   for host promotion (#166) instead of restarting at the rebind instant.
 - `RoomState.Version` bumps once and the state publishes, so both the upgrading client and
   every other member converge without a reload.
@@ -260,5 +265,8 @@ Web (`cd apps/web && npx tsc --noEmit`, `pnpm lint`, `npx vitest run`):
 
 E2E (`pnpm --filter web e2e` only, never raw playwright on :3000):
 
-- A guest joins, queues a track, becomes host, signs in via the popup-OAuth path, and
-  afterward still holds host and still owns the track.
+- BLOCKED, deferred to the popup-OAuth follow-up: a guest joins, queues a track, becomes
+  host, signs in via the popup-OAuth path, and afterward still holds host and still owns
+  the track. Popup-OAuth sign-in is not implemented in this slice (section 6 documents
+  why full-page redirect sign-in cannot preserve host in a multi-member room), so this
+  criterion cannot run until that flow exists.

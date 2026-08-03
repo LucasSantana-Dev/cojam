@@ -551,9 +551,15 @@ async function attemptRebind(roomId: string) {
     return;
   }
   const confirmed = await new Promise<boolean>((resolve) => {
-    rebindWaiter = { roomId, userId, resolve };
+    // Identity, not fields: a rejoin inside the timeout window overwrites the
+    // slot, and the stale timeout callback must never settle (or clear) the
+    // newer waiter. A superseded waiter is settled as unconfirmed so its
+    // promise cannot dangle.
+    if (rebindWaiter) rebindWaiter.resolve(false);
+    const waiter = { roomId, userId, resolve };
+    rebindWaiter = waiter;
     setTimeout(() => {
-      if (rebindWaiter?.userId === userId && rebindWaiter.roomId === roomId) {
+      if (rebindWaiter === waiter) {
         rebindWaiter = null;
         resolve(false);
       }

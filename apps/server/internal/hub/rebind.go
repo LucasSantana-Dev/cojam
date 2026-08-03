@@ -40,19 +40,26 @@ func (h *Hub) roomRebind(roomID, proof, clientID, userID string) (json.RawMessag
 		return nil, userErrorf("This account is already in this room from another tab or device. Close it and retry.")
 	}
 
-	// One mutation for the whole reattribution: the burn lands at commit
-	// inside the same closure (Claim is atomic, so a concurrent rebind with
-	// the same proof loses), then one Version bump publishes one state.
+	// Fast-path burn check: the common retry of a consumed sub is rejected
+	// before any mutation. Claim after the commit below is the atomic
+	// backstop for the race this check cannot see. The 5s timeout matches
+	// the store timeout convention in hub.mutate: a hung database fails the
+	// rebind fast instead of wedging the caller.
+	consumedCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	consumed, err := h.rebindBurns.Consumed(consumedCtx, oldSub)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	if consumed {
+		return nil, userErrorf("this guest identity was already upgraded")
+	}
+
+	// One mutation for the whole reattribution, one Version bump, one
+	// publication. The seniority transfer runs inside the same closure so it
+	// commits in the same serialized path as the state rewrites, before the
+	// snapshot is marshaled and published.
 	res, err := h.mutate(roomID, func(s *queue.RoomState) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		claimed, err := h.rebindBurns.Claim(ctx, oldSub)
-		if err != nil {
-			return err
-		}
-		if !claimed {
-			return userErrorf("this guest identity was already upgraded")
-		}
 		for i := range s.Queue {
 			if s.Queue[i].AddedByUserID == oldSub {
 				s.Queue[i].AddedByUserID = userID
@@ -62,6 +69,7 @@ func (h *Hub) roomRebind(roomID, proof, clientID, userID string) (json.RawMessag
 			s.HostUserID = userID
 		}
 		s.RewriteVoter("user:"+oldSub, "user:"+userID)
+		h.transferJoinTime(roomID, oldSub, userID)
 		s.Version++ // exactly one bump for the whole rebind (#172)
 		return nil
 	})
@@ -69,7 +77,26 @@ func (h *Hub) roomRebind(roomID, proof, clientID, userID string) (json.RawMessag
 		return nil, err
 	}
 
-	h.transferJoinTime(roomID, oldSub, userID)
+	// Burn AFTER the commit, not inside the closure: mutate treats
+	// save/publish failures as non-fatal (#178), so a claim inside the
+	// closure could burn the sub while the persisted room state never
+	// recorded the rebind, and the burned retry would be rejected with the
+	// attribution lost. Claiming after a successful mutate means the burn
+	// can never strand a committed rebind. The accepted race: two concurrent
+	// rebinds presenting the same proof both pass the pre-check and both
+	// commit (the rewrites are idempotent, so the second is a no-op), then
+	// Claim lets exactly one win; the loser gets the consumed rejection,
+	// which is the client-discardable dead-token path.
+	claimCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	claimed, err := h.rebindBurns.Claim(claimCtx, oldSub)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	if !claimed {
+		return nil, userErrorf("this guest identity was already upgraded")
+	}
+
 	h.disconnectReboundSub(roomID, oldSub)
 	if h.logger != nil {
 		h.logger.Info("room_rebound", "room_id", roomID)
