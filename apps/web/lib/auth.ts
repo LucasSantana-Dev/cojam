@@ -85,6 +85,17 @@ export type ConnectionTokenResult = {
   userId: string;
 };
 
+// Reason the last fetchConnectionToken call failed, or null when it did not
+// (success, or 501 feature-off, which is a legitimate fallback, not a
+// failure). joinRoom reads this to tell an auth/token failure apart from an
+// unreachable server (#190); a null return with a recorded error must never
+// be silent, so failures also log a client-visible hint below.
+let lastTokenFetchError: string | null = null;
+
+export function getLastTokenFetchError(): string | null {
+  return lastTokenFetchError;
+}
+
 // Fetch a signed JWT for the centrifuge connection.
 // If a userId is stored, include it as ?userId=<id> plus the previous token as
 // ?token=<proof> so the server can verify ownership before reissuing the
@@ -92,6 +103,7 @@ export type ConnectionTokenResult = {
 // Returns {token, userId} on success; null if feature is off (501), network error, or any other error.
 // Does NOT throw: failures are logged implicitly and return null for the caller to fall back.
 export async function fetchConnectionToken(baseUrl?: string): Promise<ConnectionTokenResult | null> {
+  lastTokenFetchError = null;
   try {
     // Use provided baseUrl or derive it
     const url = new URL(baseUrl || getHttpBase());
@@ -114,8 +126,11 @@ export async function fetchConnectionToken(baseUrl?: string): Promise<Connection
       return null;
     }
 
-    // Other errors: also return null (network, 404, 500, etc.)
+    // Other errors: record the reason (HTTP status) so the caller can tell an
+    // auth/token failure apart from an unreachable server, and log a hint.
     if (!res.ok) {
+      lastTokenFetchError = `HTTP ${res.status}`;
+      console.warn('[auth] connection-token fetch failed:', lastTokenFetchError);
       return null;
     }
 
@@ -125,8 +140,11 @@ export async function fetchConnectionToken(baseUrl?: string): Promise<Connection
     storeIdentity(data.userId, data.token);
 
     return { token: data.token, userId: data.userId };
-  } catch {
-    // Network error, JSON parse error, or other exception: return null
+  } catch (err) {
+    // Network error, JSON parse error, or other exception: record and log so
+    // the failure is never a silent null (#190).
+    lastTokenFetchError = err instanceof Error ? err.message : 'network error';
+    console.warn('[auth] connection-token fetch failed:', lastTokenFetchError);
     return null;
   }
 }
