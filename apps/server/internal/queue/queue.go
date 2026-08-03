@@ -119,8 +119,9 @@ func (rs *RoomState) Add(track TrackRef) *TrackRef {
 }
 
 // Remove removes a track from the queue by ID and bumps the version.
-// If the removed track was NowPlayingID, clears it. The track's votes go with
-// it so counts never outlive the track (F4).
+// If the removed track was NowPlayingID, playback advances to the track that
+// followed it (now at the same index), or clears when nothing follows. The
+// track's votes go with it so counts never outlive the track (F4).
 func (rs *RoomState) Remove(trackID string) error {
 	for i, t := range rs.Queue {
 		if t.ID == trackID {
@@ -129,7 +130,11 @@ func (rs *RoomState) Remove(trackID string) error {
 			rs.Version++
 
 			if rs.NowPlayingID == trackID {
-				rs.NowPlayingID = ""
+				if i < len(rs.Queue) {
+					rs.NowPlayingID = rs.Queue[i].ID
+				} else {
+					rs.NowPlayingID = ""
+				}
 			}
 			return nil
 		}

@@ -80,11 +80,54 @@ func TestRemove(t *testing.T) {
 	if rs.Version != 2 {
 		t.Errorf("expected version 2, got %d", rs.Version)
 	}
-	if rs.NowPlayingID != "" {
-		t.Errorf("expected NowPlayingID to be cleared, got %s", rs.NowPlayingID)
+	if rs.NowPlayingID != "t2" {
+		t.Errorf("expected NowPlayingID to advance to successor t2, got %q", rs.NowPlayingID)
 	}
 	if len(rs.Queue) != 1 {
 		t.Errorf("expected queue length 1, got %d", len(rs.Queue))
+	}
+}
+
+func TestRemoveCurrentWithQueuedSuccessorThenAdd(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "played", Title: "Old", AddedBy: "u1", Sources: Sources{}},
+			{ID: "current", Title: "Now", AddedBy: "u1", Sources: Sources{}},
+			{ID: "queued", Title: "Next", AddedBy: "u1", Sources: Sources{}},
+		},
+		NowPlayingID: "current",
+		Version:      1,
+	}
+
+	if err := rs.Remove("current"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rs.NowPlayingID != "queued" {
+		t.Fatalf("expected advance to queued, got %q", rs.NowPlayingID)
+	}
+
+	added := rs.Add(TrackRef{Title: "New", AddedBy: "u2", Sources: Sources{}})
+	if rs.NowPlayingID != "queued" {
+		t.Errorf("add after advance must not hijack NowPlayingID, got %q", rs.NowPlayingID)
+	}
+	if added.ID == "" {
+		t.Error("expected added track to get an ID")
+	}
+}
+
+func TestRemoveCurrentLastClearsNowPlaying(t *testing.T) {
+	rs := &RoomState{
+		RoomID:       "room1",
+		Queue:        []TrackRef{{ID: "t1", Title: "Only", AddedBy: "u1", Sources: Sources{}}},
+		NowPlayingID: "t1",
+		Version:      1,
+	}
+	if err := rs.Remove("t1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rs.NowPlayingID != "" {
+		t.Errorf("expected NowPlayingID cleared when nothing follows, got %q", rs.NowPlayingID)
 	}
 }
 
