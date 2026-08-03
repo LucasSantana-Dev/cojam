@@ -6,13 +6,18 @@ import { computeNameSuffixes } from './nameSuffix';
 import { fetchConnectionToken, getLastTokenFetchError } from './auth';
 import { getAccountToken } from './account';
 import { features } from './features';
-import type { ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
+import type { ChatDeletePub, ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = { clientId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' };
 
 // Client-side chat scrollback cap (F8). The server ring holds the last 50;
 // the client keeps a bit more so a long session does not visibly drop lines.
 const MAX_CHAT_MESSAGES = 100;
+
+// Terminal disconnect code the server sends on room.kick (#181). Centrifuge
+// treats 4500-4999 as application terminal codes, so no reconnect follows;
+// the room page swaps to an explicit "removed by host" state instead.
+export const DISCONNECT_CODE_KICKED = 4500;
 
 // roomChatEnabled resolves the F8 flag runtime-first (via /env.js), falling
 // back to the build-time NEXT_PUBLIC_FEATURE_ROOM_CHAT.
@@ -25,11 +30,18 @@ export interface AppStore {
   connected: boolean;
   reconnecting: boolean;
   name: string;
+  // This connection's server-assigned centrifuge client id (from the
+  // 'connected' context); drives self-identification in presence lists.
+  clientId: string;
   members: Member[];
   // Collision suffixes for duplicate display names (#170), recomputed on every
   // membership change so PresenceBar and the fused chip cannot disagree.
   nameSuffixes: Record<string, string>;
   connectedServices: string[];
+  // True after the server disconnects this client with DISCONNECT_CODE_KICKED
+  // (room.kick, #181): the room page shows "removed by host" instead of the
+  // reconnect flow. Reset on every fresh joinRoom.
+  kicked: boolean;
   // Tracks this client has upvoted (F4). The published votes map holds
   // server-stamped voter keys the client cannot map back to itself (the
   // anonymous clientID is server-assigned), so this local set drives the
@@ -42,6 +54,8 @@ export interface AppStore {
   setState: (state: RoomState) => void;
   setConnected: (connected: boolean) => void;
   setReconnecting: (reconnecting: boolean) => void;
+  setClientId: (clientId: string) => void;
+  setKicked: (kicked: boolean) => void;
   setMembers: (members: Member[]) => void;
   setConnectedServices: (services: string[]) => void;
   setMyVotes: (votes: Record<string, true>) => void;
@@ -50,6 +64,7 @@ export interface AppStore {
   removeMember: (clientId: string) => void;
   setChat: (messages: ChatMessage[]) => void;
   addChatMessage: (message: ChatMessage) => void;
+  removeChatMessage: (messageId: string) => void;
 }
 
 export const useStore = create<AppStore>((set) => ({
@@ -57,9 +72,11 @@ export const useStore = create<AppStore>((set) => ({
   connected: false,
   reconnecting: false,
   name: '',
+  clientId: '',
   members: [],
   nameSuffixes: {},
   connectedServices: [],
+  kicked: false,
   myVotes: {},
   chat: [],
   setName: (name) => set({ name }),
@@ -68,6 +85,8 @@ export const useStore = create<AppStore>((set) => ({
   })),
   setConnected: (connected) => set({ connected }),
   setReconnecting: (reconnecting) => set({ reconnecting }),
+  setClientId: (clientId) => set({ clientId }),
+  setKicked: (kicked) => set({ kicked }),
   setMembers: (members) => set({ members, nameSuffixes: computeNameSuffixes(members) }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
   setMyVotes: (myVotes) => set({ myVotes }),
@@ -93,10 +112,14 @@ export const useStore = create<AppStore>((set) => ({
   setChat: (messages) => set({ chat: messages }),
   // Chat has no version guard (it is not RoomState): dedupe by id so live
   // publications and history refetches can overlap safely, and cap the list.
+  // Tombstoned lines (chat.delete, #181) are never added — a history refetch
+  // racing the deletion must not resurrect them.
   addChatMessage: (message) => set((s) =>
-    s.chat.some((m) => m.id === message.id)
+    message.deleted || s.chat.some((m) => m.id === message.id)
       ? s
       : { chat: [...s.chat, message].slice(-MAX_CHAT_MESSAGES) }),
+  // Host tombstone publication (#181): drop the line by id, no history rewrite.
+  removeChatMessage: (messageId) => set((s) => ({ chat: s.chat.filter((m) => m.id !== messageId) })),
 }));
 
 // myVotes persistence (#188): the server stays authoritative for vote counts
@@ -255,13 +278,18 @@ export async function joinRoom(
   // A fresh joinRoom is a new room intent: clear chat alongside the activeRoom
   // reset above so switching rooms never shows the previous room's lines.
   store.setChat([]);
+  // A fresh join also clears a prior kick (#181): being removed from one room
+  // must not stick the next join on the "removed by host" screen.
+  store.setKicked(false);
   // Restore this room's persisted vote pressed-state (#188): after a reload
   // the in-memory set is empty while the server still counts the votes.
   restoreMyVotes(roomId);
 
-  centrifuge.on('connected', () => {
+  centrifuge.on('connected', (ctx) => {
     store.setConnected(true);
     store.setReconnecting(false);
+    // The server-assigned client id (self-identification in presence, #181).
+    store.setClientId((ctx as { client?: string } | undefined)?.client ?? '');
     // Re-measure clock offset on reconnect (fire-and-forget, non-fatal on error)
     measureClockOffset().catch(() => {
       /* clock sync error - not fatal */
@@ -295,21 +323,29 @@ export async function joinRoom(
     store.setReconnecting(true);
   });
 
-  centrifuge.on('disconnected', () => {
+  centrifuge.on('disconnected', (ctx) => {
     store.setConnected(false);
     store.setReconnecting(false);
+    // room.kick (#181): the server closed this connection with the terminal
+    // kicked code; the room page swaps to the "removed by host" state.
+    if ((ctx as { code?: number } | undefined)?.code === DISCONNECT_CODE_KICKED) {
+      useStore.getState().setKicked(true);
+    }
   });
 
   const sub = centrifuge.newSubscription(`room:${roomId}`);
 
   sub.on('publication', (ctx) => {
-    const pub = ctx.data as RoomStatePub | ChatMessagePub;
+    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub;
     if (pub.type === 'room.state') {
       store.setState(pub.state);
     } else if (pub.type === 'chat.message') {
       // Chat appends through its own store path (F8): no version guard, the
       // room.state guard only applies to state publications.
       store.addChatMessage(pub.message);
+    } else if (pub.type === 'chat.delete') {
+      // Host tombstone (#181): every client drops the line by id.
+      store.removeChatMessage(pub.messageId);
     }
   });
 
@@ -500,7 +536,23 @@ export async function sendChat(roomId: string, text: string, name: string): Prom
 export async function fetchChatHistory(roomId: string): Promise<ChatMessage[]> {
   if (!centrifuge) throw new Error('Not connected');
   const result = await centrifuge.rpc('chat.history', { roomId });
-  return (result.data as { messages: ChatMessage[] }).messages ?? [];
+  const messages = (result.data as { messages: ChatMessage[] }).messages ?? [];
+  // The ring keeps tombstoned slots (history is never rewritten, #181);
+  // clients never render them.
+  return messages.filter((m) => !m.deleted);
+}
+
+// Host moderation (#181). Both are host-only server-side (UserError 400 for
+// non-hosts) and draw from the chat rate limit. The UI gates the affordances
+// on host status, but the server stays authoritative.
+export async function deleteChatMessage(roomId: string, messageId: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('chat.delete', { roomId, messageId });
+}
+
+export async function kickMember(roomId: string, clientId: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('room.kick', { roomId, clientId });
 }
 
 // setRoomPublic toggles the room's public directory listing (host only,

@@ -190,8 +190,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }, [activePlayer, roomId]);
 
   if (!joined) {
-    return (
-      <main id="main" className="room flex items-center justify-center min-h-screen p-4">
+    return (  <main id="main" className="room flex items-center justify-center min-h-screen p-4">
         <form
           onSubmit={handleJoin}
           className="join-form panel w-full max-w-sm space-y-8 p-8"
@@ -270,6 +269,31 @@ export function RoomClient({ roomId }: { roomId: string }) {
     );
   }
 
+  // room.kick (#181): the server closed this connection with the terminal
+  // kicked code. Replace the room UI entirely — no StatusBanner retry loop,
+  // since the disconnect was deliberate and the connection will not retry.
+  if (store.kicked) {
+    return (
+      <main id="main" className="room flex items-center justify-center min-h-screen p-4">
+        <div className="panel w-full max-w-sm space-y-4 p-8 text-center">
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            Removed from the room
+          </h1>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            The host removed you from this session.
+          </p>
+          <Link
+            href="/"
+            className="inline-block px-6 py-3 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95"
+            style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+          >
+            Back to home
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <div className="room min-h-screen" style={{ color: 'var(--color-text-primary)' }}>
       <StatusBanner />
@@ -289,7 +313,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              <PresenceBar />
+              <PresenceBar roomId={roomId} canControl={hostControl} />
               <ShareRoomButton />
               {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
               {hostControl && f.publicRooms && <PublicRoomToggle roomId={roomId} />}
@@ -524,7 +548,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
           <div className="lg:col-span-1 room-arrival lg:sticky lg:top-24 lg:self-start" style={{ ['--i' as string]: 1 }}>
             <QueuePanel roomId={roomId} canControl={hostControl} />
-            {f.roomChat && <ChatPanel roomId={roomId} />}
+            {f.roomChat && <ChatPanel roomId={roomId} canControl={hostControl} />}
           </div>
         </div>
       </main>

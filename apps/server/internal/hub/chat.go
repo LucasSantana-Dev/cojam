@@ -38,12 +38,19 @@ const (
 // deliberately excluded: it is bounded (maxChatHistory), membership-gated, and
 // called once per join/rejoin. Chat is also kept out of fanoutMethods: that
 // budget protects third-party API quotas and chat never leaves the server.
+// chat.delete/room.kick share the bucket (#181): moderation is host-only but
+// still scriptable, and a per-caller cap keeps one compromised host token from
+// wiping the room at machine speed.
 var chatMethods = map[string]bool{
-	"chat.send": true,
+	"chat.send":   true,
+	"chat.delete": true,
+	"room.kick":   true,
 }
 
 // ChatMessage is one room chat line. userID is always server-stamped from the
 // connection identity, never trusted from params (the AddedByUserID pattern).
+// Deleted marks a host tombstone (chat.delete, #181): the ring slot is kept
+// but Text is redacted and clients must not render the entry.
 type ChatMessage struct {
 	ID             string `json:"id"`
 	RoomID         string `json:"roomId"`
@@ -51,6 +58,7 @@ type ChatMessage struct {
 	UserID         string `json:"userId,omitempty"`
 	Text           string `json:"text"`
 	SentAtServerMs int64  `json:"sentAtServerMs"`
+	Deleted        bool   `json:"deleted,omitempty"`
 }
 
 // appendChat appends msg to the room's ring, dropping the oldest entry when

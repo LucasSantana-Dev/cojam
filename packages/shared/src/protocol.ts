@@ -77,8 +77,11 @@ export type ChatMessage = {
   roomId: string;
   name: string;            // sender display name (client-supplied, capped; like TrackRef.addedBy)
   userId?: string;         // server-stamped connection identity; empty when room auth is off
-  text: string;            // trimmed, 1..300 chars
+  text: string;            // trimmed, 1..300 chars; redacted ("") once deleted
   sentAtServerMs: number;  // server clock, like TransportState.updatedAtServerMs
+  // Tombstone set by chat.delete (host moderation, #181): the ring slot is
+  // kept (history is never rewritten) but clients must not render the entry.
+  deleted?: boolean;
 };
 
 // Chat rides the same room:<id> channel as room.state but is ephemeral: never
@@ -86,4 +89,11 @@ export type ChatMessage = {
 export type ChatMessagePub = {
   type: 'chat.message';
   message: ChatMessage;
+};
+
+// ChatDeletePub tells connected clients a message was tombstoned by the host
+// (chat.delete, #181); clients drop it from their local list by id.
+export type ChatDeletePub = {
+  type: 'chat.delete';
+  messageId: string;
 };

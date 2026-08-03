@@ -27,6 +27,8 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `transport.seek` | `{ roomId, positionMs: number }` | `RoomState` |
 | `chat.send` | `{ roomId, text: string, name: string }` | `{ message: ChatMessage }` |
 | `chat.history` | `{ roomId }` | `{ messages: ChatMessage[] }` |
+| `chat.delete` | `{ roomId, messageId: string }` | `{ messageId: string }` |
+| `room.kick` | `{ roomId, clientId: string }` | `{ clientId: string }` |
 | `sync.ping` | `{}` | `{ serverNowMs: number }` |
 
 `track.search` is a read (not membership-gated). The query is trimmed; empty
@@ -139,11 +141,29 @@ publication, sender included). `chat.history` returns the ring oldest-first
 for late joiners/rejoins. `chat.send` is rate-limited per caller (burst 5,
 one token per 2s; "too many requests, slow down"); `chat.history` is not.
 
+Host moderation (#181): `chat.delete` tombstones a ring entry — the slot is
+kept (history is never rewritten, so late joiners see a stable order) but the
+text is redacted server-side (`deleted: true`, `text: ""`), so a history
+refetch cannot resurrect it; a `chat.delete` publication tells connected
+clients to drop the line by id. Deleting an unknown id is a 400 UserError.
+`room.kick` drops the target connection's membership in the room and closes
+that connection with the terminal disconnect code 4500 ("removed by host";
+centrifuge clients do not reconnect after terminal codes), so the kicked
+client stops and shows an explicit "removed by host" state; remaining members
+see the departure through the usual presence leave event. Both are
+membership-gated like the other mutating RPCs and host-only, but the host
+check happens in dispatch: a non-host attempt is rejected with a UserError
+(code 400), not `ErrorPermissionDenied`. Both draw from the same per-caller
+rate limit as `chat.send`. `chat.delete` shares the `FEATURE_ROOM_CHAT` gate
+(`ErrorMethodNotFound` when chat is off); `room.kick` has no feature flag.
+
 ### Roles & authorization (RFC-0005, behind `FEATURE_ROOM_AUTH`)
 
 When `FEATURE_ROOM_AUTH` is on, connections present a server-signed token (anonymous stable
 `sub`) and the server records a room **host** (the first authenticated joiner; reclaimed if the
-host leaves). Host-only RPCs are rejected with `ErrorPermissionDenied` for non-hosts; the server
+host leaves). Host-only RPCs are rejected with `ErrorPermissionDenied` for non-hosts — except the
+moderation RPCs (`chat.delete`, `room.kick`, #181), which reject non-hosts with a client-visible
+UserError (code 400) instead; the server
 is authoritative (the web UI also hides these controls for listeners, but that is convenience
 only). When the flag is off, every member has equal rights (v0), unchanged.
 
@@ -152,6 +172,8 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 | `queue.add` | any member |
 | `queue.vote` | any member (guests included) |
 | `chat.send`, `chat.history` | any member |
+| `chat.delete` | host only (non-host gets a code-400 UserError) |
+| `room.kick` | host only (non-host gets a code-400 UserError) |
 | `room.join`, `sync.ping`, reads | any caller |
 | `now_playing.set` / `now_playing.advance` | host only |
 | `queue.reorder` | host only |
@@ -202,6 +224,13 @@ distinguished by `type`, no version guard since chat is not `RoomState`):
 
 ```json
 { "type": "chat.message", "message": ChatMessage }
+```
+
+A host's `chat.delete` publishes the tombstone event (#181); clients drop the
+line by id and never render history entries with `deleted: true`:
+
+```json
+{ "type": "chat.delete", "messageId": "..." }
 ```
 
 Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated), never on display name: two connections that picked the same name are two distinct entries and count as two listeners. Each entry's ConnInfo is `{"name": string, "platform"?: "spotify"|"apple"|"youtube"}` — the name and playback platform the client presented at connect; the server drops unrecognized platform values, so presence only carries platforms the UI can render. Display concerns stay client-side: colliding names get a deterministic suffix ("Alice", "Alice (2)") derived from the member list (sorted by clientId), recomputed on every membership change; presence is centrifuge-level, so none of this touches `RoomState` or `Version`.
@@ -336,8 +365,9 @@ type ChatMessage = {       // F8: ephemeral, in-memory only; never in RoomState
   roomId: string;
   name: string;            // sender display name (client-supplied, capped at 60)
   userId?: string;         // server-stamped connection identity; empty when room auth is off
-  text: string;            // trimmed, 1..300 chars
+  text: string;            // trimmed, 1..300 chars; redacted ("") once deleted
   sentAtServerMs: number;  // server clock (unix ms)
+  deleted?: boolean;       // host tombstone (chat.delete, #181); clients must not render it
 };
 ```
 
@@ -350,7 +380,7 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.kick`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 ### Trust model (#180)
 

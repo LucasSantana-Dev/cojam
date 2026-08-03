@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useStore, sendChat, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
+import { useStore, sendChat, deleteChatMessage, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { avatarGradient } from '@/lib/avatar';
 
@@ -21,9 +21,12 @@ const NEAR_BOTTOM_PX = 80;
 
 interface ChatPanelProps {
   roomId: string;
+  // Host moderation affordance (#181): the host sees a delete button per
+  // message. The server re-checks host status; this prop is convenience only.
+  canControl?: boolean;
 }
 
-export function ChatPanel({ roomId }: ChatPanelProps) {
+export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   const chat = useStore((s) => s.chat);
   const connected = useStore((s) => s.connected);
   const name = useStore((s) => s.name);
@@ -66,6 +69,17 @@ export function ChatPanel({ roomId }: ChatPanelProps) {
     }
   };
 
+  // Host tombstone (#181): server-first like send — the line disappears when
+  // the chat.delete publication round-trips, so a rejection needs no rollback.
+  const handleDelete = async (messageId: string) => {
+    setActionError('');
+    try {
+      await deleteChatMessage(roomId, messageId);
+    } catch (err) {
+      setActionError(rpcErrorMessage(err, 'Couldn\'t delete that message. Try again.'));
+    }
+  };
+
   return (
     <div className="panel p-6 space-y-4 h-fit mt-6">
       <div>
@@ -94,7 +108,7 @@ export function ChatPanel({ roomId }: ChatPanelProps) {
       ) : (
         <div ref={listRef} onScroll={handleScroll} className="space-y-3 max-h-80 overflow-y-auto pr-2" aria-live="polite">
           {chat.map((m) => (
-            <div key={m.id} data-testid="chat-message" className="flex items-start gap-2">
+            <div key={m.id} data-testid="chat-message" className="flex items-start gap-2 group">
               <span
                 className="avatar-chip flex-shrink-0"
                 style={{ background: avatarGradient(m.userId || m.name) }}
@@ -115,6 +129,18 @@ export function ChatPanel({ roomId }: ChatPanelProps) {
                   {m.text}
                 </p>
               </div>
+              {canControl && (
+                <button
+                  type="button"
+                  onClick={() => handleDelete(m.id)}
+                  title="Delete message (host)"
+                  aria-label={`Delete message from ${m.name}`}
+                  className="flex-shrink-0 px-1 text-sm leading-none rounded transition-all duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:brightness-125 focus:outline-none"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
+                  ×
+                </button>
+              )}
             </div>
           ))}
         </div>
