@@ -42,6 +42,17 @@ func (b *barrierStore) Save(ctx context.Context, state *queue.RoomState) error {
 	return b.inner.Save(ctx, state)
 }
 
+// mustRoom is GetOrCreateRoom for tests: the default Memory store only ever
+// returns ErrNotFound, so any error here is a regression, not test data.
+func mustRoom(t *testing.T, h *Hub, roomID string) *Room {
+	t.Helper()
+	room, err := h.GetOrCreateRoom(roomID)
+	if err != nil {
+		t.Fatalf("GetOrCreateRoom(%q): %v", roomID, err)
+	}
+	return room
+}
+
 // TestGetOrCreateRoomSingleInstance verifies that concurrent creators for the
 // same roomID all receive the SAME *Room. With the old check-then-act code
 // (map check, unlock, load, insert) every caller built its own instance and
@@ -57,7 +68,11 @@ func TestGetOrCreateRoomSingleInstance(t *testing.T) {
 	for i := 0; i < parties; i++ {
 		go func(i int) {
 			defer wg.Done()
-			rooms[i] = h.GetOrCreateRoom("race-room")
+			room, err := h.GetOrCreateRoom("race-room")
+			if err != nil {
+				t.Errorf("GetOrCreateRoom: %v", err)
+			}
+			rooms[i] = room
 		}(i)
 	}
 	wg.Wait()

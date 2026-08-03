@@ -209,7 +209,8 @@ func main() {
 		}
 
 		dbPool = pool
-		pgStore := store.NewPostgres(pool)
+		pgStore := store.NewPostgres(pool).
+			WithVersionGuardObserver(func() { metrics.StoreVersionGuardReject() })
 		h.WithStore(pgStore)
 		logger.Info("persistence_enabled", "store", "postgres")
 

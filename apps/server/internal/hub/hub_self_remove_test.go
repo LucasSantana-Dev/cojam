@@ -101,7 +101,7 @@ func TestSelfRemove_OtherListenerDenied(t *testing.T) {
 	}
 
 	// State unchanged: the track is still queued.
-	room := h.GetOrCreateRoom("sr2")
+	room := mustRoom(t, h, "sr2")
 	room.mu.Lock()
 	defer room.mu.Unlock()
 	if len(room.State.Queue) != 1 || room.State.Queue[0].ID != trackID {

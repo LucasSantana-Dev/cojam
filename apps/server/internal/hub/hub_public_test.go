@@ -316,7 +316,7 @@ func TestPublicRooms_PersistenceRoundTrip(t *testing.T) {
 
 	// Fresh hub on the same store simulates a restart (hub_persist_test pattern).
 	hub2 := NewHub(nil).WithStore(mem).WithPublicRooms(true)
-	room := hub2.GetOrCreateRoom("persist1")
+	room := mustRoom(t, hub2, "persist1")
 	if !room.State.Public {
 		t.Fatal("public flag did not survive reload")
 	}
@@ -328,7 +328,7 @@ func TestPublicRooms_PersistenceRoundTrip(t *testing.T) {
 	if _, err := hub1.HandleRPC("room.join", []byte(`{"roomId":"old1","name":"bob"}`), ""); err != nil {
 		t.Fatalf("room.join old1: %v", err)
 	}
-	if got := hub2.GetOrCreateRoom("old1").State.Public; got {
+	if got := mustRoom(t, hub2, "old1").State.Public; got {
 		t.Fatal("pre-existing room must load private (zero value)")
 	}
 }

@@ -24,14 +24,14 @@ func TestEvictIdleRooms(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("mutate stale: %v", err)
 	}
-	h.GetOrCreateRoom("stale").lastActivityUnix.Store(time.Now().Add(-2 * time.Minute).UnixNano())
+	mustRoom(t, h, "stale").lastActivityUnix.Store(time.Now().Add(-2 * time.Minute).UnixNano())
 
 	// membered: a client holds membership -> never evictable, even when idle.
-	h.GetOrCreateRoom("membered").lastActivityUnix.Store(time.Now().Add(-2 * time.Minute).UnixNano())
+	mustRoom(t, h, "membered").lastActivityUnix.Store(time.Now().Add(-2 * time.Minute).UnixNano())
 	h.Join("client-1", "membered")
 
 	// fresh: memberless but active now -> not yet idle.
-	h.GetOrCreateRoom("fresh")
+	mustRoom(t, h, "fresh")
 
 	h.evictIdleRooms(time.Now())
 
@@ -52,7 +52,7 @@ func TestEvictIdleRooms(t *testing.T) {
 	}
 
 	// Rejoin: GetOrCreateRoom reloads the persisted state from the store.
-	rejoined := h.GetOrCreateRoom("stale")
+	rejoined := mustRoom(t, h, "stale")
 	if len(rejoined.State.Queue) != 1 || rejoined.State.Queue[0].Title != "persisted" {
 		t.Fatalf("evicted room did not reload persisted state, queue=%+v", rejoined.State.Queue)
 	}
@@ -62,7 +62,7 @@ func TestEvictIdleRooms(t *testing.T) {
 // evicts, preserving the pre-#118 behavior for embedders that do not opt in.
 func TestEvictIdleRoomsDisabled(t *testing.T) {
 	h := NewHub(nil)
-	room := h.GetOrCreateRoom("room")
+	room := mustRoom(t, h, "room")
 	room.lastActivityUnix.Store(time.Now().Add(-time.Hour).UnixNano())
 
 	h.evictIdleRooms(time.Now())
@@ -89,7 +89,9 @@ func TestEvictIdleRoomsConcurrent(t *testing.T) {
 			clientID := fmt.Sprintf("client-%d", i)
 			roomID := fmt.Sprintf("room-%d", i%4)
 			for j := 0; j < 50; j++ {
-				h.GetOrCreateRoom(roomID)
+				if _, err := h.GetOrCreateRoom(roomID); err != nil {
+					t.Errorf("GetOrCreateRoom: %v", err)
+				}
 				h.Join(clientID, roomID)
 				if _, err := h.mutate(roomID, func(s *queue.RoomState) error {
 					s.RadioEnabled = true

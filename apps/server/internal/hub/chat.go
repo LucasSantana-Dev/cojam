@@ -105,6 +105,9 @@ func (h *Hub) checkChatLimit(method, rlKey string) error {
 		return nil
 	}
 	if !h.chatLimiter.allow(rlKey) {
+		if h.metrics != nil {
+			h.metrics.RateLimitReject(method)
+		}
 		return userErrorf("too many requests, slow down")
 	}
 	return nil
@@ -121,6 +124,9 @@ func (h *Hub) publishChat(roomID string, msg ChatMessage) error {
 	}
 	raw, err := json.Marshal(msg)
 	if err != nil {
+		if h.metrics != nil {
+			h.metrics.PublishError()
+		}
 		return err
 	}
 	payload, err := json.Marshal(map[string]json.RawMessage{
@@ -128,9 +134,15 @@ func (h *Hub) publishChat(roomID string, msg ChatMessage) error {
 		"message": raw,
 	})
 	if err != nil {
+		if h.metrics != nil {
+			h.metrics.PublishError()
+		}
 		return err
 	}
 	_, err = h.node.Publish("room:"+roomID, payload)
+	if err != nil && h.metrics != nil {
+		h.metrics.PublishError()
+	}
 	return err
 }
 
@@ -144,19 +156,28 @@ func (h *Hub) chatSend(roomID, text, name, userID string) (json.RawMessage, erro
 	if err != nil {
 		return nil, err
 	}
-	room := h.GetOrCreateRoom(roomID)
+	room, err := h.GetOrCreateRoom(roomID)
+	if err != nil {
+		return nil, err
+	}
 	room.mu.Lock()
 	room.appendChat(msg)
 	room.mu.Unlock()
 	if err := h.publishChat(roomID, msg); err != nil {
 		return nil, err
 	}
+	if h.metrics != nil {
+		h.metrics.ChatMessageSent()
+	}
 	return json.Marshal(map[string]ChatMessage{"message": msg})
 }
 
 // chatHistory handles chat.history: a copy of the ring, oldest first.
 func (h *Hub) chatHistoryRPC(roomID string) (json.RawMessage, error) {
-	room := h.GetOrCreateRoom(roomID)
+	room, err := h.GetOrCreateRoom(roomID)
+	if err != nil {
+		return nil, err
+	}
 	room.mu.Lock()
 	msgs := room.chatHistory()
 	room.mu.Unlock()

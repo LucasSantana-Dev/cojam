@@ -103,6 +103,50 @@ func TestPostgresStaleWriteRejection(t *testing.T) {
 	testStaleWriteRejection(t, store)
 }
 
+// TestPostgresVersionGuardObserver verifies the WithVersionGuardObserver hook
+// fires exactly when the upsert's RowsAffected is 0 (stale write dropped) and
+// not on accepted writes. Skips if TEST_DATABASE_URL is not set.
+func TestPostgresVersionGuardObserver(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+
+	ctx := context.Background()
+	pool, err := db.Open(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer pool.Close()
+
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatalf("failed to migrate database: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx, "TRUNCATE TABLE rooms"); err != nil {
+		t.Fatalf("failed to truncate rooms table: %v", err)
+	}
+
+	rejected := 0
+	store := NewPostgres(pool).WithVersionGuardObserver(func() { rejected++ })
+
+	fresh := &queue.RoomState{RoomID: "room-vg", Queue: []queue.TrackRef{}, Version: 5}
+	if err := store.Save(ctx, fresh); err != nil {
+		t.Fatalf("Save fresh failed: %v", err)
+	}
+	if rejected != 0 {
+		t.Fatalf("observer fired on an accepted insert, rejected = %d", rejected)
+	}
+
+	stale := &queue.RoomState{RoomID: "room-vg", Queue: []queue.TrackRef{}, Version: 3}
+	if err := store.Save(ctx, stale); err != nil {
+		t.Fatalf("stale Save must still return nil (RFC-0001), got %v", err)
+	}
+	if rejected != 1 {
+		t.Fatalf("observer must fire once for the version-guard rejection, rejected = %d", rejected)
+	}
+}
+
 func testLoadUnknownRoom(t *testing.T, store Store) {
 	ctx := context.Background()
 	state, err := store.Load(ctx, "unknown")

@@ -528,7 +528,7 @@ func TestHandleRPC_PlaylistImportClientTracksValidation(t *testing.T) {
 				t.Errorf("error %q should mention %q", err.Error(), tc.wantErr)
 			}
 			// Queue must be untouched.
-			room := h.GetOrCreateRoom("demo")
+			room := mustRoom(t, h, "demo")
 			room.mu.Lock()
 			n := len(room.State.Queue)
 			room.mu.Unlock()
@@ -742,7 +742,7 @@ func TestHandleRPC_QueueAddValidation(t *testing.T) {
 			if !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("error %q should mention %q", err.Error(), tc.wantErr)
 			}
-			room := h.GetOrCreateRoom("demo")
+			room := mustRoom(t, h, "demo")
 			room.mu.Lock()
 			n := len(room.State.Queue)
 			room.mu.Unlock()

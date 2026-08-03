@@ -3,6 +3,7 @@
 package obs
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -15,6 +16,22 @@ type Metrics struct {
 	MatchConfidence   prometheus.Histogram
 	MatchCacheHits    prometheus.Counter
 	MatchCacheMisses  prometheus.Counter
+
+	// Failure-path counters (#194/#195): store_errors_total is labeled by op
+	// ("load"|"save"); the version-guard counter tracks stale writes the
+	// Postgres upsert drops via RowsAffected (RFC-0001 semantics, observed
+	// instead of silently diverging).
+	StoreErrors               *prometheus.CounterVec
+	StoreVersionGuardRejected prometheus.Counter
+	RateLimitRejected         *prometheus.CounterVec
+	RoomsEvicted              prometheus.Counter
+	PublishErrors             prometheus.Counter
+
+	// Adoption counters (F1/F4/F8 usage signal).
+	VotesCast        prometheus.Counter
+	ChatMessagesSent prometheus.Counter
+	RoomsListed      prometheus.Counter
+	RoomsSetPublic   *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -43,8 +60,46 @@ func New() *Metrics {
 			Name: "music_jam_match_cache_misses_total",
 			Help: "Total track matcher cache misses.",
 		}),
+		StoreErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_store_errors_total",
+			Help: "Total room-store failures by operation.",
+		}, []string{"op"}),
+		StoreVersionGuardRejected: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_store_version_guard_rejected_total",
+			Help: "Total stale room saves dropped by the Postgres version guard.",
+		}),
+		RateLimitRejected: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_rate_limit_rejected_total",
+			Help: "Total RPCs rejected by a per-caller rate limiter.",
+		}, []string{"method"}),
+		RoomsEvicted: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_rooms_evicted_total",
+			Help: "Total idle rooms evicted from hub memory.",
+		}),
+		PublishErrors: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_publish_errors_total",
+			Help: "Total room-channel publication failures.",
+		}),
+		VotesCast: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_votes_cast_total",
+			Help: "Total queue.vote toggles applied (F4 adoption).",
+		}),
+		ChatMessagesSent: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_chat_messages_sent_total",
+			Help: "Total chat messages sent (F8 adoption).",
+		}),
+		RoomsListed: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_rooms_listed_total",
+			Help: "Total room.list directory reads served (F1 adoption).",
+		}),
+		RoomsSetPublic: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_rooms_set_public_total",
+			Help: "Total room.set_public toggles applied, by target visibility.",
+		}, []string{"public"}),
 	}
-	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses)
+	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
+		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.PublishErrors,
+		m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic)
 	return m
 }
 
@@ -70,3 +125,23 @@ func (m *Metrics) ObserveMatchConfidence(c float64) { m.MatchConfidence.Observe(
 
 func (m *Metrics) MatchCacheHit()  { m.MatchCacheHits.Inc() }
 func (m *Metrics) MatchCacheMiss() { m.MatchCacheMisses.Inc() }
+
+// StoreError counts one room-store failure ("load"|"save").
+func (m *Metrics) StoreError(op string) { m.StoreErrors.WithLabelValues(op).Inc() }
+
+// StoreVersionGuardReject counts one stale save dropped by the version guard.
+func (m *Metrics) StoreVersionGuardReject() { m.StoreVersionGuardRejected.Inc() }
+
+// RateLimitReject counts one rate-limited RPC by method.
+func (m *Metrics) RateLimitReject(method string) { m.RateLimitRejected.WithLabelValues(method).Inc() }
+
+func (m *Metrics) RoomEvicted()     { m.RoomsEvicted.Inc() }
+func (m *Metrics) PublishError()    { m.PublishErrors.Inc() }
+func (m *Metrics) VoteCast()        { m.VotesCast.Inc() }
+func (m *Metrics) ChatMessageSent() { m.ChatMessagesSent.Inc() }
+func (m *Metrics) RoomListed()      { m.RoomsListed.Inc() }
+
+// RoomSetPublic counts one room.set_public toggle by target visibility.
+func (m *Metrics) RoomSetPublic(public bool) {
+	m.RoomsSetPublic.WithLabelValues(strconv.FormatBool(public)).Inc()
+}

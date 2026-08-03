@@ -93,7 +93,7 @@ func TestHubPersistenceAcrossRestart(t *testing.T) {
 	hub2 := NewHub(nil).WithStore(pgStore2)
 
 	// Load the room in hub2 (read-through load from store)
-	room2 := hub2.GetOrCreateRoom(roomID)
+	room2 := mustRoom(t, hub2, roomID)
 	if room2 == nil || room2.State == nil {
 		t.Fatalf("hub2 failed to load room from store")
 	}
