@@ -30,8 +30,8 @@ export interface AppStore {
   // server-stamped voter keys the client cannot map back to itself (the
   // anonymous clientID is server-assigned), so this local set drives the
   // pressed-state highlight while the server stays authoritative for counts.
-  // Updated ONLY on RPC success; resets on full reload (self-corrects on the
-  // next click because the server toggles).
+  // Updated ONLY on RPC success; persisted per room in sessionStorage so a
+  // reload restores the pressed state instead of inverting the toggle (#188).
   myVotes: Record<string, true>;
   chat: ChatMessage[];
   setName: (name: string) => void;
@@ -40,6 +40,7 @@ export interface AppStore {
   setReconnecting: (reconnecting: boolean) => void;
   setMembers: (members: Member[]) => void;
   setConnectedServices: (services: string[]) => void;
+  setMyVotes: (votes: Record<string, true>) => void;
   markVoted: (trackId: string, voted: boolean) => void;
   addMember: (m: Member) => void;
   removeMember: (clientId: string) => void;
@@ -64,6 +65,7 @@ export const useStore = create<AppStore>((set) => ({
   setReconnecting: (reconnecting) => set({ reconnecting }),
   setMembers: (members) => set({ members }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
+  setMyVotes: (myVotes) => set({ myVotes }),
   markVoted: (trackId, voted) => set((s) => {
     const myVotes = { ...s.myVotes };
     if (voted) {
@@ -71,6 +73,7 @@ export const useStore = create<AppStore>((set) => ({
     } else {
       delete myVotes[trackId];
     }
+    if (s.state?.roomId) persistMyVotes(s.state.roomId, myVotes);
     return { myVotes };
   }),
   addMember: (m) => set((s) =>
@@ -84,6 +87,42 @@ export const useStore = create<AppStore>((set) => ({
       ? s
       : { chat: [...s.chat, message].slice(-MAX_CHAT_MESSAGES) }),
 }));
+
+// myVotes persistence (#188): the server stays authoritative for vote counts
+// but its voter keys are server-stamped, so the client cannot re-derive which
+// tracks it voted on after a reload — the button showed unpressed while the
+// server still counted the vote, and the next click REMOVED it. Persist the
+// local set per room in sessionStorage (same pattern as NAME_KEY in the room
+// client) and restore it on join. Session-scoped: cleared when the tab closes.
+const MY_VOTES_KEY_PREFIX = 'mj_room_votes:';
+
+function loadMyVotes(roomId: string): Record<string, true> {
+  try {
+    if (typeof sessionStorage === 'undefined') return {};
+    const raw = sessionStorage.getItem(MY_VOTES_KEY_PREFIX + roomId);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed as Record<string, true>;
+  } catch {
+    return {};
+  }
+}
+
+function persistMyVotes(roomId: string, myVotes: Record<string, true>) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.setItem(MY_VOTES_KEY_PREFIX + roomId, JSON.stringify(myVotes));
+  } catch {
+    /* storage full or blocked: pressed state falls back to memory-only */
+  }
+}
+
+// restoreMyVotes reloads the persisted pressed-state for a room. joinRoom
+// calls it on every fresh join; exported for tests.
+export function restoreMyVotes(roomId: string) {
+  useStore.getState().setMyVotes(loadMyVotes(roomId));
+}
 
 // Presence entry info is the JSON {name, platform?} we set as ConnInfo server-side.
 interface ConnInfo {
@@ -197,6 +236,9 @@ export async function joinRoom(
   // A fresh joinRoom is a new room intent: clear chat alongside the activeRoom
   // reset above so switching rooms never shows the previous room's lines.
   store.setChat([]);
+  // Restore this room's persisted vote pressed-state (#188): after a reload
+  // the in-memory set is empty while the server still counts the votes.
+  restoreMyVotes(roomId);
 
   centrifuge.on('connected', () => {
     store.setConnected(true);
