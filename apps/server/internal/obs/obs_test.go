@@ -1,7 +1,6 @@
 package obs
 
 import (
-	"errors"
 	"testing"
 	"time"
 
@@ -11,9 +10,9 @@ import (
 func TestObserveRPC_CountsByMethodAndStatus(t *testing.T) {
 	m := New()
 
-	m.ObserveRPC("queue.add", nil, 5*time.Millisecond)
-	m.ObserveRPC("queue.add", nil, 7*time.Millisecond)
-	m.ObserveRPC("queue.add", errors.New("boom"), 1*time.Millisecond)
+	m.ObserveRPC("queue.add", "ok", 5*time.Millisecond)
+	m.ObserveRPC("queue.add", "ok", 7*time.Millisecond)
+	m.ObserveRPC("queue.add", "error", 1*time.Millisecond)
 
 	if got := testutil.CollectAndCount(m.RPCDuration); got != 2 { // 2 label combos: ok + error
 		t.Fatalf("label combos = %d, want 2", got)

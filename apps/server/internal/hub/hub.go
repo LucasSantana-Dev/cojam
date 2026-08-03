@@ -29,6 +29,14 @@ const maxImportTracks = 200
 // maxImportFieldLen caps free-text fields coming from clients.
 const maxImportFieldLen = 300
 
+// maxSearchQueryLen caps track.search queries forwarded to upstream providers
+// (Deezer/Spotify); longer is a client bug and rejected before any fanout.
+const maxSearchQueryLen = 200
+
+// maxSearchPrefer caps the track.search prefer list to the provider allowlist
+// size (match.providerAllowlist: spotify, deezer, apple); extras are truncated.
+const maxSearchPrefer = 3
+
 // maxImportDurationMs bounds track duration (2 hours); longer is a client bug.
 const maxImportDurationMs = 2 * 60 * 60 * 1000
 
@@ -101,6 +109,31 @@ func (e *UserError) Error() string { return e.msg }
 
 func userErrorf(format string, args ...interface{}) *UserError {
 	return &UserError{msg: fmt.Sprintf(format, args...)}
+}
+
+// mapQueueErr converts queue sentinel errors into client-visible UserErrors
+// (code 400 via rpcClientError), the same mapping queue.vote applies inline:
+// routine mistakes (unknown track) must not be masked as code 100 internal
+// server errors.
+func mapQueueErr(err error) error {
+	if errors.Is(err, queue.ErrTrackNotFound) {
+		return userErrorf("track not found")
+	}
+	return err
+}
+
+// rpcMetricStatus classifies an RPC outcome for the duration histogram:
+// user mistakes (UserError) get their own label so the "error" label counts
+// only server faults.
+func rpcMetricStatus(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	var ue *UserError
+	if errors.As(err, &ue) {
+		return "user_error"
+	}
+	return "error"
 }
 
 // rpcClientError converts UserError into a centrifuge client-visible error
@@ -788,7 +821,7 @@ func (h *Hub) handleRPC(method string, data []byte, userID, rlKey string) (json.
 	d := time.Since(start)
 
 	if h.metrics != nil {
-		h.metrics.ObserveRPC(method, err, d)
+		h.metrics.ObserveRPC(method, rpcMetricStatus(err), d)
 	}
 	if h.logger != nil {
 		var probe struct {
@@ -901,7 +934,7 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 		var addedID string
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			if len(s.Queue) >= queue.MaxQueueSize {
-				return fmt.Errorf("queue.add: queue full (max %d)", queue.MaxQueueSize)
+				return userErrorf("queue is full (max %d)", queue.MaxQueueSize)
 			}
 			addedID = s.Add(req.Track).ID
 			return nil
@@ -923,7 +956,7 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 			return nil, err
 		}
 		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
-			return s.Remove(req.TrackID)
+			return mapQueueErr(s.Remove(req.TrackID))
 		})
 
 	case "now_playing.set":
@@ -935,7 +968,7 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 			return nil, err
 		}
 		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
-			return s.SetNowPlaying(req.TrackID)
+			return mapQueueErr(s.SetNowPlaying(req.TrackID))
 		})
 
 	case "now_playing.advance":
@@ -994,7 +1027,7 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 			return nil, fmt.Errorf("queue.reorder: roomId required")
 		}
 		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
-			return s.Move(req.TrackID, req.ToIndex)
+			return mapQueueErr(s.Move(req.TrackID, req.ToIndex))
 		})
 
 	case "queue.vote":
@@ -1032,6 +1065,21 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 		}
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
+		}
+
+		// Validate before any upstream fanout: the query goes straight to
+		// Deezer/Spotify, so reject blanks and cap length; the prefer list is
+		// capped to the provider allowlist size (extras are truncated, never
+		// forwarded).
+		req.Query = strings.TrimSpace(req.Query)
+		if req.Query == "" {
+			return nil, userErrorf("search query required")
+		}
+		if utf8.RuneCountInString(req.Query) > maxSearchQueryLen {
+			return nil, userErrorf("search query too long (max %d chars)", maxSearchQueryLen)
+		}
+		if len(req.Prefer) > maxSearchPrefer {
+			req.Prefer = req.Prefer[:maxSearchPrefer]
 		}
 
 		// If searcher not configured, return empty array
@@ -1582,6 +1630,13 @@ func (h *Hub) enrichSpotify(roomID, trackID string, track queue.TrackRef) {
 // refillRadio fetches similar tracks and appends them to the queue when it runs dry.
 // Idempotent: re-checks that queue is still empty before appending (so a duplicate
 // refill from concurrent advances is a no-op).
+// Deliberately NOT in fanoutMethods: this Last.fm fanout is a server-side
+// reaction to a queue-dry transition, not a caller-driven read. It fires at
+// most once per advance that actually empties the queue (the idempotency
+// guard makes repeats no-ops), and the trigger RPC (now_playing.advance) is
+// host-only and membership-gated, so a caller cannot multiply upstream calls
+// beyond one per real dry-queue transition. Per-caller limiting would key on
+// the advancing host while the cost is room-scoped.
 func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -139,7 +139,7 @@ func (rs *RoomState) Remove(trackID string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("track not found: %s", trackID)
+	return fmt.Errorf("%w: %s", ErrTrackNotFound, trackID)
 }
 
 // ToggleVote flips voter's upvote on trackID (F4): absent appends (vote on),
@@ -188,7 +188,7 @@ func (rs *RoomState) SetNowPlaying(trackID string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("track not found: %s", trackID)
+	return fmt.Errorf("%w: %s", ErrTrackNotFound, trackID)
 }
 
 // SetYouTubeSource attaches a resolved YouTube source to a queued track
@@ -256,7 +256,7 @@ func (rs *RoomState) Move(trackID string, toIndex int) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("track not found: %s", trackID)
+		return fmt.Errorf("%w: %s", ErrTrackNotFound, trackID)
 	}
 
 	// Clamp toIndex

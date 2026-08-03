@@ -5,15 +5,19 @@ import (
 	"time"
 )
 
-// fanoutMethods are read RPCs that fan out to third-party APIs (search,
-// lyrics, metadata enrichment). They are rate-limited per caller so one
-// client cannot burn through upstream provider quotas.
+// fanoutMethods are RPCs that fan out to third-party APIs (search,
+// lyrics, metadata enrichment, playlist fetch). They are rate-limited per
+// caller so one client cannot burn through upstream provider quotas.
+// playlist.import is mutating and host-only rather than a read, but with
+// FEATURE_ROOM_AUTH off the host gate is skipped and a URL import calls
+// Deezer/Spotify/YouTube with a 15s budget, so it draws from this bucket.
 var fanoutMethods = map[string]bool{
 	"track.search":       true,
 	"track.lyrics":       true,
 	"track.depth":        true,
 	"track.listenbrainz": true,
 	"track.lastfm":       true,
+	"playlist.import":    true,
 }
 
 // voteMethods are vote RPCs (F4). Each accepted toggle republishes the full
