@@ -49,7 +49,10 @@ type TrackRef struct {
 	DurationMs int64   `json:"durationMs,omitempty"`
 	ISRC       string  `json:"isrc,omitempty"`
 	Sources    Sources `json:"sources"`
-	AddedBy    string  `json:"addedBy"`
+	// AddedBy is the adder's display name. Stamped by the server from the
+	// connection's connect-time name on queue.add/playlist.import when one
+	// was recorded (#165); only then is a client-supplied value overwritten.
+	AddedBy string `json:"addedBy"`
 	// AddedByUserID is the authenticated userID of the client that queued the
 	// track (empty when FEATURE_ROOM_AUTH is off). Populated by the server from
 	// the connection identity on queue.add/playlist.import; a client-supplied

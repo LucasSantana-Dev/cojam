@@ -82,7 +82,7 @@ func TestQueueVote_ListenerCanVote(t *testing.T) {
 		t.Fatalf("listener queue.vote must be allowed (not host-only): %v", err)
 	}
 
-	if _, err := h.handleRPC("queue.vote", votePayload("vote_host", trackID), "bob", rateLimitKey("bob_client", "bob")); err != nil {
+	if _, err := h.handleRPC("queue.vote", votePayload("vote_host", trackID), "bob_client", "bob"); err != nil {
 		t.Fatalf("listener queue.vote: %v", err)
 	}
 }
@@ -155,7 +155,7 @@ func TestQueueVote_GuestVoterKey(t *testing.T) {
 	h := NewHub(nil).WithVoting(true)
 	trackID := setupVotingRoom(t, h, "vote_guest")
 
-	res, err := h.handleRPC("queue.vote", votePayload("vote_guest", trackID), "", rateLimitKey("anon_client", ""))
+	res, err := h.handleRPC("queue.vote", votePayload("vote_guest", trackID), "anon_client", "")
 	if err != nil {
 		t.Fatalf("guest queue.vote: %v", err)
 	}

@@ -286,10 +286,15 @@ type Hub struct {
 	memberMu sync.RWMutex
 	members  map[string]map[string]struct{} // clientID -> set of roomIDs
 
-	// clientUserID tracks authenticated userID per clientID for host assignment (U3+).
-	// Populated on room.join when FEATURE_ROOM_AUTH is on.
+	// clientUserID tracks the authenticated userID per clientID for host
+	// assignment (U3+); clientName tracks the display name the connection
+	// presented at connect time (ConnInfo {name}). Together they are the
+	// server-owned connection identity (#165): queue attribution is stamped
+	// from them, never trusted from RPC params. Both populated on
+	// RegisterClient, both cleared on disconnect.
 	clientUserIDMu sync.RWMutex
 	clientUserID   map[string]string // clientID -> userID
+	clientName     map[string]string // clientID -> connect-time display name
 }
 
 // mutatingMethods are the membership-gated RPCs: the caller must be a member
@@ -394,6 +399,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		node:          node,
 		members:       make(map[string]map[string]struct{}),
 		clientUserID:  make(map[string]string),
+		clientName:    make(map[string]string),
 		enrichSem:     make(chan struct{}, enrichConcurrency),
 		enrichPending: make(chan struct{}, enrichMaxPending),
 		fanoutLimiter: newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
@@ -475,11 +481,37 @@ func (h *Hub) RecordClientUserID(clientID, userID string) {
 	}
 }
 
-// RemoveClientUserID removes the userID tracking for a client (called on disconnect).
+// RecordClientName tracks the display name a connection presented at connect
+// time (called from RegisterClient with the ConnInfo name). The server stamps
+// it as TrackRef.AddedBy on queue.add/playlist.import (#165), so a crafted
+// RPC cannot attribute tracks to another member's name.
+func (h *Hub) RecordClientName(clientID, name string) {
+	if clientID == "" {
+		return
+	}
+	h.clientUserIDMu.Lock()
+	defer h.clientUserIDMu.Unlock()
+	if name != "" {
+		h.clientName[clientID] = name
+	}
+}
+
+// displayName returns the connect-time display name recorded for a
+// connection, or "" when none was presented (or the caller is
+// transport-independent, e.g. tests calling HandleRPC).
+func (h *Hub) displayName(clientID string) string {
+	h.clientUserIDMu.RLock()
+	defer h.clientUserIDMu.RUnlock()
+	return h.clientName[clientID]
+}
+
+// RemoveClientUserID removes the identity tracking (userID and display name)
+// for a client (called on disconnect).
 func (h *Hub) RemoveClientUserID(clientID string) {
 	h.clientUserIDMu.Lock()
 	defer h.clientUserIDMu.Unlock()
 	delete(h.clientUserID, clientID)
+	delete(h.clientName, clientID)
 }
 
 // IsUserIDInRoom checks if a given userID has an active member in the room.
@@ -819,16 +851,18 @@ func (h *Hub) publish(roomID string, state json.RawMessage) error {
 // userID is the authenticated user (empty if anonymous or FEATURE_ROOM_AUTH is off).
 // Instrumented: one slog record + one histogram observation per call.
 func (h *Hub) HandleRPC(method string, data []byte, userID string) (json.RawMessage, error) {
-	return h.handleRPC(method, data, userID, rateLimitKey("", userID))
+	return h.handleRPC(method, data, "", userID)
 }
 
-// handleRPC is HandleRPC with an explicit rate-limit key. The transport layer
-// passes a client-scoped key when no authenticated userID exists so anonymous
-// clients are limited per connection instead of sharing one bucket. The same
-// key doubles as the queue.vote voter identity: it is exactly "user:<userID>"
+// handleRPC is HandleRPC with the transport-known clientID. The transport
+// layer passes it so anonymous clients are rate-limited per connection
+// instead of sharing one bucket, and so display-name attribution can be
+// stamped from the connection identity (#165). The derived rate-limit key
+// doubles as the queue.vote voter identity: it is exactly "user:<userID>"
 // when authenticated, else "client:<clientID>", so the server stamps identity
 // and clients never send who they are.
-func (h *Hub) handleRPC(method string, data []byte, userID, rlKey string) (json.RawMessage, error) {
+func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (json.RawMessage, error) {
+	rlKey := rateLimitKey(clientID, userID)
 	start := time.Now()
 	// Fanout RPCs are rate-limited per caller before doing any work; a
 	// rejection surfaces as a UserError (centrifuge code 400) via
@@ -848,7 +882,7 @@ func (h *Hub) handleRPC(method string, data []byte, userID, rlKey string) (json.
 		err = h.checkListLimit(method, rlKey)
 	}
 	if err == nil {
-		result, err = h.dispatch(method, data, userID, rlKey)
+		result, err = h.dispatch(method, data, clientID, userID, rlKey)
 	}
 	d := time.Since(start)
 
@@ -919,7 +953,7 @@ func (h *Hub) checkListLimit(method, rlKey string) error {
 	return nil
 }
 
-func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.RawMessage, error) {
+func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey string) (json.RawMessage, error) {
 	switch method {
 	case "room.join":
 		var req struct {
@@ -964,13 +998,19 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 		}
 		// queue.add crosses the same trust boundary as playlist.import's
 		// client-supplied tracks (RFC-0007): the TrackRef is arbitrary client
-		// input, so run the shared validator. AddedBy stays a client display
-		// name (capped by the validator); identity-grade attribution is
-		// server-owned via RFC-0005's addedByUserId (B16).
+		// input, so run the shared validator.
 		if err := validateImportTracks([]queue.TrackRef{req.Track}); err != nil {
 			return nil, err
 		}
-		// Server-owned identity: never trust a client-supplied addedByUserId.
+		// Server-owned attribution (#165): the display name is stamped from
+		// the name the connection presented at connect time, never trusted
+		// from the RPC payload — a crafted addedBy naming another member is
+		// overridden. When the connection presented no name (or the caller
+		// is transport-independent) the validated client value stands.
+		// addedByUserId is likewise server-owned (RFC-0005 B16).
+		if name := h.displayName(clientID); name != "" {
+			req.Track.AddedBy = name
+		}
 		req.Track.AddedByUserID = userID
 		var addedID string
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
@@ -1279,6 +1319,14 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 		// server-assigned IDs of exactly the tracks that were added so
 		// enrichment below cannot touch pre-existing queue entries when the
 		// queue was partially full (the old last-N heuristic over-enriched).
+		//
+		// Server-owned attribution (#165): when the connection presented a
+		// display name at connect time it overrides the client-supplied
+		// addedBy param, same as queue.add.
+		addedBy := req.AddedBy
+		if name := h.displayName(clientID); name != "" {
+			addedBy = name
+		}
 		var addedIDs []string
 		res, mutErr := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			remaining := queue.MaxQueueSize - len(s.Queue)
@@ -1292,7 +1340,7 @@ func (h *Hub) dispatch(method string, data []byte, userID, rlKey string) (json.R
 			}
 
 			for _, track := range toAdd {
-				track.AddedBy = req.AddedBy
+				track.AddedBy = addedBy
 				// Server-owned identity: never trust a client-supplied addedByUserId.
 				track.AddedByUserID = userID
 				added := s.Add(track)
@@ -1585,6 +1633,18 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 	// Record the userID for host assignment (U3+).
 	h.RecordClientUserID(clientID, userID)
 
+	// Record the display name the connection presented at connect time
+	// (ConnInfo {name}) so queue attribution is stamped from the connection
+	// identity (#165), never from per-RPC client input.
+	if info := client.Info(); len(info) > 0 {
+		var d struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(info, &d) == nil {
+			h.RecordClientName(clientID, d.Name)
+		}
+	}
+
 	client.OnRPC(func(e centrifuge.RPCEvent, cb centrifuge.RPCCallback) {
 		// Trust boundary: reject mutations of rooms this client hasn't joined.
 		// Authorize has access to client.UserID() for authenticated requests.
@@ -1592,7 +1652,7 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 			cb(centrifuge.RPCReply{}, err)
 			return
 		}
-		reply, err := h.handleRPC(e.Method, e.Data, userID, rateLimitKey(clientID, userID))
+		reply, err := h.handleRPC(e.Method, e.Data, clientID, userID)
 		cb(centrifuge.RPCReply{Data: reply}, rpcClientError(err))
 	})
 }
