@@ -85,6 +85,28 @@ func envDurationMinutes(key string, dflt time.Duration) time.Duration {
 	return time.Duration(n) * time.Minute
 }
 
+// presenceConnInfo builds the centrifuge ConnInfo carried into presence from
+// the connect data {name, platform?}. The platform is the client's playback
+// service (#171); unrecognized values are dropped here so presence only ever
+// carries platforms the web app can render an indicator for. Returns nil when
+// no name was presented (anonymous v0 connections keep empty ConnInfo).
+func presenceConnInfo(data []byte) []byte {
+	var d struct {
+		Name     string `json:"name"`
+		Platform string `json:"platform"`
+	}
+	if err := json.Unmarshal(data, &d); err != nil || d.Name == "" {
+		return nil
+	}
+	info := map[string]string{"name": d.Name}
+	switch d.Platform {
+	case "spotify", "apple", "youtube":
+		info["platform"] = d.Platform
+	}
+	b, _ := json.Marshal(info)
+	return b
+}
+
 func main() {
 	var shutdownHooks []func()
 
@@ -393,16 +415,12 @@ func main() {
 
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
-		// The display name arrives as connect data {name}; carry it as ConnInfo so presence
-		// entries show who is in the room (metadata only — no audio, no auth).
+		// The display name and playback platform arrive as connect data
+		// {name, platform?}; carry them as ConnInfo so presence entries show who
+		// is in the room and on which service (metadata only — no audio, no auth).
 		var info []byte
 		if len(e.Data) > 0 {
-			var d struct {
-				Name string `json:"name"`
-			}
-			if json.Unmarshal(e.Data, &d) == nil && d.Name != "" {
-				info, _ = json.Marshal(map[string]string{"name": d.Name})
-			}
+			info = presenceConnInfo(e.Data)
 		}
 
 		var userID string

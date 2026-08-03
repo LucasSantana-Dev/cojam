@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Centrifuge } from 'centrifuge';
 import { pickEnv, getRuntimeEnv, resolveRuntimeFeatures } from './runtimeEnv';
 import { estimateOffset, type PingSample } from './clockSync';
+import { computeNameSuffixes } from './nameSuffix';
 import { fetchConnectionToken, getLastTokenFetchError } from './auth';
 import { getAccountToken } from './account';
 import { features } from './features';
@@ -25,6 +26,9 @@ export interface AppStore {
   reconnecting: boolean;
   name: string;
   members: Member[];
+  // Collision suffixes for duplicate display names (#170), recomputed on every
+  // membership change so PresenceBar and the fused chip cannot disagree.
+  nameSuffixes: Record<string, string>;
   connectedServices: string[];
   // Tracks this client has upvoted (F4). The published votes map holds
   // server-stamped voter keys the client cannot map back to itself (the
@@ -54,6 +58,7 @@ export const useStore = create<AppStore>((set) => ({
   reconnecting: false,
   name: '',
   members: [],
+  nameSuffixes: {},
   connectedServices: [],
   myVotes: {},
   chat: [],
@@ -63,7 +68,7 @@ export const useStore = create<AppStore>((set) => ({
   })),
   setConnected: (connected) => set({ connected }),
   setReconnecting: (reconnecting) => set({ reconnecting }),
-  setMembers: (members) => set({ members }),
+  setMembers: (members) => set({ members, nameSuffixes: computeNameSuffixes(members) }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
   setMyVotes: (myVotes) => set({ myVotes }),
   markVoted: (trackId, voted) => set((s) => {
@@ -76,9 +81,15 @@ export const useStore = create<AppStore>((set) => ({
     if (s.state?.roomId) persistMyVotes(s.state.roomId, myVotes);
     return { myVotes };
   }),
-  addMember: (m) => set((s) =>
-    s.members.some((x) => x.clientId === m.clientId) ? s : { members: [...s.members, m] }),
-  removeMember: (clientId) => set((s) => ({ members: s.members.filter((x) => x.clientId !== clientId) })),
+  addMember: (m) => set((s) => {
+    if (s.members.some((x) => x.clientId === m.clientId)) return s;
+    const members = [...s.members, m];
+    return { members, nameSuffixes: computeNameSuffixes(members) };
+  }),
+  removeMember: (clientId) => set((s) => {
+    const members = s.members.filter((x) => x.clientId !== clientId);
+    return { members, nameSuffixes: computeNameSuffixes(members) };
+  }),
   setChat: (messages) => set({ chat: messages }),
   // Chat has no version guard (it is not RoomState): dedupe by id so live
   // publications and history refetches can overlap safely, and cap the list.
@@ -170,7 +181,7 @@ let centrifuge: Centrifuge | null = null;
 // Set after a successful room.join. A later 'connected' (reconnect after a
 // drop) re-joins so the client adopts the server's authoritative state
 // instead of serving the stale pre-disconnect snapshot (B10).
-let activeRoom: { roomId: string; name: string } | null = null;
+let activeRoom: { roomId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' | null } | null = null;
 
 // joinRoom rejects if 'connected' never fires (unreachable server, rejected
 // token with retry loop): without this the join UI hung forever (B11).
@@ -378,7 +389,7 @@ export async function joinRoom(
   }
   // Mark the room active only after the initial join succeeded: the
   // 'connected' handler keys the reconnect resync off this.
-  activeRoom = { roomId, name };
+  activeRoom = { roomId, name, platform };
 
   // Seed chat history for late joiners (F8): the server ring holds the last
   // 50 messages, older ones are gone by design.
@@ -406,7 +417,7 @@ export async function joinRoom(
 export async function retryConnection() {
   const room = activeRoom;
   if (!room) throw new Error('Nothing to reconnect to');
-  await joinRoom(room.roomId, room.name);
+  await joinRoom(room.roomId, room.name, room.platform);
 }
 
 export async function queueAdd(roomId: string, track: Omit<TrackRef, 'id'>) {

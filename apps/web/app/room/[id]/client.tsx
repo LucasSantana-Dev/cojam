@@ -27,6 +27,7 @@ import { QueuePanel } from '../components/QueuePanel';
 import { ChatPanel } from '../components/ChatPanel';
 import { AddTrackForm } from '../components/AddTrackForm';
 import { PresenceBar } from '../components/PresenceBar';
+import { PresenceMeta } from '../components/PresenceMeta';
 import { ShareRoomButton } from '../components/ShareRoomButton';
 import { PublicRoomToggle } from '../components/PublicRoomToggle';
 import { OnboardingCard } from '../components/OnboardingCard';
@@ -129,16 +130,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     hostUserId: store.state?.hostUserId,
   });
 
-  // Presence snapshot for the fused now-playing chip. Deduped by name (like
-  // PresenceBar) so one person with two tabs counts once.
-  const members = store.members ?? [];
-  const presenceNames = new Set<string>();
-  const presence = members.filter((m) => {
-    if (presenceNames.has(m.name)) return false;
-    presenceNames.add(m.name);
-    return true;
-  });
-  const presenceStack = presence.slice(0, 4);
+  // Presence snapshot for the fused now-playing chip lives in PresenceMeta,
+  // which reads the store directly (per-connection members, no name dedupe).
   const transportState = store.state?.transport?.state;
   const isPlaying = transportState === 'playing';
 
@@ -441,23 +434,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                       {/* Fused presence + provenance (R7 + R1): the room's social
                           state lives on the player, not siloed in the header. */}
                       <div className="np-meta">
-                        {f.presence && presence.length > 0 && (
-                          <>
-                            <span className="presence-stack presence-stack--sm" aria-hidden>
-                              {presenceStack.map((m) => (
-                                <span
-                                  key={m.clientId}
-                                  className="avatar-chip"
-                                  style={{ background: avatarGradient(m.clientId || m.name) }}
-                                >
-                                  {m.name.charAt(0).toUpperCase()}
-                                </span>
-                              ))}
-                            </span>
-                            <span>{presence.length === 1 ? '1 listening' : `${presence.length} listening`}</span>
-                            <span aria-hidden className="np-meta__dot">·</span>
-                          </>
-                        )}
+                        <PresenceMeta />
                         <span>added by {nowPlaying.addedBy}</span>
                         <span className="np-timer">in room {formatElapsed(roomElapsedS)}</span>
                       </div>
