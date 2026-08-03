@@ -90,3 +90,60 @@ describe('ChatPanel', () => {
     expect((input as HTMLInputElement).value).toBe('spam');
   });
 });
+
+// Auto-scroll gating (#189). jsdom does not lay out, so scroll metrics are
+// stubbed per test to give the near-bottom math real numbers.
+describe('ChatPanel auto-scroll (#189)', () => {
+  const scrollList = (container: HTMLElement) =>
+    container.querySelector('.overflow-y-auto') as HTMLElement;
+
+  const stubMetrics = (el: HTMLElement, scrollHeight: number, clientHeight: number) => {
+    Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+  };
+
+  beforeEach(() => {
+    useStore.setState({ chat: [], connected: true, name: 'Ana' });
+  });
+
+  it('preserves a scrolled-up reading position when a message arrives', () => {
+    useStore.setState({ chat: [msg('m1', 'first')] });
+    const { container } = render(<ChatPanel roomId="r1" />);
+    const list = scrollList(container);
+    stubMetrics(list, 1000, 200);
+    // The user scrolls up to read history (700px above the bottom).
+    fireEvent.scroll(list, { target: { scrollTop: 100 } });
+
+    act(() => useStore.getState().addChatMessage(msg('m2', 'second')));
+
+    expect(list.scrollTop).toBe(100);
+  });
+
+  it('follows new messages when the user is at the bottom', () => {
+    useStore.setState({ chat: [msg('m1', 'first')] });
+    const { container } = render(<ChatPanel roomId="r1" />);
+    const list = scrollList(container);
+    stubMetrics(list, 1000, 200);
+    // At the bottom: scrollHeight - scrollTop - clientHeight = 0 <= 80px.
+    fireEvent.scroll(list, { target: { scrollTop: 800 } });
+
+    act(() => useStore.getState().addChatMessage(msg('m2', 'second')));
+
+    expect(list.scrollTop).toBe(1000);
+  });
+
+  it('resumes following once the user scrolls back near the bottom', () => {
+    useStore.setState({ chat: [msg('m1', 'first')] });
+    const { container } = render(<ChatPanel roomId="r1" />);
+    const list = scrollList(container);
+    stubMetrics(list, 1000, 200);
+    fireEvent.scroll(list, { target: { scrollTop: 100 } });
+    act(() => useStore.getState().addChatMessage(msg('m2', 'second')));
+    expect(list.scrollTop).toBe(100);
+
+    // Back within the 80px threshold: 1000 - 750 - 200 = 50.
+    fireEvent.scroll(list, { target: { scrollTop: 750 } });
+    act(() => useStore.getState().addChatMessage(msg('m3', 'third')));
+    expect(list.scrollTop).toBe(1000);
+  });
+});

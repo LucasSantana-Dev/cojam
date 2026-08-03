@@ -330,6 +330,17 @@ export async function joinRoom(
   return sub;
 }
 
+// retryConnection (#187): recovery path after a terminal disconnect (e.g. a
+// rejected token centrifuge stops retrying). Re-runs the full join for the
+// last active room, which re-establishes the connection and resyncs state
+// (room.join RPC + chat history refetch). Throws when there is no room to
+// return to; the caller (StatusBanner) keeps the banner up on failure.
+export async function retryConnection() {
+  const room = activeRoom;
+  if (!room) throw new Error('Nothing to reconnect to');
+  await joinRoom(room.roomId, room.name);
+}
+
 export async function queueAdd(roomId: string, track: Omit<TrackRef, 'id'>) {
   if (!centrifuge) throw new Error('Not connected');
   await centrifuge.rpc('queue.add', { roomId, track });
