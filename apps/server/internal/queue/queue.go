@@ -182,11 +182,13 @@ func (rs *RoomState) ToggleVote(trackID, voter string) (bool, error) {
 }
 
 // PruneVoter removes voter from every track's voter set. Used when an
-// ephemeral guest connection drops: its "client:<clientID>" keys must not
-// outlive the connection, or a reconnecting guest (new clientID) could vote
-// twice on the same track (#183). Authenticated "user:<userID>" keys persist
-// by design — identity survives reconnects. Bumps Version only when a vote
-// was actually removed; reports whether anything changed.
+// ephemeral guest connection drops: its keys ("client:<clientID>" without
+// room auth, "user:<anonSub>" with it) must not outlive the connection, or a
+// reconnecting guest (new clientID/sub) could vote twice on the same track
+// (#183, #232). Authenticated "user:<sb:uuid>" keys persist by design — that
+// identity survives reconnects, and the hub never passes it here. Bumps
+// Version only when a vote was actually removed; reports whether anything
+// changed.
 func (rs *RoomState) PruneVoter(voter string) bool {
 	pruned := false
 	for trackID, voters := range rs.Votes {

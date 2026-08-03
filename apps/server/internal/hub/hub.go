@@ -599,19 +599,35 @@ func (h *Hub) leaveRoom(clientID, roomID string) {
 	}
 }
 
-// PruneGuestVotes removes the ephemeral "client:<clientID>" voter key from
-// every room the client is enrolled in (called on disconnect, before Leave
-// clears the membership list). A guest's votes die with the connection: the
-// clientID is never reused, so keeping the keys would inflate counts and let
-// a reconnecting guest double-vote (#183). Each prune goes through mutate, so
-// a room where the client actually voted gets a Version bump + save +
-// publish; rooms where it never voted are untouched. Authenticated
-// "user:<userID>" keys are deliberately kept — that identity survives
-// reconnects.
+// PruneGuestVotes removes the disconnecting guest's voter key from every room
+// the client is enrolled in (called on disconnect, before Leave clears the
+// membership list and before RemoveClientUserID drops the identity). A
+// guest's votes die with the connection: neither the clientID nor the
+// anonymous room-auth sub is ever reused, so keeping the keys would inflate
+// counts and let a reconnecting guest double-vote (#183, #232). The key
+// pruned is the same one rateLimitKey resolves for the vote RPC:
+// "user:<anonSub>" when the connection carried an anonymous room-auth
+// identity, else "client:<clientID>". Authenticated "sb:<uuid>" identities
+// survive reconnects, so their votes are deliberately kept. Ordering vs.
+// room.rebind (#172): if the guest rebound first, their votes were already
+// rewritten to "user:<sb:...>" and the prune of the dead anonymous key is a
+// no-op; if the disconnect fires first, the prune removes the votes and a
+// later rebind finds nothing to claim — either way, votes tied to the
+// anonymous identity die with the disconnect unless a rebind already claimed
+// them. Each prune goes through mutate, so a room where the client actually
+// voted gets a Version bump + save + publish; rooms where it never voted are
+// untouched.
 func (h *Hub) PruneGuestVotes(clientID string) {
 	if clientID == "" {
 		return
 	}
+	h.clientUserIDMu.RLock()
+	userID := h.clientUserID[clientID]
+	h.clientUserIDMu.RUnlock()
+	if strings.HasPrefix(userID, "sb:") {
+		return
+	}
+
 	h.memberMu.RLock()
 	rooms := make([]string, 0, len(h.members[clientID]))
 	for roomID := range h.members[clientID] {
@@ -619,7 +635,7 @@ func (h *Hub) PruneGuestVotes(clientID string) {
 	}
 	h.memberMu.RUnlock()
 
-	voterKey := "client:" + clientID
+	voterKey := rateLimitKey(clientID, userID)
 	for _, roomID := range rooms {
 		if _, err := h.mutate(roomID, func(s *queue.RoomState) error {
 			s.PruneVoter(voterKey)
