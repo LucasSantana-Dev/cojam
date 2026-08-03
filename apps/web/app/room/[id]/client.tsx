@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useStore, joinRoom, setRadio, nowPlayingAdvance } from '@/lib/realtime';
-import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS, serverNow } from '@/lib/playbackSync';
+import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
 
@@ -99,7 +99,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
       });
     }
   }, [appleAuthorized]);
-  const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId
     ? store.state.queue.find((t) => t.id === store.state!.nowPlayingId)
@@ -174,77 +173,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
     if (saved) doJoin(saved);
   }, [joined, doJoin]);
 
-  // U4: Drift correction loop (gated by the sync feature flag)
-  // Monitors transport state and corrects playback position drift.
-  useEffect(() => {
-    if (!f.sync || !activePlayer || !store.state?.transport) return;
-
-    const transport = store.state.transport;
-
-    // Handle state transitions: play/pause/stop
-    if (transport.state === 'playing') {
-      activePlayer.play().catch((err) => {
-        console.warn('Failed to play:', err);
-      });
-      // Seek to expected position to sync with server
-      const expected = computeExpectedPosition(transport, serverNow());
-      activePlayer.seekToMs(expected).catch((err) => {
-        if (activePlayer.canSeek()) {
-          console.warn('Failed to seek to expected position:', err);
-        }
-        // If !canSeek (e.g. Spotify free tier), silently continue
-      });
-    } else if (transport.state === 'paused') {
-      activePlayer.pause().catch((err) => {
-        console.warn('Failed to pause:', err);
-      });
-    }
-
-    // If playing and the player supports seek, set up drift correction loop
-    if (transport.state !== 'playing' || !activePlayer.canSeek()) {
-      // Clean up any existing interval
-      if (driftCorrectionIntervalRef.current) {
-        clearInterval(driftCorrectionIntervalRef.current);
-        driftCorrectionIntervalRef.current = null;
-      }
-      return;
-    }
-
-    // Start drift correction interval: check ~every 1500ms
-    driftCorrectionIntervalRef.current = setInterval(() => {
-      // Re-check state in case it changed
-      if (!activePlayer || !store.state?.transport || store.state.transport.state !== 'playing') {
-        if (driftCorrectionIntervalRef.current) {
-          clearInterval(driftCorrectionIntervalRef.current);
-          driftCorrectionIntervalRef.current = null;
-        }
-        return;
-      }
-
-      const transport = store.state.transport;
-      const expected = computeExpectedPosition(transport, serverNow());
-
-      activePlayer.getCurrentPositionMs()
-        .then((actual) => {
-          const drift = actual - expected;
-          if (shouldCorrect(drift, DRIFT_THRESHOLD_MS)) {
-            activePlayer.seekToMs(expected).catch((err) => {
-              console.warn('Drift correction seek failed:', err);
-            });
-          }
-        })
-        .catch((err) => {
-          console.warn('Failed to get current position for drift check:', err);
-        });
-    }, 1500);
-
-    return () => {
-      if (driftCorrectionIntervalRef.current) {
-        clearInterval(driftCorrectionIntervalRef.current);
-        driftCorrectionIntervalRef.current = null;
-      }
-    };
-  }, [activePlayer, store.state?.transport, store.state?.transport?.state, f.sync]);
+  // U4: Drift correction loop (gated by the sync feature flag). The hook keys
+  // off the meaningful transport fields, not publication object identity (#177).
+  useDriftCorrection(activePlayer, f.sync);
 
   // Auto-advance at track end for Spotify/Apple (YouTube also advances via its
   // native onStateChange; the server dedups through AdvanceAfter). onEnded has
