@@ -29,10 +29,13 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `chat.history` | `{ roomId }` | `{ messages: ChatMessage[] }` |
 | `sync.ping` | `{}` | `{ serverNowMs: number }` |
 
-`track.search` is a read (not membership-gated). `prefer` lists the caller's connected
+`track.search` is a read (not membership-gated). The query is trimmed; empty
+after trim or longer than 200 chars is rejected with a UserError (code 400)
+before any upstream fanout. `prefer` lists the caller's connected
 providers (`"spotify"`, `"apple"`); results playable on those providers rank first, other
 providers still appear below. Unknown providers are ignored; omitting `prefer` leaves the
-order unchanged.
+order unchanged. `prefer` is capped to the provider allowlist size (3); extras are
+truncated.
 
 `playlist.import` accepts an optional `tracks` array (RFC-0007). When present and
 non-empty, the server skips its own playlist fetcher and enqueues the supplied
@@ -41,7 +44,9 @@ metadata after validation (max 200 tracks, field length caps, duration range,
 which it fetches client-side with the user's OAuth token. When `tracks` is absent,
 the server fetches `url` itself (Deezer, YouTube). Compatibility: old clients send
 no `tracks` and behave as before; old servers ignore the unknown field and fetch
-`url` server-side (Spotify URLs then 403 in dev mode).
+`url` server-side (Spotify URLs then 403 in dev mode). `playlist.import` draws from
+the per-caller fanout rate limit (same bucket as `track.search` and the enrichment
+reads; a rejection is the code-400 "too many requests, slow down" UserError).
 
 `track.depth`, `track.lyrics`, `track.listenbrainz`, and `track.lastfm` are reads
 (not membership-gated). Each fans out to one third-party provider and degrades to
@@ -81,7 +86,10 @@ type LastfmEnrich = {        // source: "lastfm" (FEATURE_LASTFM_ENRICH + LASTFM
 `radio.set` toggles `radioEnabled` (host only). When the queue runs dry on
 `now_playing.advance` with radio on, the server refills the queue asynchronously
 from a similar-tracks provider (Last.fm, `FEATURE_RADIO` + `LASTFM_API_KEY`)
-seeded by the last queued track.
+seeded by the last queued track. The refill fanout is deliberately not
+rate-limited: it fires at most once per advance that actually empties the queue
+(the refill re-checks state and no-ops otherwise), and the trigger RPC is
+host-only, so per-caller spam cannot multiply upstream calls.
 
 `room.set_public` opts a room into the public directory (member + host only,
 `FEATURE_PUBLIC_ROOMS`, default off). `public` persists on the room until the

@@ -56,11 +56,10 @@ func (m *Metrics) RegisterRoomsGauge(count func() float64) {
 	}, count))
 }
 
-func (m *Metrics) ObserveRPC(method string, err error, d time.Duration) {
-	status := "ok"
-	if err != nil {
-		status = "error"
-	}
+// ObserveRPC records one RPC duration under a status label: "ok", "error"
+// (server fault), or "user_error" (client mistake, e.g. bad input). The
+// caller classifies; obs cannot import hub's UserError without a cycle.
+func (m *Metrics) ObserveRPC(method, status string, d time.Duration) {
 	m.RPCDuration.WithLabelValues(method, status).Observe(d.Seconds())
 }
 
