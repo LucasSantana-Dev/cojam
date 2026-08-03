@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
+import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage, getClockOffsetMs, isTrackNotFoundError } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import type { TrackRef } from '@cojam/shared';
 import {
@@ -76,7 +76,34 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     el.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
   }, [nowPlayingId]);
 
+  // #179: a track that becomes now-playing during its undo window must not be
+  // removed 4s later. Watch the store for now-playing transitions and cancel
+  // the pending removal (same cleanup as Undo) so the track keeps playing.
+  useEffect(() => {
+    return useStore.subscribe((s, prev) => {
+      const id = s.state?.nowPlayingId;
+      if (!id || id === prev.state?.nowPlayingId) return;
+      setUndoTimers((timers) => {
+        const timer = timers.get(id);
+        if (!timer) return timers;
+        clearTimeout(timer);
+        const next = new Map(timers);
+        next.delete(id);
+        return next;
+      });
+      setRemovingIds((ids) => {
+        if (!ids.has(id)) return ids;
+        const next = new Set(ids);
+        next.delete(id);
+        return next;
+      });
+    });
+  }, []);
+
   const handleVote = async (trackId: string) => {
+    // Pending-removal rows are inert (#179): blocked in the UI, guarded here
+    // too so a stray click can never vote for a half-removed track.
+    if (removingIds.has(trackId)) return;
     setActionError('');
     const voted = !myVotes[trackId];
     try {
@@ -101,9 +128,14 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
       try {
         await queueRemove(roomId, trackId);
       } catch (error) {
-        // Disconnected/unauthorized: the track stays; restore and say why.
-        console.error('queue.remove failed:', error);
-        setActionError(rpcErrorMessage(error, 'Couldn\'t remove that track. Try again.'));
+        // #179: "track not found" (#211) means someone else already removed it
+        // (or it left the queue) during the undo window — the desired end
+        // state is reached, so stay silent instead of a spurious failure.
+        if (!isTrackNotFoundError(error)) {
+          // Disconnected/unauthorized: the track stays; restore and say why.
+          console.error('queue.remove failed:', error);
+          setActionError(rpcErrorMessage(error, 'Couldn\'t remove that track. Try again.'));
+        }
       } finally {
         setRemovingIds((prev) => {
           const next = new Set(prev);
@@ -139,6 +171,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   };
 
   const handlePlay = async (trackId: string) => {
+    if (removingIds.has(trackId)) return; // pending-removal rows are inert (#179)
     setActionError('');
     try {
       await nowPlayingSet(roomId, trackId);
@@ -148,6 +181,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   };
 
   const handleMove = async (trackId: string, toIndex: number) => {
+    if (removingIds.has(trackId)) return; // pending-removal rows are inert (#179)
     setActionError('');
     try {
       await queueReorder(roomId, trackId, toIndex);
@@ -234,6 +268,10 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
         <div ref={listRef} className="space-y-2 max-h-96 overflow-y-auto pr-2">
           {queue.map((track, index) => {
             const art = queueArtwork(track);
+            // #179: during the undo window the row is marked pending-removal
+            // and every interaction on it is disabled (Undo stays live).
+            const isRemoving = removingIds.has(track.id);
+            const pendingTitle = 'Removal pending — Undo to restore';
             return (
             <div
               key={track.id}
@@ -351,10 +389,10 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                 {queueVotingEnabled && (
                   <button
                     onClick={() => handleVote(track.id)}
-                    disabled={!connected}
+                    disabled={!connected || isRemoving}
                     aria-label="Vote"
                     aria-pressed={Boolean(myVotes[track.id])}
-                    title={myVotes[track.id] ? 'Remove your vote' : 'Vote for this track'}
+                    title={isRemoving ? pendingTitle : myVotes[track.id] ? 'Remove your vote' : 'Vote for this track'}
                     className="p-1.5 rounded transition-all duration-150 hover:brightness-110 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 flex-shrink-0"
                     style={{
                       backgroundColor: myVotes[track.id] ? 'var(--color-accent)' : 'var(--color-surface-3)',
@@ -372,9 +410,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                 <div className="queue-controls flex gap-1 flex-shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
                   <button
                     onClick={() => handlePlay(track.id)}
-                    disabled={!canControl}
+                    disabled={!canControl || isRemoving}
                     aria-label="Play"
-                    title={canControl ? 'Play' : 'Only the host can play tracks'}
+                    title={isRemoving ? pendingTitle : canControl ? 'Play' : 'Only the host can play tracks'}
                     className="p-1.5 rounded transition-all duration-150 hover:brightness-110 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
                   >
@@ -382,9 +420,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                   </button>
                   <button
                     onClick={() => handleMoveUp(track.id, index)}
-                    disabled={index === 0 || !canControl}
+                    disabled={index === 0 || !canControl || isRemoving}
                     aria-label="Move up"
-                    title={canControl ? 'Move up' : 'Only the host can reorder tracks'}
+                    title={isRemoving ? pendingTitle : canControl ? 'Move up' : 'Only the host can reorder tracks'}
                     className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
                   >
@@ -392,9 +430,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                   </button>
                   <button
                     onClick={() => handleMoveDown(track.id, index)}
-                    disabled={index === queue.length - 1 || !canControl}
+                    disabled={index === queue.length - 1 || !canControl || isRemoving}
                     aria-label="Move down"
-                    title={canControl ? 'Move down' : 'Only the host can reorder tracks'}
+                    title={isRemoving ? pendingTitle : canControl ? 'Move down' : 'Only the host can reorder tracks'}
                     className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
                   >
@@ -402,9 +440,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                   </button>
                   <button
                     onClick={() => handleRemove(track.id)}
-                    disabled={!canControl}
+                    disabled={!canControl || isRemoving}
                     aria-label="Remove"
-                    title={canControl ? 'Remove' : 'Only the host can remove tracks'}
+                    title={isRemoving ? pendingTitle : canControl ? 'Remove' : 'Only the host can remove tracks'}
                     className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
                   >
