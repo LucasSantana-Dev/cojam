@@ -588,6 +588,50 @@ func TestRemovePrunesVotes(t *testing.T) {
 	}
 }
 
+func TestPruneVoter(t *testing.T) {
+	rs := &RoomState{
+		RoomID: "room1",
+		Queue: []TrackRef{
+			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
+			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
+		},
+		Version: 1,
+	}
+
+	if _, err := rs.ToggleVote("t1", "client:g1"); err != nil {
+		t.Fatalf("vote t1 guest: %v", err)
+	}
+	if _, err := rs.ToggleVote("t1", "user:alice"); err != nil {
+		t.Fatalf("vote t1 alice: %v", err)
+	}
+	if _, err := rs.ToggleVote("t2", "client:g1"); err != nil {
+		t.Fatalf("vote t2 guest: %v", err)
+	}
+
+	// Version 4 after three votes; one prune bumps once, not per track.
+	if !rs.PruneVoter("client:g1") {
+		t.Fatal("expected pruned=true for a voter with votes")
+	}
+	if rs.Version != 5 {
+		t.Errorf("expected version 5 (single bump per prune), got %d", rs.Version)
+	}
+	voters := rs.Votes["t1"]
+	if len(voters) != 1 || voters[0] != "user:alice" {
+		t.Errorf("expected votes[t1] = [user:alice], got %v", voters)
+	}
+	if _, ok := rs.Votes["t2"]; ok {
+		t.Errorf("expected votes[t2] entry dropped at zero voters, got %v", rs.Votes["t2"])
+	}
+
+	// Unknown voter: no change, no bump.
+	if rs.PruneVoter("client:ghost") {
+		t.Error("expected pruned=false for an unknown voter")
+	}
+	if rs.Version != 5 {
+		t.Errorf("expected version unchanged on no-op prune, got %d", rs.Version)
+	}
+}
+
 // TestAddToDrainedRoomStartsNewTrack pins #175: after the queue runs dry
 // (NowPlayingID cleared by AdvanceAfter, played tracks kept as history),
 // adding a track must start THAT track, not Queue[0] (the oldest played

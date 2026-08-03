@@ -433,6 +433,7 @@ func main() {
 
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
 			metrics.ConnDec()
+			h.PruneGuestVotes(client.ID())    // drop ephemeral guest votes before membership is cleared (#183)
 			h.Leave(client.ID())              // revoke room memberships for this connection
 			h.RemoveClientUserID(client.ID()) // clean up userID tracking for host assignment
 			logger.Info("client_disconnected", "client_id", client.ID(), "reason", e.Reason)

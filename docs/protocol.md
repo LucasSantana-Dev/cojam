@@ -180,7 +180,10 @@ toggles the caller's upvote on a queued track: absent votes on, present votes of
 voter per track. The server stamps the voter key from the connection identity (`user:<userID>`
 when authenticated, else `client:<clientID>`); clients never send who they are. Votes live in a
 separate `RoomState.votes` map (track ID to voter keys), not on `TrackRef`, are pruned when a
-track leaves the queue, and are capped at 200 voters per track. Each toggle bumps `version` and
+track leaves the queue, and are capped at 200 voters per track. Guest votes are ephemeral: a
+disconnect prunes that connection's `client:<clientID>` keys from every room it joined (with a
+`version` bump + publish), so a reconnecting guest gets a fresh clientID and cannot double-vote;
+authenticated `user:<userID>` votes persist across reconnects. Each toggle bumps `version` and
 publishes the full state; a dedicated per-caller rate limit (10 burst, one token per 2s) throttles
 toggle wars. Voting is member-gated but never host-only, and counts are a reorder suggestion for
 the host, not an automatic reorder: the web client renders counts plus a listeners-pick marker and
