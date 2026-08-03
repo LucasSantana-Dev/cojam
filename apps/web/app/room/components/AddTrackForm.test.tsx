@@ -121,3 +121,61 @@ describe('AddTrackForm search-seq guard', () => {
     expect(rpcMocks.searchTracks).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AddTrackForm search failure states', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useStore.setState({ name: 'Ana', connectedServices: [] });
+    rpcMocks.searchTracks.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const typeQuery = async (value: string) => {
+    const input = screen.getByRole('textbox', { name: 'Search for a song' });
+    fireEvent.change(input, { target: { value } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+  };
+
+  it('renders failure copy with retry (not the empty copy) when search rejects', async () => {
+    rpcMocks.searchTracks.mockRejectedValue({ code: 500, message: 'internal error' });
+
+    render(<AddTrackForm roomId="r1" />);
+    await typeQuery('some query');
+
+    expect(screen.getByText('Search failed. Check your connection and try again.')).toBeInTheDocument();
+    expect(screen.queryByText(/No matches found/)).not.toBeInTheDocument();
+
+    // Retry re-fires the search for the same query.
+    rpcMocks.searchTracks.mockResolvedValue([candidate('Recovered Song')]);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(rpcMocks.searchTracks).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Recovered Song')).toBeInTheDocument();
+  });
+
+  it('renders a slow-down message for rate-limit rejections', async () => {
+    rpcMocks.searchTracks.mockRejectedValue({ code: 400, message: 'too many requests, slow down' });
+
+    render(<AddTrackForm roomId="r1" />);
+    await typeQuery('some query');
+
+    expect(screen.getByText(/Slow down/)).toBeInTheDocument();
+    expect(screen.queryByText(/No matches found/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the zero-results copy for an empty (successful) result set', async () => {
+    rpcMocks.searchTracks.mockResolvedValue([]);
+
+    render(<AddTrackForm roomId="r1" />);
+    await typeQuery('some query');
+
+    expect(screen.getByText(/No matches found/)).toBeInTheDocument();
+  });
+});

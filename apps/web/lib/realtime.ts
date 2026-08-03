@@ -344,6 +344,13 @@ export function rpcErrorMessage(err: unknown, fallback: string): string {
   return typeof msg === 'string' && msg ? msg : fallback;
 }
 
+// isRateLimitError reports whether an RPC rejection is the server's per-caller
+// rate limit ("too many requests, slow down"), so the UI can show a slow-down
+// message instead of a generic failure.
+export function isRateLimitError(err: unknown): boolean {
+  return /too many requests|rate.?limit/i.test(rpcErrorMessage(err, ''));
+}
+
 export async function queueRemove(roomId: string, trackId: string) {
   if (!centrifuge) throw new Error('Not connected');
   await centrifuge.rpc('queue.remove', { roomId, trackId });

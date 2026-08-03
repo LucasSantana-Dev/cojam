@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { useStore, queueAdd, importPlaylist, rpcErrorMessage, type SearchCandidate } from '@/lib/realtime';
+import { useStore, queueAdd, importPlaylist, rpcErrorMessage, isRateLimitError, type SearchCandidate } from '@/lib/realtime';
 import { searchAllTracks } from '@/lib/spotifySearch';
 import { mergeProviderPrefs } from '@/lib/account';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
@@ -33,7 +33,11 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [, setPlaylistInputRef] = useState<HTMLInputElement | null>(null);
+  // A rejected search is NOT zero results: null = no error, otherwise the kind
+  // of failure copy to show (rate-limit gets a slow-down message).
+  const [searchError, setSearchError] = useState<'rate-limit' | 'failed' | null>(null);
+  // Bumped by the retry button to re-fire the debounced search effect.
+  const [searchRetryNonce, setSearchRetryNonce] = useState(0);
   const [importErrorShake, setImportErrorShake] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -72,9 +76,15 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
     debounceTimerRef.current = setTimeout(async () => {
       try {
         const results = await searchAllTracks(searchQuery, mergeProviderPrefs(connectedServices, { spotify: spotifyAuthorized, apple: appleAuthorized }));
-        if (searchSeqRef.current === seq) setSearchResults(results);
-      } catch {
-        if (searchSeqRef.current === seq) setSearchResults([]);
+        if (searchSeqRef.current === seq) {
+          setSearchResults(results);
+          setSearchError(null);
+        }
+      } catch (err) {
+        if (searchSeqRef.current === seq) {
+          setSearchResults([]);
+          setSearchError(isRateLimitError(err) ? 'rate-limit' : 'failed');
+        }
       } finally {
         if (searchSeqRef.current === seq) setIsSearching(false);
       }
@@ -83,7 +93,14 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [searchQuery, spotifyAuthorized, appleAuthorized, connectedServices]);
+  }, [searchQuery, spotifyAuthorized, appleAuthorized, connectedServices, searchRetryNonce]);
+
+  // Retry re-fires the debounced effect for the current query via the nonce dep.
+  const retrySearch = () => {
+    setSearchError(null);
+    setIsSearching(true);
+    setSearchRetryNonce((n) => n + 1);
+  };
 
   const handleSearchResultClick = async (result: SearchCandidate) => {
     setLoading(true);
@@ -214,6 +231,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               setSearchQuery(q);
               // Search-state resets happen here (event handler), not in the
               // debounce effect.
+              setSearchError(null);
               if (q.trim()) {
                 setIsSearching(true);
                 setSearchResults([]); // stale results must not render under the skeleton
@@ -294,7 +312,25 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               </ul>
             )}
 
-            {!isSearching && searchResults.length === 0 && (
+            {!isSearching && searchError && (
+              <div className="p-4 text-center space-y-2">
+                <p role="alert" className="text-sm" style={{ color: 'var(--color-status-error)' }}>
+                  {searchError === 'rate-limit'
+                    ? 'Too many searches. Slow down and try again in a moment.'
+                    : 'Search failed. Check your connection and try again.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={retrySearch}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none border"
+                  style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {!isSearching && !searchError && searchResults.length === 0 && (
               <div className="p-4 text-center">
                 <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
                   No matches found. Try a different search, or add manually.
@@ -320,7 +356,6 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <input
-                ref={setPlaylistInputRef}
                 type="url"
                 placeholder="Paste playlist link"
                 aria-label="Playlist URL"
