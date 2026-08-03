@@ -17,6 +17,13 @@ export function playPauseLabel(state: string | undefined): 'Play' | 'Pause' {
   return state === 'playing' ? 'Pause' : 'Play';
 }
 
+// Keys that actually move the slider. Tab/Escape are focus navigation, not
+// seek intent, so their keyup must not commit a transport.seek RPC.
+const SEEK_COMMIT_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown']);
+// Held/repeated arrow keys fire one keyup each; debounce so a burst commits
+// one RPC per pause instead of one per keyup.
+const SEEK_KEYUP_DEBOUNCE_MS = 300;
+
 interface TransportUIProps {
   roomId: string;
   activePlayer: IPlayer | null;
@@ -80,12 +87,37 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
   }, []);
 
   // Commit the seek on release (not per input tick). No-arg so it attaches to
-  // mouse/touch/key up events; reads the dragged displayPosition from state.
+  // mouse/touch up events; reads the dragged displayPosition from state.
   const commitSeek = useCallback(() => {
     setIsDragging(false);
     dragRef.current = false;
     transportSeek(roomId, displayPosition).catch((err) => console.error('Seek error:', err));
   }, [roomId, displayPosition]);
+
+  const keySeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cancel a pending debounced keyboard seek on unmount.
+  useEffect(() => {
+    return () => {
+      if (keySeekTimerRef.current) clearTimeout(keySeekTimerRef.current);
+    };
+  }, []);
+
+  // Keyboard seeks commit only on keys that move the slider (Tab/Escape are
+  // ignored) and are debounced so repeated keyups fire one RPC per pause.
+  const handleSeekKeyUp = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!SEEK_COMMIT_KEYS.has(e.key)) return;
+      setIsDragging(false);
+      dragRef.current = false;
+      if (keySeekTimerRef.current) clearTimeout(keySeekTimerRef.current);
+      keySeekTimerRef.current = setTimeout(() => {
+        keySeekTimerRef.current = null;
+        transportSeek(roomId, displayPosition).catch((err) => console.error('Seek error:', err));
+      }, SEEK_KEYUP_DEBOUNCE_MS);
+    },
+    [roomId, displayPosition]
+  );
 
   const seekDisabledReason = !canControl
     ? 'Only the host can seek'
@@ -130,7 +162,7 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
               onTouchStart={handleSeekStart}
               onMouseUp={commitSeek}
               onTouchEnd={commitSeek}
-              onKeyUp={commitSeek}
+              onKeyUp={handleSeekKeyUp}
               disabled={!canSeek || !activePlayer || !canControl}
               className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-color disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
