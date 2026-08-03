@@ -164,6 +164,12 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 on `queue.add` and `playlist.import` (a client-supplied value is overwritten). Tracks queued before
 this existed (or while the flag is off) carry no owner and stay host-only.
 
+Attribution (#165): the server also stamps `TrackRef.addedBy` (the display name) from the name the
+connection presented at connect time (centrifuge ConnInfo), on both `queue.add` (overriding
+`track.addedBy`) and `playlist.import` (overriding the `addedBy` param); a crafted value naming
+another member never reaches the room state. When the connection presented no name (room auth off
+and no connect-data name), the validated client value stands (v0).
+
 Timestamps: the server stamps `TrackRef.addedAt` (unix ms) when a track enters the queue and
 `RoomState.createdAt` (unix ms) at room creation; client-supplied values are overwritten. Rooms
 and tracks persisted before this existed carry no timestamp (absent on the wire); clients must
@@ -195,7 +201,7 @@ distinguished by `type`, no version guard since chat is not `RoomState`):
 { "type": "chat.message", "message": ChatMessage }
 ```
 
-Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages.
+Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated), never on display name: two connections that picked the same name are two distinct entries and count as two listeners.
 
 ## Accounts (Supabase Auth, behind `FEATURE_SUPABASE_AUTH`)
 
@@ -281,7 +287,7 @@ type TrackRef = {
     apple?: { songId: string; confidence: number };
     spotify?: { trackUri: string; confidence: number };
   };
-  addedBy: string;     // display name
+  addedBy: string;     // display name; server-stamped from the connection's connect-time name when one was recorded (client value overridden then)
   addedByUserId?: string; // authenticated userID of the adder, server-stamped
   addedAt?: number;    // unix ms when queued, server-stamped (absent on older tracks)
   artworkUrl?: string; // album art, client-supplied at add time (server validates https, ≤512 chars)

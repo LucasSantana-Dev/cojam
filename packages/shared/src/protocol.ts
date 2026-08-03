@@ -12,6 +12,9 @@ export type TrackRef = {
   durationMs?: number;
   isrc?: string;
   sources: { youtube?: SourceRef; apple?: SourceRef; spotify?: SourceRef };
+  // Display-name attribution. Server-stamped from the connection's
+  // connect-time name on queue.add/playlist.import when one was recorded
+  // (client-supplied values are overridden then); client-supplied otherwise.
   addedBy: string;
   // Album/track artwork URL, client-supplied at queue.add/playlist.import time
   // from the search/playlist provider response (server validates https + length).
