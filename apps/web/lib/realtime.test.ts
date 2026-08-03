@@ -59,15 +59,21 @@ vi.mock('centrifuge', () => ({ Centrifuge: centrifugeMock.MockCentrifuge }));
 
 const authMocks = vi.hoisted(() => ({
   accountToken: null as string | null,
+  session: null as { userId: string; email: string | null; accessToken: string } | null,
   fetchConnectionToken: vi.fn(async (): Promise<{ token: string } | null> => ({ token: 'anon-token' })),
   lastTokenFetchError: null as string | null,
+  proofToken: null as string | null,
+  cleared: false,
 }));
 vi.mock('./account', () => ({
   getAccountToken: vi.fn(async () => authMocks.accountToken),
+  getAccountSession: vi.fn(async () => authMocks.session),
 }));
 vi.mock('./auth', () => ({
   fetchConnectionToken: authMocks.fetchConnectionToken,
   getLastTokenFetchError: () => authMocks.lastTokenFetchError,
+  getStoredProofToken: () => authMocks.proofToken,
+  clearStoredIdentity: () => { authMocks.cleared = true; },
 }));
 
 // Runtime-env mock so tests can flip runtime-resolved flags (F8 room chat)
@@ -257,10 +263,13 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
   beforeEach(() => {
     centrifugeMock.MockCentrifuge.instances = [];
     authMocks.accountToken = null;
+    authMocks.session = null;
+    authMocks.proofToken = null;
+    authMocks.cleared = false;
     authMocks.lastTokenFetchError = null;
     authMocks.fetchConnectionToken.mockClear();
     runtimeEnvMocks.env = undefined;
-    useStore.setState({ state: null, connected: false, reconnecting: false, chat: [] });
+    useStore.setState({ state: null, connected: false, reconnecting: false, chat: [], rebindNotice: null });
   });
 
   // joinRoom resolves the token (async) before constructing Centrifuge, so
@@ -651,5 +660,176 @@ describe('host moderation (#181)', () => {
 
     await kickMember('room-1', 'client-7');
     expect(callsFor('room.kick').at(-1)?.payload).toEqual({ roomId: 'room-1', clientId: 'client-7' });
+  });
+});
+
+describe('guest-to-account rebind (#172)', () => {
+  beforeEach(() => {
+    centrifugeMock.MockCentrifuge.instances = [];
+    authMocks.accountToken = null;
+    authMocks.session = null;
+    authMocks.proofToken = null;
+    authMocks.cleared = false;
+    authMocks.lastTokenFetchError = null;
+    runtimeEnvMocks.env = { features: { roomAuth: true } };
+    useStore.setState({ state: null, connected: false, reconnecting: false, chat: [], rebindNotice: null });
+  });
+
+  const lastInstance = async () => {
+    await vi.waitFor(() => {
+      expect(centrifugeMock.MockCentrifuge.instances.length).toBeGreaterThan(0);
+    });
+    const instances = centrifugeMock.MockCentrifuge.instances;
+    return instances[instances.length - 1];
+  };
+
+  const signIn = () => {
+    authMocks.session = { userId: 'u1', email: null, accessToken: 'sb-token' };
+    authMocks.accountToken = 'sb-token';
+  };
+
+  const rebindCalls = (instance: InstanceType<typeof centrifugeMock.MockCentrifuge>) =>
+    instance.rpcCalls.filter((c) => c.method === 'room.rebind');
+
+  // Reject room.rebind with the given server message; every other method
+  // keeps the default mock behavior.
+  const failRebindWith = (
+    instance: InstanceType<typeof centrifugeMock.MockCentrifuge>,
+    message: string,
+  ) => {
+    const defaultRpc = instance.rpc.bind(instance);
+    instance.rpc = (method: string, payload: unknown) => {
+      if (method === 'room.rebind') {
+        instance.rpcCalls.push({ method, payload });
+        return Promise.reject({ code: 400, message });
+      }
+      return defaultRpc(method, payload);
+    };
+  };
+
+  it('attempts the rebind on room join with exactly {roomId, proof}, no identity field', async () => {
+    signIn();
+    authMocks.proofToken = 'proof-jwt';
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    await vi.waitFor(() => expect(rebindCalls(instance)).toHaveLength(1));
+    const payload = rebindCalls(instance)[0].payload as Record<string, unknown>;
+    expect(payload).toEqual({ roomId: 'room-1', proof: 'proof-jwt' });
+    expect(Object.keys(payload).sort()).toEqual(['proof', 'roomId']);
+  });
+
+  it('does not attempt the rebind without a stored proof token', async () => {
+    signIn();
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+    await new Promise((r) => setTimeout(r, 10));
+    expect(rebindCalls(instance)).toHaveLength(0);
+  });
+
+  it('does not attempt the rebind when signed out', async () => {
+    authMocks.proofToken = 'proof-jwt';
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+    await new Promise((r) => setTimeout(r, 10));
+    expect(rebindCalls(instance)).toHaveLength(0);
+  });
+
+  it('keeps the proof token on RPC 200 alone, discards it when the publication shows the account identity', async () => {
+    signIn();
+    authMocks.proofToken = 'proof-jwt';
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    await vi.waitFor(() => expect(rebindCalls(instance)).toHaveLength(1));
+    // The RPC resolved (mock 200) but no publication arrived yet: the token
+    // must survive (publish can fail after commit, #178).
+    await new Promise((r) => setTimeout(r, 10));
+    expect(authMocks.cleared).toBe(false);
+
+    const pubHandler = instance.subscriptions[0].handlers['publication'][0];
+    pubHandler({
+      data: {
+        type: 'room.state',
+        state: {
+          roomId: 'room-1',
+          queue: [
+            { id: 't1', title: 'T', artist: 'A', sources: {}, addedBy: 'Alice', addedByUserId: 'sb:u1' },
+          ],
+          radioEnabled: false,
+          version: 2,
+        },
+      },
+    });
+    await vi.waitFor(() => expect(authMocks.cleared).toBe(true));
+  });
+
+  it('keeps the proof token when the post-rebind publication does not show the account identity', async () => {
+    signIn();
+    authMocks.proofToken = 'proof-jwt';
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    await vi.waitFor(() => expect(rebindCalls(instance)).toHaveLength(1));
+    const pubHandler = instance.subscriptions[0].handlers['publication'][0];
+    pubHandler({
+      data: {
+        type: 'room.state',
+        state: { roomId: 'room-1', queue: [], radioEnabled: false, version: 2 },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(authMocks.cleared).toBe(false);
+  });
+
+  it('discards an unverifiable proof and shows the soft notice; sign-in proceeds', async () => {
+    signIn();
+    authMocks.proofToken = 'proof-jwt';
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    failRebindWith(instance, 'guest proof could not be verified');
+    instance.emit('connected');
+    await joinPromise; // the join itself never hard-fails on the rebind path
+
+    await vi.waitFor(() => expect(authMocks.cleared).toBe(true));
+    expect(useStore.getState().rebindNotice).toBe("Your earlier guest contributions couldn't be linked.");
+  });
+
+  it('discards an already-consumed proof silently (dead-token path)', async () => {
+    signIn();
+    authMocks.proofToken = 'proof-jwt';
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    failRebindWith(instance, 'this guest identity was already upgraded');
+    instance.emit('connected');
+    await joinPromise;
+
+    await vi.waitFor(() => expect(authMocks.cleared).toBe(true));
+    expect(useStore.getState().rebindNotice).toBeNull();
+  });
+
+  it('keeps the proof token on a transient failure so the next join retries', async () => {
+    signIn();
+    authMocks.proofToken = 'proof-jwt';
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    failRebindWith(instance, 'could not load the room, please retry');
+    instance.emit('connected');
+    await joinPromise;
+
+    await vi.waitFor(() => expect(rebindCalls(instance)).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(authMocks.cleared).toBe(false);
+    expect(useStore.getState().rebindNotice).toBeNull();
   });
 });

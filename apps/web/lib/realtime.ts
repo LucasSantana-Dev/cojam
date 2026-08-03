@@ -3,8 +3,8 @@ import { Centrifuge } from 'centrifuge';
 import { pickEnv, getRuntimeEnv, resolveRuntimeFeatures } from './runtimeEnv';
 import { estimateOffset, type PingSample } from './clockSync';
 import { computeNameSuffixes } from './nameSuffix';
-import { fetchConnectionToken, getLastTokenFetchError } from './auth';
-import { getAccountToken } from './account';
+import { fetchConnectionToken, getLastTokenFetchError, getStoredProofToken, clearStoredIdentity } from './auth';
+import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
 import type { ChatDeletePub, ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
@@ -45,6 +45,11 @@ export interface AppStore {
   // Whether an account session (Supabase) is active. Drives the guest-identity
   // signals (#167): guests see them, signed-in members never do.
   signedIn: boolean;
+  // Soft notice shown when a guest-to-account rebind (#172) could not link the
+  // earlier guest contributions (proof unverifiable after secret rotation or
+  // expiry). Sign-in itself never hard-fails on the rebind path. Reset on
+  // every fresh joinRoom.
+  rebindNotice: string | null;
   // Tracks this client has upvoted (F4). The published votes map holds
   // server-stamped voter keys the client cannot map back to itself (the
   // anonymous clientID is server-assigned), so this local set drives the
@@ -62,6 +67,7 @@ export interface AppStore {
   setMembers: (members: Member[]) => void;
   setConnectedServices: (services: string[]) => void;
   setSignedIn: (signedIn: boolean) => void;
+  setRebindNotice: (notice: string | null) => void;
   setMyVotes: (votes: Record<string, true>) => void;
   markVoted: (trackId: string, voted: boolean) => void;
   addMember: (m: Member) => void;
@@ -82,6 +88,7 @@ export const useStore = create<AppStore>((set) => ({
   connectedServices: [],
   kicked: false,
   signedIn: false,
+  rebindNotice: null,
   myVotes: {},
   chat: [],
   setName: (name) => set({ name }),
@@ -95,6 +102,7 @@ export const useStore = create<AppStore>((set) => ({
   setMembers: (members) => set({ members, nameSuffixes: computeNameSuffixes(members) }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
   setSignedIn: (signedIn) => set({ signedIn }),
+  setRebindNotice: (rebindNotice) => set({ rebindNotice }),
   setMyVotes: (myVotes) => set({ myVotes }),
   markVoted: (trackId, voted) => set((s) => {
     const myVotes = { ...s.myVotes };
@@ -287,6 +295,8 @@ export async function joinRoom(
   // A fresh join also clears a prior kick (#181): being removed from one room
   // must not stick the next join on the "removed by host" screen.
   store.setKicked(false);
+  // Same for a stale rebind notice (#172): it belongs to the previous join.
+  store.setRebindNotice(null);
   // Restore this room's persisted vote pressed-state (#188): after a reload
   // the in-memory set is empty while the server still counts the votes.
   restoreMyVotes(roomId);
@@ -345,6 +355,12 @@ export async function joinRoom(
     const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub;
     if (pub.type === 'room.state') {
       store.setState(pub.state);
+      // Rebind completion rule (#172): the proof token is discarded only when
+      // a post-rebind publication shows the authenticated identity.
+      if (rebindWaiter && pub.state.roomId === rebindWaiter.roomId && stateShowsIdentity(pub.state, rebindWaiter.userId)) {
+        rebindWaiter.resolve(true);
+        rebindWaiter = null;
+      }
     } else if (pub.type === 'chat.message') {
       // Chat appends through its own store path (F8): no version guard, the
       // room.state guard only applies to state publications.
@@ -433,6 +449,11 @@ export async function joinRoom(
   // 'connected' handler keys the reconnect resync off this.
   activeRoom = { roomId, name, platform };
 
+  // Guest-to-account upgrade (#172): a signed-in member holding an unconsumed
+  // guest proof token attempts the rebind on every room join. Fire-and-forget:
+  // join succeeds and the room works whether or not the rebind lands.
+  attemptRebind(roomId).catch(() => { /* rebind is best-effort */ });
+
   // Seed chat history for late joiners (F8): the server ring holds the last
   // 50 messages, older ones are gone by design.
   if (roomChatEnabled()) {
@@ -460,6 +481,85 @@ export async function retryConnection() {
   const room = activeRoom;
   if (!room) throw new Error('Nothing to reconnect to');
   await joinRoom(room.roomId, room.name, room.platform);
+}
+
+// --- Guest-to-account upgrade (room.rebind, #172) ---
+//
+// A guest who signs in keeps what they already did: on every room join, while
+// an unconsumed proof token (the stored anonymous connection JWT) exists, the
+// client asks the server to move the guest identity's attribution in this
+// room to the account identity. The request carries no identity field, only
+// the proof; the server reads the old identity from the verified signature.
+//
+// TODO(#172): popup OAuth is the spec's recommended sign-in flow (the room
+// tab stays connected as the guest, so the host role survives in multi-member
+// rooms); the current full-page /account flow drops the anonymous connection
+// first, so host recovery there only holds for sole-member rooms.
+
+// The rebind completes only when the post-rebind room.state publication shows
+// the authenticated identity, not on RPC 200: the server commits before
+// publishing and does not fail the RPC when the publish fails (#178), so
+// confirmation must come from the channel.
+const REBIND_CONFIRM_TIMEOUT_MS = 5_000;
+
+let rebindWaiter: { roomId: string; userId: string; resolve: (confirmed: boolean) => void } | null = null;
+
+// stateShowsIdentity reports whether a room.state publication carries the
+// authenticated identity's mark: host role, track ownership, or a voter key.
+function stateShowsIdentity(state: RoomState, userId: string): boolean {
+  if (state.hostUserId === userId) return true;
+  if (state.queue.some((t) => t.addedByUserId === userId)) return true;
+  const voterKey = `user:${userId}`;
+  return Object.values(state.votes ?? {}).some((voters) => voters.includes(voterKey));
+}
+
+// rebindRoom asks the server to move this client's earlier guest attribution
+// in the room to its account identity (#172). The payload is exactly the room
+// and the proof token: never a raw identity field.
+export async function rebindRoom(roomId: string, proof: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('room.rebind', { roomId, proof });
+}
+
+// attemptRebind fires the upgrade attempt for a fresh room join. Best-effort:
+// the room works whether or not the rebind lands. The proof token is
+// discarded only on confirmed success (the publication shows the account
+// identity) or when the server confirms the sub is dead; transient failures
+// leave it in place for the next join.
+async function attemptRebind(roomId: string) {
+  if (!resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomAuth) return;
+  const proof = getStoredProofToken();
+  if (!proof) return;
+  const session = await getAccountSession();
+  if (!session) return; // guests have nothing to upgrade to
+  const userId = `sb:${session.userId}`;
+  try {
+    await rebindRoom(roomId, proof);
+  } catch (err) {
+    const msg = rpcErrorMessage(err, '');
+    if (/already upgraded/i.test(msg)) {
+      // Dead-token path: an earlier rebind already consumed the proof.
+      clearStoredIdentity();
+    } else if (/could not be verified|proof token required/i.test(msg)) {
+      // Secret rotation or expiry past grace: the attribution handoff is
+      // lost, but sign-in and the room keep working (soft notice only).
+      clearStoredIdentity();
+      useStore.getState().setRebindNotice("Your earlier guest contributions couldn't be linked.");
+    }
+    // Anything else (collision, rate limit, network) leaves the token in
+    // place so the next room join retries.
+    return;
+  }
+  const confirmed = await new Promise<boolean>((resolve) => {
+    rebindWaiter = { roomId, userId, resolve };
+    setTimeout(() => {
+      if (rebindWaiter?.userId === userId && rebindWaiter.roomId === roomId) {
+        rebindWaiter = null;
+        resolve(false);
+      }
+    }, REBIND_CONFIRM_TIMEOUT_MS);
+  });
+  if (confirmed) clearStoredIdentity();
 }
 
 export async function queueAdd(roomId: string, track: Omit<TrackRef, 'id'>) {

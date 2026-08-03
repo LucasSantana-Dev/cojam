@@ -40,6 +40,29 @@ function getStoredToken(): string | null {
   }
 }
 
+// Get the stored anonymous connection token for room.rebind (#172): it is the
+// ownership proof for upgrading guest attribution to a signed-in account.
+export function getStoredProofToken(): string | null {
+  return getStoredToken();
+}
+
+// Discard the stored anonymous identity and its proof token after a confirmed
+// rebind, or when the server confirms the sub is dead (consumed by an earlier
+// rebind, or unverifiable after secret rotation/expiry). The next anonymous
+// token fetch mints and stores a fresh identity.
+export function clearStoredIdentity(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const storage = getStorage();
+    if (storage) {
+      storage.removeItem(STORAGE_KEY);
+      storage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // localStorage may be unavailable (private browsing, etc.); silent fail
+  }
+}
+
 // Store the anonymous user ID and its connection token in localStorage.
 // Safe for SSR: no-op if window is undefined.
 function storeIdentity(userId: string, token: string): void {

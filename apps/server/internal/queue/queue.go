@@ -209,6 +209,43 @@ func (rs *RoomState) PruneVoter(voter string) bool {
 	return pruned
 }
 
+// RewriteVoter rekeys every occurrence of oldVoter to newVoter across all
+// tracks' voter sets (guest-to-account rebind, #172). When newVoter already
+// voted a track, the old key is dropped instead (set semantics: one entry
+// per voter per track), so the upgraded member cannot double-vote. Does not
+// bump Version: the rebind mutation bumps once for the whole reattribution.
+func (rs *RoomState) RewriteVoter(oldVoter, newVoter string) {
+	for trackID, voters := range rs.Votes {
+		foundOld, foundNew := false, false
+		for _, v := range voters {
+			if v == oldVoter {
+				foundOld = true
+			}
+			if v == newVoter {
+				foundNew = true
+			}
+		}
+		if !foundOld {
+			continue
+		}
+		next := make([]string, 0, len(voters))
+		for _, v := range voters {
+			if v == oldVoter {
+				if !foundNew {
+					next = append(next, newVoter)
+				}
+				continue
+			}
+			next = append(next, v)
+		}
+		if len(next) == 0 {
+			delete(rs.Votes, trackID)
+		} else {
+			rs.Votes[trackID] = next
+		}
+	}
+}
+
 // SetNowPlaying sets the now playing track by ID.
 // Returns an error if the track is not in the queue.
 func (rs *RoomState) SetNowPlaying(trackID string) error {

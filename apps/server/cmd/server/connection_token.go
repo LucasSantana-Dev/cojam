@@ -6,13 +6,12 @@ import (
 	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
+	"github.com/LucasSantana-Dev/cojam/server/internal/rebind"
 )
 
-// refreshGrace is how long after expiry a previous connection token still proves
-// ownership of its identity for reissue. Token TTL is 24h; the grace lets a
-// returning user keep their identity across longer absences without making the
-// live-token window any wider.
-const refreshGrace = 30 * 24 * time.Hour
+// refreshGrace pins the endpoint's identity-continuity window to the shared
+// connauth.RefreshGrace (room.rebind verifies proofs with the same grace).
+const refreshGrace = connauth.RefreshGrace
 
 // connectionTokenHandler returns a signed JWT for anonymous connection auth.
 //
@@ -23,8 +22,9 @@ const refreshGrace = 30 * 24 * time.Hour
 // otherwise anyone could mint a token for any userID (e.g. a room host's, read
 // from presence) and be treated as that user. Fail-safe default is always a
 // fresh identity, never an error: clients simply adopt whatever userId comes
-// back.
-func connectionTokenHandler(roomAuthEnabled bool, roomAuthSecret string) http.HandlerFunc {
+// back. A sub consumed by a room.rebind upgrade (#172) is dead: refresh for
+// it is rejected the same way (fresh identity).
+func connectionTokenHandler(roomAuthEnabled bool, roomAuthSecret string, burns rebind.BurnList) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -40,6 +40,13 @@ func connectionTokenHandler(roomAuthEnabled bool, roomAuthSecret string) http.Ha
 			sub, err := connauth.ValidateForRefresh([]byte(roomAuthSecret), proof, refreshGrace)
 			if err != nil || sub != userID {
 				userID = ""
+			} else if burns != nil {
+				// Burn gate (#172): a consumed sub must never be reissued. On a
+				// burn-list error, fail safe to a fresh identity as well.
+				consumed, cerr := burns.Consumed(r.Context(), sub)
+				if cerr != nil || consumed {
+					userID = ""
+				}
 			}
 		}
 		if userID == "" {
