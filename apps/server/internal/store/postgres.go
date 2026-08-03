@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/jackc/pgx/v5"
@@ -108,6 +109,29 @@ func (p *Postgres) Save(ctx context.Context, state *queue.RoomState) error {
 	}
 
 	return nil
+}
+
+// DeleteIdleRooms removes every room row whose updated_at is strictly older
+// than cutoff, skipping the room ids in protected (#169). The exclusion list
+// is bound as a parameter, never interpolated. A nil protected set is an
+// error: the membership gate must be stated explicitly.
+func (p *Postgres) DeleteIdleRooms(ctx context.Context, cutoff time.Time, protected map[string]struct{}) (int64, error) {
+	if protected == nil {
+		return 0, ErrNilProtected
+	}
+	ids := make([]string, 0, len(protected))
+	for id := range protected {
+		ids = append(ids, id)
+	}
+	tag, err := p.pool.Exec(ctx, `
+		DELETE FROM rooms
+		WHERE updated_at < $1
+		  AND NOT (room_id = ANY($2))
+	`, cutoff, ids)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete idle rooms: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 // Compile-time assertion that *Postgres satisfies the Store interface

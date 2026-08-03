@@ -69,6 +69,10 @@ func (f *failingStore) Save(ctx context.Context, state *queue.RoomState) error {
 	return f.saveErr
 }
 
+func (f *failingStore) DeleteIdleRooms(ctx context.Context, cutoff time.Time, protected map[string]struct{}) (int64, error) {
+	return 0, nil
+}
+
 // #194: a transient Load failure must fail the RPC with a retryable error
 // instead of forking the room at version 0 (whose saves the version-guarded
 // upsert would then silently drop).

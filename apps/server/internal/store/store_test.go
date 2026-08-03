@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
@@ -221,6 +222,22 @@ func TestMemory_ErrNotFound_IsCorrectError(t *testing.T) {
 	_, err := m.Load(ctx, "nonexistent")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound via errors.Is, got %v", err)
+	}
+}
+
+// #169: the memory store has nothing to reclaim (the hub's in-memory
+// evictor owns residency), so DeleteIdleRooms is a no-op returning zero —
+// but the explicit-protected-set contract still applies.
+func TestMemory_DeleteIdleRooms(t *testing.T) {
+	m := NewMemory()
+	ctx := context.Background()
+
+	if _, err := m.DeleteIdleRooms(ctx, time.Now(), nil); !errors.Is(err, ErrNilProtected) {
+		t.Fatalf("nil protected set must error, got %v", err)
+	}
+	removed, err := m.DeleteIdleRooms(ctx, time.Now(), map[string]struct{}{})
+	if err != nil || removed != 0 {
+		t.Fatalf("memory DeleteIdleRooms = %d, %v; want 0, nil", removed, err)
 	}
 }
 

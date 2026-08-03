@@ -248,6 +248,13 @@ type Hub struct {
 	// eviction. State survives in the store and reloads on rejoin.
 	roomIdleTTL time.Duration
 
+	// roomPersistIdleTTL is how long a stored room row may stay memberless
+	// and untouched before StartRoomEvictor's sweep deletes it (#169). <= 0
+	// disables persistent eviction. Independent of roomIdleTTL: the
+	// in-memory sweep answers "should this room stay resident", the
+	// persistent one "should this row still exist".
+	roomPersistIdleTTL time.Duration
+
 	// fanoutLimiter rate-limits RPCs that fan out to third-party APIs
 	// (fanoutMethods) per caller, protecting upstream provider quotas.
 	fanoutLimiter *rateLimiter
@@ -289,6 +296,12 @@ type Hub struct {
 	memberMu    sync.RWMutex
 	members     map[string]map[string]struct{} // clientID -> set of roomIDs
 	roomMembers map[string]map[string]struct{} // roomID -> set of clientIDs
+
+	// memberJoinTimes records when each authenticated userID most recently
+	// joined each room, for longest-present promotion on host disconnect
+	// (#166). Guests (empty userID) are not tracked: they cannot hold the
+	// host role under RFC-0005. Guarded by memberMu.
+	memberJoinTimes map[string]map[string]int64 // roomID -> userID -> unix nanos
 
 	// clientUserID tracks the authenticated userID per clientID for host
 	// assignment (U3+); clientName tracks the display name the connection
@@ -398,19 +411,20 @@ func (h *Hub) WithPublicRooms(enabled bool) *Hub {
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
 	return &Hub{
-		rooms:         make(map[string]*Room),
-		store:         store.NewMemory(),
-		node:          node,
-		members:       make(map[string]map[string]struct{}),
-		roomMembers:   make(map[string]map[string]struct{}),
-		clientUserID:  make(map[string]string),
-		clientName:    make(map[string]string),
-		enrichSem:     make(chan struct{}, enrichConcurrency),
-		enrichPending: make(chan struct{}, enrichMaxPending),
-		fanoutLimiter: newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
-		voteLimiter:   newRateLimiter(voteBurst, voteRefill, time.Now),
-		chatLimiter:   newRateLimiter(chatBurst, chatRefill, time.Now),
-		listLimiter:   newRateLimiter(listBurst, listRefill, time.Now),
+		rooms:           make(map[string]*Room),
+		store:           store.NewMemory(),
+		node:            node,
+		members:         make(map[string]map[string]struct{}),
+		roomMembers:     make(map[string]map[string]struct{}),
+		memberJoinTimes: make(map[string]map[string]int64),
+		clientUserID:    make(map[string]string),
+		clientName:      make(map[string]string),
+		enrichSem:       make(chan struct{}, enrichConcurrency),
+		enrichPending:   make(chan struct{}, enrichMaxPending),
+		fanoutLimiter:   newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
+		voteLimiter:     newRateLimiter(voteBurst, voteRefill, time.Now),
+		chatLimiter:     newRateLimiter(chatBurst, chatRefill, time.Now),
+		listLimiter:     newRateLimiter(listBurst, listRefill, time.Now),
 	}
 }
 
@@ -446,7 +460,11 @@ func (h *Hub) launchEnrich(fn func()) {
 }
 
 // Join enrolls a client as a member of a room (called on room.join and on
-// channel subscribe, so membership survives centrifuge reconnects).
+// channel subscribe, so membership survives centrifuge reconnects). Also
+// stamps the join time for authenticated members here, not only in room.join:
+// a client that subscribes without sending room.join would otherwise have a
+// zero join time and selectSuccessor would treat it as the oldest member.
+// A rejoin resets the timestamp: seniority measures continuous presence.
 func (h *Hub) Join(clientID, roomID string) {
 	if clientID == "" || roomID == "" {
 		return
@@ -461,6 +479,16 @@ func (h *Hub) Join(clientID, roomID string) {
 		h.roomMembers[roomID] = make(map[string]struct{})
 	}
 	h.roomMembers[roomID][clientID] = struct{}{}
+
+	h.clientUserIDMu.RLock()
+	userID := h.clientUserID[clientID]
+	h.clientUserIDMu.RUnlock()
+	if userID != "" {
+		if h.memberJoinTimes[roomID] == nil {
+			h.memberJoinTimes[roomID] = make(map[string]int64)
+		}
+		h.memberJoinTimes[roomID][userID] = time.Now().UnixNano()
+	}
 }
 
 // Leave drops all of a client's memberships (called on disconnect).
@@ -558,6 +586,125 @@ func (h *Hub) RemoveClientUserID(clientID string) {
 	defer h.clientUserIDMu.Unlock()
 	delete(h.clientUserID, clientID)
 	delete(h.clientName, clientID)
+}
+
+// recordJoinTime stamps when an authenticated userID joined a room, for
+// longest-present host promotion (#166). A rejoin resets the timestamp:
+// seniority measures continuous presence, not cumulative history.
+func (h *Hub) recordJoinTime(roomID, userID string) {
+	if roomID == "" || userID == "" {
+		return
+	}
+	h.memberMu.Lock()
+	defer h.memberMu.Unlock()
+	if h.memberJoinTimes[roomID] == nil {
+		h.memberJoinTimes[roomID] = make(map[string]int64)
+	}
+	h.memberJoinTimes[roomID][userID] = time.Now().UnixNano()
+}
+
+// PromoteOnDisconnect promotes a new host in every room where the
+// disconnecting client held the host role (#166). Must be called BEFORE
+// h.Leave and h.RemoveClientUserID: it needs the departing client's userID
+// and room memberships, which those calls destroy. No-op for guests and for
+// clients that held no host role.
+func (h *Hub) PromoteOnDisconnect(clientID string) {
+	h.clientUserIDMu.RLock()
+	userID := h.clientUserID[clientID]
+	h.clientUserIDMu.RUnlock()
+	if userID == "" {
+		return // guests cannot hold the host role (RFC-0005)
+	}
+
+	h.memberMu.RLock()
+	roomIDs := make([]string, 0, len(h.members[clientID]))
+	for roomID := range h.members[clientID] {
+		roomIDs = append(roomIDs, roomID)
+	}
+	h.memberMu.RUnlock()
+
+	for _, roomID := range roomIDs {
+		h.promoteInRoom(roomID, clientID, userID)
+	}
+}
+
+// promoteInRoom runs the host handoff for one room where the departing
+// userID held the host role: the longest-present remaining authenticated
+// member becomes host, or an all-guest room's HostUserID is cleared. The
+// common case (departing client was not this room's host) is a cheap read
+// and returns early.
+func (h *Hub) promoteInRoom(roomID, clientID, userID string) {
+	if h.GetHostUserID(roomID) != userID {
+		return
+	}
+	successor, others := h.selectSuccessor(roomID, clientID)
+	if !others {
+		return // empty room: nothing to promote; evictIdleRooms reaps it
+	}
+	h.commitHostHandoff(roomID, userID, successor)
+}
+
+// selectSuccessor picks the longest-present remaining authenticated member
+// of roomID, excluding the departing clientID. others reports whether any
+// other member (guest or authenticated) remains at all. The departing client
+// is excluded explicitly: PromoteOnDisconnect runs before h.Leave, so it
+// still holds membership. memberMu is held for the membership and join-time
+// reads and released before the caller mutates, keeping the evictor's lock
+// ordering (memberMu then h.mu/room.mu) intact.
+func (h *Hub) selectSuccessor(roomID, clientID string) (successor string, others bool) {
+	h.memberMu.RLock()
+	defer h.memberMu.RUnlock()
+	h.clientUserIDMu.RLock()
+	defer h.clientUserIDMu.RUnlock()
+	var successorJoin int64
+	for memberClientID, rooms := range h.members {
+		if memberClientID == clientID {
+			continue
+		}
+		if _, inRoom := rooms[roomID]; !inRoom {
+			continue
+		}
+		others = true
+		memberUserID := h.clientUserID[memberClientID]
+		if memberUserID == "" {
+			continue // guests are not eligible for the host role (RFC-0005)
+		}
+		if join := h.memberJoinTimes[roomID][memberUserID]; successor == "" || join < successorJoin {
+			successor = memberUserID
+			successorJoin = join
+		}
+	}
+	return successor, others
+}
+
+// commitHostHandoff applies the promotion through the standard mutate path,
+// so the Version bump and publish follow the established convention. The
+// closure re-checks that HostUserID still equals the departing userID (a
+// concurrent promotion wins and must not be overwritten) and revalidates the
+// successor at commit time: if the candidate disconnected or lost its
+// authenticated identity between selection and mutation, the closure aborts
+// without mutating — the next join's lazy reclaim runs the promotion again,
+// so a departed user is never persisted as host. An empty successor means an
+// all-guest room: HostUserID is cleared, restoring equal-member behavior.
+func (h *Hub) commitHostHandoff(roomID, userID, successor string) {
+	if _, err := h.mutate(roomID, func(s *queue.RoomState) error {
+		if s.HostUserID != userID {
+			return nil // a concurrent promotion already applied
+		}
+		if successor == "" {
+			s.HostUserID = ""
+			s.Version++
+			return nil
+		}
+		if !h.IsUserIDInRoom(roomID, successor) {
+			return nil // successor departed between selection and commit
+		}
+		s.HostUserID = successor
+		s.Version++
+		return nil
+	}); err != nil && h.logger != nil {
+		h.logger.Error("host_handoff_failed", "room_id", roomID, "err", err.Error())
+	}
 }
 
 // IsUserIDInRoom checks if a given userID has an active member in the room.
@@ -745,14 +892,29 @@ func (h *Hub) WithRoomIdleTTL(d time.Duration) *Hub {
 	return h
 }
 
-// StartRoomEvictor launches the periodic idle-room sweep and returns a stop
-// function for shutdown. A disabled hub (WithRoomIdleTTL unset or <= 0) gets
-// a no-op stop.
+// WithRoomPersistIdleTTL sets how long a stored room row may stay memberless
+// and untouched before the evictor deletes it from the store (default:
+// disabled, #169). Expected to be much longer than the in-memory TTL. <= 0
+// disables persistent eviction.
+func (h *Hub) WithRoomPersistIdleTTL(d time.Duration) *Hub {
+	h.roomPersistIdleTTL = d
+	return h
+}
+
+// StartRoomEvictor launches the periodic idle-room sweeps (in-memory and
+// persistent) and returns a stop function for shutdown. One ticker, one
+// shutdown path: the persistent sweep extends the existing loop rather than
+// running a second scheduler (#169). A hub with both TTLs disabled gets a
+// no-op stop.
 func (h *Hub) StartRoomEvictor() func() {
-	if h.roomIdleTTL <= 0 {
+	ttl := h.roomIdleTTL
+	if ttl <= 0 || (h.roomPersistIdleTTL > 0 && h.roomPersistIdleTTL < ttl) {
+		ttl = h.roomPersistIdleTTL
+	}
+	if ttl <= 0 {
 		return func() {}
 	}
-	interval := h.roomIdleTTL / 2
+	interval := ttl / 2
 	if interval < time.Second {
 		interval = time.Second
 	}
@@ -766,6 +928,7 @@ func (h *Hub) StartRoomEvictor() func() {
 				return
 			case now := <-ticker.C:
 				h.evictIdleRooms(now)
+				h.evictPersistedIdleRooms(now)
 			}
 		}
 	}()
@@ -774,15 +937,17 @@ func (h *Hub) StartRoomEvictor() func() {
 
 // evictIdleRooms drops rooms with no connected members that have been idle
 // longer than roomIdleTTL. Only the in-memory instance is removed: the store
-// keeps the state and GetOrCreateRoom reloads it on rejoin. Lock order is
-// memberMu then h.mu (the only spot that nests them); Join/Leave take
-// memberMu alone and GetOrCreateRoom takes h.mu alone, so no cycle forms.
+// keeps the state and GetOrCreateRoom reloads it on rejoin. The room's
+// memberJoinTimes entry dies with it, so the two lifetimes stay identical
+// and the map cannot leak. Lock order is memberMu then h.mu (the only spot
+// that nests them); Join/Leave take memberMu alone and GetOrCreateRoom takes
+// h.mu alone, so no cycle forms.
 func (h *Hub) evictIdleRooms(now time.Time) {
 	if h.roomIdleTTL <= 0 {
 		return
 	}
-	h.memberMu.RLock()
-	defer h.memberMu.RUnlock()
+	h.memberMu.Lock()
+	defer h.memberMu.Unlock()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for roomID, room := range h.rooms {
@@ -793,11 +958,51 @@ func (h *Hub) evictIdleRooms(now time.Time) {
 			continue
 		}
 		delete(h.rooms, roomID)
+		delete(h.memberJoinTimes, roomID)
 		if h.logger != nil {
 			h.logger.Info("room_evicted", "room_id", roomID)
 		}
 		if h.metrics != nil {
 			h.metrics.RoomEvicted()
+		}
+	}
+}
+
+// evictPersistedIdleRooms deletes store rows for rooms that have been
+// memberless and untouched past roomPersistIdleTTL (#169). The sweep is
+// membership-gated, not timestamp-gated alone: rooms with connected members
+// are passed to the store as protected and skipped however old their rows
+// are. A store failure logs and returns without aborting the tick; the next
+// tick retries. Time is injected so tests need no ticker and no sleep.
+func (h *Hub) evictPersistedIdleRooms(now time.Time) {
+	if h.roomPersistIdleTTL <= 0 {
+		return
+	}
+	h.memberMu.RLock()
+	protected := make(map[string]struct{})
+	for _, rooms := range h.members {
+		for roomID := range rooms {
+			protected[roomID] = struct{}{}
+		}
+	}
+	h.memberMu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cutoff := now.Add(-h.roomPersistIdleTTL)
+	removed, err := h.store.DeleteIdleRooms(ctx, cutoff, protected)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("room_persist_evict_failed", "err", err.Error(), "cutoff", cutoff.UTC(), "ttl", h.roomPersistIdleTTL.String())
+		}
+		return
+	}
+	if removed > 0 {
+		if h.logger != nil {
+			h.logger.Info("room_persist_evicted", "removed", removed, "cutoff", cutoff.UTC(), "ttl", h.roomPersistIdleTTL.String(), "protected", len(protected))
+		}
+		if h.metrics != nil {
+			h.metrics.RoomPersistedEvicted(removed)
 		}
 	}
 }
@@ -1006,6 +1211,9 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("room.join: roomId required")
 		}
+		// Stamp presence for longest-present host promotion (#166); a rejoin
+		// resets seniority by design.
+		h.recordJoinTime(req.RoomID, userID)
 		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			// Set host if authenticated and room has no host yet.
 			// If host left the room, reclaim for the new joiner.

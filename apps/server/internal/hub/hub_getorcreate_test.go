@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
@@ -40,6 +41,10 @@ func (b *barrierStore) Load(ctx context.Context, roomID string) (*queue.RoomStat
 
 func (b *barrierStore) Save(ctx context.Context, state *queue.RoomState) error {
 	return b.inner.Save(ctx, state)
+}
+
+func (b *barrierStore) DeleteIdleRooms(ctx context.Context, cutoff time.Time, protected map[string]struct{}) (int64, error) {
+	return b.inner.DeleteIdleRooms(ctx, cutoff, protected)
 }
 
 // mustRoom is GetOrCreateRoom for tests: the default Memory store only ever

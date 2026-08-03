@@ -123,3 +123,52 @@ func TestHubPersistenceAcrossRestart(t *testing.T) {
 		t.Fatalf("hub2 version is %d, want >= 2", state2.Version)
 	}
 }
+
+// TestPromotedHostSurvivesPersistence proves a host promoted by
+// PromoteOnDisconnect (#166) is written through to Postgres and reloads.
+// Skips if TEST_DATABASE_URL is unset.
+func TestPromotedHostSurvivesPersistence(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL unset, skipping persistence test")
+	}
+
+	pool, err := db.Open(context.Background(), dbURL)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer pool.Close()
+
+	if err := db.Migrate(context.Background(), pool); err != nil {
+		t.Fatalf("failed to migrate database: %v", err)
+	}
+
+	roomID := fmt.Sprintf("test_handoff_persist_%d", os.Getpid())
+	defer pool.Exec(context.Background(), "DELETE FROM rooms WHERE room_id = $1", roomID)
+
+	hub1 := NewHub(nil).WithStore(store.NewPostgres(pool))
+
+	// Host plus two authenticated members; u-a is the longest-present.
+	room := mustRoom(t, hub1, roomID)
+	room.mu.Lock()
+	room.State.HostUserID = "u-host"
+	room.mu.Unlock()
+	hub1.RecordClientUserID("c-host", "u-host")
+	hub1.RecordClientUserID("c-a", "u-a")
+	hub1.RecordClientUserID("c-b", "u-b")
+	hub1.Join("c-host", roomID)
+	hub1.Join("c-a", roomID)
+	hub1.Join("c-b", roomID)
+	hub1.memberMu.Lock()
+	hub1.memberJoinTimes[roomID] = map[string]int64{"u-a": 100, "u-b": 200}
+	hub1.memberMu.Unlock()
+
+	hub1.PromoteOnDisconnect("c-host")
+
+	// A fresh hub on the same database loads the promoted host.
+	hub2 := NewHub(nil).WithStore(store.NewPostgres(pool))
+	room2 := mustRoom(t, hub2, roomID)
+	if room2.State.HostUserID != "u-a" {
+		t.Fatalf("persisted HostUserID = %q, want u-a", room2.State.HostUserID)
+	}
+}

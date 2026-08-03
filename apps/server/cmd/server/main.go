@@ -71,7 +71,8 @@ func parseOrigins(raw string) map[string]bool {
 }
 
 // envDurationMinutes reads a duration expressed in whole minutes
-// (unset/invalid/<=0 = dflt). Used for ROOM_IDLE_TTL_MINUTES.
+// (unset/invalid/<=0 = dflt). Used for ROOM_IDLE_TTL_MINUTES and
+// ROOM_PERSIST_IDLE_TTL_MINUTES.
 func envDurationMinutes(key string, dflt time.Duration) time.Duration {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
@@ -144,8 +145,20 @@ func main() {
 	// the TTL are dropped from hub memory; the store reloads them on rejoin.
 	roomIdleTTL := envDurationMinutes("ROOM_IDLE_TTL_MINUTES", 30*time.Minute)
 	h.WithRoomIdleTTL(roomIdleTTL)
+
+	// Persistent idle-room eviction (#169): stored rows memberless and
+	// untouched past the TTL are deleted from the store. Disabled by default
+	// (0) — a destructive background job on the operator's only database is
+	// opt-in. Set well above the in-memory TTL; single-instance deployments
+	// only (the membership gate is process-local).
+	roomPersistIdleTTL := envDurationMinutes("ROOM_PERSIST_IDLE_TTL_MINUTES", 0)
+	h.WithRoomPersistIdleTTL(roomPersistIdleTTL)
+
 	shutdownHooks = append(shutdownHooks, h.StartRoomEvictor())
 	logger.Info("room_eviction_enabled", "idle_ttl", roomIdleTTL.String())
+	if roomPersistIdleTTL > 0 {
+		logger.Info("room_persist_eviction_enabled", "idle_ttl", roomPersistIdleTTL.String())
+	}
 
 	// Supabase Auth (accounts): when on, a connection token that validates as a
 	// Supabase access token sets the user id to "sb:<supabase-user-uuid>". Checked
@@ -433,9 +446,10 @@ func main() {
 
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
 			metrics.ConnDec()
-			h.PruneGuestVotes(client.ID())    // drop ephemeral guest votes before membership is cleared (#183)
-			h.Leave(client.ID())              // revoke room memberships for this connection
-			h.RemoveClientUserID(client.ID()) // clean up userID tracking for host assignment
+			h.PromoteOnDisconnect(client.ID()) // host handoff (#166): needs membership + userID, so it must precede the cleanup calls
+			h.PruneGuestVotes(client.ID())     // drop ephemeral guest votes before membership is cleared (#183)
+			h.Leave(client.ID())               // revoke room memberships for this connection
+			h.RemoveClientUserID(client.ID())  // clean up userID tracking for host assignment
 			logger.Info("client_disconnected", "client_id", client.ID(), "reason", e.Reason)
 		})
 
