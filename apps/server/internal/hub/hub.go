@@ -18,6 +18,7 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/rebind"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 )
 
@@ -305,10 +306,12 @@ type Hub struct {
 	members     map[string]map[string]struct{} // clientID -> set of roomIDs
 	roomMembers map[string]map[string]struct{} // roomID -> set of clientIDs
 
-	// memberJoinTimes records when each authenticated userID most recently
-	// joined each room, for longest-present promotion on host disconnect
-	// (#166). Guests (empty userID) are not tracked: they cannot hold the
-	// host role under RFC-0005. Guarded by memberMu.
+	// memberJoinTimes records when each identified userID most recently joined
+	// each room, for longest-present promotion on host disconnect (#166).
+	// Connections with an empty userID are not tracked; that only happens when
+	// FEATURE_ROOM_AUTH is off, where no one can hold the host role. Under
+	// room auth, anonymous subs are non-empty, so guests are tracked too (and
+	// can hold the host role). Guarded by memberMu.
 	memberJoinTimes map[string]map[string]int64 // roomID -> userID -> unix nanos
 
 	// clientUserID tracks the authenticated userID per clientID for host
@@ -320,6 +323,13 @@ type Hub struct {
 	clientUserIDMu sync.RWMutex
 	clientUserID   map[string]string // clientID -> userID
 	clientName     map[string]string // clientID -> connect-time display name
+
+	// rebindSecret verifies the anonymous connection JWT presented to
+	// room.rebind as proof of guest ownership (#172); rebindBurns records
+	// consumed anonymous subs so a proof is single-use. Both nil when
+	// FEATURE_ROOM_AUTH is off: the RPC then replies ErrorMethodNotFound.
+	rebindSecret []byte
+	rebindBurns  rebind.BurnList
 }
 
 // mutatingMethods are the membership-gated RPCs: the caller must be a member
@@ -338,6 +348,7 @@ var mutatingMethods = map[string]bool{
 	"radio.set":           true,
 	"room.set_public":     true,
 	"room.kick":           true,
+	"room.rebind":         true,
 	"transport.play":      true,
 	"transport.pause":     true,
 	"transport.seek":      true,
@@ -414,6 +425,15 @@ func (h *Hub) WithChat(enabled bool) *Hub {
 // room.list). Default off (dark-ship, same posture as WithSync).
 func (h *Hub) WithPublicRooms(enabled bool) *Hub {
 	h.publicRoomsEnabled = enabled
+	return h
+}
+
+// WithRebind enables the room.rebind RPC (guest-to-account upgrade, #172):
+// secret verifies the anonymous connection JWT presented as the ownership
+// proof, burns records consumed anonymous subs so a proof is single-use.
+func (h *Hub) WithRebind(secret []byte, burns rebind.BurnList) *Hub {
+	h.rebindSecret = secret
+	h.rebindBurns = burns
 	return h
 }
 
@@ -688,7 +708,7 @@ func (h *Hub) PromoteOnDisconnect(clientID string) {
 	userID := h.clientUserID[clientID]
 	h.clientUserIDMu.RUnlock()
 	if userID == "" {
-		return // guests cannot hold the host role (RFC-0005)
+		return // no identity to match against HostUserID; empty userIDs only occur with FEATURE_ROOM_AUTH off, where guests cannot hold the host role
 	}
 
 	h.memberMu.RLock()
@@ -1962,6 +1982,25 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, err
 		}
 		return h.roomKick(req.RoomID, req.ClientID)
+
+	case "room.rebind":
+		if h.rebindSecret == nil || h.rebindBurns == nil {
+			return nil, centrifuge.ErrorMethodNotFound
+		}
+		var req struct {
+			RoomID string `json:"roomId"`
+			Proof  string `json:"proof"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("room.rebind: roomId required")
+		}
+		// The payload deliberately carries no identity field (#172, decision
+		// C): the old guest identity is read from the signature-verified
+		// proof token, never from client input.
+		return h.roomRebind(req.RoomID, req.Proof, clientID, userID)
 
 	case "sync.ping":
 		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})

@@ -85,6 +85,13 @@ func Validate(secret []byte, token string) (string, error) {
 	return sub, nil
 }
 
+// RefreshGrace is how long after expiry a connection token still proves
+// ownership of its identity. Token TTL is 24h; the grace lets a returning
+// user keep their identity across longer absences without making the
+// live-token window any wider. Shared by the connection-token endpoint and
+// the room.rebind proof check (#172) so both accept exactly the same tokens.
+const RefreshGrace = 30 * 24 * time.Hour
+
 // ValidateForRefresh verifies an HS256 JWT's signature and returns its subject,
 // tolerating expiry within the given grace window. Used by the connection-token
 // endpoint to prove ownership of a previous identity before reissuing it: the

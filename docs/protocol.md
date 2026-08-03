@@ -29,6 +29,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `chat.history` | `{ roomId }` | `{ messages: ChatMessage[] }` |
 | `chat.delete` | `{ roomId, messageId: string }` | `{ messageId: string }` |
 | `room.kick` | `{ roomId, clientId: string }` | `{ clientId: string }` |
+| `room.rebind` | `{ roomId, proof: string }` | `RoomState` |
 | `sync.ping` | `{}` | `{ serverNowMs: number }` |
 
 `track.search` is a read (not membership-gated). The query is trimmed; empty
@@ -157,6 +158,41 @@ check happens in dispatch: a non-host attempt is rejected with a UserError
 rate limit as `chat.send`. `chat.delete` shares the `FEATURE_ROOM_CHAT` gate
 (`ErrorMethodNotFound` when chat is off); `room.kick` has no feature flag.
 
+Guest-to-account upgrade (#172): `room.rebind` moves a guest's attribution in
+the current room from their anonymous sub to their signed-in `sb:<uuid>`
+identity, so a guest who signs in keeps what they already did. The payload
+carries the room and `proof`, the stored anonymous connection JWT, and no
+identity field: the server verifies the signature with the same grace as the
+connection-token refresh (30 days) and reads the old identity from the
+verified `sub`, so a client can only ever claim the guest identity it
+actually held. Guards, each rejected with a UserError (code 400): the caller
+must be signed in (`sb:` identity), the proof must verify, the account must
+not already be in the room on another connection (collision message: "This
+account is already in this room from another tab or device. Close it and
+retry."), and the sub must be unconsumed. One mutation bumps `version` once:
+track ownership (`addedByUserId`) moves to the account, the host role moves
+if the guest held it, voter keys rewrite from `user:<anonSub>` to
+`user:sb:<uuid>` (deduped, so no double vote), and join-time seniority
+transfers so longest-present host promotion keeps the guest's standing (the
+transfer runs inside the same serialized mutation, before the state
+publishes). `addedBy` display strings stay untouched. A successful rebind
+consumes the sub: it is recorded in `rebound_subs`, later rebinds presenting
+it are rejected ("this guest identity was already upgraded"), and
+`/api/connection-token` refuses to reissue it. The in-memory fallback (no
+`DATABASE_URL`) is dev/test-only: production must run with Postgres or the
+single-use guarantee does not survive restarts. The burn claim lands
+immediately after the mutation commits, with a pre-mutation check rejecting
+already-consumed subs.
+The rebound sub's remaining connections in the room are force-disconnected
+via the `room.kick` mechanism so a still-open anonymous tab cannot keep
+accumulating attribution under the dead sub. The RPC exists only when
+`FEATURE_ROOM_AUTH` is on; otherwise the server replies
+`ErrorMethodNotFound`. The web client attempts the rebind on every room join
+while an unconsumed proof token exists, discards the token only after a
+post-rebind `room.state` publication shows the account identity (or when the
+server confirms the sub is dead), and degrades proof-verification failures
+to a soft notice while sign-in proceeds.
+
 The server also publishes **system messages** (#205): `chat.message`
 publications with `kind: "system"` and no member identity (`name`/`userId`
 empty) — `Now playing: <title> — <artist>` when `now_playing.advance` actually
@@ -188,6 +224,7 @@ only). When the flag is off, every member has equal rights (v0), unchanged.
 | `chat.send`, `chat.history` | any member |
 | `chat.delete` | host only (non-host gets a code-400 UserError) |
 | `room.kick` | host only (non-host gets a code-400 UserError) |
+| `room.rebind` | any member; caller must be signed in (`sb:` identity) |
 | `room.join`, `sync.ping`, reads | any caller |
 | `now_playing.set` / `now_playing.advance` | host only |
 | `queue.reorder` | host only |
@@ -285,7 +322,9 @@ widening the live-token window). Without proof the param is ignored and a fresh
 identity is minted; otherwise anyone could mint a token for any userID (for
 example a room host's, read from presence) and be treated as that user. The
 fail-safe default is always a fresh identity, never an error: clients adopt
-whatever `userId` comes back. The web client (`apps/web/lib/auth.ts`) persists
+whatever `userId` comes back. A sub consumed by a `room.rebind` upgrade
+(#172) is dead: refresh for it is rejected the same way and a fresh identity
+is minted. The web client (`apps/web/lib/auth.ts`) persists
 both values in localStorage and presents them on the next fetch.
 
 ## Web runtime config (`GET /env.js`)
@@ -395,7 +434,7 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.kick`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 ### Trust model (#180)
 

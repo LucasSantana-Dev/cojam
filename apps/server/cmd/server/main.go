@@ -30,6 +30,7 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/rebind"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 	"github.com/LucasSantana-Dev/cojam/server/internal/supauth"
 )
@@ -197,7 +198,11 @@ func main() {
 
 	// Wire persistent store if DATABASE_URL is configured. dbPool is held at this
 	// scope so the /readyz check can ping it; nil in in-memory mode.
+	// burns tracks anonymous subs consumed by room.rebind upgrades (#172):
+	// Postgres-backed when a database is configured (survives restart),
+	// in-memory otherwise.
 	var dbPool *pgxpool.Pool
+	burns := rebind.BurnList(rebind.NewMemory())
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 		// Bound all startup DB work (connect, ping, migrate) with a deadline so a
 		// hung or locked database fails the deploy fast instead of blocking forever.
@@ -251,6 +256,7 @@ func main() {
 		}
 
 		dbPool = pool
+		burns = rebind.NewPostgres(pool)
 		pgStore := store.NewPostgres(pool).
 			WithVersionGuardObserver(func() { metrics.StoreVersionGuardReject() })
 		h.WithStore(pgStore)
@@ -413,6 +419,13 @@ func main() {
 		}
 	}
 
+	// Guest-to-account upgrade (#172): room.rebind verifies the stored
+	// anonymous connection JWT as its ownership proof, so it is wired exactly
+	// when anonymous connection auth is.
+	if roomAuthEnabled {
+		h.WithRebind([]byte(roomAuthSecret), burns)
+	}
+
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
 		// The display name and playback platform arrive as connect data
@@ -534,7 +547,7 @@ func main() {
 
 	// Connection token endpoint: returns a signed JWT token for anonymous connection auth.
 	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented).
-	r.Get("/api/connection-token", connectionTokenHandler(roomAuthEnabled, roomAuthSecret))
+	r.Get("/api/connection-token", connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns))
 
 	// WebSocket handler for centrifuge. Origin allowlist prevents cross-site
 	// WebSocket hijacking: without it any page could open a socket and mutate rooms.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,15 +9,21 @@ import (
 	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
+	"github.com/LucasSantana-Dev/cojam/server/internal/rebind"
 )
 
 const testRoomAuthSecret = "test-room-auth-secret"
 
 func doConnectionToken(t *testing.T, url string, enabled bool) (int, map[string]string) {
 	t.Helper()
+	return doConnectionTokenWithBurns(t, url, enabled, nil)
+}
+
+func doConnectionTokenWithBurns(t *testing.T, url string, enabled bool, burns rebind.BurnList) (int, map[string]string) {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	rec := httptest.NewRecorder()
-	connectionTokenHandler(enabled, testRoomAuthSecret).ServeHTTP(rec, req)
+	connectionTokenHandler(enabled, testRoomAuthSecret, burns).ServeHTTP(rec, req)
 	var body map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&body)
 	return rec.Code, body
@@ -105,5 +112,44 @@ func TestConnectionTokenIgnoresUserIdWithBadSignatureProof(t *testing.T) {
 	_, body := doConnectionToken(t, "/api/connection-token?userId=victim-host&token="+prev, true)
 	if body["userId"] == "victim-host" {
 		t.Error("userId honored with bad-signature proof: identity spoofing possible")
+	}
+}
+
+// #172 burn: a sub consumed by a room.rebind upgrade is dead. Refresh for it
+// is rejected the same way as a forged proof: the userId param is ignored and
+// a fresh identity is minted instead.
+func TestConnectionTokenRejectsConsumedSubRefresh(t *testing.T) {
+	burns := rebind.NewMemory()
+	claimed, err := burns.Claim(context.Background(), "consumed-sub")
+	if err != nil || !claimed {
+		t.Fatalf("seed claim: claimed=%v err=%v", claimed, err)
+	}
+	prev, err := connauth.Mint([]byte(testRoomAuthSecret), "consumed-sub", 24*time.Hour)
+	if err != nil {
+		t.Fatalf("Mint failed: %v", err)
+	}
+	code, body := doConnectionTokenWithBurns(t, "/api/connection-token?userId=consumed-sub&token="+prev, true, burns)
+	if code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", code)
+	}
+	if body["userId"] == "consumed-sub" {
+		t.Error("consumed sub reissued: the burn must kill identity continuity")
+	}
+	if body["userId"] == "" {
+		t.Error("Expected a fresh identity to be minted")
+	}
+}
+
+// An unconsumed sub with valid proof keeps identity continuity through the
+// burn gate.
+func TestConnectionTokenHonorsUnconsumedSub(t *testing.T) {
+	burns := rebind.NewMemory()
+	prev, err := connauth.Mint([]byte(testRoomAuthSecret), "live-sub", 24*time.Hour)
+	if err != nil {
+		t.Fatalf("Mint failed: %v", err)
+	}
+	_, body := doConnectionTokenWithBurns(t, "/api/connection-token?userId=live-sub&token="+prev, true, burns)
+	if body["userId"] != "live-sub" {
+		t.Errorf("Expected identity continuity for an unconsumed sub, got userId %q", body["userId"])
 	}
 }
