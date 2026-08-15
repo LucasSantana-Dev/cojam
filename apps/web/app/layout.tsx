@@ -34,8 +34,15 @@ async function resolveSiteUrl(): Promise<string> {
   const h = await headers();
   const host = h.get('x-forwarded-host') ?? h.get('host');
   if (!host) return 'http://localhost:3000';
-  const proto =
-    h.get('x-forwarded-proto') ?? (process.env.NODE_ENV === 'production' ? 'https' : 'http');
+  // Don't trust x-forwarded-proto in production: Cloudflare terminates TLS,
+  // but the Caddy->container hop behind it is plain HTTP, so Caddy forwards
+  // 'http' even though the public site is always HTTPS. Trusting that header
+  // produced a real bug — canonical (resolved via metadataBase, apparently
+  // through a different Next.js internal path) came out https while
+  // openGraph.url/jsonLd.url (this same value, used directly) came out http.
+  // This deployment has no legitimate non-HTTPS production case, so decide
+  // by NODE_ENV alone and skip the unreliable header entirely.
+  const proto = process.env.NODE_ENV === 'production' ? 'https' : (h.get('x-forwarded-proto') ?? 'http');
   return `${proto}://${host}`;
 }
 
