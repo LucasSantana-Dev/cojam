@@ -39,7 +39,14 @@ const config: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self'",
+              // 'unsafe-inline' is required: Next.js App Router injects several
+              // inline bootstrap/hydration scripts (flight-data payloads) that
+              // are unavoidable without a per-request nonce pipeline (proxy.ts
+              // + header threading) — verified via a real browser CSP check,
+              // not assumed. A nonce-based policy is a reasonable follow-up;
+              // script-src still blocks loading any *external* script, and
+              // frame-ancestors/object-src/base-uri/form-action stay strict.
+              "script-src 'self' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https://is1-ssl.mzstatic.com",
               "connect-src 'self' https://accounts.spotify.com https://api.spotify.com https://*.supabase.co",
