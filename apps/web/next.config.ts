@@ -25,7 +25,12 @@ const config: NextConfig = {
   // OAuth/API hosts, and any *.supabase.co project (URL is runtime-configured
   // via /env.js, not known at build time). next/font self-hosts fonts at
   // build time, so no external font-src is needed.
+  // Production-only: e2e (`pnpm dev`) points NEXT_PUBLIC_WS_URL at the Go
+  // server's own port (ws://localhost:8080), a genuinely cross-origin
+  // connection only in local dev — production is same-origin via Caddy
+  // path-routing, which connect-src 'self' already covers correctly.
   async headers() {
+    if (process.env.NODE_ENV !== 'production') return [];
     return [
       {
         source: '/:path*',
