@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useStore, sendChat, deleteChatMessage, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
+import { fileReport } from '@/lib/report';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { avatarGradient } from '@/lib/avatar';
 
@@ -75,6 +76,28 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   // click would send a duplicate delete and surface "message not found" for
   // an action that succeeded.
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
+  // Reported ids are kept locally so the control reads as done. The report is
+  // durable server-side; this is only the affordance.
+  const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
+  const handleReport = async (messageId: string, text: string, name: string) => {
+    if (reportedIds.has(messageId)) return;
+    setReportedIds((prev) => new Set(prev).add(messageId));
+    const ok = await fileReport({
+      roomId,
+      kind: 'message',
+      subjectId: messageId,
+      content: text,
+      reason: `reported message from ${name}`,
+    });
+    if (!ok) {
+      setReportedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(messageId);
+        return next;
+      });
+    }
+  };
   const handleDelete = async (messageId: string) => {
     if (deletingIds.has(messageId)) return;
     setDeletingIds((prev) => new Set(prev).add(messageId));
@@ -153,6 +176,17 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                   {m.text}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => handleReport(m.id, m.text, m.name)}
+                disabled={reportedIds.has(m.id)}
+                title={reportedIds.has(m.id) ? 'Reported' : 'Report message'}
+                aria-label={reportedIds.has(m.id) ? `Reported message from ${m.name}` : `Report message from ${m.name}`}
+                className="flex-shrink-0 px-1 text-sm leading-none rounded transition-all duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:brightness-125 focus:outline-none disabled:opacity-40"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                {reportedIds.has(m.id) ? '✓' : '⚑'}
+              </button>
               {canControl && (
                 <button
                   type="button"
