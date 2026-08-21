@@ -41,9 +41,13 @@ and a timestamp, nothing else.
   exists.** Watch2Gether has operated exactly this commercially for years with
   no public enforcement action, which is precedent, not permission.
 
-Risk verdict: moderate. Acceptable, but the decision to accept it belongs to
-the operator and should be recorded in an ADR before implementation starts, not
-after.
+Risk verdict: moderate, and **accepted** on 2026-08-20 (ADR-0007). Three things
+make it smaller than it first reads: there is no API key to revoke (playback
+uses the IFrame API; only matching needs `YOUTUBE_API_KEY`), each client renders
+its own player so YouTube serves its own ads and counts its own view, and
+`NEXT_PUBLIC_FEATURE_VIDEO` is the kill switch.
+
+This gate is now passed; implementation is unblocked.
 
 ## 1. Goal and non-goals
 
