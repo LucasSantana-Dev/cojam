@@ -60,9 +60,29 @@ Two deliberate omissions:
   reach the server port directly. Exposing database reachability to the internet
   leaks infrastructure state for no gain.
 
-## 5. Outstanding
+## 5. Implemented (`.github/workflows/uptime.yml`)
 
-The check itself, which is configuration rather than code:
+Runs on GitHub Actions, deliberately **not** on the CoJam host: that satisfies
+the one hard requirement, since a monitor sharing fate with the monitored is
+what happened in #264.
+
+Probes `/` and `/api/connection-token` every 15 minutes, three attempts each
+with a 10s gap so a single blip does not alert. GitHub emails the repo owner
+when a scheduled workflow fails.
+
+Note it probes `/api/connection-token` rather than the purpose-built
+`/api/healthz`: the latter ships in #271 and is not deployed yet. Verified
+against production, where `/api/healthz` currently returns 404 for exactly that
+reason. Switch once it is live.
+
+Known limits, stated because they affect how much to trust it: GitHub's cron is
+best-effort and can be delayed by many minutes under load, and scheduled
+workflows are disabled automatically after 60 days without repository activity.
+It is a floor, not a pager.
+
+## 5.1 Still outstanding
+
+The remainder is configuration rather than code:
 
 - Probe `https://cojam.lucassantana.tech/api/healthz` **and** `/` — they fail
   independently and route to different containers.

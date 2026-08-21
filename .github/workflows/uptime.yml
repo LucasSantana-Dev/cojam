@@ -1,0 +1,63 @@
+name: Uptime
+
+# Runs on GitHub, deliberately not on the CoJam host. The #264 outage went
+# unnoticed for ~8h partly because Healthchecks was down for the same root
+# cause: a monitor that shares fate with what it monitors is not a monitor.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: Probe production
+    runs-on: ubuntu-latest
+    steps:
+      # Two paths, because the proxy routes them to different containers and
+      # they fail independently: / reaches the Next app, /api/* the Go server.
+      #
+      # Do NOT probe /healthz: it is not publicly routed and 404s even when
+      # everything is healthy, which yields a permanently red check that gets
+      # muted — worse than no check.
+      #
+      # /api/connection-token rather than /api/healthz because the latter ships
+      # in #271 and is not deployed yet. Switch once it is live: it is the
+      # purpose-built probe, while this one exists for another reason.
+      - name: Probe
+        env:
+          BASE_URL: https://cojam.lucassantana.tech
+        run: |
+          set -uo pipefail
+          fail=0
+
+          probe() {
+            path="$1"
+            # Three attempts: a single blip should not page anyone.
+            for attempt in 1 2 3; do
+              code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "${BASE_URL}${path}" || echo 000)
+              if [ "$code" = "200" ]; then
+                echo "OK    ${path} -> ${code} (attempt ${attempt})"
+                return 0
+              fi
+              echo "retry ${path} -> ${code} (attempt ${attempt})"
+              sleep 10
+            done
+            echo "FAIL  ${path} -> ${code} after 3 attempts"
+            return 1
+          }
+
+          probe "/" || fail=1
+          probe "/api/connection-token" || fail=1
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::CoJam production is not serving. A 502 here means the container ports and the proxy upstream disagree — see issue #264."
+            exit 1
+          fi
+          echo "Production is serving."
