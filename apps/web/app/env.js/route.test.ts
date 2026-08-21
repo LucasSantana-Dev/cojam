@@ -3,7 +3,12 @@ import { FEATURE_ENV_VARS } from '@/lib/features';
 import { GET } from './route';
 
 const FEATURE_KEYS = Object.values(FEATURE_ENV_VARS);
-const KEYS = ['COJAM_SUPABASE_URL', 'COJAM_SUPABASE_ANON_KEY', ...FEATURE_KEYS];
+const KEYS = [
+  'COJAM_SUPABASE_URL',
+  'COJAM_SUPABASE_ANON_KEY',
+  'COJAM_FEATURE_SUPABASE_AUTH',
+  ...FEATURE_KEYS,
+];
 
 function parseBody(res: Response): Promise<Record<string, unknown>> {
   return res.text().then((body) => {
@@ -29,6 +34,39 @@ describe('env.js route supabase overrides', () => {
   it('emits both supabase values when both are set', async () => {
     process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
     process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
+    const env = await parseBody(GET());
+    expect(env.supabaseUrl).toBe('https://runtime.supabase.co');
+    expect(env.supabaseAnonKey).toBe('runtime-key');
+  });
+
+  // A stale URL/key pair left in the environment renders a sign-in path the
+  // server will refuse, because the client reads accounts availability from
+  // their presence alone. Production shipped exactly this against a deleted
+  // Supabase project (#265).
+  it('emits neither when COJAM_FEATURE_SUPABASE_AUTH is false', async () => {
+    process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
+    process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
+    process.env.COJAM_FEATURE_SUPABASE_AUTH = 'false';
+    const env = await parseBody(GET());
+    expect(env.supabaseUrl).toBeUndefined();
+    expect(env.supabaseAnonKey).toBeUndefined();
+  });
+
+  it('still emits when COJAM_FEATURE_SUPABASE_AUTH is true', async () => {
+    process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
+    process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
+    process.env.COJAM_FEATURE_SUPABASE_AUTH = 'true';
+    const env = await parseBody(GET());
+    expect(env.supabaseUrl).toBe('https://runtime.supabase.co');
+    expect(env.supabaseAnonKey).toBe('runtime-key');
+  });
+
+  // Unset must stay permissive: existing deployments do not set this var and
+  // must keep working.
+  it('still emits when COJAM_FEATURE_SUPABASE_AUTH is unset', async () => {
+    process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
+    process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
+    delete process.env.COJAM_FEATURE_SUPABASE_AUTH;
     const env = await parseBody(GET());
     expect(env.supabaseUrl).toBe('https://runtime.supabase.co');
     expect(env.supabaseAnonKey).toBe('runtime-key');
