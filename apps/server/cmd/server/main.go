@@ -44,7 +44,11 @@ var version = "dev"
 // featureEnabled reads a FEATURE_* toggle (1/true/on/yes = on, 0/false/off/no = off,
 // unset/unrecognized = dflt). Mirrors the web lib/features.ts convention.
 func featureEnabled(key string, dflt bool) bool {
-	switch strings.ToLower(os.Getenv(key)) {
+	return featureEnabledIn(os.Getenv, key, dflt)
+}
+
+func featureEnabledIn(getenv func(string) string, key string, dflt bool) bool {
+	switch strings.ToLower(getenv(key)) {
 	case "1", "true", "on", "yes":
 		return true
 	case "0", "false", "off", "no":
@@ -113,6 +117,15 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+
+	fatalCfg, warnCfg := validateProdConfig(os.Getenv)
+	for _, w := range warnCfg {
+		logger.Warn("config", "problem", w)
+	}
+	if len(fatalCfg) > 0 {
+		log.Fatal(formatConfigErrors(fatalCfg))
+	}
+
 	metrics := obs.New()
 
 	// Create centrifuge node

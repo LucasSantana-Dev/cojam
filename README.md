@@ -144,6 +144,7 @@ COJAM_FEATURE_SUPABASE_AUTH=false      # suppress the Supabase pair entirely
 **Server** (environment):
 
 ```bash
+APP_ENV=production                     # strict config validation; refuses unsafe boots
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 FEATURE_MATCHING=true
 ROOM_IDLE_TTL_MINUTES=30               # evict memberless rooms idle this long
@@ -163,6 +164,19 @@ pnpm test:server                       # Go: go test -race ./...
 pnpm --filter web exec vitest run      # web unit
 pnpm --filter web e2e                  # web e2e (two-browser room sync)
 ```
+
+> [!NOTE]
+> The migration, store, and room-reload tests need a real Postgres and skip
+> silently without one. Set `TEST_DATABASE_URL` to run them:
+>
+> ```bash
+> TEST_DATABASE_URL=postgres://user@127.0.0.1:5432/cojam_test?sslmode=disable \
+>   pnpm test:server
+> ```
+>
+> CI provides this via a Postgres service container, so these run on every PR.
+
+<!-- Separate GitHub alert blocks; a bare blank line trips MD028. -->
 
 > [!TIP]
 > `GET /api/healthz` is the public liveness probe. It returns `{"status":"ok"}`
