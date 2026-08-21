@@ -50,7 +50,19 @@ room. Say so in the policy; it is a genuinely good answer.
 The one exception is a **report**: filing one copies the message content into a
 durable record, because the chat line it concerns is usually gone by the time
 anyone reads the report. So the lawful basis for reports is compliance with a
-legal obligation, not consent, and reports need their own retention period.
+legal obligation, not consent.
+
+**Report retention is not yet set, and the policy cannot publish without it.**
+It is a different question from room retention (30 days) because the basis
+differs: a report may need to outlive the room it concerns, and under ECA
+Digital the retention that matters is however long an authority could ask about
+the incident. That number is a legal answer, not an engineering one, and it is
+the second thing to bring to the review alongside the minimum age. Until it is
+set, reports accumulate without a defined lifetime, which is itself a finding.
+
+Decisions behind this spec are recorded in `docs/adr/`: ADR-0006 (connection
+draining, and why chat stays ephemeral and dies on deploy) and ADR-0007
+(accepting the YouTube ToS risk for video co-watch).
 
 ### 2.2 Collected from account users
 

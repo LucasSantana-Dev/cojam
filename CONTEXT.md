@@ -14,7 +14,7 @@ by a room ID that is itself the access grant.
 _Avoid_: session, channel, party
 
 **Link capability**:
-The rule that holding a room's link *is* permission to enter it. There is no
+The rule that holding a room's link _is_ permission to enter it. There is no
 separate join-approval step, by decision. A private room's privacy rests on its
 ID being unguessable, not on a server-side check.
 _Avoid_: invite, access token (both imply something the server validates
@@ -33,8 +33,9 @@ room, and it follows from subscribing to the room.
 _Avoid_: user, participant, attendee
 
 **Host**:
-The one member who holds moderation rights over a room. The first authenticated
-joiner; reclaimed by another member if the host leaves.
+The one member who holds moderation rights over a room. The first member to
+join with a verified connection identity, guest or account alike; reclaimed by
+another member if the host leaves. A guest can be a host.
 _Avoid_: owner, admin, creator (the creator may not still be the host)
 
 **Listener**:
@@ -56,7 +57,7 @@ _Avoid_: profile, login, user
 
 **Queue**:
 The ordered list of tracks a room will play. Shared and mutable by any member.
-_Avoid_: playlist (a playlist is something a user imports *from* a platform)
+_Avoid_: playlist (a playlist is something a user imports _from_ a platform)
 
 **Track**:
 One song as metadata: title, artist, ISRC, and per-platform source references.

@@ -60,8 +60,11 @@ is single-use, short-lived, and useless without the code.
 
 Changed from the callback onward:
 
-1. `/callback/spotify` POSTs `{code, code_verifier, redirect_uri}` to
-   `POST /api/spotify/token` instead of calling Spotify directly.
+1. `/callback/spotify` POSTs `{code, codeVerifier, redirectUri, connToken}` to
+   `POST /api/spotify/token` instead of calling Spotify directly. `connToken` is
+   the caller's connection JWT; the server resolves its `sub` via
+   `connauth.Validate` and that `sub` is the subject the grant is filed under.
+   An unverifiable token is a 401: no identity means no record to reach.
 2. The server exchanges the code with Spotify, using the client secret. Keeping
    PKCE as well as the secret is deliberate: it costs nothing and preserves the
    binding between this browser and this code.
@@ -94,8 +97,24 @@ the same trust level #172 already accepts for attribution rebinding, and it is
 strictly better than today, where the refresh token itself sits in
 `sessionStorage` and is readable by any script on the page.
 
-The record must expire, so an abandoned guest session does not leave a live
-Spotify refresh token indefinitely.
+**Expiry contract (as shipped).** Each record carries an absolute `expires_at`,
+set to 30 days from the last write. Expiry is enforced on **read** (an expired
+row reads as absent, so it cannot mint an access token) *and* by a sweep that
+deletes expired rows. The record is refreshed on every rotation, so an actively
+used connection does not expire mid-use; an abandoned one does.
+
+It is deliberately **not** bounded by the 24-hour connection JWT: that token is
+short-lived and reissued, while the grant it identifies is long-lived. Binding
+the record to the JWT's lifetime would force a reconnect every day.
+
+Covered by tests: an expired record reads as `ErrNotFound` in both the memory
+and Postgres stores, and the refresh endpoint returns 404 ("reconnect
+required") rather than minting a token.
+
+**Guest-to-account migration is out of scope here.** A guest who upgrades
+(#172) keeps their `sub` through the rebind, so the record follows the identity.
+Moving custody into `connected_services` for account users is a follow-up, not
+part of this change.
 
 ### 3.4 Access token handling in the browser
 

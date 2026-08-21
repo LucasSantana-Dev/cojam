@@ -9,7 +9,7 @@ Date: 2026-08-20
 Voice chat was proposed on the reading that Discord's absence in Brazil created
 an opening. That reading was wrong.
 
-The August 2026 AGU order suspended Discord's **livestream feature**. Discord
+The August 2026 ANPD order suspended Discord's **livestream feature**. Discord
 itself stays up, and **Discord voice works normally**. So voice chat does not
 fill a gap Discord left. It is table stakes for competing with Discord as a
 hangout venue at all, which is a far larger ask than the one this backlog was

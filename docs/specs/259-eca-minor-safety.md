@@ -25,7 +25,7 @@ So the currently-serving surface is:
 - **no age signal, no reporting route, no moderation audit trail**
 
 ECA Digital (Lei 15.211, signed 2025-09-17, enforcement decree 2026-03-18) is
-the law the AGU used in August 2026 to force Discord to suspend its livestream
+the law the ANPD used in August 2026 to force Discord to suspend its livestream
 feature after a 13-year-old's death. A directory of stranger rooms with live
 chat and anonymous access is closer to that surface than is comfortable.
 
@@ -58,7 +58,7 @@ Self-declared age against a stated minimum, asked when joining a room
 
 This follows the asymmetry the trust model already encodes: an invite-link room
 is people who know each other, while the directory is strangers finding
-strangers. The second is the surface the AGU acted against; the first is not.
+strangers. The second is the surface the ANPD acted against; the first is not.
 Gating discovery rather than the whole product is proportionate to where the
 risk actually sits, and it leaves the main flow (a friend sends a link)
 untouched.
@@ -131,7 +131,9 @@ with no moderators is the wrong shape.
 
 ## 6. Acceptance criteria
 
-- Minimum age stated in the terms and collected at first join.
+- Minimum age stated in the terms, and affirmed before joining a room reached
+  **through the public directory**. An invite-link join is not gated, which is
+  the decision in 3.1 and must not drift back to "first join".
 - Report a message, a user, and a room, all available to guests.
 - Reports reach a monitored destination, verified end to end once.
 - Moderation actions produce a durable, queryable record.
