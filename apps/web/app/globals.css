@@ -14,8 +14,10 @@
   --color-text-primary: oklch(0.96 0.01 280); /* off-white, not #fff */
   --color-text-secondary: oklch(0.62 0.02 280); /* muted, readable */
   --color-text-muted: oklch(0.48 0.01 280);   /* for hints/secondary text */
-  --color-accent: oklch(0.66 0.20 300);       /* violet — the identity accent */
-  --color-accent-hover: oklch(0.72 0.18 300); /* lighter for hover */
+  /* Violet, the identity accent. Hover is `filter: brightness(1.08)` on the
+     element, not a second token: a --color-accent-hover existed here with zero
+     consumers and only advertised a mechanism the code does not use (#290). */
+  --color-accent: oklch(0.66 0.20 300);
   /* Second brand accent: music green (ADR-0004). The representative SOLID for
      non-logo uses; the logo core is the --logo-core-* gradient below. Sits
      BETWEEN those endpoints, not at their midpoint: the midpoint measures
@@ -601,7 +603,7 @@ input:focus, textarea:focus, select:focus {
   translate: -50% calc(-50% + var(--py, 0px));
   z-index: 0;
   pointer-events: none;
-  background: radial-gradient(circle, oklch(0.66 0.2 300 / 0.35), transparent 62%);
+  background: radial-gradient(circle, color-mix(in oklab, var(--color-accent) 35%, transparent), transparent 62%);
   filter: blur(20px);
   animation: glow-breathe 7s ease-in-out infinite;
 }
@@ -618,8 +620,8 @@ input:focus, textarea:focus, select:focus {
   z-index: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(oklch(0.66 0.2 300 / 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.66 0.2 300 / 0.06) 1px, transparent 1px);
+    linear-gradient(color-mix(in oklab, var(--color-accent) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--color-accent) 6%, transparent) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
 }
@@ -641,7 +643,7 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: -0.04em;
   white-space: nowrap;
   color: transparent;
-  background: linear-gradient(180deg, oklch(0.66 0.2 300 / 0.16), oklch(0.66 0.2 300 / 0));
+  background: linear-gradient(180deg, color-mix(in oklab, var(--color-accent) 16%, transparent), color-mix(in oklab, var(--color-accent) 0%, transparent));
   -webkit-background-clip: text;
   background-clip: text;
   user-select: none;
@@ -657,7 +659,7 @@ input:focus, textarea:focus, select:focus {
   bottom: auto;
   translate: none;
   transform: rotate(var(--r)) translate3d(0, var(--sway, 0px), 0);
-  background: linear-gradient(180deg, oklch(0.66 0.2 300 / 0.1), oklch(0.66 0.2 300 / 0));
+  background: linear-gradient(180deg, color-mix(in oklab, var(--color-accent) 10%, transparent), color-mix(in oklab, var(--color-accent) 0%, transparent));
   -webkit-background-clip: text;
   background-clip: text;
 }
@@ -725,9 +727,9 @@ input:focus, textarea:focus, select:focus {
   text-transform: uppercase;
   color: var(--color-accent);
   padding: 0.4rem 0.85rem;
-  border: 1px solid oklch(0.66 0.2 300 / 0.35);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 35%, transparent);
   border-radius: 999px;
-  background: oklch(0.66 0.2 300 / 0.06);
+  background: color-mix(in oklab, var(--color-accent) 6%, transparent);
 }
 
 .eyebrow-dot {
@@ -889,7 +891,7 @@ input:focus, textarea:focus, select:focus {
 /* Signature payoff word: italic, brighter violet gradient, and soft glow.
    Glow (drop-shadow) is on the mask wrapper, gradient and style on the inner .word. */
 .hero-title .word-mask.word-accent {
-  filter: drop-shadow(0 0 28px oklch(0.66 0.2 300 / 0.55));
+  filter: drop-shadow(0 0 28px color-mix(in oklab, var(--color-accent) 55%, transparent));
 }
 
 .hero-title .word-mask.word-accent .word {
@@ -1181,10 +1183,10 @@ input:focus, textarea:focus, select:focus {
   font-weight: 650;
   color: var(--color-surface-0);
   background: var(--color-accent);
-  box-shadow: 0 0 0 0 oklch(0.66 0.2 300 / 0.5), 0 8px 30px -8px oklch(0.66 0.2 300 / 0.7);
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-accent) 50%, transparent), 0 8px 30px -8px color-mix(in oklab, var(--color-accent) 70%, transparent);
   transition: transform 150ms ease, box-shadow 200ms ease, filter 150ms ease;
 }
-.btn-primary:hover { filter: brightness(1.08); box-shadow: 0 0 24px 2px oklch(0.66 0.2 300 / 0.5); }
+.btn-primary:hover { filter: brightness(1.08); box-shadow: 0 0 24px 2px color-mix(in oklab, var(--color-accent) 50%, transparent); }
 .btn-primary:active { transform: scale(0.97); }
 
 .btn-ghost {
@@ -1371,7 +1373,7 @@ input:focus, textarea:focus, select:focus {
   color: var(--color-text-secondary);
   background: var(--color-surface-1);
 }
-.platform-chip[data-live="1"] { color: var(--color-text-primary); border-color: oklch(0.66 0.2 300 / 0.45); }
+.platform-chip[data-live="1"] { color: var(--color-text-primary); border-color: color-mix(in oklab, var(--color-accent) 45%, transparent); }
 
 .final-cta {
   text-align: center;
@@ -1417,7 +1419,7 @@ input:focus, textarea:focus, select:focus {
   background: oklch(0.08 0 0 / 0.55);
   backdrop-filter: blur(14px) saturate(1.3);
   -webkit-backdrop-filter: blur(14px) saturate(1.3);
-  border-bottom: 1px solid oklch(0.66 0.2 300 / 0.12);
+  border-bottom: 1px solid color-mix(in oklab, var(--color-accent) 12%, transparent);
   transform: translateY(0);
   transition: transform 350ms cubic-bezier(0.2, 0.65, 0.2, 1), opacity 350ms ease;
   will-change: transform;
@@ -1488,7 +1490,7 @@ input:focus, textarea:focus, select:focus {
   translate: -50% 0;
   z-index: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse at center, oklch(0.66 0.2 300 / 0.14), transparent 68%);
+  background: radial-gradient(ellipse at center, color-mix(in oklab, var(--color-accent) 14%, transparent), transparent 68%);
   filter: blur(30px);
 }
 .room > * { position: relative; z-index: 1; }
@@ -1515,7 +1517,7 @@ input:focus, textarea:focus, select:focus {
   background: oklch(0.09 0.01 280 / 0.72);
   backdrop-filter: blur(16px) saturate(1.3);
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
-  border-bottom: 1px solid oklch(0.66 0.2 300 / 0.12);
+  border-bottom: 1px solid color-mix(in oklab, var(--color-accent) 12%, transparent);
 }
 
 /* Shareable room code, rendered as a distinct monospace chip in the header. */
@@ -1526,8 +1528,8 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: 0.08em;
   padding: 0.1rem 0.5rem;
   border-radius: 0.375rem;
-  background: oklch(0.66 0.2 300 / 0.12);
-  border: 1px solid oklch(0.66 0.2 300 / 0.28);
+  background: color-mix(in oklab, var(--color-accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 28%, transparent);
   color: var(--color-text-primary);
 }
 
@@ -1558,11 +1560,11 @@ input:focus, textarea:focus, select:focus {
 
 /* Now-playing: live accent ring + animated equalizer. */
 .now-playing.is-live {
-  border-color: oklch(0.66 0.2 300 / 0.5);
+  border-color: color-mix(in oklab, var(--color-accent) 50%, transparent);
   box-shadow:
     0 1px 0 0 oklch(1 0 0 / 0.05) inset,
-    0 0 0 1px oklch(0.66 0.2 300 / 0.25),
-    0 24px 60px -34px oklch(0.66 0.2 300 / 0.6);
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 25%, transparent),
+    0 24px 60px -34px color-mix(in oklab, var(--color-accent) 60%, transparent);
 }
 
 .eq {
@@ -1591,8 +1593,8 @@ input:focus, textarea:focus, select:focus {
 
 /* Now-playing item highlight in the queue. */
 .queue-item.is-now {
-  border-color: oklch(0.66 0.2 300 / 0.55);
-  background: oklch(0.66 0.2 300 / 0.08);
+  border-color: color-mix(in oklab, var(--color-accent) 55%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 8%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
