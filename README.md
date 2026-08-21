@@ -156,7 +156,16 @@ SPOTIFY_CLIENT_SECRET=<secret>
 APPLE_TEAM_ID=<team>                   # Apple MusicKit token (when enabled)
 APPLE_KEY_ID=<id>
 APPLE_PRIVATE_KEY_PATH=/path/to/key
+SPOTIFY_TOKEN_KEY=<base64 32 bytes>    # seals stored Spotify refresh tokens
 ```
+
+> [!IMPORTANT]
+> `SPOTIFY_TOKEN_KEY` must be base64 of exactly 32 bytes
+> (`openssl rand -base64 32`) and must be kept **separate from
+> `DATABASE_URL`**, so leaking one does not imply leaking the other. Unset
+> means no server-side custody: playback still works for the lifetime of one
+> access token, then the user reconnects. Refusing is deliberate, because
+> storing a long-lived credential in the clear is worse than not storing it.
 
 ## Testing
 

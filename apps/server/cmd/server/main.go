@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"log/slog"
@@ -31,6 +32,7 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/rebind"
+	"github.com/LucasSantana-Dev/cojam/server/internal/spotifytoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 	"github.com/LucasSantana-Dev/cojam/server/internal/supauth"
 )
@@ -214,6 +216,27 @@ func main() {
 	// burns tracks anonymous subs consumed by room.rebind upgrades (#172):
 	// Postgres-backed when a database is configured (survives restart),
 	// in-memory otherwise.
+	// Spotify refresh-token custody (#252). Sealed at rest with a key kept
+	// separate from DATABASE_URL, so a database leak does not imply a Spotify
+	// one. No key means no custody: refusing is better than storing a
+	// long-lived credential in the clear, and playback still works for the
+	// lifetime of one access token.
+	var spotifyStore spotifytoken.Store
+	var spotifySealer *spotifytoken.Sealer
+	if raw := os.Getenv("SPOTIFY_TOKEN_KEY"); raw != "" {
+		key, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil {
+			log.Fatalf("SPOTIFY_TOKEN_KEY must be base64-encoded: %v", err)
+		}
+		spotifySealer, err = spotifytoken.NewSealer(key)
+		if err != nil {
+			log.Fatalf("SPOTIFY_TOKEN_KEY must decode to exactly 32 bytes: %v", err)
+		}
+	} else {
+		logger.Warn("spotify_token_custody_disabled",
+			"reason", "SPOTIFY_TOKEN_KEY unset; Spotify sessions will not survive an access-token expiry")
+	}
+
 	var dbPool *pgxpool.Pool
 	burns := rebind.BurnList(rebind.NewMemory())
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
@@ -270,6 +293,9 @@ func main() {
 
 		dbPool = pool
 		burns = rebind.NewPostgres(pool)
+		if spotifySealer != nil {
+			spotifyStore = spotifytoken.NewPostgres(pool, spotifySealer)
+		}
 		pgStore := store.NewPostgres(pool).
 			WithVersionGuardObserver(func() { metrics.StoreVersionGuardReject() })
 		h.WithStore(pgStore)
@@ -421,6 +447,16 @@ func main() {
 		logger.Info("lastfm_enrich_enabled")
 	}
 
+	// No database but a key configured: keep custody in memory. Records die
+	// with the process, so a rollover asks the user to reconnect Spotify —
+	// the same trade-off in-memory rooms already make.
+	if spotifyStore == nil && spotifySealer != nil {
+		spotifyStore = spotifytoken.NewMemory(spotifySealer)
+	}
+	if spotifyStore != nil {
+		logger.Info("spotify_token_custody_enabled", "store", map[bool]string{true: "postgres", false: "memory"}[dbPool != nil])
+	}
+
 	// Connection authentication setup
 	roomAuthEnabled := featureEnabled("FEATURE_ROOM_AUTH", false)
 	roomAuthSecret := os.Getenv("ROOM_AUTH_SECRET")
@@ -542,6 +578,16 @@ func main() {
 	// Client telemetry (#245/#251): folds browser-reported errors, funnel
 	// events and web vitals into the existing Prometheus surface.
 	r.Post("/api/telemetry", telemetryHandler(metrics, logger, newTelemetryLimiter()))
+
+	// Server-side Spotify token custody (#252). The browser posts the
+	// authorization code here and gets back only a short-lived access token;
+	// the refresh token never leaves this process. Both endpoints share one
+	// limiter because they draw on the same Spotify budget.
+	if spotifyStore != nil {
+		spotifyLimiter := newCallerLimiter(spotifyBurst, spotifyRefill)
+		r.Post("/api/spotify/token", spotifyExchangeHandler(spotifyStore, roomAuthSecret, logger, spotifyLimiter))
+		r.Post("/api/spotify/refresh", spotifyRefreshHandler(spotifyStore, roomAuthSecret, logger, spotifyLimiter))
+	}
 
 	// Apple token endpoint
 	r.Get("/api/apple/dev-token", func(w http.ResponseWriter, r *http.Request) {
