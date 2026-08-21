@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
-import { headers } from 'next/headers';
 import { Bricolage_Grotesque, Instrument_Sans } from 'next/font/google';
 import './globals.css';
+import { resolveSiteUrl } from '@/lib/siteUrl';
 
 // Display face: characterful humanist-grotesque with a display optical cut —
 // carries the hero title + oversized backdrop word. Body: clean humanist sans,
@@ -21,31 +21,6 @@ const body = Instrument_Sans({
 const description =
   'Friends on different streaming services listen together in one room. Everyone plays on their own account; CoJam keeps the queue in sync on metadata alone.';
 
-// `/` prerenders as a static page, so a plain module-level env-var read gets
-// baked in at `next build` time, not re-read at runtime — a NEXT_PUBLIC_ var
-// would additionally break the environment-agnostic image (see
-// publish-web-image.yml). COJAM_SITE_URL (set at deploy, no NEXT_PUBLIC_
-// prefix needed since this is server-only) is the recommended override;
-// falling back to the request's own Host header keeps behavior correct even
-// if it's unset, at the cost of opting this route into dynamic rendering.
-async function resolveSiteUrl(): Promise<string> {
-  const configured = process.env.COJAM_SITE_URL;
-  if (configured) return configured;
-  const h = await headers();
-  const host = h.get('x-forwarded-host') ?? h.get('host');
-  if (!host) return 'http://localhost:3000';
-  // Don't trust x-forwarded-proto in production: Cloudflare terminates TLS,
-  // but the Caddy->container hop behind it is plain HTTP, so Caddy forwards
-  // 'http' even though the public site is always HTTPS. Trusting that header
-  // produced a real bug — canonical (resolved via metadataBase, apparently
-  // through a different Next.js internal path) came out https while
-  // openGraph.url/jsonLd.url (this same value, used directly) came out http.
-  // This deployment has no legitimate non-HTTPS production case, so decide
-  // by NODE_ENV alone and skip the unreliable header entirely.
-  const proto = process.env.NODE_ENV === 'production' ? 'https' : (h.get('x-forwarded-proto') ?? 'http');
-  return `${proto}://${host}`;
-}
-
 export async function generateMetadata(): Promise<Metadata> {
   const siteUrl = await resolveSiteUrl();
   return {
@@ -61,7 +36,9 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       url: siteUrl,
     },
-    twitter: { card: 'summary', title: 'CoJam', description },
+    // large_image, not summary: opengraph-image.tsx is 1200x630, and the
+    // file-convention image is picked up for twitter automatically.
+    twitter: { card: 'summary_large_image', title: 'CoJam', description },
   };
 }
 
@@ -81,8 +58,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const siteUrl = await resolveSiteUrl();
-  // Minimal WebSite structured data for the public landing. No og:image yet;
-  // omitted deliberately rather than pointing at a missing asset.
+  // Minimal WebSite structured data for the public landing.
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
