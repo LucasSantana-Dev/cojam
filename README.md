@@ -123,6 +123,23 @@ NEXT_PUBLIC_SPOTIFY_CLIENT_ID=<id>     # Spotify PKCE (Web Playback)
 NEXT_PUBLIC_WS_URL=ws://localhost:8080/connection/websocket
 ```
 
+`NEXT_PUBLIC_*` are inlined at build time. A deployed image is configured at
+runtime instead, via `COJAM_*` vars served through `/env.js` (no rebuild):
+
+```bash
+COJAM_WS_URL=wss://example.com/connection/websocket
+COJAM_FEATURE_<NAME>=true|false        # runtime override per feature flag
+COJAM_SUPABASE_URL=<url>               # accounts; emitted only with the anon key
+COJAM_SUPABASE_ANON_KEY=<key>
+COJAM_FEATURE_SUPABASE_AUTH=false      # suppress the Supabase pair entirely
+```
+
+> [!IMPORTANT]
+> The client treats the presence of the Supabase pair as "accounts available".
+> Set `COJAM_FEATURE_SUPABASE_AUTH=false` whenever the server runs with
+> `FEATURE_SUPABASE_AUTH=false`, or the UI offers a sign-in the server will
+> refuse.
+
 **Server** (environment):
 
 ```bash
