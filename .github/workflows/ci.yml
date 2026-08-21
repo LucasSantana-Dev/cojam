@@ -23,6 +23,25 @@ jobs:
     defaults:
       run:
         working-directory: apps/server
+    # Postgres so the persistence tests actually run. Without TEST_DATABASE_URL
+    # the migration, store and room-reload tests all t.Skip, which is how
+    # internal/db sat at 11% while having tests written for it.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: cojam
+          POSTGRES_PASSWORD: cojam
+          POSTGRES_DB: cojam_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cojam"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://cojam:cojam@localhost:5432/cojam_test?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
