@@ -3,6 +3,10 @@ import { act, render, screen } from '@testing-library/react';
 import { LiveRoomsStrip, LiveRoomsSlot } from './LiveRoomsStrip';
 import type { PublicRoomSummary } from '@cojam/shared';
 
+// useRouter needs a mounted app router; the gate only needs push to be callable.
+const push = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
+
 // next/link outside an app-router render tree; a plain anchor is enough here.
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -107,5 +111,101 @@ describe('LiveRoomsSlot', () => {
 
     act(() => publicRoomsMock.listener?.([]));
     expect(screen.getByText('example mock')).toBeInTheDocument();
+  });
+});
+
+describe('directory age gate (#259)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    push.mockClear();
+  });
+
+  const one: PublicRoomSummary[] = [
+    { roomId: 'ROOM1', name: 'Sala', memberCount: 2 } as PublicRoomSummary,
+  ];
+
+  it('blocks the first directory join and asks', async () => {
+    render(<LiveRoomsStrip rooms={one} />);
+    await act(async () => {
+      screen.getByText('Sala').closest('a')!.click();
+    });
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('navigates after affirming, and remembers', async () => {
+    const { unmount } = render(<LiveRoomsStrip rooms={one} />);
+    await act(async () => {
+      screen.getByText('Sala').closest('a')!.click();
+    });
+    await act(async () => {
+      screen.getByRole('button', { name: /or over/i }).click();
+    });
+
+    expect(push).toHaveBeenCalledWith('/room/ROOM1');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    unmount();
+
+    // Second visit: no gate, the Link navigates on its own.
+    push.mockClear();
+    render(<LiveRoomsStrip rooms={one} />);
+    await act(async () => {
+      screen.getByText('Sala').closest('a')!.click();
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('cancelling leaves the visitor where they were', async () => {
+    render(<LiveRoomsStrip rooms={one} />);
+    await act(async () => {
+      screen.getByText('Sala').closest('a')!.click();
+    });
+    await act(async () => {
+      screen.getByRole('button', { name: /cancel/i }).click();
+    });
+
+    expect(push).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('age gate is a real modal (#259)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    push.mockClear();
+  });
+
+  const one: PublicRoomSummary[] = [
+    { roomId: 'ROOM1', name: 'Sala', memberCount: 2 } as PublicRoomSummary,
+  ];
+
+  // role=dialog + aria-modal without focus management is a lie to assistive
+  // tech. The native element supplies containment; this asserts we use it.
+  it('uses a native dialog opened as modal', async () => {
+    render(<LiveRoomsStrip rooms={one} />);
+    const dialog = screen.getByRole('dialog', { hidden: true });
+    expect(dialog.tagName).toBe('DIALOG');
+    expect(dialog).not.toHaveAttribute('open');
+
+    await act(async () => {
+      screen.getByText('Sala').closest('a')!.click();
+    });
+    expect(dialog).toHaveAttribute('open');
+  });
+
+  it('Escape cancels without navigating', async () => {
+    render(<LiveRoomsStrip rooms={one} />);
+    await act(async () => {
+      screen.getByText('Sala').closest('a')!.click();
+    });
+
+    const dialog = screen.getByRole('dialog', { hidden: true });
+    await act(async () => {
+      dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+    });
+
+    expect(dialog).not.toHaveAttribute('open');
+    expect(push).not.toHaveBeenCalled();
   });
 });
