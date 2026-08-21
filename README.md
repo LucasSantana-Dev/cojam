@@ -146,6 +146,12 @@ pnpm --filter web exec vitest run      # web unit
 pnpm --filter web e2e                  # web e2e (two-browser room sync)
 ```
 
+> [!TIP]
+> `GET /api/healthz` is the public liveness probe. It returns `{"status":"ok"}`
+> and is the only health endpoint reachable through the public hostname, so it
+> is what an external uptime check should target. `/healthz` and `/readyz` are
+> on the server port and are not publicly routed.
+
 > [!WARNING]
 > Always use `pnpm --filter web e2e`, never raw `playwright test`. The e2e
 > script frees port 3000 first; a stale dev server on :3000 makes Playwright's
