@@ -13,7 +13,8 @@ delta is genuinely small: keep video visible instead of audio-only, and add a
 transport position sync that the audio path does not need because it advances
 track-by-track rather than second-by-second.
 
-Market context (verify before betting on it): in August 2026 the Brazilian AGU
+Market context (verify before betting on it): in August 2026 Brazil's data
+protection authority (ANPD)
 ordered Discord to suspend its livestream feature under ECA Digital (Lei
 15.211). Discord complied. The platform was **not** banned. So the opening is
 narrower than "Discord is gone": it is that one specific way Brazilian groups
@@ -41,9 +42,13 @@ and a timestamp, nothing else.
   exists.** Watch2Gether has operated exactly this commercially for years with
   no public enforcement action, which is precedent, not permission.
 
-Risk verdict: moderate. Acceptable, but the decision to accept it belongs to
-the operator and should be recorded in an ADR before implementation starts, not
-after.
+Risk verdict: moderate, and **accepted** on 2026-08-20 (ADR-0007). Three things
+make it smaller than it first reads: there is no API key to revoke (playback
+uses the IFrame API; only matching needs `YOUTUBE_API_KEY`), each client renders
+its own player so YouTube serves its own ads and counts its own view, and
+`NEXT_PUBLIC_FEATURE_VIDEO` is the kill switch.
+
+This gate is now passed; implementation is unblocked.
 
 ## 0.5 Correction, 2026-08-21: most of this already exists
 
@@ -154,8 +159,13 @@ ending on an empty queue must not reset NowPlaying to the oldest played entry.
 
 ### 4.1 Feature flag
 
-`NEXT_PUBLIC_FEATURE_VIDEO`, default false, following the runtime flag pattern
-from RFC-0006 / #126. Ship dark, enable per room.
+`NEXT_PUBLIC_FEATURE_VIDEO` / `COJAM_FEATURE_VIDEO`, default false, following
+the runtime flag pattern from RFC-0006 / #126. Ship dark.
+
+Deliberately **its own flag, not `FEATURE_SYNC`**. Sync is audio transport and
+is useful on its own; video carries the ToS exposure accepted in ADR-0007 and
+must be switchable off without also disabling audio drift correction. One flag
+for both would make the kill switch cost more than it should.
 
 ### 4.2 Player
 

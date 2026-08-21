@@ -60,8 +60,11 @@ is single-use, short-lived, and useless without the code.
 
 Changed from the callback onward:
 
-1. `/callback/spotify` POSTs `{code, code_verifier, redirect_uri}` to
-   `POST /api/spotify/token` instead of calling Spotify directly.
+1. `/callback/spotify` POSTs `{code, codeVerifier, redirectUri, connToken}` to
+   `POST /api/spotify/token` instead of calling Spotify directly. `connToken` is
+   the caller's connection JWT; the server resolves its `sub` via
+   `connauth.Validate` and that `sub` is the subject the grant is filed under.
+   An unverifiable token is a 401: no identity means no record to reach.
 2. The server exchanges the code with Spotify, using the client secret. Keeping
    PKCE as well as the secret is deliberate: it costs nothing and preserves the
    binding between this browser and this code.
@@ -72,19 +75,46 @@ Changed from the callback onward:
 
 ### 3.3 Where the refresh token lives
 
-Two cases, and this is the part that needs a decision before implementation:
+**Decided 2026-08-20: key it to the `connauth` anonymous `sub`.**
 
-- **Account users.** There is already a `connected_services` concept in the
-  Supabase schema. That is the natural home, and it survives across devices.
-- **Guests.** There is no durable identity to key on. Options are an httpOnly,
-  `Secure`, `SameSite=Lax` cookie holding an opaque handle to a server-side
-  record, or simply not persisting a refresh token for guests and requiring
-  reconnect when the access token expires.
+- **Account users.** The `connected_services` concept in the Supabase schema is
+  the natural home and survives across devices.
+- **Guests.** `connauth.Mint` already issues a server-signed JWT carrying a
+  stable anonymous `sub`, and #172 already accepts that token as proof of
+  ownership when rebinding attribution on guest-to-account upgrade. So a
+  server-verifiable guest identity **already exists**; the refresh token is
+  keyed to that `sub`. The browser only ever holds the access token, in memory.
 
-Recommend the cookie-handle approach: it keeps the credential out of JS, works
-for guests, and reuses the guest-identity model the room already has. The record
-should expire, so an abandoned guest session does not leave a live Spotify
-refresh token indefinitely.
+This reverses an earlier recommendation in this spec, which proposed a new
+httpOnly cookie holding an opaque handle. That would stand up a second
+guest-identity mechanism beside the `connauth` `sub`, giving two sources of
+truth for "who is this guest". Reusing the existing one is smaller and keeps
+the identity model singular.
+
+**Residual risk, stated plainly:** whoever holds a guest's connection JWT can
+mint Spotify access tokens for that account until the record expires. That is
+the same trust level #172 already accepts for attribution rebinding, and it is
+strictly better than today, where the refresh token itself sits in
+`sessionStorage` and is readable by any script on the page.
+
+**Expiry contract (as shipped).** Each record carries an absolute `expires_at`,
+set to 30 days from the last write. Expiry is enforced on **read** (an expired
+row reads as absent, so it cannot mint an access token) *and* by a sweep that
+deletes expired rows. The record is refreshed on every rotation, so an actively
+used connection does not expire mid-use; an abandoned one does.
+
+It is deliberately **not** bounded by the 24-hour connection JWT: that token is
+short-lived and reissued, while the grant it identifies is long-lived. Binding
+the record to the JWT's lifetime would force a reconnect every day.
+
+Covered by tests: an expired record reads as `ErrNotFound` in both the memory
+and Postgres stores, and the refresh endpoint returns 404 ("reconnect
+required") rather than minting a token.
+
+**Guest-to-account migration is out of scope here.** A guest who upgrades
+(#172) keeps their `sub` through the rebind, so the record follows the identity.
+Moving custody into `connected_services` for account users is a follow-up, not
+part of this change.
 
 ### 3.4 Access token handling in the browser
 

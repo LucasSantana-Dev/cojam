@@ -25,7 +25,7 @@ So the currently-serving surface is:
 - **no age signal, no reporting route, no moderation audit trail**
 
 ECA Digital (Lei 15.211, signed 2025-09-17, enforcement decree 2026-03-18) is
-the law the AGU used in August 2026 to force Discord to suspend its livestream
+the law the ANPD used in August 2026 to force Discord to suspend its livestream
 feature after a 13-year-old's death. A directory of stranger rooms with live
 chat and anonymous access is closer to that surface than is comfortable.
 
@@ -51,13 +51,28 @@ right shape if a middle option is wanted.
 
 ### 3.1 Age signal
 
-There is none anywhere. The minimum age must be stated in the terms (#253) and
-collected at the point of first join.
+**Decided 2026-08-20: gate the public-directory path only.**
 
-Deliberately **not** proposing hard age verification: it is disproportionate for
-a hobby project, it collects far more personal data than the current design (a
-privacy harm of its own), and self-declaration is the norm for comparable
-products. What matters is that a stated minimum exists and is asked.
+Self-declared age against a stated minimum, asked when joining a room
+*discovered through the directory*. Joining by invite link is unchanged.
+
+This follows the asymmetry the trust model already encodes: an invite-link room
+is people who know each other, while the directory is strangers finding
+strangers. The second is the surface the ANPD acted against; the first is not.
+Gating discovery rather than the whole product is proportionate to where the
+risk actually sits, and it leaves the main flow (a friend sends a link)
+untouched.
+
+Deliberately **not** hard age verification: it is disproportionate for a hobby
+project, and it would collect far more personal data than the current design,
+which is a privacy harm of its own. No date of birth is stored; the gate
+records only that the minimum was affirmed.
+
+Considered and rejected for now: requiring an **account** to join from the
+directory. That is the strongest mitigation, because it ends anonymous guests
+in stranger rooms entirely, but accounts are broken in production (#265) so it
+would disable the directory outright until #266 is deployed. Worth revisiting
+once accounts work.
 
 ### 3.2 Reporting route
 
@@ -116,7 +131,9 @@ with no moderators is the wrong shape.
 
 ## 6. Acceptance criteria
 
-- Minimum age stated in the terms and collected at first join.
+- Minimum age stated in the terms, and affirmed before joining a room reached
+  **through the public directory**. An invite-link join is not gated, which is
+  the decision in 3.1 and must not drift back to "first join".
 - Report a message, a user, and a room, all available to guests.
 - Reports reach a monitored destination, verified end to end once.
 - Moderation actions produce a durable, queryable record.

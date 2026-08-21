@@ -38,6 +38,7 @@ actually does today, not what a template would assume.
 | Queue entries and who added them | `RoomState.queue`, Postgres | `queue.add` |
 | Votes, keyed to `user:<id>` or `client:<id>` | `RoomState.votes`, Postgres | `queue.vote` |
 | Chat messages | `Room.chat`, in-memory ring only | `chat.send` |
+| Reports | durable, and they **copy** the reported content | member action (#259) |
 | Host-set room name and public flag | `RoomState.name`, `RoomState.public` | host action |
 
 Note that **votes are personal data**: they associate an identity with a
@@ -45,6 +46,23 @@ preference, and they are persisted to Postgres inside `RoomState`.
 
 Chat is **not** persisted (`internal/hub/hub.go:199-202`) and dies with the
 room. Say so in the policy; it is a genuinely good answer.
+
+The one exception is a **report**: filing one copies the message content into a
+durable record, because the chat line it concerns is usually gone by the time
+anyone reads the report. So the lawful basis for reports is compliance with a
+legal obligation, not consent.
+
+**Report retention is not yet set, and the policy cannot publish without it.**
+It is a different question from room retention (30 days) because the basis
+differs: a report may need to outlive the room it concerns, and under ECA
+Digital the retention that matters is however long an authority could ask about
+the incident. That number is a legal answer, not an engineering one, and it is
+the second thing to bring to the review alongside the minimum age. Until it is
+set, reports accumulate without a defined lifetime, which is itself a finding.
+
+Decisions behind this spec are recorded in `docs/adr/`: ADR-0006 (connection
+draining, and why chat stays ephemeral and dies on deploy) and ADR-0007
+(accepting the YouTube ToS risk for video co-watch).
 
 ### 2.2 Collected from account users
 
@@ -82,14 +100,24 @@ architecture:
 Retention claims must match the code, or the policy is false:
 
 - `ROOM_IDLE_TTL_MINUTES` (default 30) evicts memberless rooms from memory.
-- `ROOM_PERSIST_IDLE_TTL_MINUTES` (default 0, disabled) deletes room **rows**.
-  **Default off means persisted rooms are currently retained indefinitely.**
-  That is the honest answer today, and it is probably not the intended one.
-- Chat is ephemeral and dies with the room in memory.
+- `ROOM_PERSIST_IDLE_TTL_MINUTES` deletes room **rows**. It is unset in
+  production today, which means `0`, which means disabled, which means
+  **persisted rooms are currently retained indefinitely**.
+- Chat is ephemeral and dies with the room in memory. Deploys also end it, by
+  decision (ADR-0006).
 
-If the policy is to promise deletion after a period, `ROOM_PERSIST_IDLE_TTL_MINUTES`
-has to be set to a non-zero value first. Do not write a retention promise the
-configuration does not keep.
+**Decided 2026-08-20: 30 days** (`ROOM_PERSIST_IDLE_TTL_MINUTES=43200`), to be
+set before the policy is published. A room idle for 30 days is dead, and the
+queue is not worth the retained data. Deleting the row does not break the link:
+`GetOrCreateRoom` recreates the room empty, so the capability still works and
+only the queue is lost.
+
+The previous objection to enabling this was that it is single-instance-only.
+ADR-0006 accepts single-instance as the architecture, so that objection is
+gone.
+
+Do not publish the policy before the setting is applied. A retention promise
+the configuration does not keep is worse than no promise.
 
 ## 4. Deletion has to actually work
 
