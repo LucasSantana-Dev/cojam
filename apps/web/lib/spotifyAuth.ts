@@ -1,16 +1,21 @@
-// Spotify OAuth 2.0 Authorization Code + PKCE for a SPA (no client secret).
-// Web Playback SDK needs the `streaming` scope + a Premium account.
+// Spotify OAuth 2.0 Authorization Code + PKCE, with the code-for-token exchange
+// on our server (#252). Web Playback SDK needs the `streaming` scope + Premium.
+//
+// The refresh token never reaches this file. It is held server-side, keyed to
+// the connauth anonymous sub, and only a short-lived access token comes back.
+// PKCE protects the authorization code in transit; it does nothing for the
+// tokens that code produces, which is why the old sessionStorage copy was a
+// standing risk.
 
 import { pickEnv, getRuntimeEnv } from './runtimeEnv';
+import { resolveConnectionToken } from './realtime';
+import { trackError } from './telemetry';
 
-export type StoredToken = {
+export type SpotifySession = {
   accessToken: string;
-  refreshToken: string;
   expiresAt: number; // epoch ms
-  scope?: string; // granted scopes from the token response; absent on legacy tokens
+  scope?: string; // granted scopes from the token response
 };
-
-const STORAGE_KEY = 'mj_spotify_token';
 const VERIFIER_KEY = 'mj_spotify_verifier';
 const RETURN_KEY = 'mj_spotify_return';
 const REFRESH_SKEW_MS = 60_000; // refresh a minute early
@@ -21,16 +26,28 @@ const REFRESH_SKEW_MS = 60_000; // refresh a minute early
 // old-scope token does NOT grant new scopes: users must re-consent once.
 const SCOPES = 'streaming user-read-email user-read-private playlist-read-private';
 const AUTH_URL = 'https://accounts.spotify.com/authorize';
-const TOKEN_URL = 'https://accounts.spotify.com/api/token';
+// Our server, not Spotify's token endpoint: the client secret and the refresh
+// token both live there (#252).
+const EXCHANGE_URL = '/api/spotify/token';
+const REFRESH_URL = '/api/spotify/refresh';
+
+// Raised when the server has no usable refresh token for this identity, which
+// the caller must surface as "reconnect Spotify" rather than a transient error.
+export class SpotifyReconnectRequired extends Error {
+  constructor() {
+    super('Spotify session expired. Reconnect to keep playing.');
+    this.name = 'SpotifyReconnectRequired';
+  }
+}
 
 // Pure: is this token usable right now? (exported for unit tests)
-export function isTokenValid(t: StoredToken | null, now: number): boolean {
+export function isTokenValid(t: SpotifySession | null, now: number): boolean {
   return !!t && t.expiresAt - REFRESH_SKEW_MS > now;
 }
 
 // Pure: was `scope` part of this token's grant? Legacy tokens have no recorded
 // scope, so they fail the check and trigger a re-auth (exported for unit tests).
-export function hasScope(t: StoredToken | null, scope: string): boolean {
+export function hasScope(t: SpotifySession | null, scope: string): boolean {
   if (!t?.scope) return false;
   return t.scope.split(' ').includes(scope);
 }
@@ -63,17 +80,21 @@ function redirectUri(): string {
   return `${canonicalOrigin(window.location)}/callback/spotify`;
 }
 
-function loadStored(): StoredToken | null {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as StoredToken) : null;
-  } catch {
-    return null;
-  }
+// In memory only, deliberately. A reload costs one /api/spotify/refresh
+// round-trip, which is the right trade for keeping the token out of any
+// storage a script can read.
+let session: SpotifySession | null = null;
+
+// Set when the server reports the grant is unrecoverable; see
+// needsSpotifyReconnect below.
+let reconnectRequired = false;
+
+function loadStored(): SpotifySession | null {
+  return session;
 }
 
-function store(t: StoredToken) {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(t));
+function store(t: SpotifySession | null) {
+  session = t;
 }
 
 function base64url(bytes: Uint8Array): string {
@@ -118,49 +139,62 @@ export async function beginAuth(returnPath: string): Promise<void> {
 export async function handleCallback(code: string): Promise<string> {
   const verifier = sessionStorage.getItem(VERIFIER_KEY);
   if (!verifier) throw new Error('missing PKCE verifier');
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: redirectUri(),
-    client_id: clientId(),
-    code_verifier: verifier,
-  });
-  const res = await fetch(TOKEN_URL, {
+
+  // The connection JWT identifies which record the refresh token is filed
+  // under. Without it the server cannot key the grant to anyone.
+  const connToken = await resolveConnectionToken();
+  if (!connToken) throw new Error('Could not get a session token from the server. Try again in a moment.');
+
+  const res = await fetch(EXCHANGE_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      codeVerifier: verifier,
+      redirectUri: redirectUri(),
+      connToken,
+    }),
   });
   if (!res.ok) throw new Error(`token exchange failed: ${res.status}`);
+
   const data = await res.json();
   store({
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
+    accessToken: data.accessToken,
+    expiresAt: Date.now() + data.expiresIn * 1000,
     scope: data.scope,
   });
+  reconnectRequired = false;
   sessionStorage.removeItem(VERIFIER_KEY);
   return sessionStorage.getItem(RETURN_KEY) ?? '/';
 }
 
-async function refresh(t: StoredToken): Promise<StoredToken | null> {
-  const body = new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token: t.refreshToken,
-    client_id: clientId(),
-  });
-  const res = await fetch(TOKEN_URL, {
+// Asks the server to mint a fresh access token from the refresh token it holds.
+// Returns null on a transient failure, and throws SpotifyReconnectRequired when
+// the grant is gone for good (revoked, or nothing stored).
+async function refresh(): Promise<SpotifySession | null> {
+  const connToken = await resolveConnectionToken();
+  if (!connToken) return null;
+
+  const res = await fetch(REFRESH_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connToken }),
   });
+
+  // 404 is the server saying it has nothing usable: the user revoked the grant
+  // in Spotify, or the record expired. Retrying can never succeed.
+  if (res.status === 404) {
+    store(null);
+    throw new SpotifyReconnectRequired();
+  }
   if (!res.ok) return null;
+
   const data = await res.json();
-  const next: StoredToken = {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token ?? t.refreshToken,
-    expiresAt: Date.now() + data.expires_in * 1000,
+  const next: SpotifySession = {
+    accessToken: data.accessToken,
+    expiresAt: Date.now() + data.expiresIn * 1000,
     // Refresh responses may omit scope; the grant does not change on refresh.
-    scope: data.scope ?? t.scope,
+    scope: data.scope ?? session?.scope,
   };
   store(next);
   return next;
@@ -170,11 +204,37 @@ async function refresh(t: StoredToken): Promise<StoredToken | null> {
 export async function getAccessToken(): Promise<string | null> {
   const t = loadStored();
   if (isTokenValid(t, Date.now())) return t!.accessToken;
-  if (t?.refreshToken) {
-    const refreshed = await refresh(t);
-    if (refreshed) return refreshed.accessToken;
+
+  // No in-memory session is the normal state after a reload, not a signal that
+  // the user is unauthenticated: the server may still hold their grant.
+  //
+  // This stays total. Thirteen call sites treat null as "not connected", and
+  // making them handle an exception would be a wide change for a condition
+  // they cannot act on individually. A permanent failure is recorded on the
+  // module instead, for the UI to surface once.
+  try {
+    const refreshed = await refresh();
+    return refreshed?.accessToken ?? null;
+  } catch (err) {
+    if (err instanceof SpotifyReconnectRequired) {
+      reconnectRequired = true;
+      trackError('token_refresh_failed', err);
+      return null;
+    }
+    return null;
   }
-  return null;
+}
+
+// True once the server has told us the grant is gone for good. The UI reads
+// this to offer a reconnect instead of leaving a connected-looking session
+// that silently cannot play — the failure mode #176 fixed for playback.
+export function needsSpotifyReconnect(): boolean {
+  return reconnectRequired;
+}
+
+// Cleared when a fresh connect succeeds.
+export function clearSpotifyReconnect(): void {
+  reconnectRequired = false;
 }
 
 export function isAuthed(): boolean {
