@@ -2077,14 +2077,17 @@ input:focus, textarea:focus, select:focus {
   overflow-wrap: anywhere;
 }
 
-/* Age gate overlay (#259). */
+/* Age gate (#259). Native <dialog>: showModal() supplies focus containment,
+   Escape and an inert background, so only presentation is styled here. */
 .age-gate {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  place-items: center;
+  border: none;
   padding: 1.5rem;
+  background: transparent;
+  color: inherit;
+  max-width: min(26rem, 100vw - 3rem);
+}
+
+.age-gate::backdrop {
   background: color-mix(in oklab, black 65%, transparent);
 }
 

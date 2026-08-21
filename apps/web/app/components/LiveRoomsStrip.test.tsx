@@ -169,3 +169,43 @@ describe('directory age gate (#259)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
+
+describe('age gate is a real modal (#259)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    push.mockClear();
+  });
+
+  const one: PublicRoomSummary[] = [
+    { roomId: 'ROOM1', name: 'Sala', memberCount: 2 } as PublicRoomSummary,
+  ];
+
+  // role=dialog + aria-modal without focus management is a lie to assistive
+  // tech. The native element supplies containment; this asserts we use it.
+  it('uses a native dialog opened as modal', async () => {
+    render(<LiveRoomsStrip rooms={one} />);
+    const dialog = screen.getByRole('dialog', { hidden: true });
+    expect(dialog.tagName).toBe('DIALOG');
+    expect(dialog).not.toHaveAttribute('open');
+
+    await act(async () => {
+      screen.getByText('Sala').closest('a')!.click();
+    });
+    expect(dialog).toHaveAttribute('open');
+  });
+
+  it('Escape cancels without navigating', async () => {
+    render(<LiveRoomsStrip rooms={one} />);
+    await act(async () => {
+      screen.getByText('Sala').closest('a')!.click();
+    });
+
+    const dialog = screen.getByRole('dialog', { hidden: true });
+    await act(async () => {
+      dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+    });
+
+    expect(dialog).not.toHaveAttribute('open');
+    expect(push).not.toHaveBeenCalled();
+  });
+});

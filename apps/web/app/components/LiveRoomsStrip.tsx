@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { MINIMUM_AGE, hasAffirmedAge, affirmAge } from '@/lib/ageGate';
@@ -18,6 +18,17 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
   const router = useRouter();
   // Set to the room a visitor is trying to reach while the gate is open.
   const [pendingRoomId, setPendingRoomId] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  // showModal() is what makes it actually modal: it moves focus in, contains
+  // Tab, makes the background inert and wires Escape. Hand-rolling a focus
+  // trap to match would be strictly worse.
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    if (pendingRoomId && !el.open) el.showModal();
+    if (!pendingRoomId && el.open) el.close();
+  }, [pendingRoomId]);
 
   // Directory joins are gated (#259); invite-link joins are untouched.
   const openRoom = (event: React.MouseEvent, roomId: string) => {
@@ -69,25 +80,36 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
         ))}
       </div>
 
-      {pendingRoomId && (
-        <div className="age-gate" role="dialog" aria-modal="true" aria-labelledby="age-gate-title">
-          <div className="age-gate__panel">
-            <h2 id="age-gate-title" className="age-gate__title">Before you join</h2>
-            <p className="age-gate__body">
-              Public rooms are open to people you have not met. You need to be{' '}
-              {MINIMUM_AGE} or over to join one.
-            </p>
-            <div className="age-gate__actions">
-              <button type="button" className="btn-primary" onClick={confirmAge}>
-                I am {MINIMUM_AGE} or over
-              </button>
-              <button type="button" className="btn-ghost" onClick={() => setPendingRoomId(null)}>
-                Cancel
-              </button>
-            </div>
+      {/* Rendered unconditionally so the ref exists before showModal(). The
+          native element handles focus placement, containment and restoration
+          to the card; onCancel covers Escape and the backdrop. */}
+      <dialog
+        ref={dialogRef}
+        className="age-gate"
+        aria-labelledby="age-gate-title"
+        onCancel={(e) => {
+          e.preventDefault();
+          setPendingRoomId(null);
+        }}
+        onClose={() => setPendingRoomId(null)}
+      >
+        <div className="age-gate__panel">
+          <h2 id="age-gate-title" className="age-gate__title">Before you join</h2>
+          <p className="age-gate__body">
+            Public rooms are open to people you have not met. You need to be{' '}
+            {MINIMUM_AGE} or over to join one.
+          </p>
+          <div className="age-gate__actions">
+            <button type="button" className="btn-primary" onClick={confirmAge}>
+              I am {MINIMUM_AGE} or over
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => setPendingRoomId(null)}>
+              Cancel
+            </button>
           </div>
         </div>
-      )}
+      </dialog>
+
     </div>
   );
 }
