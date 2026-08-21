@@ -136,3 +136,86 @@ func (p *Postgres) Recent(ctx context.Context, limit int) ([]Report, error) {
 	}
 	return out, rows.Err()
 }
+
+// Action is a completed moderation action. chat.delete and room.kick left no
+// durable record before this (#259): stdout is not an audit trail, since it is
+// unqueryable and gone when the container recycles.
+type Action struct {
+	ID          string
+	RoomID      string
+	Action      string // "chat.delete" | "room.kick"
+	ActorUserID string // the host who acted
+	SubjectID   string // message id or client id
+	CreatedAt   time.Time
+}
+
+// AuditStore persists moderation actions.
+type AuditStore interface {
+	Record(ctx context.Context, a Action) error
+	RecentActions(ctx context.Context, limit int) ([]Action, error)
+}
+
+// MemoryAudit is an in-memory AuditStore.
+type MemoryAudit struct {
+	mu      sync.Mutex
+	actions []Action
+}
+
+func NewMemoryAudit() *MemoryAudit { return &MemoryAudit{} }
+
+func (m *MemoryAudit) Record(_ context.Context, a Action) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.actions = append(m.actions, a)
+	return nil
+}
+
+func (m *MemoryAudit) RecentActions(_ context.Context, limit int) ([]Action, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	out := make([]Action, 0, limit)
+	for i := len(m.actions) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, m.actions[i])
+	}
+	return out, nil
+}
+
+// PostgresAudit is an AuditStore backed by the moderation_actions table.
+type PostgresAudit struct {
+	pool *pgxpool.Pool
+}
+
+func NewPostgresAudit(pool *pgxpool.Pool) *PostgresAudit { return &PostgresAudit{pool: pool} }
+
+func (p *PostgresAudit) Record(ctx context.Context, a Action) error {
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO moderation_actions (id, room_id, action, actor_user_id, subject_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, a.ID, a.RoomID, a.Action, a.ActorUserID, a.SubjectID, a.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to record moderation action: %w", err)
+	}
+	return nil
+}
+
+func (p *PostgresAudit) RecentActions(ctx context.Context, limit int) ([]Action, error) {
+	rows, err := p.pool.Query(ctx, `
+		SELECT id, room_id, action, actor_user_id, subject_id, created_at
+		FROM moderation_actions ORDER BY created_at DESC LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load moderation actions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Action
+	for rows.Next() {
+		var a Action
+		if err := rows.Scan(&a.ID, &a.RoomID, &a.Action, &a.ActorUserID, &a.SubjectID, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan moderation action: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}

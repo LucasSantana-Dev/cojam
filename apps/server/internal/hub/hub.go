@@ -232,6 +232,7 @@ type Hub struct {
 	node            *centrifuge.Node
 	publishFn       func(roomID string, state json.RawMessage) error // test seam; nil = publish via node
 	logger          *slog.Logger
+	moderationAudit ModerationAudit
 	metrics         *obs.Metrics
 	matcher         Matcher
 	spotifyMatcher  Matcher
@@ -416,6 +417,16 @@ func (h *Hub) WithVoting(enabled bool) *Hub {
 
 // WithChat enables ephemeral room chat RPCs (chat.send/chat.history, F8).
 // Off returns ErrorMethodNotFound, same as transport.* (dark-ship default).
+// ModerationAudit records a completed moderation action. A func rather than an
+// interface so hub does not import the storage package. Nil disables auditing.
+type ModerationAudit func(action, roomID, actorUserID, subjectID string)
+
+// WithModerationAudit wires the audit sink for chat.delete and room.kick (#259).
+func (h *Hub) WithModerationAudit(fn ModerationAudit) *Hub {
+	h.moderationAudit = fn
+	return h
+}
+
 func (h *Hub) WithChat(enabled bool) *Hub {
 	h.chatEnabled = enabled
 	return h
@@ -1976,7 +1987,13 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		if err := h.requireHost(req.RoomID, userID, "delete messages"); err != nil {
 			return nil, err
 		}
-		return h.chatDelete(req.RoomID, req.MessageID)
+		res, err := h.chatDelete(req.RoomID, req.MessageID)
+		// Audited on success only, and here rather than inside chatDelete
+		// because this is where the acting identity is known.
+		if err == nil && h.moderationAudit != nil {
+			h.moderationAudit("chat.delete", req.RoomID, userID, req.MessageID)
+		}
+		return res, err
 
 	case "room.kick":
 		var req struct {
@@ -1997,7 +2014,11 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		if err := h.requireHost(req.RoomID, userID, "kick members"); err != nil {
 			return nil, err
 		}
-		return h.roomKick(req.RoomID, req.ClientID)
+		res, err := h.roomKick(req.RoomID, req.ClientID)
+		if err == nil && h.moderationAudit != nil {
+			h.moderationAudit("room.kick", req.RoomID, userID, req.ClientID)
+		}
+		return res, err
 
 	case "room.rebind":
 		if h.rebindSecret == nil || h.rebindBurns == nil {

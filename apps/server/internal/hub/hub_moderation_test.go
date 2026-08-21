@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -275,5 +276,60 @@ func TestModeration_RateLimited(t *testing.T) {
 	_, err = h.HandleRPC("room.kick", kick, "u-host")
 	if !errors.As(err, &ue) || ue.Error() != "too many requests, slow down" {
 		t.Fatalf("burst+1 kick: got %v, want the rate-limit UserError", err)
+	}
+}
+
+// The audit trail exists to answer "what was removed, by whom, when" (#259).
+// Stdout is not an audit trail: unqueryable, and gone with the container.
+func TestModerationAudit_RecordsActorAndSubject(t *testing.T) {
+	type entry struct{ action, roomID, actor, subject string }
+	var mu sync.Mutex
+	var got []entry
+
+	h := newModerationTestHub(t, "r", "u-host")
+	h.WithModerationAudit(func(action, roomID, actorUserID, subjectID string) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, entry{action, roomID, actorUserID, subjectID})
+	})
+
+	messageID := sendChatLine(t, h, "r", "troll bait")
+	payload := fmt.Sprintf(`{"roomId":"r","messageId":%q}`, messageID)
+	if _, err := h.HandleRPC("chat.delete", []byte(payload), "u-host"); err != nil {
+		t.Fatalf("chat.delete: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 {
+		t.Fatalf("expected one audited action, got %d", len(got))
+	}
+	if got[0] != (entry{"chat.delete", "r", "u-host", messageID}) {
+		t.Fatalf("audit lost the actor or subject: %+v", got[0])
+	}
+}
+
+// A rejected action is not a moderation event, so it must not be audited.
+func TestModerationAudit_SkipsFailedActions(t *testing.T) {
+	var mu sync.Mutex
+	audited := 0
+
+	h := newModerationTestHub(t, "r", "u-host")
+	h.WithModerationAudit(func(string, string, string, string) {
+		mu.Lock()
+		defer mu.Unlock()
+		audited++
+	})
+
+	// Non-host: rejected before anything happens.
+	payload := `{"roomId":"r","messageId":"whatever"}`
+	if _, err := h.HandleRPC("chat.delete", []byte(payload), "u-listener"); err == nil {
+		t.Fatal("expected a non-host chat.delete to be rejected")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if audited != 0 {
+		t.Fatalf("a rejected action must not be audited, got %d", audited)
 	}
 }
