@@ -520,6 +520,12 @@ func main() {
 	// store it needs is reachable.
 	r.Get("/healthz", healthzHandler())
 	r.Get("/readyz", readyzHandler(dbPool))
+	// Public liveness. /healthz is unreachable from outside: the proxy routes
+	// only /connection/* and /api/* here, so a public /healthz lands on the web
+	// app and 404s, and anything probing it is measuring nothing (#268).
+	// Carries no version: this one is internet-facing and the build stamp only
+	// helps someone fingerprint the deployment.
+	r.Get("/api/healthz", publicHealthzHandler())
 
 	// Apple token endpoint
 	r.Get("/api/apple/dev-token", func(w http.ResponseWriter, r *http.Request) {
@@ -654,6 +660,18 @@ func healthzHandler() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": version})
+	}
+}
+
+// publicHealthzHandler is the internet-facing liveness probe. Reaching it
+// exercises the whole public path (edge, tunnel, proxy, container), which is
+// the path that broke in #264 while every other signal stayed green.
+func publicHealthzHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}
 }
 
