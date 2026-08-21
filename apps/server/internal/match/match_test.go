@@ -228,10 +228,25 @@ func TestNewCachedMatcher_ConcurrentAccess(t *testing.T) {
 		}
 	}
 
-	// Inner should have been called only once (or a few times if the lock
-	// permits concurrent entries, but definitely not 10 times)
-	if callCount > 2 {
-		t.Errorf("inner called %d times, want <= 2 (some concurrency is ok)", callCount)
+	// The cache releases its lock across the inner call, so a burst on a cold
+	// key can produce more than one miss. The number is timing-dependent, which
+	// is why asserting "<= 2" made this test flaky (roughly 1 run in 6).
+	//
+	// Assert the property that actually matters instead: the cache collapses
+	// concurrent callers, so inner is called fewer times than there are
+	// callers.
+	burst := atomic.LoadInt64(&callCount)
+	if burst >= 10 {
+		t.Errorf("inner called %d times for 10 concurrent callers: the cache collapsed nothing", burst)
+	}
+
+	// And once the burst has settled, the key is warm: further calls must not
+	// reach inner at all. This part is deterministic.
+	if _, err := cached(ctx, "Same", "Track", ""); err != nil {
+		t.Fatalf("post-burst lookup: %v", err)
+	}
+	if after := atomic.LoadInt64(&callCount); after != burst {
+		t.Errorf("a warm key reached inner: %d -> %d", burst, after)
 	}
 }
 
