@@ -3,6 +3,7 @@ import Script from 'next/script';
 import { Bricolage_Grotesque, Instrument_Sans } from 'next/font/google';
 import './globals.css';
 import { resolveSiteUrl } from '@/lib/siteUrl';
+import { WebVitals } from '@/app/components/WebVitals';
 
 // Display face: characterful humanist-grotesque with a display optical cut —
 // carries the hero title + oversized backdrop word. Body: clean humanist sans,
@@ -74,6 +75,7 @@ export default async function RootLayout({
         <Script src="/env.js" strategy="beforeInteractive" />
       </head>
       <body>
+        <WebVitals />
         <a href="#main" className="sr-only focus:not-sr-only">
           Skip to content
         </a>

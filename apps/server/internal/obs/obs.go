@@ -37,6 +37,14 @@ type Metrics struct {
 	// RoomsShared counts rooms that gained their first non-creator member
 	// (second concurrent member) — the link-sharing adoption signal (#180).
 	RoomsShared prometheus.Counter
+
+	// Client telemetry (#245/#251). Names are drawn from a server-side
+	// allowlist, never from the request body: a free-text label here is a
+	// cardinality bomb.
+	ClientErrors    *prometheus.CounterVec
+	ProductEvents   *prometheus.CounterVec
+	WebVitals       *prometheus.HistogramVec
+	TelemetryReject *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -109,10 +117,28 @@ func New() *Metrics {
 			Name: "music_jam_rooms_shared_total",
 			Help: "Total rooms that gained their first non-creator member.",
 		}),
+		ClientErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_client_errors_total",
+			Help: "Client-side errors reported by the browser, by allowlisted name.",
+		}, []string{"name"}),
+		ProductEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_product_events_total",
+			Help: "Activation funnel events reported by the browser, by allowlisted name.",
+		}, []string{"name"}),
+		WebVitals: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "music_jam_web_vitals",
+			Help:    "Core Web Vitals reported by the browser (LCP/INP in ms, CLS unitless).",
+			Buckets: []float64{0.1, 0.25, 100, 200, 500, 1000, 2500, 4000, 8000},
+		}, []string{"name"}),
+		TelemetryReject: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_telemetry_rejected_total",
+			Help: "Telemetry posts rejected, by reason. A spike means a misbehaving client.",
+		}, []string{"reason"}),
 	}
 	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
 		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.RoomsPersistedEvicted,
-		m.PublishErrors, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared)
+		m.PublishErrors, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
+		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject)
 
 	return m
 }
@@ -162,6 +188,13 @@ func (m *Metrics) RoomPersistedEvicted(n int64) { m.RoomsPersistedEvicted.Add(fl
 
 // RoomShared counts a room gaining its first non-creator member (#180).
 func (m *Metrics) RoomShared() { m.RoomsShared.Inc() }
+
+func (m *Metrics) ClientError(name string)    { m.ClientErrors.WithLabelValues(name).Inc() }
+func (m *Metrics) ProductEvent(name string)   { m.ProductEvents.WithLabelValues(name).Inc() }
+func (m *Metrics) TelemetryRejected(r string) { m.TelemetryReject.WithLabelValues(r).Inc() }
+func (m *Metrics) WebVital(name string, v float64) {
+	m.WebVitals.WithLabelValues(name).Observe(v)
+}
 
 // RoomSetPublic counts one room.set_public toggle by target visibility.
 func (m *Metrics) RoomSetPublic(public bool) {

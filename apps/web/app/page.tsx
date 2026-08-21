@@ -10,6 +10,7 @@ import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
 import { LogoMark } from '@/app/components/Logo';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
+import { trackEvent } from '@/lib/telemetry';
 
 // Protocol commands cycled in the HUD readout. The product is a protocol
 // (RoomState, RPC dispatch, version bumps) — this is its voice.
@@ -42,10 +43,21 @@ export default function Home() {
   // snapshot keeps SSR and the first client render in agreement.
   const accountsEnabled = useSyncExternalStore(noopSubscribe, supabaseEnabled, () => false);
 
-  const createRoom = () => router.push(`/room/${generateRoomId()}`);
+  // Top of the funnel. Empty deps: once per mount, not per re-render.
+  useEffect(() => {
+    trackEvent('landing_view');
+  }, []);
+
+  const createRoom = () => {
+    trackEvent('room_create');
+    router.push(`/room/${generateRoomId()}`);
+  };
   const joinRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    if (roomId.trim()) router.push(`/room/${roomId.trim().toUpperCase()}`);
+    if (roomId.trim()) {
+      trackEvent('room_join');
+      router.push(`/room/${roomId.trim().toUpperCase()}`);
+    }
   };
 
   // HUD readouts (hunt-2: the landing behaves like a room). A real session

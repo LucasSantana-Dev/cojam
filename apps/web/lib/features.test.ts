@@ -18,6 +18,7 @@ describe('resolveFeatures', () => {
       queueVoting: false,
       roomChat: false,
       publicRooms: false,
+      telemetry: false,
     });
   });
 
@@ -45,6 +46,7 @@ describe('resolveFeatures', () => {
       queueVoting: false,
       roomChat: false,
       publicRooms: false,
+      telemetry: false,
     });
   });
 

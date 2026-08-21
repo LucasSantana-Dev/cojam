@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
+import { trackError } from '@/lib/telemetry';
 
 // Segment boundary; root-layout failures fall through to global-error.tsx.
 export default function Error({
@@ -12,8 +13,8 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Only record of the error until #245 lands: Next swallows the original.
     console.error('[cojam] segment error', error);
+    trackError('boundary_segment', error);
   }, [error]);
 
   return (
