@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { isTokenValid, canonicalOrigin, hasScope, type StoredToken } from './spotifyAuth';
+import {
+  isTokenValid,
+  canonicalOrigin,
+  hasScope,
+  SpotifyReconnectRequired,
+  type SpotifySession,
+} from './spotifyAuth';
 
-const tok = (over: Partial<StoredToken> = {}): StoredToken => ({
+const tok = (over: Partial<SpotifySession> = {}): SpotifySession => ({
   accessToken: 'a',
-  refreshToken: 'r',
   expiresAt: 1_000_000,
   ...over,
 });
@@ -81,5 +86,23 @@ describe('canonicalOrigin', () => {
         origin: 'https://cojam.example.com',
       }),
     ).toBe('https://cojam.example.com');
+  });
+});
+
+describe('SpotifyReconnectRequired (#252)', () => {
+  it('is distinguishable from a transient error', () => {
+    const err = new SpotifyReconnectRequired();
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('SpotifyReconnectRequired');
+    expect(err.message).toMatch(/reconnect/i);
+  });
+});
+
+describe('session shape (#252)', () => {
+  // The whole point of moving custody server-side: nothing here holds a
+  // long-lived credential.
+  it('carries no refresh token', () => {
+    expect(tok()).not.toHaveProperty('refreshToken');
+    expect(tok({ scope: 'streaming' })).not.toHaveProperty('refreshToken');
   });
 });
