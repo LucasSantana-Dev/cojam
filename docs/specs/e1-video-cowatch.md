@@ -45,6 +45,33 @@ Risk verdict: moderate. Acceptable, but the decision to accept it belongs to
 the operator and should be recorded in an ADR before implementation starts, not
 after.
 
+## 0.5 Correction, 2026-08-21: most of this already exists
+
+Verified against the code before implementing. The synchronized-playback
+machinery this spec proposed was already built for audio, behind `FEATURE_SYNC`:
+
+- `transport.play` / `transport.pause` / `transport.seek` exist, host-only,
+  position clamped, `updatedAtServerMs` server-stamped
+  (`docs/protocol.md:25-27,125-128,234`).
+- `RoomState.transport` exists (`protocol.ts:33-37,46`).
+- `useDriftCorrection` exists and is wired (`room/[id]/client.tsx:186`), with
+  `computeExpectedPosition` / `shouldCorrect` / `DRIFT_THRESHOLD_MS` in
+  `lib/playbackSync.ts`. The #177 re-fire guard is already in place.
+- The YouTube player already renders visibly (`YouTubePlayer.tsx:197,258`).
+- Non-embeddable videos are already handled: codes 100, 101 and 150
+  (`YouTubePlayer.tsx:43-46`).
+
+**What is actually missing** is far smaller than sections 2 to 4 below suggest:
+
+1. `TrackRef.kind: 'audio' | 'video'`, which does not exist.
+2. Video-appropriate layout: stage-with-panels, and a pinned player with tabbed
+   panels on mobile. This is the real work, and it is UI rather than protocol.
+3. A heartbeat republish for late-joiner convergence, if the existing
+   publication cadence does not already cover it.
+
+Sections 2 and 3 are kept below as the record of what was proposed, but should
+be read as **already satisfied** rather than as work to do.
+
 ## 1. Goal and non-goals
 
 **Goal.** A room can play a YouTube video that every member sees at the same
