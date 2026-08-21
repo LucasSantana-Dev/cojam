@@ -17,7 +17,9 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 async function sendChatMessage(page: Page, text: string) {
-  await page.getByLabel('Message').fill(text);
+  // exact: the report control's aria-label ("Report message from …", #259)
+  // also contains "message", so a substring match now resolves to two nodes.
+  await page.getByLabel('Message', { exact: true }).fill(text);
   await page.getByRole('button', { name: 'Send' }).click();
   // Wait for the publication round-trip so a subsequent send/assert cannot
   // race the field reset.
