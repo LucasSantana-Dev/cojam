@@ -45,6 +45,10 @@ type Metrics struct {
 	ProductEvents   *prometheus.CounterVec
 	WebVitals       *prometheus.HistogramVec
 	TelemetryReject *prometheus.CounterVec
+
+	// ReportsFiled counts member reports by kind (#259). A report is the one
+	// exception to "chat is never retained", so it is worth watching.
+	ReportsFiled *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -134,11 +138,15 @@ func New() *Metrics {
 			Name: "music_jam_telemetry_rejected_total",
 			Help: "Telemetry posts rejected, by reason. A spike means a misbehaving client.",
 		}, []string{"reason"}),
+		ReportsFiled: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_reports_filed_total",
+			Help: "Member reports filed, by kind (message, member, room).",
+		}, []string{"kind"}),
 	}
 	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
 		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.RoomsPersistedEvicted,
 		m.PublishErrors, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
-		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject)
+		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject, m.ReportsFiled)
 
 	return m
 }
@@ -192,6 +200,8 @@ func (m *Metrics) RoomShared() { m.RoomsShared.Inc() }
 func (m *Metrics) ClientError(name string)    { m.ClientErrors.WithLabelValues(name).Inc() }
 func (m *Metrics) ProductEvent(name string)   { m.ProductEvents.WithLabelValues(name).Inc() }
 func (m *Metrics) TelemetryRejected(r string) { m.TelemetryReject.WithLabelValues(r).Inc() }
+func (m *Metrics) ReportFiled(kind string)    { m.ReportsFiled.WithLabelValues(kind).Inc() }
+
 func (m *Metrics) WebVital(name string, v float64) {
 	m.WebVitals.WithLabelValues(name).Observe(v)
 }
