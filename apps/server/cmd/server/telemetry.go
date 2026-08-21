@@ -48,31 +48,40 @@ type telemetryPayload struct {
 	Detail string  `json:"detail"`
 }
 
-// telemetryLimiter is a token bucket keyed by caller, mirroring the hub's
-// rateLimiter. Kept local so telemetry cannot spend the hub's budget.
-type telemetryLimiter struct {
+// callerLimiter is a token bucket keyed by caller, mirroring the hub's
+// rateLimiter. Each public endpoint gets its own instance so one cannot spend
+// another's budget, and none of them spend the hub's.
+type callerLimiter struct {
 	mu      sync.Mutex
+	burst   float64
+	refill  time.Duration
 	buckets map[string]float64
 	seen    map[string]time.Time
 	last    time.Time
 }
 
-func newTelemetryLimiter() *telemetryLimiter {
-	return &telemetryLimiter{
+func newCallerLimiter(burst float64, refill time.Duration) *callerLimiter {
+	return &callerLimiter{
+		burst:   burst,
+		refill:  refill,
 		buckets: map[string]float64{},
 		seen:    map[string]time.Time{},
 		last:    time.Now(),
 	}
 }
 
-func (l *telemetryLimiter) allow(key string, now time.Time) bool {
+func newTelemetryLimiter() *callerLimiter {
+	return newCallerLimiter(telemetryBurst, telemetryRefill)
+}
+
+func (l *callerLimiter) allow(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	// buckets hold tokens CONSUMED, so refill decreases them. A caller back at
 	// zero is indistinguishable from one never seen, so drop the entry.
 	if elapsed := now.Sub(l.last); elapsed > 0 {
-		refill := float64(elapsed) / float64(telemetryRefill)
+		refill := float64(elapsed) / float64(l.refill)
 		for k := range l.buckets {
 			if v := l.buckets[k] - refill; v <= 0 {
 				delete(l.buckets, k)
@@ -91,7 +100,7 @@ func (l *telemetryLimiter) allow(key string, now time.Time) bool {
 	}
 	l.seen[key] = now
 
-	if l.buckets[key] >= telemetryBurst {
+	if l.buckets[key] >= l.burst {
 		return false
 	}
 	l.buckets[key]++
@@ -129,7 +138,7 @@ func callerKey(r *http.Request) string {
 // telemetryHandler accepts one client-reported error, product event, or web
 // vital and folds it into the existing Prometheus surface. See
 // docs/specs/245-251-client-telemetry.md for why this is not Sentry.
-func telemetryHandler(metrics *obs.Metrics, logger *slog.Logger, limiter *telemetryLimiter) http.HandlerFunc {
+func telemetryHandler(metrics *obs.Metrics, logger *slog.Logger, limiter *callerLimiter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !limiter.allow(callerKey(r), time.Now()) {
 			metrics.TelemetryRejected("rate_limited")
