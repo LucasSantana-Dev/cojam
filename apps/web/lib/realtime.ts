@@ -19,6 +19,20 @@ const MAX_CHAT_MESSAGES = 100;
 // the room page swaps to an explicit "removed by host" state instead.
 export const DISCONNECT_CODE_KICKED = 4500;
 
+// Client-local system line marking chat history that a server rollover ended.
+// Never sent to the server; the id prefix keeps it from colliding with a
+// server-assigned uuid so dedupe-by-id still works.
+export function chatUnavailableNotice(roomId: string): ChatMessage {
+  return {
+    id: `local-chat-gap-${Date.now()}`,
+    roomId,
+    name: '',
+    text: 'Earlier messages are unavailable — the room reconnected to a restarted server.',
+    kind: 'system',
+    sentAtServerMs: Date.now(),
+  };
+}
+
 // roomChatEnabled resolves the F8 flag runtime-first (via /env.js), falling
 // back to the build-time NEXT_PUBLIC_FEATURE_ROOM_CHAT.
 function roomChatEnabled(): boolean {
@@ -326,7 +340,15 @@ export async function joinRoom(
       // Heal chat lines missed during the drop (F8); dedupe by id makes the
       // refetch idempotent against anything that arrived live.
       if (roomChatEnabled()) {
+        const hadChat = useStore.getState().chat.some((m) => m.kind !== 'system');
         fetchChatHistory(rejoin.roomId).then((messages) => {
+          // The ring is per-process and never persisted, so a server rollover
+          // (ADR-0006) heals into nothing. Say so instead of letting the lines
+          // vanish silently.
+          if (hadChat && messages.length === 0) {
+            useStore.getState().addChatMessage(chatUnavailableNotice(rejoin.roomId));
+            return;
+          }
           messages.forEach((m) => useStore.getState().addChatMessage(m));
         }).catch(() => {
           /* chat history is best-effort; the next reconnect retries */

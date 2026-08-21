@@ -3,7 +3,9 @@
 // different V8 realm, so parseConnInfo's `instanceof Uint8Array` check
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED } from './realtime';
+import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
+  chatUnavailableNotice,
+} from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
 
 // Centrifuge/auth/account mocks for the joinRoom lifecycle tests (B9/B10/B11).
@@ -898,5 +900,26 @@ describe('rebind waiter supersede (#172)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('chatUnavailableNotice (ADR-0006)', () => {
+  it('is a system line carrying no member identity', () => {
+    const notice = chatUnavailableNotice('ROOM123');
+    expect(notice.kind).toBe('system');
+    expect(notice.name).toBe('');
+    expect(notice.userId).toBeUndefined();
+    expect(notice.roomId).toBe('ROOM123');
+    expect(notice.text).toMatch(/unavailable/i);
+  });
+
+  // Dedupe in addChatMessage is by id, so a client-local line must never
+  // collide with a server-assigned uuid.
+  it('uses a locally-namespaced id', () => {
+    expect(chatUnavailableNotice('ROOM123').id).toMatch(/^local-chat-gap-/);
+  });
+
+  it('does not render as a deleted tombstone', () => {
+    expect(chatUnavailableNotice('ROOM123').deleted).toBeUndefined();
   });
 });
