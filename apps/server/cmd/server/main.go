@@ -32,6 +32,7 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/rebind"
+	"github.com/LucasSantana-Dev/cojam/server/internal/report"
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifytoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 	"github.com/LucasSantana-Dev/cojam/server/internal/supauth"
@@ -239,6 +240,8 @@ func main() {
 
 	var dbPool *pgxpool.Pool
 	burns := rebind.BurnList(rebind.NewMemory())
+	reports := report.Store(report.NewMemory())
+	audit := report.AuditStore(report.NewMemoryAudit())
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 		// Bound all startup DB work (connect, ping, migrate) with a deadline so a
 		// hung or locked database fails the deploy fast instead of blocking forever.
@@ -293,6 +296,8 @@ func main() {
 
 		dbPool = pool
 		burns = rebind.NewPostgres(pool)
+		reports = report.NewPostgres(pool)
+		audit = report.NewPostgresAudit(pool)
 		if spotifySealer != nil {
 			spotifyStore = spotifytoken.NewPostgres(pool, spotifySealer)
 		}
@@ -457,6 +462,27 @@ func main() {
 		logger.Info("spotify_token_custody_enabled", "store", map[bool]string{true: "postgres", false: "memory"}[dbPool != nil])
 	}
 
+	// Moderation audit trail (#259): chat.delete and room.kick previously left
+	// only a stdout line, which is not queryable and dies with the container.
+	// Recorded asynchronously so a slow write never blocks a moderation action.
+	h.WithModerationAudit(func(action, roomID, actorUserID, subjectID string) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			rec := report.Action{
+				ID:          connauth.NewSub(),
+				RoomID:      roomID,
+				Action:      action,
+				ActorUserID: actorUserID,
+				SubjectID:   subjectID,
+				CreatedAt:   time.Now().UTC(),
+			}
+			if err := audit.Record(ctx, rec); err != nil {
+				logger.Error("moderation_audit_failed", "err", err.Error(), "action", action)
+			}
+		}()
+	})
+
 	// Connection authentication setup
 	roomAuthEnabled := featureEnabled("FEATURE_ROOM_AUTH", false)
 	roomAuthSecret := os.Getenv("ROOM_AUTH_SECRET")
@@ -575,6 +601,11 @@ func main() {
 	// Carries no version: this one is internet-facing and the build stamp only
 	// helps someone fingerprint the deployment.
 	r.Get("/api/healthz", publicHealthzHandler())
+	// Member reports (#259). Durable by design: chat is ephemeral, so the
+	// report copies what it concerns.
+	r.Post("/api/report", reportHandler(reports, roomAuthSecret, metrics, logger,
+		newCallerLimiter(reportBurst, reportRefill)))
+
 	// Client telemetry (#245/#251): folds browser-reported errors, funnel
 	// events and web vitals into the existing Prometheus surface.
 	r.Post("/api/telemetry", telemetryHandler(metrics, logger, newTelemetryLimiter()))
