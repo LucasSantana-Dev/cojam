@@ -96,6 +96,11 @@ func validateImportTracks(tracks []queue.TrackRef) error {
 		if t.ArtworkURL != "" && !strings.HasPrefix(t.ArtworkURL, "https://") {
 			return userErrorf("track %d: artwork url must be https", i+1)
 		}
+		// Kind drives client rendering, so an unrecognised value would leave a
+		// track that no player claims. Empty stays valid and means audio.
+		if t.Kind != "" && t.Kind != queue.KindAudio && t.Kind != queue.KindVideo {
+			return userErrorf("track %d: unknown kind", i+1)
+		}
 	}
 	return nil
 }

@@ -724,6 +724,9 @@ func TestHandleRPC_QueueAddValidation(t *testing.T) {
 		{"artwork url too long", `{"title":"T","artist":"A","artworkUrl":"https://` + strings.Repeat("x", 513) + `"}`, "artwork"},
 		{"artwork url not https", `{"title":"T","artist":"A","artworkUrl":"http://img.example.com/x.jpg"}`, "artwork"},
 		{"artwork url javascript scheme", `{"title":"T","artist":"A","artworkUrl":"javascript:alert(1)"}`, "artwork"},
+		// An unrecognised kind would leave a track no player claims (#258).
+		{"unknown kind", `{"title":"T","artist":"A","kind":"hologram"}`, "kind"},
+		{"kind wrong case", `{"title":"T","artist":"A","kind":"Video"}`, "kind"},
 	}
 
 	for _, tc := range cases {
@@ -765,5 +768,38 @@ func TestHandleRPC_PlaylistImportAddedByTooLong(t *testing.T) {
 	var ue *UserError
 	if !errors.As(err, &ue) {
 		t.Fatalf("validation error must be user-facing, got %T: %v", err, err)
+	}
+}
+
+// Kind drives client rendering. Absent means audio, so existing queues and
+// older clients are unaffected (#258).
+func TestQueueAdd_KindRoundTrips(t *testing.T) {
+	for _, tc := range []struct{ name, payload, want string }{
+		{"video is preserved", `"kind":"video",`, "video"},
+		{"audio is preserved", `"kind":"audio",`, "audio"},
+		{"absent stays absent", ``, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := NewHub(nil)
+			h.Join("client1", "kindroom")
+
+			payload := `{"roomId":"kindroom","track":{` + tc.payload +
+				`"title":"T","artist":"A","sources":{"youtube":{"videoId":"abc","confidence":1}},"addedBy":"x"}}`
+			res, err := h.HandleRPC("queue.add", []byte(payload), "")
+			if err != nil {
+				t.Fatalf("queue.add: %v", err)
+			}
+
+			var st queue.RoomState
+			if err := json.Unmarshal(res, &st); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(st.Queue) != 1 {
+				t.Fatalf("expected one track, got %d", len(st.Queue))
+			}
+			if st.Queue[0].Kind != tc.want {
+				t.Fatalf("kind = %q, want %q", st.Queue[0].Kind, tc.want)
+			}
+		})
 	}
 }

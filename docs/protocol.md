@@ -391,6 +391,7 @@ type TrackRef = {
   addedByUserId?: string; // authenticated userID of the adder, server-stamped
   addedAt?: number;    // unix ms when queued, server-stamped (absent on older tracks)
   artworkUrl?: string; // album art, client-supplied at add time (server validates https, ≤512 chars)
+  kind?: 'audio' | 'video'; // render as audio or video (#258); absent = audio. Unknown values rejected at add.
 };
 
 type RoomState = {
