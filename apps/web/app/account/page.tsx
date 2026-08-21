@@ -235,7 +235,7 @@ export default function AccountPage() {
           <p role="alert" className="text-sm" style={{ color: 'var(--color-status-error)' }}>{error}</p>
         )}
         {message && (
-          <p role="status" className="text-sm" style={{ color: '#86efac' }}>{message}</p>
+          <p role="status" className="text-sm" style={{ color: 'var(--color-status-ok)' }}>{message}</p>
         )}
       </div>
     </main>

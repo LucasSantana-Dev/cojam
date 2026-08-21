@@ -16,16 +16,30 @@
   --color-text-muted: oklch(0.48 0.01 280);   /* for hints/secondary text */
   --color-accent: oklch(0.66 0.20 300);       /* violet — the identity accent */
   --color-accent-hover: oklch(0.72 0.18 300); /* lighter for hover */
-  /* Second brand accent: music green (ADR-0004). This is the representative
-     SOLID for non-logo uses; the logo core is the --logo-core-* gradient below,
-     and --color-accent-2 sits between its lime and emerald endpoints. */
-  --color-accent-2: #4ade80;
-  /* Logo mark gradients (frame = violet sweep, core = lime -> emerald). The core
-     endpoints are the gradient form of --color-accent-2. */
-  --logo-frame-from: #6d5cff; --logo-frame-to: #c661ff;
-  --logo-core-from: #a3e635;  --logo-core-to: #10b981;
+  /* Second brand accent: music green (ADR-0004). The representative SOLID for
+     non-logo uses; the logo core is the --logo-core-* gradient below. Sits
+     BETWEEN those endpoints, not at their midpoint: the midpoint measures
+     oklch(0.773 0.178 145.7), so this is 6 degrees toward emerald and a step
+     lighter. Whether the brand green should move there is #290. */
+  --color-accent-2: oklch(0.800 0.182 151.7);   /* was #4ade80, exact */
+  /* Logo mark gradients (frame = violet sweep, core = lime -> emerald). */
+  --logo-frame-from: oklch(0.587 0.232 281.2);  /* was #6d5cff, exact */
+  --logo-frame-to: oklch(0.681 0.233 311.2);    /* was #c661ff, exact */
+  --logo-core-from: oklch(0.849 0.207 128.8);   /* was #a3e635, exact */
+  --logo-core-to: oklch(0.696 0.149 162.5);     /* was #10b981, exact */
   --color-status-warn: oklch(0.70 0.20 55);  /* amber-ish for reconnecting state */
   --color-status-error: oklch(0.60 0.20 25); /* red-ish for connection lost state */
+  /* Lightness steps on the hues above, which is the point of working in OKLCH:
+     a softer error is the same hue at higher L, not a separately picked red.
+     -soft is for inline form errors, which sit on a card and need the extra
+     contrast headroom (7.19:1 vs 4.55:1 for the base token). */
+  --color-status-error-soft: oklch(0.711 0.166 22);  /* was #f87171 */
+  --color-status-ok: oklch(0.871 0.136 152);         /* was #86efac, accent-2 hue */
+  /* Member and provider identity scale. Three fixed hues, previously duplicated
+     as six literals across page.tsx and RoomShowcase.tsx with no definition. */
+  --color-ident-1: oklch(0.654 0.211 296.6);    /* was #a06bff */
+  --color-ident-2: oklch(0.714 0.143 254.6);    /* was #60a5fa */
+  --color-ident-3: oklch(0.773 0.153 163.2);    /* was #34d399 */
   /* Motion tokens (premium timing band). Enter = decelerate; never linear for UI. */
   --dur-micro: 160ms;
   --dur-base: 320ms;
@@ -442,17 +456,17 @@ input:focus, textarea:focus, select:focus {
 }
 
 .badge-youtube {
-  background-color: rgba(239, 68, 68, 0.15);
-  color: #ea580c;
+  background-color: oklch(0.637 0.208 25.3 / 0.15);
+  color: oklch(0.646 0.194 41.1);
 }
 
 .badge-apple {
-  background-color: rgba(30, 58, 138, 0.15);
-  color: #93c5fd;
+  background-color: oklch(0.379 0.138 265.5 / 0.15);
+  color: oklch(0.809 0.096 251.8);
 }
 
 .badge-spotify {
-  background-color: rgba(96, 165, 250, 0.15);
+  background-color: oklch(0.714 0.143 254.6 / 0.15);
   color: var(--color-accent);
 }
 
@@ -1860,7 +1874,7 @@ input:focus, textarea:focus, select:focus {
 .success-toast {
   animation: slide-up-fade-out var(--dur-expressive) var(--ease-out-quart) forwards;
   animation-delay: 2.5s;
-  color: #86efac;
+  color: var(--color-status-ok);
 }
 
 /* Radio toggle thumb: spring feel */

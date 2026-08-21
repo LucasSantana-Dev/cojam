@@ -305,7 +305,7 @@ export function SpotifyPlayer({
   if (!clientId) return null;
   if (status === 'error') {
     return (
-      <div className="text-sm" style={{ color: '#ef4444' }}>
+      <div className="text-sm" style={{ color: 'var(--color-status-error)' }}>
         Spotify unavailable (Premium required)
       </div>
     );

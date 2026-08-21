@@ -6,9 +6,9 @@ import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, PlayIcon, ArrowUpIcon, ArrowD
 const roomData = {
   roomId: 'NEON-4821',
   presence: [
-    { initials: 'L', name: 'Lucas', color: '#a06bff' },
-    { initials: 'M', name: 'Maria', color: '#60a5fa' },
-    { initials: 'T', name: 'Théo', color: '#34d399' },
+    { initials: 'L', name: 'Lucas', color: 'var(--color-ident-1)' },
+    { initials: 'M', name: 'Maria', color: 'var(--color-ident-2)' },
+    { initials: 'T', name: 'Théo', color: 'var(--color-ident-3)' },
   ],
   nowPlaying: {
     title: 'Instant Crush',
@@ -58,9 +58,9 @@ const roomData = {
 };
 
 const sourceConfig = {
-  spotify: { Icon: SpotifyIcon, label: 'Spotify', color: '#a06bff' },
-  apple: { Icon: AppleMusicIcon, label: 'Apple', color: '#60a5fa' },
-  youtube: { Icon: YouTubeIcon, label: 'YouTube', color: '#ef4444' },
+  spotify: { Icon: SpotifyIcon, label: 'Spotify', color: 'var(--color-ident-1)' },
+  apple: { Icon: AppleMusicIcon, label: 'Apple', color: 'var(--color-ident-2)' },
+  youtube: { Icon: YouTubeIcon, label: 'YouTube', color: 'var(--color-status-error)' },
 };
 
 // Intentionally standalone promo mockup: static data, self-contained styles.
@@ -348,7 +348,7 @@ export function RoomShowcase() {
                         </button>
                         <button
                           className="p-1.5 rounded transition-colors duration-150 hover:bg-red-500/20"
-                          style={{ color: '#ef4444' }}
+                          style={{ color: 'var(--color-status-error)' }}
                           aria-label="Remove"
                           type="button"
                         >
