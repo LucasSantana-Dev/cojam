@@ -133,6 +133,7 @@ COJAM_FEATURE_<NAME>=true|false        # runtime override per feature flag
 COJAM_SUPABASE_URL=<url>               # accounts; emitted only with the anon key
 COJAM_SUPABASE_ANON_KEY=<key>
 COJAM_FEATURE_SUPABASE_AUTH=false      # suppress the Supabase pair entirely
+COJAM_FEATURE_TELEMETRY=true           # client error/vitals/event reporting (default off)
 ```
 
 > [!IMPORTANT]

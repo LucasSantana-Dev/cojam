@@ -15,6 +15,7 @@ export type Features = {
   queueVoting: boolean;
   roomChat: boolean;
   publicRooms: boolean;
+  telemetry: boolean;
 };
 
 export type FeatureName = keyof Features;
@@ -36,6 +37,7 @@ export const FEATURE_ENV_VARS: Record<FeatureName, string> = {
   queueVoting: 'COJAM_FEATURE_QUEUE_VOTING',
   roomChat: 'COJAM_FEATURE_ROOM_CHAT',
   publicRooms: 'COJAM_FEATURE_PUBLIC_ROOMS',
+  telemetry: 'COJAM_FEATURE_TELEMETRY',
 };
 
 const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
@@ -64,6 +66,7 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
     queueVoting: flag(env.NEXT_PUBLIC_FEATURE_QUEUE_VOTING, false),
     roomChat: flag(env.NEXT_PUBLIC_FEATURE_ROOM_CHAT, false),
     publicRooms: flag(env.NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS, false),
+    telemetry: flag(env.NEXT_PUBLIC_FEATURE_TELEMETRY, false),
   };
 }
 
@@ -82,4 +85,5 @@ export const features: Features = resolveFeatures({
   NEXT_PUBLIC_FEATURE_QUEUE_VOTING: process.env.NEXT_PUBLIC_FEATURE_QUEUE_VOTING,
   NEXT_PUBLIC_FEATURE_ROOM_CHAT: process.env.NEXT_PUBLIC_FEATURE_ROOM_CHAT,
   NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS: process.env.NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS,
+  NEXT_PUBLIC_FEATURE_TELEMETRY: process.env.NEXT_PUBLIC_FEATURE_TELEMETRY,
 });

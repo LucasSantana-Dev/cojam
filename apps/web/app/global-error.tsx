@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { trackError } from '@/lib/telemetry';
 
 // Replaces the layout entirely, so it renders its own <html>/<body> and cannot
 // rely on globals.css being applied. Hence the inline styles.
@@ -13,6 +14,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error('[cojam] root error', error);
+    trackError('boundary_root', error);
   }, [error]);
 
   return (

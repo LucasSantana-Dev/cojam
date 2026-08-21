@@ -539,6 +539,9 @@ func main() {
 	// Carries no version: this one is internet-facing and the build stamp only
 	// helps someone fingerprint the deployment.
 	r.Get("/api/healthz", publicHealthzHandler())
+	// Client telemetry (#245/#251): folds browser-reported errors, funnel
+	// events and web vitals into the existing Prometheus surface.
+	r.Post("/api/telemetry", telemetryHandler(metrics, logger, newTelemetryLimiter()))
 
 	// Apple token endpoint
 	r.Get("/api/apple/dev-token", func(w http.ResponseWriter, r *http.Request) {
