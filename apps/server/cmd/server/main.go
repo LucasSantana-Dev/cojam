@@ -32,6 +32,7 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/rebind"
+	"github.com/LucasSantana-Dev/cojam/server/internal/report"
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifytoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 	"github.com/LucasSantana-Dev/cojam/server/internal/supauth"
@@ -239,6 +240,7 @@ func main() {
 
 	var dbPool *pgxpool.Pool
 	burns := rebind.BurnList(rebind.NewMemory())
+	reports := report.Store(report.NewMemory())
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 		// Bound all startup DB work (connect, ping, migrate) with a deadline so a
 		// hung or locked database fails the deploy fast instead of blocking forever.
@@ -293,6 +295,7 @@ func main() {
 
 		dbPool = pool
 		burns = rebind.NewPostgres(pool)
+		reports = report.NewPostgres(pool)
 		if spotifySealer != nil {
 			spotifyStore = spotifytoken.NewPostgres(pool, spotifySealer)
 		}
@@ -575,6 +578,11 @@ func main() {
 	// Carries no version: this one is internet-facing and the build stamp only
 	// helps someone fingerprint the deployment.
 	r.Get("/api/healthz", publicHealthzHandler())
+	// Member reports (#259). Durable by design: chat is ephemeral, so the
+	// report copies what it concerns.
+	r.Post("/api/report", reportHandler(reports, roomAuthSecret, metrics, logger,
+		newCallerLimiter(reportBurst, reportRefill)))
+
 	// Client telemetry (#245/#251): folds browser-reported errors, funnel
 	// events and web vitals into the existing Prometheus surface.
 	r.Post("/api/telemetry", telemetryHandler(metrics, logger, newTelemetryLimiter()))
