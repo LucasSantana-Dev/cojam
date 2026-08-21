@@ -643,9 +643,9 @@ export default function Home() {
                   </div>
                   <div className="room-card__bottom">
                     <span className="room-card__avatars">
-                      <i style={{ background: '#a06bff' }}>L</i>
-                      <i style={{ background: '#60a5fa' }}>M</i>
-                      <i style={{ background: '#34d399' }}>T</i>
+                      <i style={{ background: 'var(--color-ident-1)' }}>L</i>
+                      <i style={{ background: 'var(--color-ident-2)' }}>M</i>
+                      <i style={{ background: 'var(--color-ident-3)' }}>T</i>
                     </span>
                     <span className="room-card__chat">
                       <b>Maria</b> added Borderline to the queue

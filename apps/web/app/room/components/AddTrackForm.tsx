@@ -386,7 +386,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
             </p>
           )}
           {playlistSuccess && (
-            <p role="status" aria-live="polite" className="success-toast text-sm" style={{ color: '#86efac' }}>
+            <p role="status" aria-live="polite" className="success-toast text-sm" style={{ color: 'var(--color-status-ok)' }}>
               {playlistSuccess}
             </p>
           )}
@@ -395,7 +395,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
 
       {/* Shared add-track error lives OUTSIDE the manual form: a failed
           search-result add must stay visible when the details are closed. */}
-      <p role="alert" aria-live="polite" className="text-sm" style={{ color: '#f87171', minHeight: error ? undefined : 0 }}>
+      <p role="alert" aria-live="polite" className="text-sm" style={{ color: 'var(--color-status-error-soft)', minHeight: error ? undefined : 0 }}>
         {error}
       </p>
 

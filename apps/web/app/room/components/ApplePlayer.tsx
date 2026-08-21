@@ -216,7 +216,7 @@ export function ApplePlayer({
   if (status === 'unconfigured' || status === 'idle') return null;
   if (status === 'error') {
     return (
-      <div className="text-sm" style={{ color: '#ef4444' }}>
+      <div className="text-sm" style={{ color: 'var(--color-status-error)' }}>
         Apple Music unavailable
       </div>
     );

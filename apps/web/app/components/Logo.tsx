@@ -50,33 +50,33 @@ export function LogoMark({
       fill="none"
       aria-hidden
       focusable="false"
-      style={glow ? { filter: 'drop-shadow(0 0 14px rgba(160,107,255,0.45))' } : undefined}
+      style={glow ? { filter: 'drop-shadow(0 0 14px color-mix(in oklab, var(--color-ident-1) 45%, transparent))' } : undefined}
     >
       <defs>
         {flow ? (
           <>
             <linearGradient id={frame} x1="20" y1="439" x2="440" y2="439" gradientUnits="userSpaceOnUse" spreadMethod="repeat">
-              <stop offset="0" stopColor="var(--logo-frame-from, #6d5cff)" />
-              <stop offset="0.5" stopColor="var(--logo-frame-to, #c661ff)" />
-              <stop offset="1" stopColor="var(--logo-frame-from, #6d5cff)" />
+              <stop offset="0" stopColor="var(--logo-frame-from, oklch(0.587 0.232 281.2))" />
+              <stop offset="0.5" stopColor="var(--logo-frame-to, oklch(0.681 0.233 311.2))" />
+              <stop offset="1" stopColor="var(--logo-frame-from, oklch(0.587 0.232 281.2))" />
               <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="420 0" dur="9s" repeatCount="indefinite" />
             </linearGradient>
             <linearGradient id={core} x1="439" y1="380" x2="439" y2="640" gradientUnits="userSpaceOnUse" spreadMethod="repeat">
-              <stop offset="0" stopColor="var(--logo-core-from, #a3e635)" />
-              <stop offset="0.5" stopColor="var(--logo-core-to, #10b981)" />
-              <stop offset="1" stopColor="var(--logo-core-from, #a3e635)" />
+              <stop offset="0" stopColor="var(--logo-core-from, oklch(0.849 0.207 128.8))" />
+              <stop offset="0.5" stopColor="var(--logo-core-to, oklch(0.696 0.149 162.5))" />
+              <stop offset="1" stopColor="var(--logo-core-from, oklch(0.849 0.207 128.8))" />
               <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="0 260" dur="7s" repeatCount="indefinite" />
             </linearGradient>
           </>
         ) : (
           <>
             <linearGradient id={frame} x1="20" y1="439" x2="858" y2="439" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stopColor="var(--logo-frame-from, #6d5cff)" />
-              <stop offset="1" stopColor="var(--logo-frame-to, #c661ff)" />
+              <stop offset="0" stopColor="var(--logo-frame-from, oklch(0.587 0.232 281.2))" />
+              <stop offset="1" stopColor="var(--logo-frame-to, oklch(0.681 0.233 311.2))" />
             </linearGradient>
             <linearGradient id={core} x1="439" y1="360" x2="439" y2="720" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stopColor="var(--logo-core-from, #a3e635)" />
-              <stop offset="1" stopColor="var(--logo-core-to, #10b981)" />
+              <stop offset="0" stopColor="var(--logo-core-from, oklch(0.849 0.207 128.8))" />
+              <stop offset="1" stopColor="var(--logo-core-to, oklch(0.696 0.149 162.5))" />
             </linearGradient>
           </>
         )}

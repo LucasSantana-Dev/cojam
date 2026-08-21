@@ -108,8 +108,8 @@ export default function SpotifyCallback() {
         <div
           className="w-12 h-12 rounded-full flex items-center justify-center mx-auto"
           style={{
-            background: 'rgba(239, 68, 68, 0.15)',
-            border: '2px solid #ef4444',
+            background: 'color-mix(in oklab, var(--color-status-error) 15%, transparent)',
+            border: '2px solid var(--color-status-error)',
           }}
         >
           <svg
@@ -117,7 +117,7 @@ export default function SpotifyCallback() {
             height="24"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#ef4444"
+            stroke="var(--color-status-error)"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -126,7 +126,7 @@ export default function SpotifyCallback() {
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </div>
-        <p style={{ color: '#ef4444', marginTop: '1rem', fontWeight: 500 }}>
+        <p style={{ color: 'var(--color-status-error)', marginTop: '1rem', fontWeight: 500 }}>
           {error || 'Authentication failed'}
         </p>
         <Link
