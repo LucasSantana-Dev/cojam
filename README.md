@@ -22,6 +22,7 @@ their own account while the server keeps everyone in sync on metadata alone.
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
 - [Testing](#testing)
+- [Deploying](#deploying)
 - [Project layout](#project-layout)
 - [Status](#status)
 
@@ -81,7 +82,7 @@ flowchart TB
 | Matching | ISRC-first · YouTube Data API · Spotify Client Credentials · MusicBrainz fallback |
 | Persistence | Postgres (pgx) when `DATABASE_URL` is set, rooms survive restart · in-memory fallback for local dev |
 | Monorepo | pnpm workspaces (`apps/web`, `packages/shared`) + colocated Go module (`apps/server`) |
-| Deploy | Docker images published to GHCR when app sources change on main (`ghcr.io/lucassantana-dev/cojam-web`, `ghcr.io/lucassantana-dev/cojam-server`); run them anywhere |
+| Deploy | Docker images published to GHCR when app sources change on main (`ghcr.io/lucassantana-dev/cojam-web`, `ghcr.io/lucassantana-dev/cojam-server`); self-hosted behind a reverse proxy, see [Deploying](#deploying) |
 
 One centrifuge channel serves each room (`room:<id>`). Clients subscribe to a
 room to be authorized to mutate it; the server is authoritative for queue state.
@@ -123,6 +124,23 @@ NEXT_PUBLIC_SPOTIFY_CLIENT_ID=<id>     # Spotify PKCE (Web Playback)
 NEXT_PUBLIC_WS_URL=ws://localhost:8080/connection/websocket
 ```
 
+`NEXT_PUBLIC_*` are inlined at build time. A deployed image is configured at
+runtime instead, via `COJAM_*` vars served through `/env.js` (no rebuild):
+
+```bash
+COJAM_WS_URL=wss://example.com/connection/websocket
+COJAM_FEATURE_<NAME>=true|false        # runtime override per feature flag
+COJAM_SUPABASE_URL=<url>               # accounts; emitted only with the anon key
+COJAM_SUPABASE_ANON_KEY=<key>
+COJAM_FEATURE_SUPABASE_AUTH=false      # suppress the Supabase pair entirely
+```
+
+> [!IMPORTANT]
+> The client treats the presence of the Supabase pair as "accounts available".
+> Set `COJAM_FEATURE_SUPABASE_AUTH=false` whenever the server runs with
+> `FEATURE_SUPABASE_AUTH=false`, or the UI offers a sign-in the server will
+> refuse.
+
 **Server** (environment):
 
 ```bash
@@ -158,6 +176,16 @@ pnpm --filter web e2e                  # web e2e (two-browser room sync)
 >
 > CI provides this via a Postgres service container, so these run on every PR.
 
+<!-- Separate GitHub alert blocks; a bare blank line trips MD028. -->
+
+> [!TIP]
+> `GET /api/healthz` is the public liveness probe. It returns `{"status":"ok"}`
+> and is the only health endpoint reachable through the public hostname, so it
+> is what an external uptime check should target. `/healthz` and `/readyz` are
+> on the server port and are not publicly routed.
+
+<!-- Separate GitHub alert blocks; a bare blank line trips MD028. -->
+
 > [!WARNING]
 > Always use `pnpm --filter web e2e`, never raw `playwright test`. The e2e
 > script frees port 3000 first; a stale dev server on :3000 makes Playwright's
@@ -177,6 +205,39 @@ cojam/
 │                         # backup-restore) are local-only, gitignored
 └── pnpm-workspace.yaml
 ```
+
+## Deploying
+
+The published images are environment-agnostic: one build runs anywhere, and
+every deployment-specific value is supplied at runtime. There is no build-time
+configuration to change and no deploy workflow in this repo, by design.
+
+CoJam runs self-hosted: a container host behind a reverse proxy that terminates
+TLS and path-routes a single hostname.
+
+- `/connection/*` and `/api/*` reach the **Go server**.
+- everything else reaches the **Next.js app**, which serves `/env.js`.
+
+The web app defines no `/api/*` routes, so the split is collision-free.
+
+Two constraints are easy to get wrong:
+
+1. **Publish the container ports where the proxy can reach them.** If the proxy
+   dials `127.0.0.1` and the containers publish on another interface, every
+   request becomes a 502 while both containers still report healthy, because
+   their healthchecks probe from inside the container. This has happened.
+2. **`/healthz` is not reachable through the public hostname.** It belongs to
+   the Go server, and the proxy only routes `/connection/*` and `/api/*` there,
+   so a public `/healthz` hits the Next.js app and 404s. Probe `/readyz` on the
+   server port directly, or use `/api/connection-token` from outside.
+
+Rollback is pinning the previous `sha-` image tag and recreating. Room state is
+in Postgres and survives restarts.
+
+> [!NOTE]
+> The operator runbooks with host-specific detail (`launch-readiness.md`,
+> `feature-rollout-plan.md`, `backup-restore.md`, `observability.md`) are
+> local-only by repo convention and are not in this repository.
 
 ## Status
 

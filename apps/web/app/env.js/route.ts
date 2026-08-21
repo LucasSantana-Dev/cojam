@@ -22,7 +22,17 @@ export function GET() {
   // values are set. Emitting just one would mix the runtime project with the
   // build-time NEXT_PUBLIC_* fallback of the other, pointing the client at two
   // different Supabase projects.
-  if (process.env.COJAM_SUPABASE_URL !== undefined && process.env.COJAM_SUPABASE_ANON_KEY !== undefined) {
+  //
+  // COJAM_FEATURE_SUPABASE_AUTH=false suppresses the pair entirely. The client
+  // treats their presence as "accounts available" (lib/supabase.ts), so a stale
+  // URL/key left in the environment renders a sign-in path the server will not
+  // honour when its own FEATURE_SUPABASE_AUTH is off.
+  const supabaseAuthOff = process.env.COJAM_FEATURE_SUPABASE_AUTH === 'false';
+  if (
+    !supabaseAuthOff &&
+    process.env.COJAM_SUPABASE_URL !== undefined &&
+    process.env.COJAM_SUPABASE_ANON_KEY !== undefined
+  ) {
     env.supabaseUrl = process.env.COJAM_SUPABASE_URL;
     env.supabaseAnonKey = process.env.COJAM_SUPABASE_ANON_KEY;
   }
