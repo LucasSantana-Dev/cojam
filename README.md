@@ -22,6 +22,7 @@ their own account while the server keeps everyone in sync on metadata alone.
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
 - [Testing](#testing)
+- [Deploying](#deploying)
 - [Project layout](#project-layout)
 - [Status](#status)
 
@@ -81,7 +82,7 @@ flowchart TB
 | Matching | ISRC-first · YouTube Data API · Spotify Client Credentials · MusicBrainz fallback |
 | Persistence | Postgres (pgx) when `DATABASE_URL` is set, rooms survive restart · in-memory fallback for local dev |
 | Monorepo | pnpm workspaces (`apps/web`, `packages/shared`) + colocated Go module (`apps/server`) |
-| Deploy | Docker images published to GHCR when app sources change on main (`ghcr.io/lucassantana-dev/cojam-web`, `ghcr.io/lucassantana-dev/cojam-server`); run them anywhere |
+| Deploy | Docker images published to GHCR when app sources change on main (`ghcr.io/lucassantana-dev/cojam-web`, `ghcr.io/lucassantana-dev/cojam-server`); self-hosted behind a reverse proxy, see [Deploying](#deploying) |
 
 One centrifuge channel serves each room (`room:<id>`). Clients subscribe to a
 room to be authorized to mutate it; the server is authoritative for queue state.
@@ -165,6 +166,39 @@ cojam/
 │                         # backup-restore) are local-only, gitignored
 └── pnpm-workspace.yaml
 ```
+
+## Deploying
+
+The published images are environment-agnostic: one build runs anywhere, and
+every deployment-specific value is supplied at runtime. There is no build-time
+configuration to change and no deploy workflow in this repo, by design.
+
+CoJam runs self-hosted: a container host behind a reverse proxy that terminates
+TLS and path-routes a single hostname.
+
+- `/connection/*` and `/api/*` reach the **Go server**.
+- everything else reaches the **Next.js app**, which serves `/env.js`.
+
+The web app defines no `/api/*` routes, so the split is collision-free.
+
+Two constraints are easy to get wrong:
+
+1. **Publish the container ports where the proxy can reach them.** If the proxy
+   dials `127.0.0.1` and the containers publish on another interface, every
+   request becomes a 502 while both containers still report healthy, because
+   their healthchecks probe from inside the container. This has happened.
+2. **`/healthz` is not reachable through the public hostname.** It belongs to
+   the Go server, and the proxy only routes `/connection/*` and `/api/*` there,
+   so a public `/healthz` hits the Next.js app and 404s. Probe `/readyz` on the
+   server port directly, or use `/api/connection-token` from outside.
+
+Rollback is pinning the previous `sha-` image tag and recreating. Room state is
+in Postgres and survives restarts.
+
+> [!NOTE]
+> The operator runbooks with host-specific detail (`launch-readiness.md`,
+> `feature-rollout-plan.md`, `backup-restore.md`, `observability.md`) are
+> local-only by repo convention and are not in this repository.
 
 ## Status
 
