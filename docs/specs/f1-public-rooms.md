@@ -3,7 +3,6 @@
 Issue: #129 (https://github.com/LucasSantana-Dev/cojam/issues/129)
 Status: spec, ready for implementation
 Date: 2026-07-22
-Scope note: docs/specs/ is internal-only by repo convention (like docs/rfc/, docs/adr/); do not commit.
 
 ## 1. Goal and non-goals
 
