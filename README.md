@@ -152,6 +152,8 @@ pnpm --filter web e2e                  # web e2e (two-browser room sync)
 > is what an external uptime check should target. `/healthz` and `/readyz` are
 > on the server port and are not publicly routed.
 
+<!-- Separate GitHub alert blocks; a bare blank line trips MD028. -->
+
 > [!WARNING]
 > Always use `pnpm --filter web e2e`, never raw `playwright test`. The e2e
 > script frees port 3000 first; a stale dev server on :3000 makes Playwright's
