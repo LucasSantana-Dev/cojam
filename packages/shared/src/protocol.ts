@@ -21,6 +21,9 @@ export type TrackRef = {
   // Absent on manual adds and tracks queued before this existed; clients render
   // a fallback tile (or derive a YouTube thumb from sources.youtube.videoId).
   artworkUrl?: string;
+  // Whether clients should render this as audio or as video (#258). Absent
+  // means audio, so existing queues and older clients are unaffected.
+  kind?: 'audio' | 'video';
   // Server-populated from the connection identity on queue.add/playlist.import;
   // clients never send this (the server overwrites it). Empty when room auth is off.
   addedByUserId?: string;

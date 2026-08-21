@@ -67,7 +67,16 @@ type TrackRef struct {
 	// the provider response (validated https + length in validateImportTracks).
 	// Empty on manual adds and tracks queued before this existed.
 	ArtworkURL string `json:"artworkUrl,omitempty"`
+	// Kind selects audio or video rendering (#258). Empty means audio, so
+	// existing queues and older clients keep working unchanged.
+	Kind string `json:"kind,omitempty"`
 }
+
+// Track kinds (#258). Empty is treated as KindAudio.
+const (
+	KindAudio = "audio"
+	KindVideo = "video"
+)
 
 // TransportState represents playback transport state
 type TransportState struct {
