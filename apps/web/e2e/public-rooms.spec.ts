@@ -48,8 +48,11 @@ test('host enables public, the landing strip lists the room, and the join link l
   await expect(card).toBeVisible({ timeout: 20_000 });
   await expect(visitor.getByText('Example room · NEON-4821')).toHaveCount(0);
 
-  // The card is the join link: clicking it lands the visitor in the room.
+  // The card is the join link, but a directory join is age-gated (#259):
+  // joining by invite link is untouched, joining a stranger room asks first.
   await card.click();
+  await expect(visitor.getByRole('dialog')).toBeVisible();
+  await visitor.getByRole('button', { name: /or over/i }).click();
   await expect(visitor).toHaveURL(new RegExp(`/room/${roomId}$`));
   await expect(visitor.getByText(roomId, { exact: true })).toBeVisible();
   await visitor.getByPlaceholder('Your name').fill('Visitor');
