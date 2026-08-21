@@ -2,6 +2,7 @@ package spotifytoken
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"os"
 	"strings"
@@ -71,20 +72,43 @@ func TestOpen_RejectsRecordMovedToAnotherSub(t *testing.T) {
 	}
 }
 
-func TestOpen_RejectsTamperedAndMalformed(t *testing.T) {
+// Tampering is applied to the DECODED bytes, never to the base64 text. Seal
+// uses RawStdEncoding, whose final character carries bits the decoder discards,
+// so flipping a bit in the encoded string was frequently a no-op: nothing was
+// actually altered, Open correctly succeeded, and the test failed. It failed 11
+// times in 40 runs before this change.
+//
+// Every byte is tampered in turn rather than one, which covers the nonce, the
+// ciphertext and the GCM tag instead of whichever section the last byte lands in.
+func TestOpen_RejectsTamperedCiphertext(t *testing.T) {
 	s := testSealer(t)
-	sealed, _ := s.Seal("sub-1", "refresh-value")
+	sealed, err := s.Seal("sub-1", "refresh-value")
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	raw, err := base64.RawStdEncoding.DecodeString(sealed)
+	if err != nil {
+		t.Fatalf("DecodeString: %v", err)
+	}
 
-	tampered := []byte(sealed)
-	tampered[len(tampered)-1] ^= 0x01
-	if _, err := s.Open("sub-1", string(tampered)); err == nil {
-		t.Error("expected tampered ciphertext to fail")
+	for i := range raw {
+		tampered := make([]byte, len(raw))
+		copy(tampered, raw)
+		tampered[i] ^= 0x01
+
+		encoded := base64.RawStdEncoding.EncodeToString(tampered)
+		if _, err := s.Open("sub-1", encoded); err == nil {
+			t.Errorf("byte %d of %d: tampering went undetected", i, len(raw))
+		}
 	}
-	if _, err := s.Open("sub-1", "not-base64!!"); err == nil {
-		t.Error("expected malformed base64 to fail")
-	}
-	if _, err := s.Open("sub-1", ""); err == nil {
-		t.Error("expected an empty record to fail")
+}
+
+func TestOpen_RejectsMalformed(t *testing.T) {
+	s := testSealer(t)
+	for _, record := range []string{"not-base64!!", "", "AAAA"} {
+		if _, err := s.Open("sub-1", record); err == nil {
+			t.Errorf("expected %q to fail", record)
+		}
 	}
 }
 
