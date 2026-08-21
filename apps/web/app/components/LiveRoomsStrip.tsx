@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { MINIMUM_AGE, hasAffirmedAge, affirmAge } from '@/lib/ageGate';
 import type { PublicRoomSummary } from '@cojam/shared';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { subscribePublicRooms } from '@/lib/publicRooms';
@@ -13,12 +15,35 @@ const MAX_CARDS = 5;
 // when present, listener count, and a Join link. Purely presentational; data
 // fetching lives in LiveRoomsSlot + lib/publicRooms.
 export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
+  const router = useRouter();
+  // Set to the room a visitor is trying to reach while the gate is open.
+  const [pendingRoomId, setPendingRoomId] = useState<string | null>(null);
+
+  // Directory joins are gated (#259); invite-link joins are untouched.
+  const openRoom = (event: React.MouseEvent, roomId: string) => {
+    if (hasAffirmedAge()) return; // let the Link navigate normally
+    event.preventDefault();
+    setPendingRoomId(roomId);
+  };
+
+  const confirmAge = () => {
+    affirmAge();
+    const roomId = pendingRoomId;
+    setPendingRoomId(null);
+    if (roomId) router.push(`/room/${roomId}`);
+  };
+
   return (
     <div className="live-rooms">
       <span className="live-rooms__label">Live rooms</span>
       <div className="live-rooms__grid">
         {rooms.slice(0, MAX_CARDS).map((room) => (
-          <Link key={room.roomId} href={`/room/${room.roomId}`} className="live-room-card">
+          <Link
+            key={room.roomId}
+            href={`/room/${room.roomId}`}
+            className="live-room-card"
+            onClick={(e) => openRoom(e, room.roomId)}
+          >
             <span className="live-room-card__top">
               <span className="live-room-card__name">{room.name || room.roomId}</span>
               <span className="room-card__live">
@@ -43,6 +68,26 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
           </Link>
         ))}
       </div>
+
+      {pendingRoomId && (
+        <div className="age-gate" role="dialog" aria-modal="true" aria-labelledby="age-gate-title">
+          <div className="age-gate__panel">
+            <h2 id="age-gate-title" className="age-gate__title">Before you join</h2>
+            <p className="age-gate__body">
+              Public rooms are open to people you have not met. You need to be{' '}
+              {MINIMUM_AGE} or over to join one.
+            </p>
+            <div className="age-gate__actions">
+              <button type="button" className="btn-primary" onClick={confirmAge}>
+                I am {MINIMUM_AGE} or over
+              </button>
+              <button type="button" className="btn-ghost" onClick={() => setPendingRoomId(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
