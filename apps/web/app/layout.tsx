@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
 import { headers } from 'next/headers';
 import { Bricolage_Grotesque, Instrument_Sans } from 'next/font/google';
@@ -64,6 +64,16 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: { card: 'summary', title: 'CoJam', description },
   };
 }
+
+// Without this Next emits no viewport meta and mobile lays out at ~980px, so
+// no responsive CSS applies. Pinch-zoom stays enabled (WCAG 1.4.4).
+// themeColor is --color-surface-0 as sRGB hex; theme-color parsing is not
+// reliably oklch-aware.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#020202',
+};
 
 export default async function RootLayout({
   children,

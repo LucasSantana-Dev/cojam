@@ -1,6 +1,7 @@
 package match
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -336,38 +337,99 @@ func ResolveYouTube(ctx context.Context, title, artist, isrc string) (*queue.Sou
 	return &queue.SourceRef{VideoID: best.VideoID, Confidence: best.Confidence}, nil
 }
 
+// Bounds for the matcher cache. TTL applies to hits and misses alike: both go
+// stale (a miss can start matching, a hit can point at a deleted video).
+var (
+	CacheMaxEntries = 10000
+	CacheTTL        = 24 * time.Hour
+)
+
+type cacheEntry struct {
+	key       string
+	val       *queue.SourceRef
+	expiresAt time.Time
+}
+
+// matchCache is an LRU with a per-entry TTL, bounded at CacheMaxEntries.
+// Every cache-key input is caller-controlled, so an unbounded map would grow
+// for the life of the process.
+type matchCache struct {
+	mu    sync.Mutex
+	order *list.List // most-recent-first
+	index map[string]*list.Element
+}
+
+func newMatchCache() *matchCache {
+	return &matchCache{order: list.New(), index: make(map[string]*list.Element)}
+}
+
+// get returns the cached value and whether it was a live hit. An expired entry
+// is dropped and reported as a miss.
+func (c *matchCache) get(key string) (*queue.SourceRef, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	el, ok := c.index[key]
+	if !ok {
+		return nil, false
+	}
+	entry := el.Value.(*cacheEntry)
+	if time.Now().After(entry.expiresAt) {
+		c.remove(el)
+		return nil, false
+	}
+	c.order.MoveToFront(el)
+	return entry.val, true
+}
+
+func (c *matchCache) put(key string, val *queue.SourceRef) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	expiresAt := time.Now().Add(CacheTTL)
+	if el, ok := c.index[key]; ok {
+		entry := el.Value.(*cacheEntry)
+		entry.val, entry.expiresAt = val, expiresAt
+		c.order.MoveToFront(el)
+		return
+	}
+	c.index[key] = c.order.PushFront(&cacheEntry{key: key, val: val, expiresAt: expiresAt})
+	for c.order.Len() > CacheMaxEntries {
+		c.remove(c.order.Back())
+	}
+}
+
+// remove unlinks el. Caller holds mu.
+func (c *matchCache) remove(el *list.Element) {
+	if el == nil {
+		return
+	}
+	c.order.Remove(el)
+	delete(c.index, el.Value.(*cacheEntry).key)
+}
+
 // NewCachedMatcher returns a thread-safe in-memory cached matcher wrapping the inner matcher.
 // Cache key is normalized (title|artist|isrc) to catch repeated adds of the same track.
 // Hit/miss events are signaled via onEvent callback (hit=true for cache hit, hit=false for cache miss).
 // Caches nil results too: avoids re-querying dead tracks.
 func NewCachedMatcher(inner hub.Matcher, onEvent func(hit bool)) hub.Matcher {
-	var mu sync.Mutex
-	cache := make(map[string]*queue.SourceRef)
+	cache := newMatchCache()
 
 	return func(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error) {
-		// Normalize cache key: lowercase, pipe-separated
 		key := strings.ToLower(title + "|" + artist + "|" + isrc)
 
-		mu.Lock()
-		if cached, ok := cache[key]; ok {
-			mu.Unlock()
-			onEvent(true) // cache hit
-			return cached, nil
+		if val, hit := cache.get(key); hit {
+			onEvent(true)
+			return val, nil
 		}
-		mu.Unlock()
 
-		// Cache miss: call inner matcher
 		result, err := inner(ctx, title, artist, isrc)
 		if err != nil {
 			return nil, err
 		}
 
-		// Cache the result (including nil) for next time
-		mu.Lock()
-		cache[key] = result
-		mu.Unlock()
-
-		onEvent(false) // cache miss
+		cache.put(key, result)
+		onEvent(false)
 		return result, nil
 	}
 }

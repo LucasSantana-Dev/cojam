@@ -1,0 +1,3 @@
+# Single maintainer; this exists so review routing is explicit rather than
+# implied, and so a future second maintainer has an obvious place to land.
+*       @LucasSantana-Dev

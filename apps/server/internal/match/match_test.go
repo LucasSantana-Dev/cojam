@@ -2,12 +2,14 @@ package match
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
@@ -1021,5 +1023,66 @@ func TestRankByProviders_PreferDeezer(t *testing.T) {
 	ranked := RankByProviders(results, []string{"deezer"})
 	if ranked[0].Title != "A" {
 		t.Errorf("ranked[0].Title = %q, want A (deezer preferred)", ranked[0].Title)
+	}
+}
+
+func TestNewCachedMatcher_EvictsPastMaxEntries(t *testing.T) {
+	defer func(n int) { CacheMaxEntries = n }(CacheMaxEntries)
+	CacheMaxEntries = 10
+
+	calls := 0
+	inner := func(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error) {
+		calls++
+		return &queue.SourceRef{VideoID: title, Confidence: 0.9}, nil
+	}
+	cached := NewCachedMatcher(inner, func(bool) {})
+	ctx := context.Background()
+
+	// Flood with unique keys, well past the bound.
+	for i := 0; i < 100; i++ {
+		if _, err := cached(ctx, fmt.Sprintf("track-%d", i), "Artist", ""); err != nil {
+			t.Fatalf("call %d failed: %v", i, err)
+		}
+	}
+	if calls != 100 {
+		t.Fatalf("expected 100 inner calls, got %d", calls)
+	}
+
+	// The oldest key must have been evicted, so it re-resolves.
+	if _, err := cached(ctx, "track-0", "Artist", ""); err != nil {
+		t.Fatalf("re-resolve failed: %v", err)
+	}
+	if calls != 101 {
+		t.Fatalf("expected evicted key to re-resolve (101 calls), got %d", calls)
+	}
+
+	// The newest key must still be cached.
+	if _, err := cached(ctx, "track-99", "Artist", ""); err != nil {
+		t.Fatalf("recent lookup failed: %v", err)
+	}
+	if calls != 101 {
+		t.Fatalf("expected recent key to hit cache, got %d calls", calls)
+	}
+}
+
+func TestNewCachedMatcher_ExpiredEntryReResolves(t *testing.T) {
+	defer func(d time.Duration) { CacheTTL = d }(CacheTTL)
+	CacheTTL = -time.Second // already expired on insert
+
+	calls := 0
+	inner := func(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error) {
+		calls++
+		return nil, nil // nil results are cached too, so this covers negative caching
+	}
+	cached := NewCachedMatcher(inner, func(bool) {})
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		if _, err := cached(ctx, "Song", "Artist", "ISRC"); err != nil {
+			t.Fatalf("call %d failed: %v", i, err)
+		}
+	}
+	if calls != 3 {
+		t.Fatalf("expected every expired lookup to re-resolve (3 calls), got %d", calls)
 	}
 }

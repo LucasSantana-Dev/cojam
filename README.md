@@ -126,6 +126,7 @@ NEXT_PUBLIC_WS_URL=ws://localhost:8080/connection/websocket
 **Server** (environment):
 
 ```bash
+APP_ENV=production                     # strict config validation; refuses unsafe boots
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 FEATURE_MATCHING=true
 ROOM_IDLE_TTL_MINUTES=30               # evict memberless rooms idle this long

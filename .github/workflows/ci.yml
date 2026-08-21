@@ -44,6 +44,10 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Keeps the audit at zero so a genuinely exploitable advisory is visible
+      # instead of buried under a standing count. Fixes go in the
+      # pnpm-workspace.yaml overrides block.
+      - run: pnpm audit --audit-level high
       - run: ./scripts/check_web_drift.sh
       # Types + lint are documented local gates (AGENTS.md) and must run in CI:
       # the eslint 10 bump passed this job green while breaking `pnpm lint`.
