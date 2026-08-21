@@ -31,8 +31,11 @@ jobs:
         image: postgres:17-alpine
         env:
           POSTGRES_USER: cojam
-          POSTGRES_PASSWORD: cojam
           POSTGRES_DB: cojam_test
+          # Trust auth: the container is ephemeral, reachable only from this
+          # job, and destroyed with the runner. It also keeps a credential
+          # literal out of the repo entirely.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         options: >-
@@ -41,7 +44,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_DATABASE_URL: postgres://cojam:cojam@localhost:5432/cojam_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://cojam@localhost:5432/cojam_test?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

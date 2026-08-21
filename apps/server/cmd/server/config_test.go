@@ -9,8 +9,10 @@ import (
 // removes or corrupts exactly one key.
 func validProd() map[string]string {
 	return map[string]string{
-		"APP_ENV":               "production",
-		"DATABASE_URL":          "postgres://user:pass@host/db",
+		"APP_ENV": "production",
+		// The validator only checks for non-empty, so this stays credential-free
+		// to avoid tripping secret scanners on a fixture.
+		"DATABASE_URL":          "postgres://example/db",
 		"CORS_ORIGINS":          "https://cojam.example",
 		"METRICS_ADDR":          "127.0.0.1:9100",
 		"FEATURE_ROOM_AUTH":     "true",
