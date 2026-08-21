@@ -17,6 +17,10 @@ const rpcMocks = vi.hoisted(() => ({
   deleteChatMessage: vi.fn(async (): Promise<void> => {}),
 }));
 
+type ReportInput = Parameters<typeof import('@/lib/report').fileReport>[0];
+const fileReport = vi.fn(async (input: ReportInput) => Boolean(input));
+vi.mock('@/lib/report', () => ({ fileReport: (input: ReportInput) => fileReport(input) }));
+
 vi.mock('@/lib/realtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/realtime')>()),
   sendChat: rpcMocks.sendChat,
@@ -194,5 +198,45 @@ describe('ChatPanel auto-scroll (#189)', () => {
     fireEvent.scroll(list, { target: { scrollTop: 750 } });
     act(() => useStore.getState().addChatMessage(msg('m3', 'third')));
     expect(list.scrollTop).toBe(1000);
+  });
+});
+
+describe('reporting a message (#259)', () => {
+  beforeEach(() => {
+    useStore.setState({ chat: [msg('m-1', 'linha ruim', 'Ana')], connected: true, name: 'Beto' });
+    fileReport.mockClear();
+  });
+
+  it('is available to every member, not just the host', () => {
+    render(<ChatPanel roomId="r1" />);
+    expect(screen.getByLabelText('Report message from Ana')).toBeInTheDocument();
+  });
+
+  // The server cannot fetch the line: chat is ephemeral and may be gone.
+  it('sends the message content along with the report', async () => {
+    render(<ChatPanel roomId="r1" />);
+    await act(async () => {
+      screen.getByLabelText('Report message from Ana').click();
+    });
+
+    expect(fileReport).toHaveBeenCalledTimes(1);
+    expect(fileReport.mock.calls[0][0]).toMatchObject({
+      roomId: 'r1',
+      kind: 'message',
+      subjectId: 'm-1',
+      content: 'linha ruim',
+    });
+  });
+
+  it('does not file the same report twice', async () => {
+    render(<ChatPanel roomId="r1" />);
+    await act(async () => {
+      screen.getByLabelText('Report message from Ana').click();
+    });
+    await act(async () => {
+      screen.getByLabelText('Reported message from Ana').click();
+    });
+
+    expect(fileReport).toHaveBeenCalledTimes(1);
   });
 });
