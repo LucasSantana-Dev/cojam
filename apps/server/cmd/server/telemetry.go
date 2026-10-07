@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -100,7 +99,9 @@ func (l *callerLimiter) allow(key string, now time.Time) bool {
 	}
 	l.seen[key] = now
 
-	if l.buckets[key] >= l.burst {
+	// Admit only a whole token: a bucket refilled to just under the burst
+	// must not let one extra request through.
+	if l.buckets[key]+1 > l.burst {
 		return false
 	}
 	l.buckets[key]++
@@ -121,18 +122,6 @@ func truncateRunes(s string, n int) string {
 		count++
 	}
 	return s
-}
-
-// callerKey identifies a caller for rate limiting. The proxy sets
-// X-Forwarded-For; RemoteAddr is the fallback for direct connections.
-func callerKey(r *http.Request) string {
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		if i := strings.IndexByte(fwd, ','); i >= 0 {
-			return strings.TrimSpace(fwd[:i])
-		}
-		return strings.TrimSpace(fwd)
-	}
-	return r.RemoteAddr
 }
 
 // telemetryHandler accepts one client-reported error, product event, or web

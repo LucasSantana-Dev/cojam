@@ -549,8 +549,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
         {store.rebindNotice}
       </p>
       <header className="room-header">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 md:gap-y-3">
             <div className="space-y-1 min-w-0">
               <h1 className="text-2xl font-bold inline-flex items-center gap-2">
                 {/* Flows only while (re)connecting: colors moving = syncing. */}
@@ -564,7 +564,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 {accountsEnabled && !store.signedIn && <span className="guest-chip">Guest</span>}
               </p>
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="room-header-controls flex items-center gap-2 md:gap-3 flex-wrap">
               <PresenceBar roomId={roomId} canControl={hostControl} />
               <ShareRoomButton />
               <ReportRoomButton roomId={roomId} />
@@ -594,7 +594,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                       : 'none',
                   }}
                 />
-                <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                <span className="text-xs font-medium sr-only md:not-sr-only" style={{ color: 'var(--color-text-secondary)' }}>
                   {store.reconnecting
                     ? 'Reconnecting...'
                     : store.connected
@@ -607,7 +607,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         </div>
       </header>
 
-      <main id="main" className="max-w-7xl mx-auto px-6 py-8">
+      <main id="main" className="room-main max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-8">
         {/* Switching between a video and an audio track changes layouts and remounts
             the YouTube player once (accepted: tracks rarely alternate mid-session). */}
         {videoMode ? (
@@ -673,21 +673,49 @@ export function RoomClient({ roomId }: { roomId: string }) {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-5 lg:grid-cols-3 gap-8">
+          <>
+          <div className="audio-room grid grid-cols-1 md:grid-cols-5 lg:grid-cols-3 gap-4 md:gap-8" data-testid="audio-room" data-tab={panelTab}>
           <div data-testid="room-main-column" className="md:col-span-3 lg:col-span-2 space-y-6 room-arrival" style={{ ['--i' as string]: 0 }}>
-            {queueEmpty && <OnboardingCard />}
-            {playerPanel}
-
-            {heroPanel}
-
-            {addTrackForm}
+            {/* Below 768px the same Playing / Queue / Chat / Add tabs as the video
+                room (#258) decide which panel shows; md and up shows every panel. */}
+            <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel video-panel-keep space-y-6" data-active={panelTab === 'playing'}>
+              {queueEmpty && <OnboardingCard />}
+              {playerPanel}
+              {heroPanel}
+            </div>
+            <div id="video-panel-add" role="tabpanel" aria-labelledby="video-tab-add" className="video-panel" data-active={panelTab === 'add'}>
+              {addTrackForm}
+            </div>
           </div>
 
           <div data-testid="room-side-column" className="md:col-span-2 lg:col-span-1 room-arrival md:sticky md:top-24 md:self-start" style={{ ['--i' as string]: 1 }}>
-            {queuePanels}
-            {chatPanel}
+            <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel" data-active={panelTab === 'queue'}>
+              {queuePanels}
+            </div>
+            {chatPanel && (
+              <div id="video-panel-chat" role="tabpanel" aria-labelledby="video-tab-chat" className="video-panel" data-active={panelTab === 'chat'}>
+                {chatPanel}
+              </div>
+            )}
           </div>
         </div>
+          <div className="video-tabs audio-tabs" role="tablist" aria-label="Room panels">
+            {videoTabs.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`video-tab-${id}`}
+                aria-selected={panelTab === id}
+                aria-controls={`video-panel-${id}`}
+                className="video-tab"
+                onClick={() => setPanelTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          </>
         )}
       </main>
 

@@ -21,7 +21,7 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 test('host enables public, the landing strip lists the room, and the join link lands in the room', async ({ browser }) => {
-  const roomId = `e2epub${Date.now().toString(36)}`;
+  const roomId = `PUB${Date.now().toString(36).toUpperCase()}`;
 
   const host = await (await browser.newContext()).newPage();
   await join(host, roomId, 'Host');
@@ -31,7 +31,7 @@ test('host enables public, the landing strip lists the room, and the join link l
   const visitor = await (await browser.newContext()).newPage();
   await proxyConnectionToken(visitor);
   await visitor.goto('/');
-  await expect(visitor.getByText('Example room · NEON-4821')).toBeVisible();
+  await expect(visitor.getByText('Sala de exemplo · NEON-4821')).toBeVisible();
   await expect(visitor.locator('.live-room-card')).toHaveCount(0);
 
   // The host (first joiner) opts the room into the directory with a label.
@@ -46,13 +46,13 @@ test('host enables public, the landing strip lists the room, and the join link l
   // replacing the mock.
   const card = visitor.locator('.live-room-card').filter({ hasText: 'E2E Lounge' });
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(visitor.getByText('Example room · NEON-4821')).toHaveCount(0);
+  await expect(visitor.getByText('Sala de exemplo · NEON-4821')).toHaveCount(0);
 
   // The card is the join link, but a directory join is age-gated (#259):
   // joining by invite link is untouched, joining a stranger room asks first.
   await card.click();
   await expect(visitor.getByRole('dialog')).toBeVisible();
-  await visitor.getByRole('button', { name: /or over/i }).click();
+  await visitor.getByRole('button', { name: /anos ou mais/i }).click();
   await expect(visitor).toHaveURL(new RegExp(`/room/${roomId}$`));
   await expect(visitor.getByText(roomId, { exact: true })).toBeVisible();
   await visitor.getByPlaceholder('Your name').fill('Visitor');
@@ -74,7 +74,7 @@ test('flag off renders the static example-room fallback', async ({ page }) => {
   await page.goto('/');
   // The directory never loads with the flag off: the mock stays and no live
   // card renders, even though the previous test left a public room behind.
-  await expect(page.getByText('Example room · NEON-4821')).toBeVisible();
+  await expect(page.getByText('Sala de exemplo · NEON-4821')).toBeVisible();
   await expect(page.locator('.live-room-card')).toHaveCount(0);
   await expect(page.locator('.live-rooms')).toHaveCount(0);
 });

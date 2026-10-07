@@ -141,7 +141,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
           )}
         </div>
       ) : (
-        <div ref={listRef} onScroll={handleScroll} className="space-y-3 max-h-80 overflow-y-auto pr-2" aria-live="polite">
+        <div ref={listRef} onScroll={handleScroll} className="space-y-3 chat-scroll overflow-y-auto pr-2" aria-live="polite">
           {chat.map((m) => (
             m.kind === 'system' ? (
               // Server announcements (#205): no avatar/identity, mono + muted

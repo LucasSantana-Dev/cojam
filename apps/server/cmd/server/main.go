@@ -93,8 +93,25 @@ func envDurationMinutes(key string, dflt time.Duration) time.Duration {
 	return time.Duration(n) * time.Minute
 }
 
+// maxDisplayNameLen caps the connect-time display name, in runes. The name
+// is client-chosen and fans out to every member through presence, queue
+// attribution and chat.
+const maxDisplayNameLen = 40
+
+// envPositiveInt reads a positive integer (unset/invalid/<=0 = dflt). Used to
+// tune rate-limit bursts for environments where many callers share one IP
+// (local dev and e2e all arrive from 127.0.0.1).
+func envPositiveInt(getenv func(string) string, key string, dflt int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(getenv(key)))
+	if err != nil || n <= 0 {
+		return dflt
+	}
+	return n
+}
+
 // presenceConnInfo builds the centrifuge ConnInfo carried into presence from
-// the connect data {name, platform?}. The platform is the client's playback
+// the connect data {name, platform?}. The name is trimmed and capped at
+// maxDisplayNameLen runes (rune-safe). The platform is the client's playback
 // service (#171); unrecognized values are dropped here so presence only ever
 // carries platforms the web app can render an indicator for. Returns nil when
 // no name was presented (anonymous v0 connections keep empty ConnInfo).
@@ -103,10 +120,14 @@ func presenceConnInfo(data []byte) []byte {
 		Name     string `json:"name"`
 		Platform string `json:"platform"`
 	}
-	if err := json.Unmarshal(data, &d); err != nil || d.Name == "" {
+	if err := json.Unmarshal(data, &d); err != nil {
 		return nil
 	}
-	info := map[string]string{"name": d.Name}
+	name := truncateRunes(strings.TrimSpace(d.Name), maxDisplayNameLen)
+	if name == "" {
+		return nil
+	}
+	info := map[string]string{"name": name}
 	switch d.Platform {
 	case "spotify", "apple", "youtube":
 		info["platform"] = d.Platform
@@ -201,6 +222,9 @@ func main() {
 	// only (the membership gate is process-local).
 	roomPersistIdleTTL := envDurationMinutes("ROOM_PERSIST_IDLE_TTL_MINUTES", 0)
 	h.WithRoomPersistIdleTTL(roomPersistIdleTTL)
+
+	// Room-creation budget burst, per identity and per client IP.
+	h.WithRoomCreateBurst(envPositiveInt(os.Getenv, "ROOM_CREATE_RATE_BURST", hub.DefaultRoomCreateBurst))
 
 	shutdownHooks = append(shutdownHooks, h.StartRoomEvictor())
 	logger.Info("room_eviction_enabled", "idle_ttl", roomIdleTTL.String())
@@ -510,6 +534,11 @@ func main() {
 		h.WithRebind([]byte(roomAuthSecret), burns)
 	}
 
+	// With room auth on every connection carries an identity, so every joined
+	// room binds a host and a host-less room fails closed for host-only RPCs.
+	// Off keeps the v0 equal-member behaviour for host-less rooms.
+	h.WithHostAssignment(roomAuthEnabled)
+
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
 		// The display name and playback platform arrive as connect data
@@ -557,6 +586,7 @@ func main() {
 		logger.Info("client_connected", "client_id", client.ID(), "transport", client.Transport().Name())
 
 		// Room routing happens per-RPC via params.roomId (docs/protocol.md)
+		h.RecordClientIP(client.ID(), clientIPFromContext(client.Context()))
 		h.RegisterClient(client)
 
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
@@ -569,21 +599,13 @@ func main() {
 		})
 
 		client.OnSubscribe(func(e centrifuge.SubscribeEvent, cb centrifuge.SubscribeCallback) {
-			logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
-			// Subscribing to room:<id> enrolls the client so it may mutate that room
-			// (link = capability; see docs/protocol.md "Trust model", #180).
-			// centrifuge re-subscribes on reconnect, so membership survives reconnects.
-			if roomID, ok := strings.CutPrefix(e.Channel, "room:"); ok {
-				h.Join(client.ID(), roomID)
+			reply, err := authorizeSubscribe(h, client.ID(), e.Channel)
+			if err != nil {
+				logger.Info("channel_subscribe_rejected", "client_id", client.ID())
+			} else {
+				logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
 			}
-			// Presence + join/leave so the room can show who is listening.
-			cb(centrifuge.SubscribeReply{
-				Options: centrifuge.SubscribeOptions{
-					EmitPresence:  true,
-					EmitJoinLeave: true,
-					PushJoinLeave: true,
-				},
-			}, nil)
+			cb(reply, err)
 		})
 
 		// Authorize presence queries (else client presence() returns code 108).
@@ -596,7 +618,7 @@ func main() {
 	r := chi.NewRouter()
 
 	// Add middleware
-	r.Use(middleware.Logger)
+	r.Use(accessLog(logger))
 	r.Use(middleware.Recoverer)
 
 	// Liveness: the process is up. Readiness (/readyz) additionally gates on the
@@ -667,8 +689,16 @@ func main() {
 	})
 
 	// Connection token endpoint: returns a signed JWT token for anonymous connection auth.
-	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented).
-	r.Get("/api/connection-token", connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns))
+	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented). POST carries
+	// the refresh proof in the body; GET with query params is the deprecated
+	// form, kept for one release. Rate-limited per client IP.
+	// CONNECTION_TOKEN_RATE_BURST raises the per-IP burst where many callers
+	// share one address (local dev, e2e); production keeps the default.
+	connTokenLimiter := newCallerLimiter(
+		float64(envPositiveInt(os.Getenv, "CONNECTION_TOKEN_RATE_BURST", connTokenBurst)), connTokenRefill)
+	connToken := connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns, connTokenLimiter, logger)
+	r.Post("/api/connection-token", connToken)
+	r.Get("/api/connection-token", connToken)
 
 	// WebSocket handler for centrifuge. Origin allowlist prevents cross-site
 	// WebSocket hijacking: without it any page could open a socket and mutate rooms.
@@ -687,7 +717,7 @@ func main() {
 			return allowedOrigins[origin]
 		},
 	})
-	r.Handle("/connection/websocket", wsHandler)
+	r.Handle("/connection/websocket", withClientIP(wsHandler))
 
 	// Prometheus metrics (custom registry from obs). Served only on a dedicated
 	// listener when METRICS_ADDR is set (e.g. 127.0.0.1:9090), never on the

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/centrifugal/centrifuge"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
@@ -171,5 +172,46 @@ func TestRateLimit_RejectionCounted(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(metrics.RateLimitRejected.WithLabelValues("track.search")); got != 1 {
 		t.Fatalf("rate_limit_rejected_total{method=track.search} = %v, want 1", got)
+	}
+}
+
+// RPC method names are client-supplied, so anything outside the dispatch set
+// must collapse to one "unknown" label (metrics) and value (logs); otherwise
+// every distinct junk method mints a new time series.
+func TestHandleRPC_UnknownMethods_CollapseToOneSeries(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	metrics := obs.New()
+	h := NewHub(nil).WithObservability(logger, metrics)
+
+	for _, m := range []string{"bogus.one", "bogus.two", "line\nbreak", strings.Repeat("m", 300)} {
+		if _, err := h.HandleRPC(m, []byte(`{}`), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
+			t.Fatalf("%q: got %v, want ErrorMethodNotFound", m, err)
+		}
+	}
+
+	if got := testutil.CollectAndCount(metrics.RPCDuration); got != 1 {
+		t.Fatalf("unknown methods produced %d series, want 1", got)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("bad log line %q: %v", line, err)
+		}
+		if rec["method"] != "unknown" {
+			t.Fatalf("log method = %v, want unknown", rec["method"])
+		}
+	}
+}
+
+// Every method that draws from a limiter or the membership gate must be a
+// known dispatch method, or its metrics would be mislabelled "unknown".
+func TestKnownMethods_CoverGatedMethods(t *testing.T) {
+	for _, set := range []map[string]bool{mutatingMethods, hostOnlyMethods, fanoutMethods, voteMethods, chatMethods, listMethods, transportMethods} {
+		for m := range set {
+			if !knownMethods[m] {
+				t.Errorf("%s is gated but not in knownMethods", m)
+			}
+		}
 	}
 }

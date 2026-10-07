@@ -120,9 +120,12 @@ export function getLastTokenFetchError(): string | null {
 }
 
 // Fetch a signed JWT for the centrifuge connection.
-// If a userId is stored, include it as ?userId=<id> plus the previous token as
-// ?token=<proof> so the server can verify ownership before reissuing the
-// identity (without proof it mints a fresh one; spoofing is rejected silently).
+// If a userId is stored, send it plus the previous token (the ownership proof)
+// in a form-encoded POST body so the server can verify ownership before
+// reissuing the identity (without proof it mints a fresh one; spoofing is
+// rejected silently). The proof never goes in the URL, where access and proxy
+// logs would record it. Form encoding keeps this a CORS simple request (no
+// preflight) for the cross-origin dev setup.
 // Returns {token, userId} on success; null if feature is off (501), network error, or any other error.
 // Does NOT throw: failures are logged implicitly and return null for the caller to fall back.
 export async function fetchConnectionToken(baseUrl?: string): Promise<ConnectionTokenResult | null> {
@@ -133,16 +136,27 @@ export async function fetchConnectionToken(baseUrl?: string): Promise<Connection
     url.pathname = '/api/connection-token';
 
     // Include stored identity + ownership proof if available
+    const body = new URLSearchParams();
     const storedUid = getStoredUserId();
     if (storedUid) {
-      url.searchParams.set('userId', storedUid);
+      body.set('userId', storedUid);
       const storedToken = getStoredToken();
       if (storedToken) {
-        url.searchParams.set('token', storedToken);
+        body.set('token', storedToken);
       }
     }
 
-    const res = await fetch(url.toString());
+    let res = await fetch(url.toString(), { method: 'POST', body });
+
+    // Rollout fallback: a server older than the POST form answers 405 (or
+    // 404). Retry once with the legacy GET query form so a web deploy that
+    // lands before the server deploy keeps users connecting. Remove once
+    // every server accepts POST.
+    if (res.status === 405 || res.status === 404) {
+      const legacy = new URL(url.toString());
+      body.forEach((value, key) => legacy.searchParams.set(key, value));
+      res = await fetch(legacy.toString());
+    }
 
     // 501 means feature is off; return null (caller falls back to v0 behavior)
     if (res.status === 501) {

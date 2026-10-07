@@ -105,7 +105,8 @@ func TestReport_BadIDsRejected(t *testing.T) {
 	if got, _ := store.Recent(context.Background(), 1); len(got) != 0 {
 		t.Fatal("rejected reports must not be stored")
 	}
-	if rec := postReport(h, `{"roomId":"AB12-cd_34","kind":"member","subjectId":"a1b2-c3_d4"}`); rec.Code != http.StatusNoContent {
+	h, _ = reportSetup(t) // fresh limiter: the bad-id requests spent the burst
+	if rec := postReport(h, `{"roomId":"AB12CD34","kind":"member","subjectId":"a1b2-c3_d4"}`); rec.Code != http.StatusNoContent {
 		t.Fatalf("real-shaped ids must pass, got %d", rec.Code)
 	}
 }
@@ -144,7 +145,7 @@ func TestReport_RateLimitIsPerCaller(t *testing.T) {
 	send := func(ip string) int {
 		req := httptest.NewRequest(http.MethodPost, "/api/report",
 			strings.NewReader(`{"roomId":"R1","kind":"room"}`))
-		req.Header.Set("X-Forwarded-For", ip)
+		req.RemoteAddr = ip + ":4000" // callerKey ignores spoofable headers from public peers
 		rec := httptest.NewRecorder()
 		h(rec, req)
 		return rec.Code

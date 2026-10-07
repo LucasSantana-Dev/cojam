@@ -18,6 +18,13 @@ export const AGE_GATE_COPY_EN: AgeGateCopy = {
   cancel: 'Cancel',
 };
 
+export const AGE_GATE_COPY_PT: AgeGateCopy = {
+  title: 'Antes de entrar',
+  body: `Salas públicas são abertas a pessoas que você não conhece. Você precisa ter ${MINIMUM_AGE} anos ou mais para entrar em uma.`,
+  confirm: `Tenho ${MINIMUM_AGE} anos ou mais`,
+  cancel: 'Cancelar',
+};
+
 // Directory joins are gated (#259); invite-link joins are untouched. Shared by
 // the landing strip and the /rooms page so both ask the same question once.
 // `onCardClick` goes on the card link; `gate` is the modal to render once.

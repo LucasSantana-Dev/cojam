@@ -3,6 +3,7 @@ import Script from 'next/script';
 import { Bricolage_Grotesque, Instrument_Sans } from 'next/font/google';
 import './globals.css';
 import { resolveSiteUrl } from '@/lib/siteUrl';
+import { jsonLdScript } from '@/lib/jsonLd';
 import { WebVitals } from '@/app/components/WebVitals';
 
 // Display face: characterful humanist-grotesque with a display optical cut —
@@ -20,22 +21,23 @@ const body = Instrument_Sans({
 });
 
 const description =
-  'Friends on different streaming services listen together in one room. Everyone plays on their own account; CoJam keeps the queue in sync on metadata alone.';
+  'Amigos em serviços de streaming diferentes ouvem juntos numa só sala. Cada um toca na própria conta; o CoJam mantém a fila em sincronia só com metadados.';
 
 export async function generateMetadata(): Promise<Metadata> {
   const siteUrl = await resolveSiteUrl();
   return {
     metadataBase: new URL(siteUrl),
-    title: { default: 'CoJam · listen together, across services', template: '%s · CoJam' },
+    title: { default: 'CoJam · ouçam juntos, entre serviços', template: '%s · CoJam' },
     description,
     applicationName: 'CoJam',
     alternates: { canonical: '/' },
     openGraph: {
       type: 'website',
       siteName: 'CoJam',
-      title: 'CoJam · listen together, across services',
+      title: 'CoJam · ouçam juntos, entre serviços',
       description,
       url: siteUrl,
+      locale: 'pt_BR',
     },
     // large_image, not summary: opengraph-image.tsx is 1200x630, and the
     // file-convention image is picked up for twitter automatically.
@@ -64,11 +66,12 @@ export default async function RootLayout({
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: 'CoJam',
+    inLanguage: 'pt-BR',
     url: siteUrl,
     description,
   };
   return (
-    <html lang="en" className={`dark ${display.variable} ${body.variable}`}>
+    <html lang="pt-BR" className={`dark ${display.variable} ${body.variable}`}>
       <head>
         {/* Runtime client config (WS URL, Spotify client id). Loaded before the
             app so window.__COJAM_ENV__ is set when realtime/auth code runs. */}
@@ -77,12 +80,12 @@ export default async function RootLayout({
       <body>
         <WebVitals />
         <a href="#main" className="sr-only focus:not-sr-only">
-          Skip to content
+          Pular para o conteúdo
         </a>
         {children}
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }}
         />
       </body>
     </html>

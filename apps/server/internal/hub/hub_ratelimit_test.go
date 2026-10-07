@@ -140,3 +140,39 @@ func TestRateLimiter_EvictsIdleBuckets(t *testing.T) {
 		t.Fatal("active bucket must survive the sweep")
 	}
 }
+
+// State-fanout mutations (every accepted call republishes the full room
+// state) share one per-caller bucket.
+func TestMutationRateLimit_SharedBucket(t *testing.T) {
+	h := NewHub(nil)
+	h.mutationLimiter = newRateLimiter(2, time.Hour, time.Now)
+	add := []byte(`{"roomId":"MUTRL1","track":{"title":"S","artist":"A","sources":{}}}`)
+
+	for i := 0; i < 2; i++ {
+		if _, err := h.handleRPC("queue.add", add, "c1", "u1"); err != nil {
+			t.Fatalf("queue.add %d within burst: %v", i+1, err)
+		}
+	}
+	var ue *UserError
+	for _, m := range []struct{ method, data string }{
+		{"queue.add", string(add)},
+		{"queue.reorder", `{"roomId":"MUTRL1","trackId":"x","toIndex":0}`},
+		{"queue.remove", `{"roomId":"MUTRL1","trackId":"x"}`},
+		{"now_playing.set", `{"roomId":"MUTRL1","trackId":"x"}`},
+		{"now_playing.advance", `{"roomId":"MUTRL1","afterId":"x"}`},
+		{"radio.set", `{"roomId":"MUTRL1","enabled":true}`},
+	} {
+		_, err := h.handleRPC(m.method, []byte(m.data), "c1", "u1")
+		if !errors.As(err, &ue) || ue.Error() != "too many requests, slow down" {
+			t.Fatalf("%s past the shared burst: got %v, want the rate-limit UserError", m.method, err)
+		}
+	}
+
+	// Other callers keep their own budget; non-mutation RPCs are unaffected.
+	if _, err := h.handleRPC("queue.add", add, "c2", "u2"); err != nil {
+		t.Fatalf("other caller: %v", err)
+	}
+	if _, err := h.handleRPC("sync.ping", []byte(`{}`), "c1", "u1"); err != nil {
+		t.Fatalf("sync.ping: %v", err)
+	}
+}

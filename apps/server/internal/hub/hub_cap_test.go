@@ -10,6 +10,7 @@ import (
 // flooding a room. The (MaxQueueSize+1)th add is rejected.
 func TestHandleRPC_QueueCap(t *testing.T) {
 	h := NewHub(nil)
+	h.mutationLimiter = nil // filling the queue in one burst; the cap is under test, not the rate
 	add := []byte(`{"roomId":"cap","track":{"title":"t","artist":"a","sources":{},"addedBy":"u"}}`)
 
 	for i := 0; i < queue.MaxQueueSize; i++ {

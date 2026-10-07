@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
+	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/report"
 )
 
-var reportIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+var reportSubjectRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 // Bounds for the report endpoint. It is an unauthenticated-ish public write
 // (membership is not checkable over HTTP), so it is bounded like /api/telemetry.
@@ -64,8 +65,8 @@ func reportHandler(
 		// Ids reach the operator's webhook channel, so they are restricted to a
 		// plain charset (no mentions, markdown or newlines). Real ids are
 		// base36, base64url or uuid; subjectId may be empty (room reports).
-		if !kind.Valid() || !reportIDRe.MatchString(req.RoomID) ||
-			(req.SubjectID != "" && !reportIDRe.MatchString(req.SubjectID)) {
+		if !kind.Valid() || !hub.ValidRoomID(req.RoomID) ||
+			(req.SubjectID != "" && !reportSubjectRe.MatchString(req.SubjectID)) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
