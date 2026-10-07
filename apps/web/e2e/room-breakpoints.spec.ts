@@ -140,7 +140,7 @@ test.describe('room at 390x844', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test('tabs, no overflow, 44px targets, chat one tap away', async ({ page }) => {
-    await join(page, `e2em${Date.now().toString(36)}`);
+    await join(page, `E2EM${Date.now().toString(36).toUpperCase()}`);
     await expect(page.getByRole('tab', { name: 'Chat' })).toBeVisible();
 
     // Header is one short band, not a stack that eats the fold.
