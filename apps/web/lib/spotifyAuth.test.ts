@@ -3,6 +3,8 @@ import {
   isTokenValid,
   canonicalOrigin,
   hasScope,
+  safeReturnPath,
+  stateMatches,
   SpotifyReconnectRequired,
   type SpotifySession,
 } from './spotifyAuth';
@@ -104,5 +106,34 @@ describe('session shape (#252)', () => {
   it('carries no refresh token', () => {
     expect(tok()).not.toHaveProperty('refreshToken');
     expect(tok({ scope: 'streaming' })).not.toHaveProperty('refreshToken');
+  });
+});
+
+describe('safeReturnPath', () => {
+  it('keeps same-origin absolute paths', () => {
+    expect(safeReturnPath('/room/abc?x=1#h')).toBe('/room/abc?x=1#h');
+    expect(safeReturnPath('/')).toBe('/');
+  });
+
+  it.each(['//evil.test', '//evil.test/x', '/\\evil.test', 'https://evil.test', 'javascript:alert(1)', 'room/abc', '', '/a\nb'])(
+    'rejects %j',
+    (p) => {
+      expect(safeReturnPath(p)).toBe('/');
+    },
+  );
+
+  it('falls back for null and undefined', () => {
+    expect(safeReturnPath(null)).toBe('/');
+    expect(safeReturnPath(undefined)).toBe('/');
+  });
+});
+
+describe('stateMatches', () => {
+  it('accepts only an identical, non-empty state', () => {
+    expect(stateMatches('abc', 'abc')).toBe(true);
+    expect(stateMatches('abc', 'abd')).toBe(false);
+    expect(stateMatches('abc', null)).toBe(false);
+    expect(stateMatches(null, 'abc')).toBe(false);
+    expect(stateMatches('', '')).toBe(false);
   });
 });

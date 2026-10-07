@@ -3,6 +3,7 @@ import Script from 'next/script';
 import { Bricolage_Grotesque, Instrument_Sans } from 'next/font/google';
 import './globals.css';
 import { resolveSiteUrl } from '@/lib/siteUrl';
+import { jsonLdScript } from '@/lib/jsonLd';
 import { WebVitals } from '@/app/components/WebVitals';
 
 // Display face: characterful humanist-grotesque with a display optical cut —
@@ -84,7 +85,7 @@ export default async function RootLayout({
         {children}
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }}
         />
       </body>
     </html>
