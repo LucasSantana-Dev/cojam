@@ -6,9 +6,12 @@ import type { RoomState, TrackRef } from '@cojam/shared';
 
 // nowPlayingAdvance is the only RPC the component can fire (track end); the
 // failure-path tests never reach it, but keep it off the network anyway.
+const realtimeMocks = vi.hoisted(() => ({
+  nowPlayingAdvance: vi.fn(async () => {}),
+}));
 vi.mock('@/lib/realtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/realtime')>()),
-  nowPlayingAdvance: vi.fn(async () => {}),
+  nowPlayingAdvance: realtimeMocks.nowPlayingAdvance,
 }));
 
 type YTEvents = {
@@ -90,6 +93,12 @@ describe('YouTubePlayer onError wiring', () => {
     render(<YouTubePlayer roomId="r1" onPlayError={onPlayError} />);
     act(() => capturedEvents!.onError!({ data: 2 }));
     expect(onPlayError).not.toHaveBeenCalled();
+  });
+
+  it('routes IFrame ENDED through the shared advance path with the now-playing id (#258)', () => {
+    render(<YouTubePlayer roomId="r1" fill />);
+    act(() => capturedEvents!.onStateChange!({ data: 0 }));
+    expect(realtimeMocks.nowPlayingAdvance).toHaveBeenCalledWith('r1', 't1');
   });
 
   it('clears the failure when playback actually starts', () => {

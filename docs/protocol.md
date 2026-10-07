@@ -129,6 +129,21 @@ type PublicRoomSummary = {
 and publish the full `RoomState`. `sync.ping` is a read returning the server
 clock (unix ms) for client offset estimation.
 
+Transport RPCs draw from their own per-caller limiter (burst 20, one token per
+250ms), separate from the fanout limiter: scrubbing is bursty and touches no
+third-party API.
+
+Video co-watch (E1, #258) is gated by its own flag, `FEATURE_VIDEO` on the
+server and `COJAM_FEATURE_VIDEO` on the web runtime (default off, independent
+of `FEATURE_SYNC`; the transport controls still need sync). A track is a video
+track when `TrackRef.kind === "video"`; the web client sets it when a YouTube
+link is added from the manual form with the flag on. While the now-playing
+track is `kind: "video"` and `transport.state === "playing"`, the server
+republishes the room state every 10s with `version` bumped and `transport`
+unchanged, so clients that missed a publication converge on the next beat. The
+ticker stops on pause, track end, a non-video track, an empty room and room
+eviction. No video bytes cross the server: each client renders its own IFrame.
+
 `chat.send` / `chat.history` (F8) exist only when `FEATURE_ROOM_CHAT` is on
 (default off); otherwise the server replies `ErrorMethodNotFound`. Chat is
 ephemeral: an in-memory per-room ring of the last 50 messages, never part of
