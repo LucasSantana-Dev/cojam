@@ -77,7 +77,7 @@ describe('ApplePlayer play failure surface', () => {
     render(<ApplePlayer authorized={true} onAuthorized={() => {}} onPlayError={onPlayError} />);
     // Wait for MusicKit init to flip the component to ready, then publish the
     // now-playing track so the play effect runs against a ready instance.
-    await screen.findByText(/Apple Music connected/);
+    await screen.findByText(/Apple Music conectado/);
     act(() => useStore.setState({ state: roomState(true) }));
   }
 

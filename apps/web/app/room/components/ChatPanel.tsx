@@ -64,7 +64,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
       await sendChat(roomId, text, name);
       setDraft('');
     } catch (err) {
-      setActionError(rpcErrorMessage(err, 'Couldn\'t send that message. Try again.'));
+      setActionError(rpcErrorMessage(err, 'Não deu para enviar a mensagem. Tente de novo.'));
     } finally {
       setSending(false);
     }
@@ -105,7 +105,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
     try {
       await deleteChatMessage(roomId, messageId);
     } catch (err) {
-      setActionError(rpcErrorMessage(err, 'Couldn\'t delete that message. Try again.'));
+      setActionError(rpcErrorMessage(err, 'Não deu para apagar a mensagem. Tente de novo.'));
     } finally {
       setDeletingIds((prev) => {
         const next = new Set(prev);
@@ -132,11 +132,11 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
       {chat.length === 0 ? (
         <div className="py-8 text-center">
           <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            No messages yet. Say hi.
+            Nenhuma mensagem ainda. Diga oi.
           </p>
           {!connected && (
             <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-              You&apos;re disconnected; reconnect to send messages.
+              Você está desconectado. Reconecte para enviar mensagens.
             </p>
           )}
         </div>
@@ -180,8 +180,8 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                 type="button"
                 onClick={() => handleReport(m.id, m.text, m.name)}
                 disabled={reportedIds.has(m.id)}
-                title={reportedIds.has(m.id) ? 'Reported' : 'Report message'}
-                aria-label={reportedIds.has(m.id) ? `Reported message from ${m.name}` : `Report message from ${m.name}`}
+                title={reportedIds.has(m.id) ? 'Denunciada' : 'Denunciar mensagem'}
+                aria-label={reportedIds.has(m.id) ? `Mensagem de ${m.name} denunciada` : `Denunciar mensagem de ${m.name}`}
                 className="flex-shrink-0 px-1 text-sm leading-none rounded transition-all duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:brightness-125 focus:outline-none disabled:opacity-40"
                 style={{ color: 'var(--color-text-muted)' }}
               >
@@ -192,8 +192,8 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                   type="button"
                   onClick={() => handleDelete(m.id)}
                   disabled={deletingIds.has(m.id)}
-                  title="Delete message (host)"
-                  aria-label={`Delete message from ${m.name}`}
+                  title="Apagar mensagem (anfitrião)"
+                  aria-label={`Apagar mensagem de ${m.name}`}
                   className="flex-shrink-0 px-1 text-sm leading-none rounded transition-all duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:brightness-125 focus:outline-none disabled:opacity-30"
                   style={{ color: 'var(--color-text-muted)' }}
                 >
@@ -209,8 +209,8 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
       <form onSubmit={handleSend} className="flex gap-2">
         <input
           type="text"
-          placeholder={connected ? 'Message' : 'Reconnect to send messages'}
-          aria-label="Message"
+          placeholder={connected ? 'Mensagem' : 'Reconecte para enviar mensagens'}
+          aria-label="Mensagem"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={MAX_CHAT_TEXT_LEN}
@@ -221,11 +221,11 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
         <button
           type="submit"
           disabled={!connected || !draft.trim() || sending}
-          title={connected ? 'Send' : 'Reconnect to send messages'}
+          title={connected ? 'Enviar' : 'Reconecte para enviar mensagens'}
           className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none"
           style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
         >
-          Send
+          Enviar
         </button>
       </form>
     </div>

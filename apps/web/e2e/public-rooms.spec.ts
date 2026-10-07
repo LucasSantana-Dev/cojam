@@ -14,10 +14,10 @@ async function join(page: Page, roomId: string, name: string) {
   await page.goto(`/room/${roomId}`);
   // Waiting-room card shows the room code in a chip ("You're about to join <CODE>").
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Your name').fill(name);
-  await page.getByRole('button', { name: 'Join & Play' }).click();
-  // Joined header shows the room-code chip + "you're <name>" (see RoomClient header).
-  await expect(page.getByText(`you’re ${name}`)).toBeVisible();
+  await page.getByPlaceholder('Seu nome').fill(name);
+  await page.getByRole('button', { name: 'Entrar na sala' }).click();
+  // Joined header shows the room-code chip + "você é <name>" (see RoomClient header).
+  await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
 test('host enables public, the landing strip lists the room, and the join link lands in the room', async ({ browser }) => {
@@ -37,10 +37,10 @@ test('host enables public, the landing strip lists the room, and the join link l
   // The host (first joiner) opts the room into the directory with a label.
   // The checkbox is controlled by the room-state publication, so click and
   // wait for the round-trip rather than check() (which verifies immediately).
-  await host.getByRole('checkbox', { name: 'Public' }).click();
-  await expect(host.getByRole('checkbox', { name: 'Public' })).toBeChecked();
-  await host.getByLabel('Public room label').fill('E2E Lounge');
-  await host.getByLabel('Public room label').press('Enter');
+  await host.getByRole('checkbox', { name: 'Pública' }).click();
+  await expect(host.getByRole('checkbox', { name: 'Pública' })).toBeChecked();
+  await host.getByLabel('Nome da sala pública').fill('E2E Lounge');
+  await host.getByLabel('Nome da sala pública').press('Enter');
 
   // The strip polls every 15s; the card must appear within one poll interval,
   // replacing the mock.
@@ -55,9 +55,9 @@ test('host enables public, the landing strip lists the room, and the join link l
   await visitor.getByRole('button', { name: /anos ou mais/i }).click();
   await expect(visitor).toHaveURL(new RegExp(`/room/${roomId}$`));
   await expect(visitor.getByText(roomId, { exact: true })).toBeVisible();
-  await visitor.getByPlaceholder('Your name').fill('Visitor');
-  await visitor.getByRole('button', { name: 'Join & Play' }).click();
-  await expect(visitor.getByText('you’re Visitor')).toBeVisible();
+  await visitor.getByPlaceholder('Seu nome').fill('Visitor');
+  await visitor.getByRole('button', { name: 'Entrar na sala' }).click();
+  await expect(visitor.getByTestId('room-me')).toContainText('Visitor');
 });
 
 test('flag off renders the static example-room fallback', async ({ page }) => {

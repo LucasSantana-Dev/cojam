@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Stage } from './Stage';
 
-describe('Stage', () => {
+describe('Palco', () => {
   it('renders the media child inside a labelled landmark', () => {
     render(
-      <Stage label="Video stage">
+      <Stage label="Palco de vídeo">
         <div data-testid="media" />
       </Stage>,
     );
-    expect(screen.getByRole('region', { name: 'Video stage' })).toContainElement(screen.getByTestId('media'));
+    expect(screen.getByRole('region', { name: 'Palco de vídeo' })).toContainElement(screen.getByTestId('media'));
   });
 
   it('omits overlay and caption unless given', () => {
@@ -24,7 +24,7 @@ describe('Stage', () => {
 
   it('mounts overlay over the frame and caption under it, so any media can reuse it', () => {
     render(
-      <Stage overlay={<span>live</span>} caption={<span>Title</span>}>
+      <Stage overlay={<span>live</span>} caption={<span>Título</span>}>
         <video data-testid="media" />
       </Stage>,
     );

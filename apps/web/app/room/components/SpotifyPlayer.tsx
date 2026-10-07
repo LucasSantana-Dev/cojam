@@ -306,7 +306,7 @@ export function SpotifyPlayer({
   if (status === 'error') {
     return (
       <div className="text-sm" style={{ color: 'var(--color-status-error)' }}>
-        Spotify unavailable (Premium required)
+        Spotify indisponível (requer Premium)
       </div>
     );
   }
@@ -319,7 +319,7 @@ export function SpotifyPlayer({
         style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
       >
         <SpotifyIcon size={16} />
-        Connect Spotify
+        Conectar Spotify
       </button>
     );
   }
@@ -330,7 +330,7 @@ export function SpotifyPlayer({
     <div className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-accent)' }} />
       <span>
-        Spotify connected{status === 'ready' ? '' : ' (starting...)'}
+        Spotify conectado{status === 'ready' ? '' : ' (iniciando...)'}
         {playingHere && <span style={{ color: 'var(--color-accent)' }}> playing &quot;{nowPlaying!.title}&quot;</span>}
       </span>
     </div>

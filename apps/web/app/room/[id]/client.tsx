@@ -165,7 +165,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       } catch (error) {
         console.error('Failed to join:', error);
         setJoinError(
-          error instanceof Error ? error.message : 'Couldn\'t join. Check the room code and try again.'
+          error instanceof Error ? error.message : 'Não deu para entrar. Confira o código da sala e tente de novo.'
         );
       } finally {
         setLoading(false);
@@ -228,7 +228,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
               {roomId}
             </div>
             <p className="text-xs pt-2" style={{ color: 'var(--color-text-muted)' }}>
-              Listen together, across services
+              Ouçam juntos, entre serviços
             </p>
           </div>
 
@@ -249,8 +249,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
             <input
               type="text"
-              placeholder="Your name"
-              aria-label="Your name"
+              placeholder="Seu nome"
+              aria-label="Seu nome"
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
               className="focus-ring-grow w-full px-4 py-3 rounded-lg focus:outline-none transition-all duration-150 text-center"
@@ -271,7 +271,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
           >
             <span className="join-label-crossfade">
-              {loading ? 'Joining...' : 'Join & Play'}
+              {loading ? 'Entrando...' : 'Entrar na sala'}
             </span>
           </button>
 
@@ -280,8 +280,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
               when accounts are not deployed (no remedy to point at). */}
           {accountsEnabled && !store.signedIn && (
             <p className="text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
-              Your identity is stored in this browser. Sign in before leaving this room to keep
-              your room role across devices.
+              Sua identidade fica guardada neste navegador. Entre na sua conta antes de sair
+              da sala para manter seu papel em outros dispositivos.
             </p>
           )}
 
@@ -304,17 +304,17 @@ export function RoomClient({ roomId }: { roomId: string }) {
       <main id="main" className="room flex items-center justify-center min-h-screen p-4">
         <div className="panel w-full max-w-sm space-y-4 p-8 text-center">
           <h1 className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-            Removed from the room
+            Você foi removido da sala
           </h1>
           <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            The host removed you from this session.
+            O anfitrião removeu você desta sessão.
           </p>
           <Link
             href="/"
             className="inline-block px-6 py-3 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95"
             style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
           >
-            Back to home
+            Voltar ao início
           </Link>
         </div>
       </main>
@@ -329,10 +329,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
     f.video && f.youtube && nowPlaying?.kind === 'video' && activeSource === 'youtube';
 
   const videoTabs: ReadonlyArray<readonly [VideoPanelTab, string]> = [
-    ['playing', 'Playing'],
-    ['queue', 'Queue'],
+    ['playing', 'Tocando'],
+    ['queue', 'Fila'],
     ...(f.roomChat ? ([['chat', 'Chat']] as const) : []),
-    ['add', 'Add'],
+    ['add', 'Adicionar'],
   ];
 
   const playerPanel = (
@@ -391,20 +391,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     }}
                   >
                     {!nowPlaying || isPlaying
-                      ? 'Now playing'
+                      ? 'Tocando agora'
                       : transportState === 'stopped'
-                        ? 'Stopped'
-                        : 'Paused'}
+                        ? 'Parado'
+                        : 'Pausado'}
                   </span>
                 </div>
-                <label className="radio-control cursor-pointer" title="Auto-plays related songs when the queue runs out">
+                <label className="radio-control cursor-pointer" title="Toca músicas parecidas quando a fila acaba">
                   <input
                     type="checkbox"
                     checked={store.state?.radioEnabled ?? false}
                     onChange={(e) => setRadio(roomId, e.target.checked)}
                     className="sr-only"
                   />
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Radio</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Rádio</span>
                   <div
                     className="radio-toggle relative w-8 h-4 rounded-full transition-colors duration-150"
                     style={{
@@ -438,9 +438,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                           state lives on the player, not siloed in the header. */}
                       <div className="np-meta">
                         <PresenceMeta />
-                        <span>added by {nowPlaying.addedBy}</span>
+                        <span>adicionada por {nowPlaying.addedBy}</span>
                         {roomAgeS !== null && (
-                          <span className="np-timer">in room {formatElapsed(roomAgeS)}</span>
+                          <span className="np-timer">na sala há {formatElapsed(roomAgeS)}</span>
                         )}
                       </div>
                     </div>
@@ -472,9 +472,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                             border: '1px solid var(--color-border)',
                             color: 'var(--color-text-primary)',
                           }}
-                          title="View track details from MusicBrainz"
+                          title="Ver detalhes da faixa no MusicBrainz"
                         >
-                          Details
+                          Detalhes
                         </button>
                       )}
                       {f.lyrics && nowPlaying && (
@@ -486,9 +486,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                             border: '1px solid var(--color-border)',
                             color: 'var(--color-text-primary)',
                           }}
-                          title="View lyrics for this track"
+                          title="Ver a letra desta faixa"
                         >
-                          Lyrics
+                          Letra
                         </button>
                       )}
                       {(f.listenBrainz || f.lastfmEnrich) && nowPlaying && (
@@ -500,9 +500,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                             border: '1px solid var(--color-border)',
                             color: 'var(--color-text-primary)',
                           }}
-                          title="View track enrichment from ListenBrainz and Last.fm"
+                          title="Ver dados extras do ListenBrainz e do Last.fm"
                         >
-                          More
+                          Mais
                         </button>
                       )}
                     </div>
@@ -516,9 +516,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 </>
               ) : (
                 <div className="hero-empty">
-                  <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>Nothing playing yet</p>
+                  <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>Nada tocando ainda</p>
                   <p className="text-sm mt-2" style={{ color: 'var(--color-text-secondary)' }}>
-                    Add a track below to start the session.
+                    Adicione uma faixa abaixo para começar a sessão.
                   </p>
                 </div>
               )}
@@ -560,11 +560,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 <ReportRoomButton roomId={roomId} variant="icon" />
               </div>
               <p className="text-sm flex items-center gap-2 flex-wrap" style={{ color: 'var(--color-text-secondary)' }}>
-                <span>Room</span>
+                <span>Sala</span>
                 <span className="room-code-chip">{roomId}</span>
                 <span aria-hidden style={{ opacity: 0.5 }}>·</span>
-                <span className="truncate">you&rsquo;re {store.name}</span>
-                {accountsEnabled && !store.signedIn && <span className="guest-chip">Guest</span>}
+                <span className="truncate" data-testid="room-me">você é {store.name}</span>
+                {accountsEnabled && !store.signedIn && <span className="guest-chip">Convidado</span>}
               </p>
             </div>
             <div className="room-header-controls flex items-center gap-2 md:gap-3 flex-wrap">
@@ -579,7 +579,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                   className="text-sm underline"
                   style={{ color: 'var(--color-text-secondary)' }}
                 >
-                  Account
+                  Conta
                 </Link>
               )}
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
@@ -599,10 +599,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 />
                 <span className="text-xs font-medium sr-only md:not-sr-only" style={{ color: 'var(--color-text-secondary)' }}>
                   {store.reconnecting
-                    ? 'Reconnecting...'
+                    ? 'Reconectando...'
                     : store.connected
-                      ? 'Connected'
-                      : 'Disconnected'}
+                      ? 'Conectado'
+                      : 'Desconectado'}
                 </span>
               </div>
             </div>
@@ -616,14 +616,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
         {videoMode ? (
           <div className="video-room" data-testid="video-room" data-tab={panelTab}>
             <Stage
-              label="Video stage"
+              label="Palco de vídeo"
               caption={
                 nowPlaying && (
                   <div className="min-w-0">
                     <div className="font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
                       {nowPlaying.title}
                     </div>
-                    <div className="text-xs truncate">by {nowPlaying.artist}</div>
+                    <div className="text-xs truncate">de {nowPlaying.artist}</div>
                   </div>
                 )
               }
@@ -637,7 +637,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
               />
             </Stage>
 
-            <div className="video-tabs" role="tablist" aria-label="Room panels">
+            <div className="video-tabs" role="tablist" aria-label="Painéis da sala">
               {videoTabs.map(([id, label]) => (
                 <button
                   key={id}
@@ -702,7 +702,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             )}
           </div>
         </div>
-          <div className="video-tabs audio-tabs" role="tablist" aria-label="Room panels">
+          <div className="video-tabs audio-tabs" role="tablist" aria-label="Painéis da sala">
             {videoTabs.map(([id, label]) => (
               <button
                 key={id}

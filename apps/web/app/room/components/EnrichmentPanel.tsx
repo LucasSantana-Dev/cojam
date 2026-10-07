@@ -67,7 +67,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
         const result = await fetchListenBrainz(roomId, track.isrc || '', track.title, track.artist);
         if (!cancelled) setLbData(result);
       } catch (err) {
-        if (!cancelled) setLbError(err instanceof Error ? err.message : 'Failed to fetch ListenBrainz data');
+        if (!cancelled) setLbError(err instanceof Error ? err.message : 'Não foi possível carregar os dados do ListenBrainz');
       } finally {
         if (!cancelled) setLbLoading(false);
       }
@@ -92,7 +92,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
         const result = await fetchLastfmEnrich(roomId, track.artist, track.title);
         if (!cancelled) setLfmData(result);
       } catch (err) {
-        if (!cancelled) setLfmError(err instanceof Error ? err.message : 'Failed to fetch Last.fm data');
+        if (!cancelled) setLfmError(err instanceof Error ? err.message : 'Não foi possível carregar os dados do Last.fm');
       } finally {
         if (!cancelled) setLfmLoading(false);
       }
@@ -128,14 +128,14 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
         ref={containerRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`Enrichment for ${track.title}`}
+        aria-label={`Mais sobre ${track.title}`}
       >
         {/* Header */}
         <div className="flex-shrink-0 px-6 py-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-accent)', letterSpacing: '0.15em' }}>
-                Enrichment
+                Mais sobre a faixa
               </p>
               <h2 className="text-lg font-semibold mt-1 truncate" style={{ color: 'var(--color-text-primary)' }}>
                 {track.title}
@@ -148,7 +148,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
               onClick={onClose}
               className="flex-shrink-0 p-2 rounded-lg hover:opacity-70 transition-opacity"
               style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              aria-label="Close enrichment panel"
+              aria-label="Fechar painel"
             >
               ✕
             </button>
@@ -187,7 +187,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
                   {lbData.count !== undefined && (
                     <div className="flex gap-2 items-center">
                       <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                        Play count:
+                        Reproduções:
                       </span>
                       <span style={{ color: 'var(--color-text-primary)' }}>
                         {formatCount(lbData.count)}
@@ -216,7 +216,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
 
                   {(!lbData.tags || lbData.tags.length === 0) && lbData.count === undefined && (
                     <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                      No additional data available.
+                      Sem dados adicionais.
                     </p>
                   )}
                 </div>
@@ -254,7 +254,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                        Play count
+                        Reproduções
                       </p>
                       <p className="text-lg font-semibold mt-1" style={{ color: 'var(--color-text-primary)' }}>
                         {formatCount(lfmData.playcount)}
@@ -262,7 +262,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
                     </div>
                     <div>
                       <p className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                        Listeners
+                        Ouvintes
                       </p>
                       <p className="text-lg font-semibold mt-1" style={{ color: 'var(--color-text-primary)' }}>
                         {formatCount(lfmData.listeners)}
@@ -291,7 +291,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
 
                   {(!lfmData.tags || lfmData.tags.length === 0) && lfmData.playcount === 0 && lfmData.listeners === 0 && (
                     <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                      No data available.
+                      Sem dados.
                     </p>
                   )}
                 </div>
@@ -302,7 +302,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
           {/* No data state (both sections empty or no providers enabled) */}
           {!lbError && !lbLoading && !lbData && !lfmError && !lfmLoading && !lfmData && (
             <div style={{ color: 'var(--color-text-secondary)' }}>
-              <p className="text-sm">No enrichment data available for this track.</p>
+              <p className="text-sm">Sem dados extras para esta faixa.</p>
             </div>
           )}
 
@@ -310,7 +310,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
           {(lbData || lfmData) && (
             <div className="pt-2 border-t space-y-1" style={{ borderColor: 'var(--color-border)' }}>
               <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                Data sources:
+                Fontes:
               </p>
               {lbData && (
                 <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>

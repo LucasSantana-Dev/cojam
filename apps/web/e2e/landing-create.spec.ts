@@ -11,6 +11,6 @@ test('landing: name and create room lands inside the room as that name', async (
 
   await expect(page).toHaveURL(/\/room\/[0-9A-Z]{12}$/);
   // Auto-joined: the room header shows the display name, never the join form.
-  await expect(page.getByText('you’re Ana')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Join & Play' })).toHaveCount(0);
+  await expect(page.getByTestId('room-me')).toContainText('Ana');
+  await expect(page.getByRole('button', { name: 'Entrar na sala' })).toHaveCount(0);
 });

@@ -95,8 +95,8 @@ export function PresenceBar({ roomId, canControl = false }: PresenceBarProps) {
                 <button
                   type="button"
                   onClick={() => handleKick(member)}
-                  title={`Kick ${member.name} from the room`}
-                  aria-label={`Kick ${member.name} from the room`}
+                  title={`Remover ${member.name} da sala`}
+                  aria-label={`Remover ${member.name} da sala`}
                   className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-150 focus:outline-none"
                   style={{
                     backgroundColor: 'var(--color-status-error)',
@@ -119,7 +119,7 @@ export function PresenceBar({ roomId, canControl = false }: PresenceBarProps) {
               color: 'var(--color-text-secondary)',
               border: '2px solid var(--color-surface-1)',
             }}
-            title={expanded ? 'Show fewer members' : 'Show all members (host)'}
+            title={expanded ? 'Mostrar menos membros' : 'Mostrar todos os membros (anfitrião)'}
             aria-expanded={expanded}
           >
             {expanded ? '−' : `+${hiddenCount}`}
@@ -141,8 +141,8 @@ export function PresenceBar({ roomId, canControl = false }: PresenceBarProps) {
       {report.dialog}
       <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
         {members.length === 1
-          ? '1 listening'
-          : `${members.length} listening`}
+          ? '1 ouvindo'
+          : `${members.length} ouvindo`}
       </div>
     </div>
   );

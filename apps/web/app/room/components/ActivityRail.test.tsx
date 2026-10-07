@@ -17,7 +17,7 @@ function track(id: string, addedBy: string, title: string, addedAt?: number): Tr
   return {
     id,
     title,
-    artist: 'Artist',
+    artist: 'Artista',
     sources: {},
     addedBy,
     ...(addedAt !== undefined ? { addedAt } : {}),
@@ -51,12 +51,12 @@ describe('ActivityRail (#206)', () => {
     render(<ActivityRail />);
 
     const items = screen.getAllByRole('listitem');
-    expect(items[0]).toHaveTextContent('Bob added Newest Song');
-    expect(items[0]).toHaveTextContent('2m ago');
-    expect(items[1]).toHaveTextContent('Cid added Middle Song');
-    expect(items[1]).toHaveTextContent('5m ago');
-    expect(items[2]).toHaveTextContent('Alice added Older Song');
-    expect(items[2]).toHaveTextContent('10m ago');
+    expect(items[0]).toHaveTextContent('Bob adicionou Newest Song');
+    expect(items[0]).toHaveTextContent('há 2 min');
+    expect(items[1]).toHaveTextContent('Cid adicionou Middle Song');
+    expect(items[1]).toHaveTextContent('há 5 min');
+    expect(items[2]).toHaveTextContent('Alice adicionou Older Song');
+    expect(items[2]).toHaveTextContent('há 10 min');
   });
 
   it('skips tracks with no server timestamp (legacy queue entries)', () => {
@@ -66,7 +66,7 @@ describe('ActivityRail (#206)', () => {
 
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(1);
-    expect(items[0]).toHaveTextContent('Bob added Stamped Song');
+    expect(items[0]).toHaveTextContent('Bob adicionou Stamped Song');
     expect(screen.queryByText(/Legacy Song/)).toBeNull();
   });
 
@@ -76,7 +76,7 @@ describe('ActivityRail (#206)', () => {
     const { container } = render(<ActivityRail />);
 
     expect(container).toBeEmptyDOMElement();
-    expect(screen.queryByText('Activity')).toBeNull();
+    expect(screen.queryByText('Atividade')).toBeNull();
   });
 
   it('applies the measured clock offset so skewed clients agree on the age', () => {
@@ -87,6 +87,6 @@ describe('ActivityRail (#206)', () => {
 
     render(<ActivityRail />);
 
-    expect(screen.getByRole('listitem')).toHaveTextContent('5m ago');
+    expect(screen.getByRole('listitem')).toHaveTextContent('há 5 min');
   });
 });
