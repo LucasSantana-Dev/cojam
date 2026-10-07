@@ -8,6 +8,11 @@ import (
 // prodEnv is the APP_ENV value that turns on strict config validation.
 const prodEnv = "production"
 
+// minRoomAuthSecretLen is the shortest ROOM_AUTH_SECRET accepted in production.
+// The secret is an HS256 HMAC key; 32 bytes matches the hash output size, so a
+// shorter key is the weakest link in every connection token.
+const minRoomAuthSecretLen = 32
+
 // validateProdConfig returns the fatal misconfigurations for a production boot,
 // and separately the non-fatal ones. Outside APP_ENV=production it returns
 // nothing: local dev keeps the permissive defaults.
@@ -30,8 +35,13 @@ func validateProdConfig(getenv func(string) string) (fatal, warn []string) {
 		fatal = append(fatal, `CORS_ORIGINS contains "*": any page could open a socket and mutate rooms`)
 	}
 
-	if featureEnabledIn(getenv, "FEATURE_ROOM_AUTH", false) && getenv("ROOM_AUTH_SECRET") == "" {
-		fatal = append(fatal, "FEATURE_ROOM_AUTH is on but ROOM_AUTH_SECRET is empty: every connection would be rejected")
+	if featureEnabledIn(getenv, "FEATURE_ROOM_AUTH", false) {
+		switch secret := getenv("ROOM_AUTH_SECRET"); {
+		case secret == "":
+			fatal = append(fatal, "FEATURE_ROOM_AUTH is on but ROOM_AUTH_SECRET is empty: every connection would be rejected")
+		case len(secret) < minRoomAuthSecretLen:
+			fatal = append(fatal, fmt.Sprintf("ROOM_AUTH_SECRET is shorter than %d bytes: connection tokens would be signed with a weak key", minRoomAuthSecretLen))
+		}
 	}
 
 	if featureEnabledIn(getenv, "FEATURE_SUPABASE_AUTH", false) &&

@@ -16,7 +16,7 @@ func validProd() map[string]string {
 		"CORS_ORIGINS":          "https://cojam.example",
 		"METRICS_ADDR":          "127.0.0.1:9100",
 		"FEATURE_ROOM_AUTH":     "true",
-		"ROOM_AUTH_SECRET":      "s3cret",
+		"ROOM_AUTH_SECRET":      strings.Repeat("k", minRoomAuthSecretLen),
 		"FEATURE_SUPABASE_AUTH": "true",
 		"SUPABASE_URL":          "https://project.supabase.co",
 		"SUPABASE_JWT_SECRET":   "jwt",
@@ -34,6 +34,13 @@ func TestValidateProdConfig(t *testing.T) {
 		{"cors origins unset", func(e map[string]string) { delete(e, "CORS_ORIGINS") }, "CORS_ORIGINS"},
 		{"cors origins wildcard", func(e map[string]string) { e["CORS_ORIGINS"] = "*" }, `CORS_ORIGINS contains "*"`},
 		{"room auth secret missing", func(e map[string]string) { delete(e, "ROOM_AUTH_SECRET") }, "ROOM_AUTH_SECRET"},
+		{"room auth secret too short", func(e map[string]string) {
+			e["ROOM_AUTH_SECRET"] = strings.Repeat("k", minRoomAuthSecretLen-1)
+		}, "ROOM_AUTH_SECRET is shorter than"},
+		{"room auth off so short secret is ignored", func(e map[string]string) {
+			e["FEATURE_ROOM_AUTH"] = "false"
+			e["ROOM_AUTH_SECRET"] = "short"
+		}, ""},
 		{"room auth off so secret not needed", func(e map[string]string) {
 			e["FEATURE_ROOM_AUTH"] = "false"
 			delete(e, "ROOM_AUTH_SECRET")
