@@ -786,6 +786,10 @@ export default function Home() {
         <a href="https://github.com/LucasSantana-Dev/cojam" target="_blank" rel="noreferrer">
           github.com/LucasSantana-Dev/cojam
         </a>
+        {' · '}
+        <Link href="/privacidade">Privacidade</Link>
+        {' · '}
+        <Link href="/termos">Termos</Link>
       </footer>
     </div>
   );
