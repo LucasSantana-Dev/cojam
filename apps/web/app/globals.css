@@ -1175,6 +1175,74 @@ input:focus, textarea:focus, select:focus {
   color: var(--color-accent-2);
 }
 
+/* Strip header + /rooms page (#306). Reuses the .live-room-card language. */
+.live-rooms__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+.live-rooms__head .live-rooms__label { margin-bottom: 0; }
+.live-rooms__all {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-accent-2);
+  text-decoration: none;
+}
+.live-rooms__all:hover { text-decoration: underline; }
+.rooms-page {
+  width: min(100%, 64rem);
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+.rooms-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.rooms-page__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.rooms-page__sub {
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+.rooms-page__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.rooms-page__search {
+  flex: 1 1 14rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.6rem;
+}
+.rooms-page__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+.rooms-page__sort select {
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.6rem;
+}
+.rooms-page__empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
 /* Buttons ----------------------------------------------------- */
 .btn-primary {
   position: relative;
