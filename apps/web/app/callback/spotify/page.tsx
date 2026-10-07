@@ -51,7 +51,9 @@ export default function SpotifyCallback() {
   return (
     <SintoniaScreen>
       <main id="main" className="sx-main">
-        <div className="sx-glass sx-card sx-card--narrow sx-center" aria-live="polite" data-testid="spotify-callback">
+        <div className="sx-glass sx-card sx-card--narrow sx-center" aria-live={state === 'error' ? undefined : 'polite'}
+          data-testid="spotify-callback"
+        >
           <div className="sx-brand">
             <LogoMark size={20} /> CoJam
           </div>
@@ -83,9 +85,10 @@ export default function SpotifyCallback() {
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </div>
-              <h1 className="sx-title sx-title--sm" role="alert" data-testid="spotify-callback-error">
+              <h1 className="sx-title sx-title--sm">Não deu para conectar o Spotify</h1>
+              <p role="alert" data-testid="spotify-callback-error">
                 {spotifyConnectMessage(kind)}
-              </h1>
+              </p>
               <SineLine flat />
               <div className="sx-actions sx-actions--center">
                 {canRetrySpotifyConnect(kind) && (

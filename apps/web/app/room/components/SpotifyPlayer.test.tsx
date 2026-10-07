@@ -130,6 +130,7 @@ describe('SpotifyPlayer connect failure surface', () => {
     expect(alert).toHaveAttribute('role', 'alert');
     expect(alert).toHaveTextContent('precisa de uma conta Premium');
     expect(alert).toHaveTextContent('YouTube');
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('points at the tester list when /v1/me answers 403', async () => {

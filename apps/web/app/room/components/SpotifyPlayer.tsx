@@ -263,6 +263,7 @@ export function SpotifyPlayer({
           const adapter = new SpotifyPlayerAdapter(player, device_id, canSeek);
           playerRef.current = adapter;
           onPlayerReadyRef.current?.(adapter);
+          setProblem(null);
           setStatus('ready');
         });
         player.addListener('authentication_error', () => {
@@ -270,7 +271,7 @@ export function SpotifyPlayer({
           onAuthorized(false);
         });
         player.addListener('initialization_error', () => {
-          setProblem('unknown');
+          setProblem('sdk');
           setStatus('error');
         });
         player.addListener('account_error', () => {
@@ -281,7 +282,7 @@ export function SpotifyPlayer({
       } catch (e) {
         console.error('Spotify SDK init failed:', e);
         if (!cancelled) {
-          setProblem('unknown');
+          setProblem('sdk');
           setStatus('error');
         }
       }
@@ -362,9 +363,11 @@ export function SpotifyPlayer({
 
   if (!authorized) {
     if (!problem) return connectButton('Conectar Spotify');
+    // Premium: the account is the problem, so offer no button to loop on.
+    if (!canRetrySpotifyConnect(problem)) return problemNote;
     return (
       <div className="flex flex-col items-start gap-2">
-        {connectButton(canRetrySpotifyConnect(problem) ? 'Tentar de novo' : 'Conectar Spotify')}
+        {connectButton('Tentar de novo')}
         {problemNote}
       </div>
     );
