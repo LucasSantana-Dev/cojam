@@ -53,7 +53,9 @@ func (h *Hub) listPublicRooms() (json.RawMessage, error) {
 	rooms := make([]PublicRoomSummary, 0, len(h.rooms))
 	for roomID, room := range h.rooms {
 		room.mu.Lock()
-		if !room.State.Public {
+		// Defense in depth (#259): a name stored before the filter existed, or
+		// changed by a path that skipped it, never reaches the directory.
+		if !room.State.Public || roomNameBlocked(room.State.Name) {
 			room.mu.Unlock()
 			continue
 		}
