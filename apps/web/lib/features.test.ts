@@ -19,6 +19,7 @@ describe('resolveFeatures', () => {
       roomChat: false,
       publicRooms: false,
       telemetry: false,
+      video: false,
     });
   });
 
@@ -47,6 +48,7 @@ describe('resolveFeatures', () => {
       roomChat: false,
       publicRooms: false,
       telemetry: false,
+      video: false,
     });
   });
 
@@ -69,6 +71,14 @@ describe('resolveFeatures', () => {
   it('sync defaults off and can be enabled', () => {
     expect(resolveFeatures({}).sync).toBe(false);
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_SYNC: 'on' }).sync).toBe(true);
+  });
+
+  it('video defaults off, is independent of sync, and maps to COJAM_FEATURE_VIDEO', () => {
+    expect(resolveFeatures({}).video).toBe(false);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_VIDEO: 'on' }).video).toBe(true);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_VIDEO: 'on' }).sync).toBe(false);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_SYNC: 'on' }).video).toBe(false);
+    expect(FEATURE_ENV_VARS.video).toBe('COJAM_FEATURE_VIDEO');
   });
 
   it('queueVoting defaults off and can be enabled', () => {

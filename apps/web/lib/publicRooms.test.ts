@@ -47,7 +47,7 @@ vi.mock('./realtime', () => ({
 }));
 
 const fixtures: PublicRoomSummary[] = [
-  { roomId: 'NEON42', name: 'Neon Room', memberCount: 7, nowPlaying: { title: 'Instant Crush', artist: 'Daft Punk' } },
+  { roomId: 'NEON42', name: 'Neon Room', memberCount: 7, kind: 'audio', lastActiveMs: 1_000, nowPlaying: { title: 'Instant Crush', artist: 'Daft Punk' } },
 ];
 
 const lastInstance = async () => {
