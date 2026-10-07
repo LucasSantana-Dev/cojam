@@ -9,6 +9,7 @@ import { RoomShowcase } from '@/app/components/RoomShowcase';
 import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
 import { LiveCounter } from '@/app/components/LiveCounter';
 import { LogoMark } from '@/app/components/Logo';
+import { YourDataId } from '@/app/components/YourDataId';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
 import { MINIMUM_AGE } from '@/lib/ageGate';
@@ -884,6 +885,9 @@ export default function Home() {
           </button>
         </section>
       </main>
+
+      {/* LGPD erasure (#318): only for browsers that hold a guest id. */}
+      <YourDataId />
 
       <footer className="landing-footer">
         Built in public ·{' '}

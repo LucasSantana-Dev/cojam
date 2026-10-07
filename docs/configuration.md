@@ -90,6 +90,17 @@ The purge is by age only. Neither table has a status or resolution column, so a 
 
 Room idleness is measured by the last change to the row, not the last visit. A room someone opened within the in-memory window (`ROOM_IDLE_TTL_MINUTES`) without changing anything is still held in memory, and a later change saves it again.
 
+### Erasing one person's data (LGPD)
+
+`server erase` is an operator subcommand of the server binary (#318). It connects with `DATABASE_URL`, runs in one transaction, and prints counts per table only.
+
+```bash
+server erase --sub <guest id> [--name <display name>] [--client-id <id>]... [--include-subject-reports] --dry-run
+server erase --sub <guest id> [--name <display name>] [--client-id <id>]... [--include-subject-reports] --apply
+```
+
+It deletes the person's Spotify token row; removes their votes, host role and queue attribution from persisted rooms (names become "Removido"); anonymizes them as the reporter of reports and as the actor or subject of moderation actions. A display name (`--name`) only matches inside rooms where the person's id or a given client id was found, since names are not unique. Reports **about** the person are kept as evidence under a legal obligation (LGPD art. 7 II, art. 16 I) unless `--include-subject-reports` is passed, and moderation rows tied to a kept report stay with it. `[[REVISAR]]` that default with legal review. Stop the server before `--apply`: a room held in memory would write the person back. The guest id is shown to the person on the landing page under "Seus dados". The full procedure is the operator runbook `docs/runbooks/lgpd-erasure.md` (kept out of git, like the other runbooks).
+
 ## Observability
 
 Set `REPORT_WEBHOOK_URL` to push a minimal summary of each member report (id, kind, room id, category, time; no chat content) to a channel you monitor. Unset means reports are stored and logged only.
