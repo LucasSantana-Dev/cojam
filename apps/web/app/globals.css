@@ -934,6 +934,35 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
+/* One-step create: name + button. 44px targets, stacks under 480px. */
+.hero-create {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.hero-create__input {
+  min-height: 44px;
+  min-width: 0;
+  flex: 1 1 11rem;
+  max-width: 16rem;
+  padding: 0 1rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+.hero-create .btn-primary { min-height: 44px; }
+.hero-create .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .hero-create { flex-direction: column; align-items: stretch; }
+  .hero-create__input { max-width: none; flex: none; }
+  .hero-create .hero-join__label { text-align: center; }
+}
+
 /* Join-by-code elevated to equal footing with Start a room (Spotify Jam steal:
    the guest's first ten seconds is the pitch). Real <label>, mono micro. */
 .hero-join {
