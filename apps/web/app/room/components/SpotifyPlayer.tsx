@@ -14,18 +14,23 @@ import {
 import { getRuntimeEnv, pickEnv } from '@/lib/runtimeEnv';
 import { SpotifyIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
-import { detectSpotifyCanSeek, createEndedDetector } from '@/lib/playerUtils';
+import { detectSpotifyCanSeek, createEndedDetector, createSpotifyEndDetector, type SpotifyEndState } from '@/lib/playerUtils';
 
 // Minimal structural types for the Spotify Web Playback SDK surface we use.
 export interface SpotifyPlaybackState {
   position: number;
-  track_window?: { current_track?: { duration_ms?: number } };
+  paused?: boolean;
+  track_window?: {
+    current_track?: { duration_ms?: number; id?: string | null; uri?: string };
+    previous_tracks?: Array<{ id?: string | null; uri?: string }>;
+  };
 }
 
 export interface SpotifySDKPlayer {
   connect(): Promise<boolean>;
   getCurrentState(): Promise<SpotifyPlaybackState | null>;
   addListener(event: 'ready', cb: (data: { device_id: string }) => void): boolean;
+  addListener(event: 'player_state_changed', cb: (state: SpotifyPlaybackState | null) => void): boolean;
   addListener(event: string, cb: () => void): boolean;
 }
 
@@ -81,6 +86,7 @@ class SpotifyPlayerAdapter implements IPlayer {
   private canSeekValue: boolean = false;
   private positionPollInterval: NodeJS.Timeout | null = null;
   private endedDetector = createEndedDetector();
+  private stateEndDetector = createSpotifyEndDetector();
 
   constructor(player: SpotifySDKPlayer, deviceId: string, canSeek: boolean) {
     this.player = player;
@@ -142,10 +148,24 @@ class SpotifyPlayerAdapter implements IPlayer {
 
   onEnded(cb: () => void): void {
     this.endedCallbacks.push(cb);
+    // End detection must not depend on a position subscriber (the transport
+    // bar) being mounted.
+    this.startPolling();
+  }
+
+  // Fed by the SDK's player_state_changed: catches the natural end of a track
+  // (paused at position 0 with the track in previous_tracks), which the
+  // position poll cannot see.
+  handleStateChange(state: SpotifyEndState | null): void {
+    if (this.stateEndDetector(state)) this.endedCallbacks.forEach((c) => c());
   }
 
   onPositionChanged(cb: (positionMs: number) => void): void {
     this.positionCallbacks.push(cb);
+    this.startPolling();
+  }
+
+  private startPolling(): void {
     if (!this.positionPollInterval) {
       this.positionPollInterval = setInterval(async () => {
         try {
@@ -171,6 +191,7 @@ class SpotifyPlayerAdapter implements IPlayer {
     this.endedCallbacks = [];
     this.positionCallbacks = [];
     this.endedDetector = createEndedDetector();
+    this.stateEndDetector = createSpotifyEndDetector();
   }
 }
 
@@ -262,6 +283,7 @@ export function SpotifyPlayer({
           const canSeek = await detectSpotifyCanSeek(player);
           const adapter = new SpotifyPlayerAdapter(player, device_id, canSeek);
           playerRef.current = adapter;
+          player.addListener('player_state_changed', (st) => adapter.handleStateChange(st));
           onPlayerReadyRef.current?.(adapter);
           setProblem(null);
           setStatus('ready');

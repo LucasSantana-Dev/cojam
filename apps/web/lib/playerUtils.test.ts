@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { secondsToMs, msToSeconds, createEndedDetector } from './playerUtils';
+import { secondsToMs, msToSeconds, createEndedDetector, createSpotifyEndDetector } from './playerUtils';
 
 describe('playerUtils', () => {
   describe('secondsToMs', () => {
@@ -87,5 +87,38 @@ describe('playerUtils', () => {
       expect(detect(0, 0)).toBe(false);
       expect(detect(1000, 0)).toBe(false);
     });
+  });
+});
+
+describe('createSpotifyEndDetector', () => {
+  const st = (o: { paused: boolean; position: number; cur: string; prev?: string[] }) => ({
+    paused: o.paused,
+    position: o.position,
+    track_window: {
+      current_track: { id: o.cur },
+      previous_tracks: (o.prev ?? []).map((id) => ({ id })),
+    },
+  });
+
+  it('fires once when the track finishes (paused, position 0, track in previous_tracks)', () => {
+    const d = createSpotifyEndDetector();
+    expect(d(st({ paused: false, position: 1000, cur: 'a' }))).toBe(false);
+    expect(d(st({ paused: false, position: 179_900, cur: 'a' }))).toBe(false);
+    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }))).toBe(true);
+    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }))).toBe(false);
+  });
+
+  it('does not fire on a user pause or a fresh paused load', () => {
+    const d = createSpotifyEndDetector();
+    expect(d(st({ paused: true, position: 42_000, cur: 'a' }))).toBe(false);
+    expect(d(st({ paused: true, position: 0, cur: 'b' }))).toBe(false);
+    expect(d(null)).toBe(false);
+  });
+
+  it('re-arms when the same track plays again', () => {
+    const d = createSpotifyEndDetector();
+    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }))).toBe(true);
+    expect(d(st({ paused: false, position: 500, cur: 'a', prev: ['a'] }))).toBe(false);
+    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }))).toBe(true);
   });
 });

@@ -55,3 +55,36 @@ export function createEndedDetector(): (positionMs: number, durationMs: number) 
     return false;
   };
 }
+
+// Spotify's SDK has no ENDED event. When a track finishes on its own the SDK
+// emits player_state_changed with paused=true, position=0 and the finished
+// track repeated in previous_tracks (current_track is still that track). The
+// 1s position poll misses this: the position snaps to 0 instead of reaching
+// the duration. createSpotifyEndDetector reads those state pushes and fires
+// once per finished track; it re-arms when the track plays again.
+export interface SpotifyEndState {
+  paused?: boolean;
+  position: number;
+  track_window?: {
+    current_track?: { id?: string | null; uri?: string };
+    previous_tracks?: Array<{ id?: string | null; uri?: string }>;
+  };
+}
+
+export function createSpotifyEndDetector(): (state: SpotifyEndState | null | undefined) => boolean {
+  let firedFor: string | null = null;
+  return (state) => {
+    const cur = state?.track_window?.current_track;
+    const key = cur?.id ?? cur?.uri ?? null;
+    if (!state || !key) return false;
+    if (!state.paused || state.position > 0) {
+      if (firedFor === key && state.position > 0) firedFor = null;
+      return false;
+    }
+    const prev = state.track_window?.previous_tracks ?? [];
+    const finished = prev.some((t) => (t.id ?? t.uri) === key);
+    if (!finished || firedFor === key) return false;
+    firedFor = key;
+    return true;
+  };
+}
