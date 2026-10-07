@@ -136,6 +136,45 @@ async function addTrack(page: Page, title: string, artist: string) {
   await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
 }
 
+/**
+ * The Queue panel used to be `sticky` inside a parent that also holds the
+ * Activity rail, so scrolling slid it over Activity. Boxes must stay disjoint
+ * at the desktop widths, at rest and after scrolling the page.
+ */
+test.describe('queue panel vs activity rail', () => {
+  for (const width of [1440, 1024]) {
+    test(`do not overlap at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await join(page, `E2EQ${Date.now().toString(36).toUpperCase()}`);
+
+      await page.evaluate(() => {
+        document.querySelectorAll('details').forEach((d) => {
+          d.open = true;
+        });
+      });
+      await page.getByPlaceholder('Título').locator('visible=true').fill('Row One');
+      await page.getByPlaceholder('Artista').locator('visible=true').fill('Artist A');
+      await page.getByRole('button', { name: 'Adicionar à fila' }).click();
+      const queue = page.locator('[data-testid="queue-panel"]:visible');
+      const activity = page.locator('[data-testid="activity-panel"]:visible');
+      await expect(activity).toBeVisible();
+
+      for (const scrollY of [0, 300]) {
+        await page.evaluate((y) => window.scrollTo(0, y), scrollY);
+        // Rows fade in and the column settles; poll until disjoint.
+        await expect
+          .poll(async () => {
+            const q = await queue.boundingBox();
+            const a = await activity.boundingBox();
+            if (!q || !a) return 'missing';
+            return q.y + q.height <= a.y + 0.5 || a.y + a.height <= q.y + 0.5 ? 'disjoint' : 'overlap';
+          })
+          .toBe('disjoint');
+      }
+    });
+  }
+});
+
 test.describe('room at 390x844', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 

@@ -263,10 +263,10 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   }
 
   return (
-    // z-10: as the sticky panel it must paint above later-flowing positioned
-    // panels (ChatPanel) that slide under it while the column scrolls, or
-    // they'd cover the queue controls and intercept their clicks.
-    <div className="panel p-6 space-y-4 h-fit lg:sticky lg:top-24 z-10">
+    // Not sticky itself: the side column (client.tsx) already pins the whole
+    // rail. A second sticky here slid this panel over the Activity rail, which
+    // shares its parent, whenever the page scrolled.
+    <div data-testid="queue-panel" className="panel p-6 space-y-4 h-fit">
       <div>
         <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Fila
