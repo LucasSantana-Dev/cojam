@@ -1292,6 +1292,19 @@ input:focus, textarea:focus, select:focus {
   color: var(--color-text-secondary);
 }
 
+/* Live counter (#307): "N people in M rooms right now" under the hero CTA. */
+.live-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1.5rem auto 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
 /* Buttons ----------------------------------------------------- */
 .btn-primary {
   position: relative;

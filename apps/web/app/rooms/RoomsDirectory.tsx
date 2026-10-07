@@ -6,6 +6,7 @@ import type { PublicRoomSummary } from '@cojam/shared';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { subscribePublicRooms } from '@/lib/publicRooms';
 import { AGE_GATE_COPY_PT, useAgeGatedJoin } from '@/app/components/useAgeGatedJoin';
+import { LiveCounter } from '@/app/components/LiveCounter';
 
 type SortKey = 'people' | 'recent';
 
@@ -78,6 +79,7 @@ export function RoomsDirectory() {
         <div>
           <h1 className="rooms-page__title">Salas públicas</h1>
           <p className="rooms-page__sub">Salas abertas tocando agora. Entre em uma e ouça junto.</p>
+          <LiveCounter />
         </div>
         <Link href="/" className="live-rooms__all">&larr; Início</Link>
       </header>

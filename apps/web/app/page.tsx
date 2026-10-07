@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, CheckIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
 import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
+import { LiveCounter } from '@/app/components/LiveCounter';
 import { LogoMark } from '@/app/components/Logo';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
@@ -680,6 +681,8 @@ export default function Home() {
                 </button>
               </form>
             </div>
+
+            <LiveCounter />
 
             {/* Example room artifact — evidence, not promise (Stationhead
                 steal). Labeled as an example; same people/track as the
