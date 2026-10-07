@@ -63,6 +63,9 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 async function addVideo(page: Page, title: string) {
+  // Phone width (#289): the audio room keeps the add form behind its Add tab.
+  const addTab = page.getByRole('tab', { name: 'Add' });
+  if (await addTab.isVisible()) await addTab.click();
   await page.evaluate(() => {
     const details = document.querySelector('details');
     if (details) details.open = true;

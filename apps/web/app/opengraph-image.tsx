@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = 'CoJam · listen together, across services';
+export const alt = 'CoJam · ouçam juntos, entre serviços';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -45,11 +45,11 @@ export default function OpengraphImage() {
             maxWidth: 940,
           }}
         >
-          Friends on different streaming services, listening together.
+          Amigos em serviços de streaming diferentes, ouvindo juntos.
         </div>
 
         <div style={{ marginTop: 32, fontSize: 32, color: '#a1a1aa', maxWidth: 900 }}>
-          Spotify, Apple Music and YouTube in one shared queue.
+          Spotify e YouTube numa só fila compartilhada.
         </div>
       </div>
     ),

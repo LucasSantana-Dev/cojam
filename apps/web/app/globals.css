@@ -934,6 +934,26 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
+/* FAQ: native details/summary, 44px+ targets, tokens only. */
+.faq-list { max-width: 44rem; margin: 0 auto; text-align: left; }
+.faq-item { border-bottom: 1px solid var(--color-border); }
+.faq-item summary {
+  min-height: 44px;
+  padding: 0.9rem 0;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  list-style-position: outside;
+}
+.faq-item summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.faq-item p { margin: 0 0 1rem; color: var(--color-text-secondary); line-height: 1.6; }
+.platform-chip__soon {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
 /* One-step create: name + button. 44px targets, stacks under 480px. */
 .hero-create {
   display: flex;
@@ -2331,7 +2351,7 @@ input:focus, textarea:focus, select:focus {
     background: var(--color-surface-1);
     padding-bottom: 0.5rem;
   }
-  .video-panel[data-active="false"] {
+  .video-panel[data-active="false"]:not(.video-panel-keep) {
     display: none;
   }
 }
@@ -2358,5 +2378,146 @@ input:focus, textarea:focus, select:focus {
 @media (min-width: 64rem) {
   .video-room {
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+
+/* ---------- Audio room on phones (#289) ----------
+   Same pattern as the video room: panels behind tabs, so chat is one tap away
+   instead of a scroll past the player and queue. The tab bar docks to the
+   bottom for thumb reach (and so the sticky header stays one short row).
+   Nothing below applies from 768px up: tablet and desktop keep the grid. */
+@media (max-width: 47.999rem) {
+  /* The Playing panel can hold the YouTube iframe of an audio track. Hiding it
+     with display:none could pause playback on some mobile browsers, so it
+     stays laid out but collapsed, unfocusable and out of the a11y tree. */
+  .video-panel-keep[data-active="false"] {
+    visibility: hidden;
+    height: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+  /* Same 44px floor as the coarse-pointer rule, but keyed to the phone
+     width so an emulated or desktop-narrow window gets it too. */
+  .room button,
+  .panel button,
+  .room input:not([type="checkbox"], [type="radio"]),
+  .panel input:not([type="checkbox"], [type="radio"]) {
+    min-height: 44px;
+  }
+  /* Focus / scrollIntoView keep a field clear of the docked tab bar. */
+  html {
+    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+  }
+  .room-main {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+  .audio-tabs {
+    position: fixed;
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    background: oklch(0.12 0.01 280 / 0.92);
+    backdrop-filter: blur(16px) saturate(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3);
+    box-shadow: 0 8px 30px oklch(0 0 0 / 0.5);
+  }
+  /* dvh tracks the on-screen keyboard where the browser resizes the viewport,
+     so the chat list never pushes the input below the fold. */
+  .chat-scroll {
+    max-height: min(20rem, 40dvh);
+  }
+
+  /* Header: one short band. The connection pill keeps its dot and drops the
+     text (still read by screen readers), and every target is 44px. */
+  .room-header-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .room-header :is(a, button),
+  .room-header label {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .room-header .avatar-chip button {
+    background-color: transparent !important;
+    isolation: isolate;
+    position: absolute;
+    top: -14px;
+    right: -14px;
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+  }
+  .room-header .avatar-chip button::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 8px;
+    right: 8px;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    background: var(--color-status-error);
+  }
+  .room-header input[type="text"] {
+    min-height: 44px;
+  }
+  .room-header label:has(input[type="checkbox"]) {
+    position: relative;
+  }
+  .room-header label input[type="checkbox"] {
+    /* -1px: the label's 1px border sits outside its padding box. */
+    position: absolute;
+    inset: -1px;
+    width: calc(100% + 2px);
+    height: calc(100% + 2px);
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .room-header label:has(input[type="checkbox"]:checked) {
+    border-color: var(--color-accent) !important;
+    color: var(--color-accent) !important;
+  }
+  .room-header label:has(input[type="checkbox"]:focus-visible) {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* Queue rows: the thumb, title and vote stay on the row; the secondary
+     actions (play, move, remove) sit behind a 44px "more" toggle and open on
+     a second line of 44px targets, so the row never needs five buttons side
+     by side at 390px. */
+  .queue-item-row .queue-row-main {
+    flex-wrap: wrap;
+  }
+  .queue-item-row :is(button, a) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .queue-item-row .queue-controls {
+    display: none;
+    flex-basis: 100%;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+  .queue-item-row[data-more="true"] .queue-controls {
+    display: flex;
+    opacity: 1 !important;
+  }
+  .queue-item-row .queue-controls button {
+    justify-content: center;
+    align-items: center;
+  }
+}
+@media (min-width: 48rem) {
+  .audio-tabs,
+  .queue-more {
+    display: none;
+  }
+  .chat-scroll {
+    max-height: 20rem;
   }
 }

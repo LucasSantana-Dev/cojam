@@ -11,13 +11,13 @@ describe('LiveCounter', () => {
   it('renders people and rooms', async () => {
     respond({ people: 12, rooms: 4 });
     render(<LiveCounter />);
-    expect(await screen.findByText(/12 people in 4 rooms right now/)).toBeInTheDocument();
+    expect(await screen.findByText(/12 pessoas em 4 salas agora/)).toBeInTheDocument();
   });
 
   it('uses singular forms', async () => {
     respond({ people: 1, rooms: 1 });
     render(<LiveCounter />);
-    expect(await screen.findByText(/1 person in 1 room right now/)).toBeInTheDocument();
+    expect(await screen.findByText(/1 pessoa em 1 sala agora/)).toBeInTheDocument();
   });
 
   it('is hidden when nobody is in a room', async () => {

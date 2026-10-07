@@ -63,6 +63,8 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   // updater flushing before the 4s timer fires (CodeRabbit #230).
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [actionError, setActionError] = useState('');
+  // Phone only: which row has its secondary actions open (#289).
+  const [moreOpenId, setMoreOpenId] = useState<string | null>(null);
   // Queue voting (F4): hydration-safe runtime flag (RFC-0006); the build-time
   // value is the SSR snapshot, the /env.js runtime map flips it post-mount.
   const { queueVoting: queueVotingEnabled } = useRuntimeFeatures();
@@ -303,9 +305,10 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
               key={track.id}
               data-testid="queue-item"
               data-track-id={track.id}
+              data-more={moreOpenId === track.id}
               className={`queue-item-row animate-fade-in-up group${track.id === nowPlayingId ? ' is-now' : ''}${removingIds.has(track.id) ? ' removing' : ''}`}
             >
-              <div className="flex w-full items-center gap-2.5 p-2.5 rounded-lg transition-all duration-150 hover:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)] focus-within:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)]">
+              <div className="queue-row-main flex w-full items-center gap-2.5 p-2.5 rounded-lg transition-all duration-150 hover:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)] focus-within:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)]">
                 {/* Position: plain number, accent when now playing. The eq moved
                     onto the thumb (Spotify-style overlay). */}
                 <div className="text-xs font-semibold flex-shrink-0 w-5 text-center" style={{ color: track.id === nowPlayingId ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>
@@ -431,6 +434,20 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                     </span>
                   </button>
                 )}
+
+                {/* Phone only (CSS hides it from 768px): opens the secondary actions
+                    on their own line so 44px targets fit a 390px row (#289). */}
+                <button
+                  type="button"
+                  onClick={() => setMoreOpenId((cur) => (cur === track.id ? null : track.id))}
+                  aria-label="More actions"
+                  aria-expanded={moreOpenId === track.id}
+                  title="More actions"
+                  className="queue-more p-1.5 rounded flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
+                >
+                  <span aria-hidden="true">&#8943;</span>
+                </button>
 
                 {/* Right side: controls (hidden on desktop hover, always visible on touch) */}
                 <div className="queue-controls flex gap-1 flex-shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
