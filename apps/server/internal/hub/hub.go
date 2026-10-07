@@ -320,6 +320,9 @@ type Hub struct {
 	// can hold the host role). Guarded by memberMu.
 	memberJoinTimes map[string]map[string]int64 // roomID -> userID -> unix nanos
 
+	// liveStats caches the public people/rooms aggregate (#307).
+	liveStats liveStatsCache
+
 	// clientUserID tracks the authenticated userID per clientID for host
 	// assignment (U3+); clientName tracks the display name the connection
 	// presented at connect time (ConnInfo {name}). Together they are the
