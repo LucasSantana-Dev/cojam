@@ -111,18 +111,13 @@ export function ListenersWave({
     measure();
     draw();
     sync();
-    const poll = window.setInterval(() => {
-      sync();
-      if (!on) draw();
-    }, 400);
     return () => {
       cancelAnimationFrame(raf);
       io.disconnect();
       ro.disconnect();
-      window.clearInterval(poll);
       document.removeEventListener('visibilitychange', sync);
     };
-  }, [count]);
+  }, [count, running, animate]);
 
   return (
     <div ref={boxRef} className={`listeners-wave ${className}`} role="group" aria-label={label ?? 'Quem está ouvindo'}>

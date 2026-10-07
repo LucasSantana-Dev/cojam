@@ -14,6 +14,8 @@ export function useCoverFlight(trackId: string | undefined, enabled: boolean) {
     prev.current = trackId;
     if (!enabled || !trackId || !before || before === trackId) return;
     let cancelled = false;
+    let tween: { kill: () => void } | undefined;
+    let flying: HTMLElement | undefined;
     const raf = requestAnimationFrame(async () => {
       const cover = document.querySelector<HTMLElement>('.np-cover');
       const row = document.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(trackId)}"] .queue-thumb-wrap`);
@@ -23,8 +25,9 @@ export function useCoverFlight(trackId: string | undefined, enabled: boolean) {
       if (first.width === 0 || last.width === 0) return;
       const gsap = (await import('gsap').catch(() => null))?.default;
       if (!gsap || cancelled) return;
+      flying = cover;
       cover.classList.add('is-flying');
-      gsap.fromTo(
+      tween = gsap.fromTo(
         cover,
         { x: first.left - last.left, y: first.top - last.top, scale: first.width / last.width, transformOrigin: '0 0' },
         {
@@ -43,6 +46,12 @@ export function useCoverFlight(trackId: string | undefined, enabled: boolean) {
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
+      if (tween && flying) {
+        tween.kill();
+        flying.classList.remove('is-flying');
+        flying.style.removeProperty('transform');
+        flying.style.removeProperty('transform-origin');
+      }
     };
   }, [trackId, enabled]);
 }

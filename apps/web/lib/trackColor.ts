@@ -141,10 +141,10 @@ export function dominantColor(data: ArrayLike<number>): Tint | null {
 }
 
 /**
- * Up to `n` distinct vivid colours of RGBA pixel data (for the mesh ground).
+ * Up to `n` distinct vivid colours of RGBA pixel data (for the ground).
  * Same voting as dominantColor, but the winning hue bins are taken in order of
  * weight and must sit at least 45 degrees apart. Fewer than `n` real hues are
- * topped up with analogous shifts of the dominant one, so the mesh always has
+ * topped up with analogous shifts of the dominant one, so the ground always has
  * variety. Returns null for grayscale art. Every colour passes normalizeTint,
  * so white text keeps its contrast on any of them.
  */

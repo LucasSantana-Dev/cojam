@@ -23,6 +23,12 @@ import { MINIMUM_AGE } from '@/lib/ageGate';
 import { readGuestName, saveGuestName } from '@/lib/guestName';
 import { trackEvent } from '@/lib/telemetry';
 
+const STEPS = [
+  { n: '01', t: 'Digite seu nome e crie a sala', d: 'Sem instalar nada e sem conta. A sala nasce privada: só entra quem tem o link.' },
+  { n: '02', t: 'Mande o link', d: 'Um link coloca seus amigos na mesma sala, onde estiverem. Cada um entra com o próprio nome.' },
+  { n: '03', t: 'Toquem em sincronia', d: 'Montem a fila juntos; a sala sincroniza quem toca o quê. Cada um ouve na própria conta, no Spotify ou no YouTube.' },
+];
+
 // Protocol commands cycled in the HUD readout. The product is a protocol
 // (RoomState, RPC dispatch, version bumps) — this is its voice.
 const HUD_COMMANDS = [';sync', ';queue', ';veto'];
@@ -570,11 +576,6 @@ export default function Home() {
     };
   }, []);
 
-  const steps = [
-    { n: '01', t: 'Digite seu nome e crie a sala', d: 'Sem instalar nada e sem conta. A sala nasce privada: só entra quem tem o link.' },
-    { n: '02', t: 'Mande o link', d: 'Um link coloca seus amigos na mesma sala, onde estiverem. Cada um entra com o próprio nome.' },
-    { n: '03', t: 'Toquem em sincronia', d: 'Montem a fila juntos; a sala sincroniza quem toca o quê. Cada um ouve na própria conta, no Spotify ou no YouTube.' },
-  ];
 
   // Evergreen value phrases for the hero marquee. Decorative (the parent is
   // aria-hidden); the same claims appear in the readable sections below.
@@ -744,10 +745,10 @@ export default function Home() {
           <p className="section-eyebrow reveal">Como funciona em 3 passos</p>
           <h2 className="section-title reveal">Uma sala, seus serviços de streaming, <em>zero troca de app.</em></h2>
           {motion.scrollstory ? (
-            <ScrollStory steps={steps} waveAnimate={motion.ground} onActive={setStoryStep} />
+            <ScrollStory steps={STEPS} waveAnimate={motion.ground} onActive={setStoryStep} />
           ) : (
             <div className="step-grid">
-              {steps.map((s) => (
+              {STEPS.map((s) => (
                 <div key={s.n} className="step-card reveal">
                   <i className="step-rule" aria-hidden />
                   <span className="step-num">{s.n}]</span>

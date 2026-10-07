@@ -28,18 +28,23 @@ export function ScrollStory({
   useEffect(() => {
     onActiveRef.current = onActive;
   });
+  // the story leaves the page ground only when it unmounts, never on a re-pin
+  useEffect(() => () => onActiveRef.current?.(null), []);
 
+  // Pin once per step count. `steps` is read through a ref so a parent that
+  // re-renders (clock, demo cycle) with a fresh array never tears the pin down.
+  const stepCount = steps.length;
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
     let cancelled = false;
-    let ctx: { revert: () => void } | undefined;
+    let ctx: { revert: () => void; add: (fn: () => void) => void } | undefined;
     (async () => {
       const gsap = (await import('gsap')).default;
       const { ScrollTrigger } = await import('gsap/ScrollTrigger');
       if (cancelled) return;
       gsap.registerPlugin(ScrollTrigger);
-      const last = steps.length - 1;
+      const last = stepCount - 1;
       ctx = gsap.context(() => {
         ScrollTrigger.create({
           trigger: root,
@@ -57,11 +62,14 @@ export function ScrollStory({
             setActive(idx);
             onActiveRef.current?.(idx);
             // the room on the phone scrolls to the next track
-            gsap.fromTo(
-              root.querySelectorAll('.dev-stage, .dev-chat'),
-              { yPercent: idx > 0 ? 12 : -12, opacity: 0 },
-              { yPercent: 0, opacity: 1, duration: 0.5, ease: 'power3.out', stagger: 0.06, overwrite: true },
-            );
+            // created inside the context so revert() kills it with the pin
+            ctx?.add(() => {
+              gsap.fromTo(
+                root.querySelectorAll('.dev-stage, .dev-chat'),
+                { yPercent: idx > 0 ? 12 : -12, opacity: 0 },
+                { yPercent: 0, opacity: 1, duration: 0.5, ease: 'power3.out', stagger: 0.06, overwrite: true },
+              );
+            });
           },
         });
       }, root);
@@ -70,10 +78,9 @@ export function ScrollStory({
     });
     return () => {
       cancelled = true;
-      onActiveRef.current?.(null);
       ctx?.revert();
     };
-  }, [steps]);
+  }, [stepCount]);
 
   return (
     <div ref={rootRef} className="story" data-tint="story" data-step={active} style={demoTintStyle(active)}>

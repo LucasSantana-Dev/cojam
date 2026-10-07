@@ -138,6 +138,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // glide, not a swap. Idle violet when nothing plays.
   const artwork = nowPlaying ? queueArtwork(nowPlaying) : null;
   const { tint, palette } = useTrackColors(artwork);
+  const [coverFail, setCoverFail] = useState<{ url: string | null; level: number }>({ url: null, level: 0 });
+  const coverLevel = coverFail.url === artwork ? coverFail.level : 0;
   const motion = useMotion();
   useCoverFlight(nowPlaying?.id, motion.flip);
 
@@ -437,9 +439,17 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 <>
                   <div className="np-stage__row">
                   <div className="np-cover" aria-hidden>
-                    {artwork ? (
+                    {artwork && coverLevel < 2 ? (
                       // eslint-disable-next-line @next/next/no-img-element -- cover colour is read from this exact image; crossOrigin keeps the canvas untainted
-                      <img key={artwork} src={artwork} alt="" crossOrigin="anonymous" className="np-cover__img" />
+                      <img
+                        key={`${artwork}|${coverLevel}`}
+                        src={artwork}
+                        alt=""
+                        crossOrigin={coverLevel === 0 ? 'anonymous' : undefined}
+                        className="np-cover__img"
+                        // CORS load failed: show the plain (non-CORS) image, the ground stays idle; if that fails too, the placeholder
+                        onError={() => setCoverFail({ url: artwork, level: coverLevel + 1 })}
+                      />
                     ) : (
                       <span className="np-cover__fallback">{nowPlaying.title.charAt(0).toUpperCase()}</span>
                     )}

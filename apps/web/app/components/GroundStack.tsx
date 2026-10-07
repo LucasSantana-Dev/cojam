@@ -46,13 +46,18 @@ export function GroundStack({
   const animated = useRef(0);
   const [hold, setHold] = useState(false);
 
+  // callers pass a fresh spec object every render; only its colour key matters
+  const specRef = useRef(spec);
+  useEffect(() => {
+    specRef.current = spec;
+  });
   const key = specKey(spec);
   useEffect(() => {
     if (!key || key === lastKey.current) return;
     lastKey.current = key;
-    const layer = { id: nextId.current++, spec };
+    const layer = { id: nextId.current++, spec: specRef.current };
     setLayers((prev) => (prev.length === 0 || !animate ? [layer] : [...prev, layer]));
-  }, [key, spec, animate]);
+  }, [key, animate]);
 
   useEffect(() => {
     if (layers.length < 2) return;
@@ -62,10 +67,11 @@ export function GroundStack({
     const el = els.current.get(top.id);
     if (!el) return;
     let cancelled = false;
+    let tween: { kill: () => void } | undefined;
     (async () => {
       const gsap = (await import('gsap').catch(() => null))?.default;
       const finish = () => !cancelled && setLayers((prev) => prev.filter((l) => l.id === top.id));
-      if (!gsap) return finish();
+      if (!gsap || cancelled) return finish();
       const origin = originSelector ? document.querySelector<HTMLElement>(originSelector) : null;
       const host = el.parentElement;
       const hr = host?.getBoundingClientRect();
@@ -74,13 +80,14 @@ export function GroundStack({
         const cx = r.left + r.width / 2 - hr.left;
         const cy = r.top + r.height / 2 - hr.top;
         const reach = Math.hypot(Math.max(cx, hr.width - cx), Math.max(cy, hr.height - cy));
-        gsap.fromTo(el, { clipPath: `circle(0px at ${cx}px ${cy}px)` }, { clipPath: `circle(${reach}px at ${cx}px ${cy}px)`, duration: 0.95, ease: 'power2.out', onComplete: finish });
+        tween = gsap.fromTo(el, { clipPath: `circle(0px at ${cx}px ${cy}px)` }, { clipPath: `circle(${reach}px at ${cx}px ${cy}px)`, duration: 0.95, ease: 'power2.out', onComplete: finish });
       } else {
-        gsap.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.9, ease: 'power1.inOut', onComplete: finish });
+        tween = gsap.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.9, ease: 'power1.inOut', onComplete: finish });
       }
     })();
     return () => {
       cancelled = true;
+      tween?.kill();
     };
   }, [layers, originSelector]);
 
