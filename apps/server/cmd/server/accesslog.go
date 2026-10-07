@@ -3,6 +3,7 @@ package main
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -24,6 +25,17 @@ func accessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 			start := time.Now()
 			defer func() {
 				status := ww.Status()
+				if status == 0 && isUpgrade(r) {
+					// Hijacked by the websocket handler: the connection was
+					// switched, and the handler returned only when the session
+					// ended, so its duration is not a request latency.
+					logger.Info("http_request",
+						"method", r.Method,
+						"path", r.URL.Path,
+						"status", http.StatusSwitchingProtocols,
+					)
+					return
+				}
 				if status == 0 {
 					status = http.StatusOK
 				}
@@ -37,4 +49,9 @@ func accessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 		})
 	}
+}
+
+// isUpgrade reports a websocket upgrade request.
+func isUpgrade(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 }

@@ -58,3 +58,36 @@ func TestAccessLog_DefaultStatus(t *testing.T) {
 		t.Fatalf("status = %v, want 200", rec["status"])
 	}
 }
+
+// A websocket upgrade that the handler took over (hijacked, nothing written
+// through the wrapper) is logged once as 101 without a session-long
+// duration; a rejected upgrade keeps its real status.
+func TestAccessLog_WebsocketUpgrade(t *testing.T) {
+	serve := func(handler http.HandlerFunc) map[string]any {
+		t.Helper()
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&buf, nil))
+		req := httptest.NewRequest(http.MethodGet, "/connection/websocket", nil)
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Upgrade", "websocket")
+		accessLog(logger)(handler).ServeHTTP(httptest.NewRecorder(), req)
+		var rec map[string]any
+		if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+			t.Fatalf("decode: %v (%q)", err, buf.String())
+		}
+		return rec
+	}
+
+	upgraded := serve(func(w http.ResponseWriter, r *http.Request) {})
+	if upgraded["status"] != float64(http.StatusSwitchingProtocols) {
+		t.Fatalf("upgrade status = %v, want 101", upgraded["status"])
+	}
+	if _, ok := upgraded["duration_ms"]; ok {
+		t.Fatalf("an upgraded session must not log a duration: %v", upgraded)
+	}
+
+	rejected := serve(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusForbidden) })
+	if rejected["status"] != float64(http.StatusForbidden) {
+		t.Fatalf("rejected upgrade status = %v, want 403", rejected["status"])
+	}
+}
