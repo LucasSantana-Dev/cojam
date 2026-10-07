@@ -157,7 +157,9 @@ describe('SpotifyPlayer connect failure surface', () => {
 
 describe('SpotifyPlayer end of track', () => {
   let stateCb: ((s: unknown) => void) | null = null;
+  const pauseSpy = vi.fn(async () => {});
   class StatefulSDKPlayer extends FakeSpotifySDKPlayer {
+    pause = pauseSpy;
     addListener(event: string, cb: (data: never) => void) {
       if (event === 'player_state_changed') stateCb = cb as (s: unknown) => void;
       return super.addListener(event, cb as (d: { device_id: string }) => void);
@@ -192,13 +194,36 @@ describe('SpotifyPlayer end of track', () => {
     const win = (paused: boolean, position: number, prev: string[]) => ({
       paused,
       position,
-      track_window: { current_track: { id: 'sp1' }, previous_tracks: prev.map((id) => ({ id })) },
+      track_window: {
+        current_track: { id: 'x', uri: 'spotify:track:x' },
+        previous_tracks: prev.map((id) => ({ id, uri: `spotify:track:${id}` })),
+      },
     });
     stateCb!(win(false, 120_000, []));
     expect(ended).not.toHaveBeenCalled();
-    stateCb!(win(true, 0, ['sp1']));
+    stateCb!(win(true, 0, ['x']));
     expect(ended).toHaveBeenCalledTimes(1);
-    stateCb!(win(true, 0, ['sp1']));
+    stateCb!(win(true, 0, ['x']));
     expect(ended).toHaveBeenCalledTimes(1);
+  });
+
+  it('Spotify Autoplay: pauses the foreign track, advances once, and the poll cannot double-fire', async () => {
+    let player: import('@/lib/playerInterface').IPlayer | null = null;
+    render(
+      <SpotifyPlayer authorized={true} onAuthorized={() => {}} onPlayerReady={(p) => (player = p)} />,
+    );
+    await waitFor(() => expect(player).not.toBeNull());
+    await waitFor(() => expect(fetch).toHaveBeenCalled()); // playUri ran, expected track set
+    const ended = vi.fn();
+    player!.onEnded(ended);
+    const x = { id: 'x', uri: 'spotify:track:x' };
+    stateCb!({ paused: false, position: 170_000, track_window: { current_track: x, previous_tracks: [] } });
+    stateCb!({
+      paused: false,
+      position: 200,
+      track_window: { current_track: { id: 'rec', uri: 'spotify:track:rec' }, previous_tracks: [x] },
+    });
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(pauseSpy).toHaveBeenCalledTimes(1);
   });
 });

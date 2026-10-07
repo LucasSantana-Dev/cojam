@@ -29,6 +29,7 @@ export interface SpotifyPlaybackState {
 export interface SpotifySDKPlayer {
   connect(): Promise<boolean>;
   getCurrentState(): Promise<SpotifyPlaybackState | null>;
+  pause?(): Promise<void>;
   addListener(event: 'ready', cb: (data: { device_id: string }) => void): boolean;
   addListener(event: 'player_state_changed', cb: (state: SpotifyPlaybackState | null) => void): boolean;
   addListener(event: string, cb: () => void): boolean;
@@ -87,6 +88,10 @@ class SpotifyPlayerAdapter implements IPlayer {
   private positionPollInterval: NodeJS.Timeout | null = null;
   private endedDetector = createEndedDetector();
   private stateEndDetector = createSpotifyEndDetector();
+  // The track CoJam asked the SDK to play, and the one an advance was already
+  // sent for: the poll and state paths share this latch (one advance per track).
+  private expectedUri: string | null = null;
+  private advancedFor: string | null = null;
 
   constructor(player: SpotifySDKPlayer, deviceId: string, canSeek: boolean) {
     this.player = player;
@@ -156,8 +161,28 @@ class SpotifyPlayerAdapter implements IPlayer {
   // Fed by the SDK's player_state_changed: catches the natural end of a track
   // (paused at position 0 with the track in previous_tracks), which the
   // position poll cannot see.
+  setExpected(uri: string | null): void {
+    if (uri !== this.expectedUri) this.advancedFor = null;
+    this.expectedUri = uri;
+  }
+
+  private emitEnded(): void {
+    if (this.advancedFor !== null && this.advancedFor === this.expectedUri) return;
+    this.advancedFor = this.expectedUri;
+    this.endedCallbacks.forEach((c) => c());
+  }
+
   handleStateChange(state: SpotifyEndState | null): void {
-    if (this.stateEndDetector(state)) this.endedCallbacks.forEach((c) => c());
+    const end = this.stateEndDetector(state, this.expectedUri);
+    if (!end) {
+      // Replay of the same track (position back near 0, playing) re-arms.
+      if (state && !state.paused && state.position > 0 && state.position < 5000) this.advancedFor = null;
+      return;
+    }
+    // Spotify Autoplay (or a skip in the user's own app) moved to a track the
+    // room never queued: stop it so it does not play while the room advances.
+    if (end === 'foreign') void this.player.pause?.()?.catch?.(() => {});
+    this.emitEnded();
   }
 
   onPositionChanged(cb: (positionMs: number) => void): void {
@@ -173,9 +198,7 @@ class SpotifyPlayerAdapter implements IPlayer {
           const pos = state?.position ?? 0;
           const duration = state?.track_window?.current_track?.duration_ms ?? 0;
           this.positionCallbacks.forEach((c) => c(pos));
-          if (this.endedDetector(pos, duration)) {
-            this.endedCallbacks.forEach((c) => c());
-          }
+          if (this.endedDetector(pos, duration)) this.emitEnded();
         } catch {
           // Keep polling; a transient SDK read failure is not fatal.
         }
@@ -339,6 +362,7 @@ export function SpotifyPlayer({
       ? current.queue.find((t) => t.id === current.nowPlayingId)
       : undefined;
     if (!track || pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) !== 'spotify') return;
+    playerRef.current?.setExpected(spotifyUri);
     playUri(deviceId.current, spotifyUri)
       .then(() => onPlayErrorRef.current?.(null))
       .catch((e) => {

@@ -95,30 +95,48 @@ describe('createSpotifyEndDetector', () => {
     paused: o.paused,
     position: o.position,
     track_window: {
-      current_track: { id: o.cur },
-      previous_tracks: (o.prev ?? []).map((id) => ({ id })),
+      current_track: { id: o.cur, uri: `spotify:track:${o.cur}` },
+      previous_tracks: (o.prev ?? []).map((id) => ({ id, uri: `spotify:track:${id}` })),
     },
   });
+  const A = 'spotify:track:a';
 
-  it('fires once when the track finishes (paused, position 0, track in previous_tracks)', () => {
+  it('normal end: fires once (paused, position 0, track in previous_tracks)', () => {
     const d = createSpotifyEndDetector();
-    expect(d(st({ paused: false, position: 1000, cur: 'a' }))).toBe(false);
-    expect(d(st({ paused: false, position: 179_900, cur: 'a' }))).toBe(false);
-    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }))).toBe(true);
-    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }))).toBe(false);
+    expect(d(st({ paused: false, position: 1000, cur: 'a' }), A)).toBeNull();
+    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }), A)).toBe('ended');
+    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }), A)).toBeNull();
+  });
+
+  it('Spotify Autoplay: a foreign track after ours fires once as foreign', () => {
+    const d = createSpotifyEndDetector();
+    d(st({ paused: false, position: 170_000, cur: 'a' }), A);
+    expect(d(st({ paused: false, position: 300, cur: 'zzz', prev: ['a'] }), A)).toBe('foreign');
+    expect(d(st({ paused: true, position: 400, cur: 'zzz', prev: ['a'] }), A)).toBeNull();
+  });
+
+  it('foreign track without ours in previous_tracks (user skipped in Spotify) also counts as ended', () => {
+    const d = createSpotifyEndDetector();
+    d(st({ paused: false, position: 20_000, cur: 'a' }), A);
+    expect(d(st({ paused: false, position: 100, cur: 'other' }), A)).toBe('foreign');
+  });
+
+  it('stale state of the previous room track right after a switch does not fire', () => {
+    const d = createSpotifyEndDetector();
+    expect(d(st({ paused: false, position: 90_000, cur: 'old' }), A)).toBeNull();
   });
 
   it('does not fire on a user pause or a fresh paused load', () => {
     const d = createSpotifyEndDetector();
-    expect(d(st({ paused: true, position: 42_000, cur: 'a' }))).toBe(false);
-    expect(d(st({ paused: true, position: 0, cur: 'b' }))).toBe(false);
-    expect(d(null)).toBe(false);
+    expect(d(st({ paused: true, position: 42_000, cur: 'a' }), A)).toBeNull();
+    expect(d(st({ paused: true, position: 0, cur: 'a' }), A)).toBeNull();
+    expect(d(null, A)).toBeNull();
   });
 
   it('re-arms when the same track plays again', () => {
     const d = createSpotifyEndDetector();
-    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }))).toBe(true);
-    expect(d(st({ paused: false, position: 500, cur: 'a', prev: ['a'] }))).toBe(false);
-    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }))).toBe(true);
+    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }), A)).toBe('ended');
+    expect(d(st({ paused: false, position: 500, cur: 'a', prev: ['a'] }), A)).toBeNull();
+    expect(d(st({ paused: true, position: 0, cur: 'a', prev: ['a'] }), A)).toBe('ended');
   });
 });

@@ -71,20 +71,44 @@ export interface SpotifyEndState {
   };
 }
 
-export function createSpotifyEndDetector(): (state: SpotifyEndState | null | undefined) => boolean {
+// expectedUri is the track CoJam asked the SDK to play. Outcomes:
+//  'ended'   the expected track finished (paused at 0, in previous_tracks).
+//  'foreign' Spotify moved on to a track CoJam did not queue (account
+//            Autoplay, or the user skipped in their own Spotify app). Either
+//            way the room track is no longer playing, so it counts as ended;
+//            the caller should pause the SDK. Only armed once the expected
+//            track has been seen playing, so the stale state left over from
+//            the previous room track right after playUri never triggers it.
+export type SpotifyEnd = 'ended' | 'foreign' | null;
+
+export function createSpotifyEndDetector(): (
+  state: SpotifyEndState | null | undefined,
+  expectedUri?: string | null,
+) => SpotifyEnd {
   let firedFor: string | null = null;
-  return (state) => {
+  let seenPlaying: string | null = null;
+  return (state, expectedUri) => {
     const cur = state?.track_window?.current_track;
-    const key = cur?.id ?? cur?.uri ?? null;
-    if (!state || !key) return false;
-    if (!state.paused || state.position > 0) {
-      if (firedFor === key && state.position > 0) firedFor = null;
-      return false;
-    }
+    if (!state || !cur) return null;
+    const expId = expectedUri ? expectedUri.split(':').pop() : undefined;
+    const isExp = (t?: { id?: string | null; uri?: string }) =>
+      !!t && (expectedUri ? t.uri === expectedUri || (!!expId && t.id === expId) : true);
+    const key = expectedUri ?? cur.id ?? cur.uri ?? null;
+    if (!key) return null;
     const prev = state.track_window?.previous_tracks ?? [];
-    const finished = prev.some((t) => (t.id ?? t.uri) === key);
-    if (!finished || firedFor === key) return false;
+    if (isExp(cur)) {
+      if (!state.paused || state.position > 0) {
+        seenPlaying = key;
+        if (firedFor === key && !state.paused && state.position > 0 && state.position < 5000) firedFor = null;
+        return null;
+      }
+      const finished = prev.some((t) => (t.id ?? t.uri) === (cur.id ?? cur.uri));
+      if (!finished || firedFor === key) return null;
+      firedFor = key;
+      return 'ended';
+    }
+    if (firedFor === key || seenPlaying !== key) return null;
     firedFor = key;
-    return true;
+    return 'foreign';
   };
 }
