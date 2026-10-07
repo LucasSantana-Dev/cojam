@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // presenceConnInfo forwards {name, platform?} into presence ConnInfo (#171):
@@ -95,5 +97,27 @@ func TestReadyzHandler_MemoryModeReady(t *testing.T) {
 	}
 	if body["status"] != "ready" {
 		t.Fatalf("status field = %q, want \"ready\"", body["status"])
+	}
+}
+
+// The connect-time display name is capped at maxDisplayNameLen runes
+// (rune-safe) and trimmed; it feeds presence, queue attribution and chat.
+func TestPresenceConnInfo_CapsName(t *testing.T) {
+	long := strings.Repeat("名", maxDisplayNameLen+5) + "🎧"
+	got := presenceConnInfo([]byte(`{"name":"` + long + `"}`))
+	var decoded map[string]string
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatalf("output not JSON: %v", err)
+	}
+	if n := utf8.RuneCountInString(decoded["name"]); n != maxDisplayNameLen || !utf8.ValidString(decoded["name"]) {
+		t.Fatalf("name = %q (%d runes), want %d valid runes", decoded["name"], n, maxDisplayNameLen)
+	}
+
+	got = presenceConnInfo([]byte(`{"name":"  Ana  "}`))
+	if err := json.Unmarshal(got, &decoded); err != nil || decoded["name"] != "Ana" {
+		t.Fatalf("name must be trimmed: %s", got)
+	}
+	if got := presenceConnInfo([]byte(`{"name":"   "}`)); got != nil {
+		t.Fatalf("blank name must yield no ConnInfo, got %s", got)
 	}
 }

@@ -2109,7 +2109,6 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		var req struct {
 			RoomID string `json:"roomId"`
 			Text   string `json:"text"`
-			Name   string `json:"name"`
 		}
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
@@ -2117,7 +2116,10 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("chat.send: roomId required")
 		}
-		return h.chatSend(req.RoomID, req.Text, req.Name, userID)
+		// The display name is the server-known connection name (#165 pattern);
+		// any name in the payload is ignored so a member cannot post as
+		// someone else. No connect-time name falls back to "Listener".
+		return h.chatSend(req.RoomID, req.Text, h.displayName(clientID), userID)
 
 	case "chat.history":
 		if !h.chatEnabled {

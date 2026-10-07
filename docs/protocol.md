@@ -25,7 +25,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `transport.play` | `{ roomId, trackId?: string, positionMs: number }` | `RoomState` |
 | `transport.pause` | `{ roomId, positionMs: number }` | `RoomState` |
 | `transport.seek` | `{ roomId, positionMs: number }` | `RoomState` |
-| `chat.send` | `{ roomId, text: string, name: string }` | `{ message: ChatMessage }` |
+| `chat.send` | `{ roomId, text: string }` (a `name` field is ignored) | `{ message: ChatMessage }` |
 | `chat.history` | `{ roomId }` | `{ messages: ChatMessage[] }` |
 | `chat.delete` | `{ roomId, messageId: string }` | `{ messageId: string }` |
 | `room.kick` | `{ roomId, clientId: string }` | `{ clientId: string }` |
@@ -305,7 +305,7 @@ line by id and never render history entries with `deleted: true`:
 { "type": "chat.delete", "messageId": "..." }
 ```
 
-Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated), never on display name: two connections that picked the same name are two distinct entries and count as two listeners. Each entry's ConnInfo is `{"name": string, "platform"?: "spotify"|"apple"|"youtube"}` — the name and playback platform the client presented at connect; the server drops unrecognized platform values, so presence only carries platforms the UI can render. Display concerns stay client-side: colliding names get a deterministic suffix ("Alice", "Alice (2)") derived from the member list (sorted by clientId), recomputed on every membership change; presence is centrifuge-level, so none of this touches `RoomState` or `Version`.
+Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated), never on display name: two connections that picked the same name are two distinct entries and count as two listeners. Each entry's ConnInfo is `{"name": string, "platform"?: "spotify"|"apple"|"youtube"}`: the name and playback platform the client presented at connect; the server trims the name and caps it at 40 runes, and drops unrecognized platform values, so presence only carries platforms the UI can render. Display concerns stay client-side: colliding names get a deterministic suffix ("Alice", "Alice (2)") derived from the member list (sorted by clientId), recomputed on every membership change; presence is centrifuge-level, so none of this touches `RoomState` or `Version`.
 
 ## Accounts (Supabase Auth, behind `FEATURE_SUPABASE_AUTH`)
 
@@ -447,7 +447,7 @@ type TransportState = {
 type ChatMessage = {       // F8: ephemeral, in-memory only; never in RoomState
   id: string;              // server-assigned uuid
   roomId: string;
-  name: string;            // sender display name (client-supplied, capped at 60)
+  name: string;            // sender display name: the connection's connect-time name ("Listener" when none); any name in the payload is ignored
   userId?: string;         // server-stamped connection identity; empty when room auth is off
   text: string;            // trimmed, 1..300 chars; redacted ("") once deleted
   kind?: 'system';         // #205: server announcement (advance, join/leave); absent on user messages

@@ -93,8 +93,14 @@ func envDurationMinutes(key string, dflt time.Duration) time.Duration {
 	return time.Duration(n) * time.Minute
 }
 
+// maxDisplayNameLen caps the connect-time display name, in runes. The name
+// is client-chosen and fans out to every member through presence, queue
+// attribution and chat.
+const maxDisplayNameLen = 40
+
 // presenceConnInfo builds the centrifuge ConnInfo carried into presence from
-// the connect data {name, platform?}. The platform is the client's playback
+// the connect data {name, platform?}. The name is trimmed and capped at
+// maxDisplayNameLen runes (rune-safe). The platform is the client's playback
 // service (#171); unrecognized values are dropped here so presence only ever
 // carries platforms the web app can render an indicator for. Returns nil when
 // no name was presented (anonymous v0 connections keep empty ConnInfo).
@@ -103,10 +109,14 @@ func presenceConnInfo(data []byte) []byte {
 		Name     string `json:"name"`
 		Platform string `json:"platform"`
 	}
-	if err := json.Unmarshal(data, &d); err != nil || d.Name == "" {
+	if err := json.Unmarshal(data, &d); err != nil {
 		return nil
 	}
-	info := map[string]string{"name": d.Name}
+	name := truncateRunes(strings.TrimSpace(d.Name), maxDisplayNameLen)
+	if name == "" {
+		return nil
+	}
+	info := map[string]string{"name": name}
 	switch d.Platform {
 	case "spotify", "apple", "youtube":
 		info["platform"] = d.Platform

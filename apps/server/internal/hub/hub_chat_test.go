@@ -73,8 +73,9 @@ func TestChatSend_Validation(t *testing.T) {
 		}
 	}
 
-	res, err := h.HandleRPC("chat.send",
-		[]byte(`{"roomId":"v","text":"  hello room  ","name":"  Ana  ","userId":"spoofed"}`), "u1")
+	h.RecordClientName("c-ana", "  Ana  ")
+	res, err := h.handleRPC("chat.send",
+		[]byte(`{"roomId":"v","text":"  hello room  ","name":"Mallory","userId":"spoofed"}`), "c-ana", "u1")
 	if err != nil {
 		t.Fatalf("valid send: %v", err)
 	}
@@ -105,9 +106,9 @@ func TestChatSend_Validation(t *testing.T) {
 	}
 
 	// Over-long display names are capped, not rejected (display label only).
-	longName := strings.Repeat("n", maxChatNameLen+10)
-	payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": "hi", "name": longName})
-	res, err = h.HandleRPC("chat.send", payload, "")
+	h.RecordClientName("c-long", strings.Repeat("n", maxChatNameLen+10))
+	payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": "hi"})
+	res, err = h.handleRPC("chat.send", payload, "c-long", "")
 	if err != nil {
 		t.Fatalf("long-name send: %v", err)
 	}
@@ -304,9 +305,9 @@ func TestChatSend_MultiByteTruncation(t *testing.T) {
 	h := newChatTestHub(t)
 
 	// 70 CJK runes (> maxChatNameLen runes, > 3x that in bytes).
-	longName := strings.Repeat("名", maxChatNameLen+10) + "🎧"
-	payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": "hi", "name": longName})
-	res, err := h.HandleRPC("chat.send", payload, "")
+	h.RecordClientName("c-cjk", strings.Repeat("名", maxChatNameLen+10)+"🎧")
+	payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": "hi"})
+	res, err := h.handleRPC("chat.send", payload, "c-cjk", "")
 	if err != nil {
 		t.Fatalf("multi-byte long-name send: %v", err)
 	}
@@ -511,5 +512,33 @@ func TestChatSystem_DisabledStaysSilent(t *testing.T) {
 	room.mu.Unlock()
 	if n != 0 {
 		t.Fatalf("chat disabled but ring has %d messages", n)
+	}
+}
+
+// The chat display name is the server-known connection name; a name in the
+// payload is ignored, so a member cannot post as someone else.
+func TestChatSend_UsesConnectionName(t *testing.T) {
+	h := newChatTestHub(t)
+	send := func(clientID string) string {
+		t.Helper()
+		res, err := h.handleRPC("chat.send", []byte(`{"roomId":"v","text":"hi","name":"Host"}`), clientID, "")
+		if err != nil {
+			t.Fatalf("chat.send: %v", err)
+		}
+		var out struct {
+			Message ChatMessage `json:"message"`
+		}
+		if err := json.Unmarshal(res, &out); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return out.Message.Name
+	}
+
+	h.RecordClientName("c-ana", "Ana")
+	if got := send("c-ana"); got != "Ana" {
+		t.Fatalf("name = %q, want the connection name Ana", got)
+	}
+	if got := send("c-nameless"); got != "Listener" {
+		t.Fatalf("nameless connection: name = %q, want the Listener fallback", got)
 	}
 }

@@ -70,7 +70,7 @@ func readTokenRequest(r *http.Request) (req tokenRequest, deprecated bool) {
 // Identity continuity: a request may ask to keep a previous identity (userId),
 // but the server honors it only when the previous token proves ownership
 // (valid signature, matching sub, expired no more than refreshGrace ago).
-// Without proof the userId is ignored and a fresh identity is minted —
+// Without proof the userId is ignored and a fresh identity is minted;
 // otherwise anyone could mint a token for any userID (e.g. a room host's, read
 // from presence) and be treated as that user. Fail-safe default is always a
 // fresh identity, never an error: clients simply adopt whatever userId comes
