@@ -105,6 +105,20 @@ describe('QueuePanel undo window', () => {
     vi.useRealTimers();
   });
 
+  it('toggles a row\'s secondary actions from the phone "More actions" button (#289)', () => {
+    render(<QueuePanel roomId="r1" canControl />);
+    const row = screen.getByTestId('queue-item');
+    const more = within(row).getByRole('button', { name: 'More actions' });
+
+    expect(row).toHaveAttribute('data-more', 'false');
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(more);
+    expect(row).toHaveAttribute('data-more', 'true');
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(more);
+    expect(row).toHaveAttribute('data-more', 'false');
+  });
+
   it('opens the undo window on Remove without calling queue.remove yet', () => {
     render(<QueuePanel roomId="r1" canControl />);
 
