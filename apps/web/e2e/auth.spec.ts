@@ -52,17 +52,17 @@ test('room auth: listener sees host-only controls disabled, host sees them enabl
 
   // Host: queue controls are enabled.
   await expect(host.getByRole('button', { name: 'Tocar' }).first()).toBeEnabled();
-  await expect(host.getByRole('button', { name: 'Remover' }).first()).toBeEnabled();
+  await expect(host.getByRole('button', { name: 'Remover', exact: true }).first()).toBeEnabled();
   await expect(host.getByRole('button', { name: 'Mover para cima' }).nth(1)).toBeEnabled();
   await expect(host.getByRole('button', { name: 'Mover para baixo' }).first()).toBeEnabled();
 
   // Listener: the same controls render but stay disabled and say why (gating
   // is disabled={!canControl} in QueuePanel, driven by room/[id]/client.tsx).
   await expect(listener.getByRole('button', { name: 'Tocar' }).first()).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Remover' }).first()).toBeDisabled();
+  await expect(listener.getByRole('button', { name: 'Remover', exact: true }).first()).toBeDisabled();
   await expect(listener.getByRole('button', { name: 'Mover para cima' }).nth(1)).toBeDisabled();
   await expect(listener.getByRole('button', { name: 'Mover para baixo' }).first()).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Remover' }).first())
+  await expect(listener.getByRole('button', { name: 'Remover', exact: true }).first())
     .toHaveAttribute('title', 'Só o anfitrião pode remover faixas');
 
   // Listeners can still add to the queue: membership-gated, not host-gated.
