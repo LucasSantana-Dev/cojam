@@ -159,7 +159,7 @@ func TestChatDelete_UnknownMessage(t *testing.T) {
 func TestChatDelete_DisabledReturnsMethodNotFound(t *testing.T) {
 	h := NewHub(nil)
 
-	if _, err := h.HandleRPC("chat.delete", []byte(`{"roomId":"x","messageId":"m"}`), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
+	if _, err := h.HandleRPC("chat.delete", []byte(`{"roomId":"X","messageId":"m"}`), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
 		t.Fatalf("chat.delete with chat off: got %v, want ErrorMethodNotFound", err)
 	}
 }
@@ -169,17 +169,17 @@ func TestChatDelete_DisabledReturnsMethodNotFound(t *testing.T) {
 func TestModeration_MembershipGate(t *testing.T) {
 	h := NewHub(nil).WithChat(true)
 
-	del := []byte(`{"roomId":"x","messageId":"m"}`)
+	del := []byte(`{"roomId":"X","messageId":"m"}`)
 	if err := h.Authorize(newTestClient("attacker", ""), "chat.delete", del); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("unjoined chat.delete: got %v, want ErrorPermissionDenied", err)
 	}
-	kick := []byte(`{"roomId":"x","clientId":"c1"}`)
+	kick := []byte(`{"roomId":"X","clientId":"c1"}`)
 	if err := h.Authorize(newTestClient("attacker", ""), "room.kick", kick); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("unjoined room.kick: got %v, want ErrorPermissionDenied", err)
 	}
 
 	// Members pass the membership gate (the host check itself lives in dispatch).
-	h.Join("c1", "x")
+	h.Join("c1", "X")
 	if err := h.Authorize(newTestClient("c1", ""), "chat.delete", del); err != nil {
 		t.Fatalf("member chat.delete: got %v, want nil", err)
 	}
@@ -259,7 +259,7 @@ func TestModeration_RateLimited(t *testing.T) {
 	if err := del(m2); err != nil {
 		t.Fatalf("second delete within burst: %v", err)
 	}
-	_, err := h.HandleRPC("chat.delete", []byte(`{"roomId":"r","messageId":"x"}`), "u-host")
+	_, err := h.HandleRPC("chat.delete", []byte(`{"roomId":"r","messageId":"X"}`), "u-host")
 	var ue *UserError
 	if !errors.As(err, &ue) || ue.Error() != "too many requests, slow down" {
 		t.Fatalf("burst+1 delete: got %v, want the rate-limit UserError", err)

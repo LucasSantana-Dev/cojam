@@ -21,7 +21,7 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 test('host enables public, the landing strip lists the room, and the join link lands in the room', async ({ browser }) => {
-  const roomId = `e2epub${Date.now().toString(36)}`;
+  const roomId = `PUB${Date.now().toString(36).toUpperCase()}`;
 
   const host = await (await browser.newContext()).newPage();
   await join(host, roomId, 'Host');

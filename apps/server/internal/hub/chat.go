@@ -21,8 +21,8 @@ const (
 	maxChatHistory = 50
 	// maxChatTextLen caps message text (aligns with maxImportFieldLen).
 	maxChatTextLen = 300
-	// maxChatNameLen caps the client-supplied display name (same trust level
-	// as TrackRef.AddedBy: display only, identity is server-stamped userID).
+	// maxChatNameLen caps the display name, which is the connection's
+	// connect-time name (display only, identity is server-stamped userID).
 	maxChatNameLen = 60
 )
 

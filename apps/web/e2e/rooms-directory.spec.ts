@@ -24,9 +24,11 @@ async function makePublic(page: Page, label: string) {
 
 test('/rooms lists public rooms only, filters by search and reorders by sort', async ({ browser }) => {
   const suffix = Date.now().toString(36);
-  const alpha = `e2eal${suffix}`;
-  const beta = `e2ebe${suffix}`;
-  const secret = `e2esx${suffix}`;
+  // Room ids follow the server format: uppercase base36, at most 12 chars.
+  const idSuffix = suffix.toUpperCase();
+  const alpha = `AL${idSuffix}`;
+  const beta = `BE${idSuffix}`;
+  const secret = `SX${idSuffix}`;
   const alphaLabel = `Alpha ${suffix}`;
   const betaLabel = `Beta ${suffix}`;
 

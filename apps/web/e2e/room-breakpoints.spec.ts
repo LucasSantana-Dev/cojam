@@ -51,7 +51,7 @@ test.describe('room layout across the tablet range', () => {
   for (const width of [768, 834, 1023]) {
     test(`is two columns at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
-      await join(page, `e2eb${Date.now().toString(36)}`);
+      await join(page, `E2EB${Date.now().toString(36).toUpperCase()}`);
 
       // Polled, not sampled once. Two transients make a single measurement
       // unreliable, and both settle on their own:
@@ -74,7 +74,7 @@ test.describe('room layout across the tablet range', () => {
 
   test('is single column at 390px', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
-    await join(page, `e2eb${Date.now().toString(36)}`);
+    await join(page, `E2EB${Date.now().toString(36).toUpperCase()}`);
 
     await expect.poll(async () => (await geometry(page)).sideBySide).toBe(false);
 
@@ -140,7 +140,7 @@ test.describe('room at 390x844', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test('tabs, no overflow, 44px targets, chat one tap away', async ({ page }) => {
-    await join(page, `e2em${Date.now().toString(36)}`);
+    await join(page, `E2EM${Date.now().toString(36).toUpperCase()}`);
     await expect(page.getByRole('tab', { name: 'Chat' })).toBeVisible();
 
     // Header is one short band, not a stack that eats the fold.

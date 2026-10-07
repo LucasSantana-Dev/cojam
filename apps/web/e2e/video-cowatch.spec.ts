@@ -80,7 +80,7 @@ const position = (page: Page) =>
   page.evaluate(() => (window as unknown as { __ytPositionMs?: () => number }).__ytPositionMs?.() ?? -1);
 
 test('host seek converges on the member within the drift threshold', async ({ browser }) => {
-  const roomId = `e2ev${Date.now().toString(36)}`;
+  const roomId = `E2EV${Date.now().toString(36).toUpperCase()}`;
   const lucas = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
   const ana = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
 
@@ -111,7 +111,7 @@ test('host seek converges on the member within the drift threshold', async ({ br
 });
 
 test('phone layout pins the stage and puts the panels in tabs', async ({ browser }) => {
-  const roomId = `e2em${Date.now().toString(36)}`;
+  const roomId = `E2EM${Date.now().toString(36).toUpperCase()}`;
   const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
   await join(page, roomId, 'Lucas');
   await addVideo(page, 'Clip');
@@ -137,7 +137,7 @@ test('phone layout pins the stage and puts the panels in tabs', async ({ browser
 });
 
 test('desktop shows stage with queue beside it and no tab bar', async ({ browser }) => {
-  const roomId = `e2ed${Date.now().toString(36)}`;
+  const roomId = `E2ED${Date.now().toString(36).toUpperCase()}`;
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
   await join(page, roomId, 'Lucas');
   await addVideo(page, 'Clip');

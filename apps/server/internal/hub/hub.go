@@ -273,6 +273,12 @@ type Hub struct {
 	// when false both RPCs return ErrorMethodNotFound (transport.* precedent).
 	publicRoomsEnabled bool
 
+	// hostAssignment is on when every connection carries an identity
+	// (FEATURE_ROOM_AUTH), so every joined room binds a host. A room with no
+	// host bound is then unclaimed and host-only RPCs fail closed. Off keeps
+	// the v0 equal-member behaviour for host-less rooms.
+	hostAssignment bool
+
 	// roomIdleTTL is how long a room with no connected members may stay idle
 	// before StartRoomEvictor's sweep drops it from memory. <= 0 disables
 	// eviction. State survives in the store and reloads on rejoin.
@@ -305,6 +311,20 @@ type Hub struct {
 	// an unauthenticated read that landing visitors poll, so it gets its own
 	// bucket (no third-party fanout, hence not in fanoutMethods).
 	listLimiter *rateLimiter
+
+	// joinLimiter rate-limits room.join per caller; roomCreateLimiter is the
+	// per-caller budget for creating rooms that do not exist yet (ensureRoom).
+	joinLimiter       *rateLimiter
+	roomCreateLimiter *rateLimiter
+
+	// mutationLimiter rate-limits state-fanout mutations per caller
+	// (mutationMethods).
+	mutationLimiter *rateLimiter
+
+	// notFound caches rooms recently confirmed absent from the store, so
+	// read-only lookups (getOrLoadRoom with create false) do not query the
+	// store on every RPC for a room that does not exist.
+	notFound *notFoundCache
 
 	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
 	// up to 200 tracks at once; an unbounded goroutine per track would burst
@@ -348,6 +368,7 @@ type Hub struct {
 	clientUserIDMu sync.RWMutex
 	clientUserID   map[string]string // clientID -> userID
 	clientName     map[string]string // clientID -> connect-time display name
+	clientIP       map[string]string // clientID -> client IP of the websocket upgrade
 
 	// rebindSecret verifies the anonymous connection JWT presented to
 	// room.rebind as proof of guest ownership (#172); rebindBurns records
@@ -380,6 +401,46 @@ var mutatingMethods = map[string]bool{
 	"chat.send":           true,
 	"chat.history":        true,
 	"chat.delete":         true,
+}
+
+// knownMethods is the dispatch set. RPC method names are client-supplied, so
+// metrics and logs label anything outside it as "unknown" (metricMethod):
+// echoing the raw name would let a client mint unbounded time series.
+var knownMethods = map[string]bool{
+	"room.join":           true,
+	"queue.add":           true,
+	"queue.remove":        true,
+	"now_playing.set":     true,
+	"now_playing.advance": true,
+	"queue.reorder":       true,
+	"queue.vote":          true,
+	"track.search":        true,
+	"track.depth":         true,
+	"track.lyrics":        true,
+	"track.listenbrainz":  true,
+	"track.lastfm":        true,
+	"playlist.import":     true,
+	"radio.set":           true,
+	"room.set_public":     true,
+	"room.list":           true,
+	"transport.play":      true,
+	"transport.pause":     true,
+	"transport.seek":      true,
+	"chat.send":           true,
+	"chat.history":        true,
+	"chat.delete":         true,
+	"room.kick":           true,
+	"room.rebind":         true,
+	"sync.ping":           true,
+}
+
+// metricMethod is the bounded label for method: itself when known, else
+// "unknown".
+func metricMethod(method string) string {
+	if knownMethods[method] {
+		return method
+	}
+	return "unknown"
 }
 
 // hostOnlyMethods are mutating RPCs that disrupt room control and therefore
@@ -469,6 +530,13 @@ func (h *Hub) WithPublicRooms(enabled bool) *Hub {
 	return h
 }
 
+// WithHostAssignment declares whether connections always carry an identity
+// (FEATURE_ROOM_AUTH on). See Hub.hostAssignment.
+func (h *Hub) WithHostAssignment(enabled bool) *Hub {
+	h.hostAssignment = enabled
+	return h
+}
+
 // WithRebind enables the room.rebind RPC (guest-to-account upgrade, #172):
 // secret verifies the anonymous connection JWT presented as the ownership
 // proof, burns records consumed anonymous subs so a proof is single-use.
@@ -482,23 +550,28 @@ func (h *Hub) WithRebind(secret []byte, burns rebind.BurnList) *Hub {
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
 	return &Hub{
-		rooms:            make(map[string]*Room),
-		store:            store.NewMemory(),
-		node:             node,
-		members:          make(map[string]map[string]struct{}),
-		roomMembers:      make(map[string]map[string]struct{}),
-		memberJoinTimes:  make(map[string]map[string]int64),
-		clientUserID:     make(map[string]string),
-		clientName:       make(map[string]string),
-		enrichSem:        make(chan struct{}, enrichConcurrency),
-		enrichPending:    make(chan struct{}, enrichMaxPending),
-		fanoutLimiter:    newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
-		voteLimiter:      newRateLimiter(voteBurst, voteRefill, time.Now),
-		chatLimiter:      newRateLimiter(chatBurst, chatRefill, time.Now),
-		transportLimiter: newRateLimiter(transportBurst, transportRefill, time.Now),
-		heartbeatEvery:   videoHeartbeatEvery,
-		heartbeats:       make(map[string]chan struct{}),
-		listLimiter:      newRateLimiter(listBurst, listRefill, time.Now),
+		rooms:             make(map[string]*Room),
+		store:             store.NewMemory(),
+		node:              node,
+		members:           make(map[string]map[string]struct{}),
+		roomMembers:       make(map[string]map[string]struct{}),
+		memberJoinTimes:   make(map[string]map[string]int64),
+		clientUserID:      make(map[string]string),
+		clientName:        make(map[string]string),
+		clientIP:          make(map[string]string),
+		enrichSem:         make(chan struct{}, enrichConcurrency),
+		enrichPending:     make(chan struct{}, enrichMaxPending),
+		fanoutLimiter:     newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
+		voteLimiter:       newRateLimiter(voteBurst, voteRefill, time.Now),
+		chatLimiter:       newRateLimiter(chatBurst, chatRefill, time.Now),
+		transportLimiter:  newRateLimiter(transportBurst, transportRefill, time.Now),
+		heartbeatEvery:    videoHeartbeatEvery,
+		heartbeats:        make(map[string]chan struct{}),
+		listLimiter:       newRateLimiter(listBurst, listRefill, time.Now),
+		joinLimiter:       newRateLimiter(joinBurst, joinRefill, time.Now),
+		roomCreateLimiter: newRateLimiter(roomCreateBurst, roomCreateRefill, time.Now),
+		mutationLimiter:   newRateLimiter(mutationBurst, mutationRefill, time.Now),
+		notFound:          newNotFoundCache(notFoundMax),
 	}
 }
 
@@ -727,6 +800,26 @@ func (h *Hub) RecordClientName(clientID, name string) {
 	}
 }
 
+// RecordClientIP tracks the client IP of a connection's websocket upgrade
+// (resolved with the same proxy trust rules as the HTTP limiters). The room
+// creation budget is charged per IP as well as per identity, since anonymous
+// identities are free to mint.
+func (h *Hub) RecordClientIP(clientID, ip string) {
+	if clientID == "" || ip == "" {
+		return
+	}
+	h.clientUserIDMu.Lock()
+	defer h.clientUserIDMu.Unlock()
+	h.clientIP[clientID] = ip
+}
+
+// clientIPOf returns the recorded client IP, or "" when none is known.
+func (h *Hub) clientIPOf(clientID string) string {
+	h.clientUserIDMu.RLock()
+	defer h.clientUserIDMu.RUnlock()
+	return h.clientIP[clientID]
+}
+
 // displayName returns the connect-time display name recorded for a
 // connection, or "" when none was presented (or the caller is
 // transport-independent, e.g. tests calling HandleRPC).
@@ -743,6 +836,7 @@ func (h *Hub) RemoveClientUserID(clientID string) {
 	defer h.clientUserIDMu.Unlock()
 	delete(h.clientUserID, clientID)
 	delete(h.clientName, clientID)
+	delete(h.clientIP, clientID)
 }
 
 // recordJoinTime stamps when an authenticated userID joined a room, for
@@ -885,8 +979,34 @@ func (h *Hub) IsUserIDInRoom(roomID, userID string) bool {
 	return false
 }
 
-// GetHostUserID returns the hostUserID for a room, or empty if no host is assigned.
-// Called inside Authorize to enforce host-only methods.
+// hostAllows reports whether userID may run a host-only action in roomID.
+// It loads the room from the store when it is not resident: the in-memory map
+// alone cannot tell "no host" from "not loaded yet" (e.g. right after a
+// restart, when members re-enrol by resubscribing). It never creates a room.
+// A room with no host bound (or no room at all) is allowed only when host
+// assignment is off, the documented v0 equal-member behaviour; with host
+// assignment on it is unclaimed and denied until a room.join binds a host.
+// A store failure is returned so the caller fails closed.
+func (h *Hub) hostAllows(roomID, userID string) (bool, error) {
+	room, err := h.getOrLoadRoom(roomID, false)
+	if err != nil {
+		return false, err
+	}
+	host := ""
+	if room != nil {
+		room.mu.Lock()
+		host = room.State.HostUserID
+		room.mu.Unlock()
+	}
+	if host == "" {
+		return !h.hostAssignment, nil
+	}
+	return userID == host, nil
+}
+
+// GetHostUserID returns the hostUserID for a resident room, or empty if no
+// host is assigned or the room is not loaded. Host-only gates use hostAllows,
+// which also loads non-resident rooms.
 func (h *Hub) GetHostUserID(roomID string) string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -914,6 +1034,12 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 	}
 	_ = json.Unmarshal(data, &probe)
 
+	// Every RPC naming a room must name a well-formed one, before enrollment
+	// or dispatch can create or touch it.
+	if probe.RoomID != "" && !ValidRoomID(probe.RoomID) {
+		return errInvalidRoomID
+	}
+
 	if method == "room.join" {
 		h.Join(clientID, probe.RoomID)
 		return nil
@@ -928,12 +1054,15 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 		return centrifuge.ErrorPermissionDenied
 	}
 
-	// Host-only gate (RFC-0005 U4): if method is host-only and room has a host,
-	// only the host can execute. When HostUserID is empty (flag off), this check
-	// is skipped, preserving v0 equal-member behavior.
+	// Host-only gate (RFC-0005 U4): only the room's host may run these. The
+	// room is loaded when not resident, and a host-less room is denied unless
+	// host assignment is off (v0 equal members); see hostAllows.
 	if hostOnlyMethods[method] {
-		hostUserID := h.GetHostUserID(probe.RoomID)
-		if hostUserID != "" && userID != hostUserID {
+		allowed, err := h.hostAllows(probe.RoomID, userID)
+		if err != nil {
+			return rpcClientError(err)
+		}
+		if !allowed {
 			// B16 (RFC-0005): a listener may remove a track they added.
 			if method == "queue.remove" && h.isTrackOwner(probe.RoomID, probe.TrackID, userID) {
 				return nil
@@ -983,6 +1112,13 @@ func (h *Hub) isTrackOwner(roomID, trackID, userID string) bool {
 // share one *Room per roomID; a losing caller keeping its own instance would
 // split room.mu and orphan its mutations (never published, never persisted).
 func (h *Hub) GetOrCreateRoom(roomID string) (*Room, error) {
+	return h.getOrLoadRoom(roomID, true)
+}
+
+// getOrLoadRoom is GetOrCreateRoom with creation optional: with create false
+// a room missing from both memory and the store yields (nil, nil) and nothing
+// is persisted.
+func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 	h.mu.Lock()
 	if room, exists := h.rooms[roomID]; exists {
 		room.touch()
@@ -990,6 +1126,11 @@ func (h *Hub) GetOrCreateRoom(roomID string) (*Room, error) {
 		return room, nil
 	}
 	h.mu.Unlock()
+
+	// A recent "not found" answers read-only lookups without a store query.
+	if !create && h.notFound.has(roomID) {
+		return nil, nil
+	}
 
 	// Try to load from store (bounded: a hung store must not wedge the hub)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1008,6 +1149,11 @@ func (h *Hub) GetOrCreateRoom(roomID string) (*Room, error) {
 
 	// If not found, create fresh
 	if state == nil {
+		if !create {
+			h.notFound.add(roomID)
+			return nil, nil
+		}
+		h.notFound.forget(roomID)
 		state = &queue.RoomState{
 			RoomID:    roomID,
 			Queue:     []queue.TrackRef{},
@@ -1283,15 +1429,32 @@ func (h *Hub) HandleRPC(method string, data []byte, userID string) (json.RawMess
 // when authenticated, else "client:<clientID>", so the server stamps identity
 // and clients never send who they are.
 func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (json.RawMessage, error) {
-	rlKey := rateLimitKey(clientID, userID)
-	start := time.Now()
-	// Fanout RPCs are rate-limited per caller before doing any work; a
-	// rejection surfaces as a UserError (centrifuge code 400) via
-	// rpcClientError and does not touch other methods' budgets. Vote RPCs get
-	// their own bucket (each toggle republishes the full room state), and the
-	// room.list directory read gets its own (listMethods): no third-party
-	// fanout, but landing visitors poll it unauthenticated.
-	var result json.RawMessage
+	return h.runRPC(method, data, clientID, userID, true)
+}
+
+// serveRPC is the transport path for one client RPC: the per-caller rate
+// limits run first, then Authorize, then dispatch (without charging the limits
+// again). Limiting before Authorize keeps a throttled caller from driving the
+// host check and the store load behind it.
+func (h *Hub) serveRPC(client Client, method string, data []byte) (json.RawMessage, error) {
+	clientID, userID := client.ID(), client.UserID()
+	if err := h.checkRateLimits(method, rateLimitKey(clientID, userID)); err != nil {
+		h.observeRPC(method, data, err, 0)
+		return nil, err
+	}
+	// Trust boundary: reject mutations of rooms this client hasn't joined.
+	if err := h.Authorize(client, method, data); err != nil {
+		return nil, err
+	}
+	return h.runRPC(method, data, clientID, userID, false)
+}
+
+// checkRateLimits applies every per-caller bucket the method draws from. A
+// rejection is a UserError (centrifuge code 400 via rpcClientError) and does
+// not touch other methods' budgets. Fanout RPCs protect upstream quotas, vote
+// and mutation RPCs republish the full room state, and room.list is an
+// unauthenticated directory read that landing visitors poll.
+func (h *Hub) checkRateLimits(method, rlKey string) error {
 	err := h.checkFanoutLimit(method, rlKey)
 	if err == nil {
 		err = h.checkVoteLimit(method, rlKey)
@@ -1306,12 +1469,41 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 		err = h.checkListLimit(method, rlKey)
 	}
 	if err == nil {
+		err = h.checkJoinLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.checkMutationLimit(method, rlKey)
+	}
+	return err
+}
+
+// runRPC resolves the room (creation budget), dispatches and records one
+// metric observation and one log line. limit applies the per-caller rate
+// limits first; serveRPC has already applied them.
+func (h *Hub) runRPC(method string, data []byte, clientID, userID string, limit bool) (json.RawMessage, error) {
+	rlKey := rateLimitKey(clientID, userID)
+	start := time.Now()
+	var result json.RawMessage
+	var err error
+	if limit {
+		err = h.checkRateLimits(method, rlKey)
+	}
+	if err == nil {
+		err = h.ensureRoom(method, data, clientID, rlKey)
+	}
+	if err == nil {
 		result, err = h.dispatch(method, data, clientID, userID, rlKey)
 	}
-	d := time.Since(start)
+	h.observeRPC(method, data, err, time.Since(start))
+	return result, err
+}
 
+// observeRPC records the RPC histogram and the rpc log line under a bounded
+// method label.
+func (h *Hub) observeRPC(method string, data []byte, err error, d time.Duration) {
+	label := metricMethod(method)
 	if h.metrics != nil {
-		h.metrics.ObserveRPC(method, rpcMetricStatus(err), d)
+		h.metrics.ObserveRPC(label, rpcMetricStatus(err), d)
 	}
 	if h.logger != nil {
 		var probe struct {
@@ -1319,7 +1511,7 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 		}
 		_ = json.Unmarshal(data, &probe)
 		attrs := []any{
-			"method", method,
+			"method", label,
 			"room_id", probe.RoomID,
 			"duration_ms", float64(d.Microseconds()) / 1000.0,
 		}
@@ -1329,7 +1521,6 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 			h.logger.Info("rpc", attrs...)
 		}
 	}
-	return result, err
 }
 
 // checkFanoutLimit enforces the per-caller token bucket on RPCs that fan out
@@ -1989,7 +2180,6 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		var req struct {
 			RoomID string `json:"roomId"`
 			Text   string `json:"text"`
-			Name   string `json:"name"`
 		}
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
@@ -1997,7 +2187,10 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("chat.send: roomId required")
 		}
-		return h.chatSend(req.RoomID, req.Text, req.Name, userID)
+		// The display name is the server-known connection name (#165 pattern);
+		// any name in the payload is ignored so a member cannot post as
+		// someone else. No connect-time name falls back to "Listener".
+		return h.chatSend(req.RoomID, req.Text, h.displayName(clientID), userID)
 
 	case "chat.history":
 		if !h.chatEnabled {
@@ -2169,13 +2362,7 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 	}
 
 	client.OnRPC(func(e centrifuge.RPCEvent, cb centrifuge.RPCCallback) {
-		// Trust boundary: reject mutations of rooms this client hasn't joined.
-		// Authorize has access to client.UserID() for authenticated requests.
-		if err := h.Authorize(client, e.Method, e.Data); err != nil {
-			cb(centrifuge.RPCReply{}, err)
-			return
-		}
-		reply, err := h.handleRPC(e.Method, e.Data, clientID, userID)
+		reply, err := h.serveRPC(client, e.Method, e.Data)
 		cb(centrifuge.RPCReply{Data: reply}, rpcClientError(err))
 	})
 }
