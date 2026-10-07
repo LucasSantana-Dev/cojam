@@ -1,13 +1,11 @@
 package hub
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"testing"
 
-	"github.com/LucasSantana-Dev/cojam/server/internal/db"
+	"github.com/LucasSantana-Dev/cojam/server/internal/dbtest"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 )
@@ -15,27 +13,10 @@ import (
 // TestHubPersistenceAcrossRestart proves room state survives a hub restart
 // by persisting through PostgreSQL. Skips if TEST_DATABASE_URL is unset.
 func TestHubPersistenceAcrossRestart(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL unset, skipping persistence test")
-	}
+	// A real database, on a private schema dropped when the test ends.
+	pool := dbtest.Isolated(t)
 
-	// Open and migrate a real database
-	pool, err := db.Open(context.Background(), dbURL)
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
-	}
-	defer pool.Close()
-
-	if err := db.Migrate(context.Background(), pool); err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
-
-	// Use a unique room ID per test to avoid conflicts
-	roomID := fmt.Sprintf("test_persist_%d", os.Getpid())
-
-	// Clean up the room if it exists from a prior failed run
-	defer pool.Exec(context.Background(), "DELETE FROM rooms WHERE room_id = $1", roomID)
+	roomID := "test_persist"
 
 	// Create first hub with postgres store
 	pgStore1 := store.NewPostgres(pool)
@@ -128,23 +109,9 @@ func TestHubPersistenceAcrossRestart(t *testing.T) {
 // PromoteOnDisconnect (#166) is written through to Postgres and reloads.
 // Skips if TEST_DATABASE_URL is unset.
 func TestPromotedHostSurvivesPersistence(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL unset, skipping persistence test")
-	}
+	pool := dbtest.Isolated(t)
 
-	pool, err := db.Open(context.Background(), dbURL)
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
-	}
-	defer pool.Close()
-
-	if err := db.Migrate(context.Background(), pool); err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
-
-	roomID := fmt.Sprintf("test_handoff_persist_%d", os.Getpid())
-	defer pool.Exec(context.Background(), "DELETE FROM rooms WHERE room_id = $1", roomID)
+	roomID := "test_handoff_persist"
 
 	hub1 := NewHub(nil).WithStore(store.NewPostgres(pool))
 

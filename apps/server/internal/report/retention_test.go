@@ -3,16 +3,13 @@ package report
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/url"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/LucasSantana-Dev/cojam/server/internal/db"
+	"github.com/LucasSantana-Dev/cojam/server/internal/dbtest"
 )
 
 // base is a fixed instant far in the past that the purge tests write their
@@ -98,54 +95,10 @@ func TestMemoryAudit_PurgeBefore_BoundaryAndLimit(t *testing.T) {
 	}
 }
 
-// openTestPool opens and migrates TEST_DATABASE_URL, or skips.
-func openTestPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	ctx := context.Background()
-
-	// A private schema, migrated from scratch and dropped afterwards.
-	// Migrating the shared public schema here would race the other test
-	// packages' migrations on a fresh database (duplicate pg_type errors).
-	admin, err := db.Open(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
-	}
-	schema := fmt.Sprintf("report_test_%d_%d", os.Getpid(), time.Now().UnixNano())
-	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
-		admin.Close()
-		t.Fatalf("create schema: %v", err)
-	}
-	t.Cleanup(func() {
-		admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
-		admin.Close()
-	})
-	u, err := url.Parse(dbURL)
-	if err != nil {
-		t.Fatalf("parse url: %v", err)
-	}
-	q := u.Query()
-	q.Set("search_path", schema)
-	u.RawQuery = q.Encode()
-
-	pool, err := db.Open(ctx, u.String())
-	if err != nil {
-		t.Fatalf("failed to open isolated database: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
-	return pool
-}
-
 // #319: the real DELETE honours the same strict boundary and the batch bound.
 // Skips if TEST_DATABASE_URL is not set.
 func TestPostgres_PurgeBefore_BoundaryAndLimit(t *testing.T) {
-	pool := openTestPool(t)
+	pool := dbtest.Isolated(t)
 	ctx := context.Background()
 	ids := []string{"ret-older-2", "ret-older-1", "ret-at-cutoff", "ret-newer"}
 	cleanup := func() { pool.Exec(context.Background(), "DELETE FROM reports WHERE id = ANY($1)", ids) }
@@ -179,7 +132,7 @@ func TestPostgres_PurgeBefore_BoundaryAndLimit(t *testing.T) {
 
 // Skips if TEST_DATABASE_URL is not set.
 func TestPostgresAudit_PurgeBefore_BoundaryAndLimit(t *testing.T) {
-	pool := openTestPool(t)
+	pool := dbtest.Isolated(t)
 	ctx := context.Background()
 	ids := []string{"ret-act-older-2", "ret-act-older-1", "ret-act-at-cutoff"}
 	cleanup := func() { pool.Exec(context.Background(), "DELETE FROM moderation_actions WHERE id = ANY($1)", ids) }
