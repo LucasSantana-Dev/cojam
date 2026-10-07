@@ -81,6 +81,9 @@ jobs:
   e2e:
     name: Web e2e
     runs-on: ubuntu-latest
+    # A hung apt mirror inside `playwright install --with-deps` held this job
+    # for 1h40 on #330; fail fast instead of waiting for the 6h default.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -99,5 +102,6 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm --filter web exec playwright install --with-deps chromium
+        timeout-minutes: 8
       # playwright.config.ts starts both the web (:3000) and Go (:8080) servers itself.
       - run: pnpm --filter web exec playwright test --reporter=line
