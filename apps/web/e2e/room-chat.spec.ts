@@ -20,7 +20,7 @@ async function sendChatMessage(page: Page, text: string) {
   // exact: the report control's aria-label ("Denunciar mensagem from …", #259)
   // also contains "message", so a substring match now resolves to two nodes.
   await page.getByLabel('Mensagem', { exact: true }).fill(text);
-  await page.getByRole('button', { name: 'Enviar' }).click();
+  await page.getByRole('button', { name: 'Enviar', exact: true }).click();
   // Wait for the publication round-trip so a subsequent send/assert cannot
   // race the field reset.
   await expect(page.getByTestId('chat-message').filter({ hasText: text })).toBeVisible();

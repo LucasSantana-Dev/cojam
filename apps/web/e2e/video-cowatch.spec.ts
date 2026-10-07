@@ -64,7 +64,7 @@ async function join(page: Page, roomId: string, name: string) {
 
 async function addVideo(page: Page, title: string) {
   // Phone width (#289): the audio room keeps the add form behind its Add tab.
-  const addTab = page.getByRole('tab', { name: 'Adicionar' });
+  const addTab = page.getByRole('tab', { name: 'Adicionar', exact: true });
   if (await addTab.isVisible()) await addTab.click();
   await page.evaluate(() => {
     const details = document.querySelector('details');
@@ -128,11 +128,11 @@ test('phone layout pins the stage and puts the panels in tabs', async ({ browser
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   // Tab targets are at least 44px tall.
-  const tab = await page.getByRole('tab', { name: 'Fila' }).boundingBox();
+  const tab = await page.getByRole('tab', { name: 'Fila', exact: true }).boundingBox();
   expect(tab!.height).toBeGreaterThanOrEqual(44);
 
   await expect(page.getByTestId('queue-title').first()).toBeHidden();
-  await page.getByRole('tab', { name: 'Fila' }).click();
+  await page.getByRole('tab', { name: 'Fila', exact: true }).click();
   await expect(page.getByTestId('queue-title').first()).toBeVisible();
 });
 
