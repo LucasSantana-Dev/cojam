@@ -101,10 +101,9 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      # Without these apt waits forever on a stalled Ubuntu mirror (seen twice on #330).
-      - name: Bound apt network waits
-        run: printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "3";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-timeouts
-      - run: pnpm --filter web exec playwright install --with-deps chromium
+      # No --with-deps: the ubuntu-latest image already ships Chrome's shared libs,
+      # and the apt fetch it triggers hung on stalled Ubuntu mirrors (#330, 3 runs).
+      - run: pnpm --filter web exec playwright install chromium
         timeout-minutes: 8
       # playwright.config.ts starts both the web (:3000) and Go (:8080) servers itself.
       - run: pnpm --filter web exec playwright test --reporter=line
