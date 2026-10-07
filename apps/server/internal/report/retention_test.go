@@ -3,6 +3,8 @@ package report
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"sync"
 	"testing"
@@ -13,9 +15,8 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
 )
 
-// base is a fixed instant far in the past. Postgres purge tests write their
-// rows around it so a concurrent test package (which writes rows stamped now)
-// can never fall inside the purged range, and vice versa.
+// base is a fixed instant far in the past that the purge tests write their
+// rows around.
 var base = time.Date(1990, 1, 1, 12, 0, 0, 0, time.UTC)
 
 // #319: the boundary is strict. A record created exactly at the cutoff is
@@ -105,9 +106,34 @@ func openTestPool(t *testing.T) *pgxpool.Pool {
 		t.Skip("TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := db.Open(ctx, dbURL)
+
+	// A private schema, migrated from scratch and dropped afterwards.
+	// Migrating the shared public schema here would race the other test
+	// packages' migrations on a fresh database (duplicate pg_type errors).
+	admin, err := db.Open(ctx, dbURL)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
+	}
+	schema := fmt.Sprintf("report_test_%d_%d", os.Getpid(), time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		admin.Close()
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() {
+		admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+		admin.Close()
+	})
+	u, err := url.Parse(dbURL)
+	if err != nil {
+		t.Fatalf("parse url: %v", err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+
+	pool, err := db.Open(ctx, u.String())
+	if err != nil {
+		t.Fatalf("failed to open isolated database: %v", err)
 	}
 	t.Cleanup(pool.Close)
 	if err := db.Migrate(ctx, pool); err != nil {
