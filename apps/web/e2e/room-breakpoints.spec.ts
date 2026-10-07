@@ -152,9 +152,9 @@ test.describe('queue panel vs activity rail', () => {
           d.open = true;
         });
       });
-      await page.getByPlaceholder('Title').locator('visible=true').fill('Row One');
-      await page.getByPlaceholder('Artist').locator('visible=true').fill('Artist A');
-      await page.getByRole('button', { name: 'Add to Queue' }).click();
+      await page.getByPlaceholder('Título').locator('visible=true').fill('Row One');
+      await page.getByPlaceholder('Artista').locator('visible=true').fill('Artist A');
+      await page.getByRole('button', { name: 'Adicionar à fila' }).click();
       const queue = page.locator('[data-testid="queue-panel"]:visible');
       const activity = page.locator('[data-testid="activity-panel"]:visible');
       await expect(activity).toBeVisible();
