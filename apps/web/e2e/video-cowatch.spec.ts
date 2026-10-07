@@ -74,7 +74,7 @@ test('host seek converges on the member within the drift threshold', async ({ br
   await expect(lucas.getByTestId('stage')).toBeVisible();
 
   // Host starts playback; both stubs run.
-  await lucas.getByRole('button', { name: 'Play', exact: true }).click();
+  await lucas.getByTestId('video-main-column').getByRole('button', { name: 'Play', exact: true }).click();
   await expect.poll(() => position(ana)).toBeGreaterThan(0);
 
   // Host scrubs to the middle of the 600s video (the slider max comes from the
