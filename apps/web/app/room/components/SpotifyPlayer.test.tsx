@@ -154,3 +154,76 @@ describe('SpotifyPlayer connect failure surface', () => {
     expect(screen.getByRole('button', { name: 'Conectar Spotify' })).toBeInTheDocument();
   });
 });
+
+describe('SpotifyPlayer end of track', () => {
+  let stateCb: ((s: unknown) => void) | null = null;
+  const pauseSpy = vi.fn(async () => {});
+  class StatefulSDKPlayer extends FakeSpotifySDKPlayer {
+    pause = pauseSpy;
+    addListener(event: string, cb: (data: never) => void) {
+      if (event === 'player_state_changed') stateCb = cb as (s: unknown) => void;
+      return super.addListener(event, cb as (d: { device_id: string }) => void);
+    }
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 204 }) as Response));
+    (window as { Spotify?: unknown }).Spotify = { Player: StatefulSDKPlayer };
+    window.__COJAM_ENV__ = { spotifyClientId: 'test-client' };
+    useStore.setState({ state: roomState });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    delete (window as { Spotify?: unknown }).Spotify;
+    delete window.__COJAM_ENV__;
+    useStore.setState({ state: undefined });
+    stateCb = null;
+  });
+
+  it('fires onEnded when the SDK reports the track finished, with no position subscriber', async () => {
+    let player: import('@/lib/playerInterface').IPlayer | null = null;
+    render(
+      <SpotifyPlayer authorized={true} onAuthorized={() => {}} onPlayerReady={(p) => (player = p)} />,
+    );
+    await waitFor(() => expect(player).not.toBeNull());
+    const ended = vi.fn();
+    player!.onEnded(ended);
+    const win = (paused: boolean, position: number, prev: string[]) => ({
+      paused,
+      position,
+      track_window: {
+        current_track: { id: 'x', uri: 'spotify:track:x' },
+        previous_tracks: prev.map((id) => ({ id, uri: `spotify:track:${id}` })),
+      },
+    });
+    stateCb!(win(false, 120_000, []));
+    expect(ended).not.toHaveBeenCalled();
+    stateCb!(win(true, 0, ['x']));
+    expect(ended).toHaveBeenCalledTimes(1);
+    stateCb!(win(true, 0, ['x']));
+    expect(ended).toHaveBeenCalledTimes(1);
+  });
+
+  it('Spotify Autoplay: pauses the foreign track, advances once, and the poll cannot double-fire', async () => {
+    let player: import('@/lib/playerInterface').IPlayer | null = null;
+    render(
+      <SpotifyPlayer authorized={true} onAuthorized={() => {}} onPlayerReady={(p) => (player = p)} />,
+    );
+    await waitFor(() => expect(player).not.toBeNull());
+    await waitFor(() => expect(fetch).toHaveBeenCalled()); // playUri ran, expected track set
+    const ended = vi.fn();
+    player!.onEnded(ended);
+    const x = { id: 'x', uri: 'spotify:track:x' };
+    stateCb!({ paused: false, position: 170_000, track_window: { current_track: x, previous_tracks: [] } });
+    stateCb!({
+      paused: false,
+      position: 200,
+      track_window: { current_track: { id: 'rec', uri: 'spotify:track:rec' }, previous_tracks: [x] },
+    });
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(pauseSpy).toHaveBeenCalledTimes(1);
+  });
+});
