@@ -57,6 +57,8 @@ type Store interface {
 	Create(ctx context.Context, r Report) error
 	// Recent returns the newest reports, for the operator to review.
 	Recent(ctx context.Context, limit int) ([]Report, error)
+	// Purger removes reports past the retention window (#319).
+	Purger
 }
 
 // Memory is an in-memory Store for local dev and databaseless deployments.
@@ -153,6 +155,8 @@ type Action struct {
 type AuditStore interface {
 	Record(ctx context.Context, a Action) error
 	RecentActions(ctx context.Context, limit int) ([]Action, error)
+	// Purger removes actions past the retention window (#319).
+	Purger
 }
 
 // MemoryAudit is an in-memory AuditStore.
