@@ -73,7 +73,7 @@ pnpm dev:server    # Go server on :8080
 pnpm dev:web       # Next.js on :3000 (separate terminal)
 ```
 
-Open `http://localhost:3000/room/vibe`, join with a name, and add a YouTube track. Open the same URL in a second tab to watch the queue and presence sync.
+Open `http://localhost:3000`, type a name and create a room, then add a YouTube track. Open the room URL in a second tab to watch the queue and presence sync.
 
 ## Stack
 
