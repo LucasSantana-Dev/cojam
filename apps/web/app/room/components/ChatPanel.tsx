@@ -1,5 +1,6 @@
 'use client';
 
+import { useMotion } from '@/lib/motionFlags';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useStore, sendChat, deleteChatMessage, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
 import { fileReport } from '@/lib/report';
@@ -50,6 +51,30 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
     const el = listRef.current;
     if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
   }, [chat.length]);
+
+  // Cor da faixa motion (#325): a new line springs in. Only live arrivals (one to
+  // three at a time), never the history that lands on join. Off under
+  // prefers-reduced-motion.
+  const motion = useMotion();
+  const seenCount = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = seenCount.current;
+    seenCount.current = chat.length;
+    const list = listRef.current;
+    if (!motion.flip || prev === null || prev === 0 || !list) return;
+    const added = chat.length - prev;
+    if (added < 1 || added > 3) return;
+    const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-testid="chat-message"]')).slice(-added);
+    if (rows.length === 0) return;
+    let cancelled = false;
+    import('gsap').then(({ default: gsap }) => {
+      if (cancelled) return;
+      gsap.fromTo(rows, { y: 16, scale: 0.94, opacity: 0, transformOrigin: '0 100%' }, { y: 0, scale: 1, opacity: 1, duration: 0.55, ease: 'back.out(2.2)', stagger: 0.06, clearProps: 'transform,opacity' });
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [chat.length, motion.flip]);
 
   const handleSend = async (e: FormEvent) => {
     e.preventDefault();
@@ -116,7 +141,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   };
 
   return (
-    <div className="panel p-6 space-y-4 h-fit mt-6">
+    <div className="panel chat-panel p-6 space-y-4 h-fit mt-6">
       <div>
         <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Chat

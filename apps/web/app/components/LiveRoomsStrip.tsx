@@ -17,7 +17,7 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
   const { onCardClick, gate } = useAgeGatedJoin(AGE_GATE_COPY_PT);
 
   return (
-    <div className="live-rooms">
+    <div className="live-rooms" data-testid="live-rooms">
       <div className="live-rooms__head">
         <span className="live-rooms__label">Salas ao vivo</span>
         <Link href="/rooms" className="live-rooms__all">ver todas &rarr;</Link>
