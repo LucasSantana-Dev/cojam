@@ -273,6 +273,12 @@ type Hub struct {
 	// when false both RPCs return ErrorMethodNotFound (transport.* precedent).
 	publicRoomsEnabled bool
 
+	// hostAssignment is on when every connection carries an identity
+	// (FEATURE_ROOM_AUTH), so every joined room binds a host. A room with no
+	// host bound is then unclaimed and host-only RPCs fail closed. Off keeps
+	// the v0 equal-member behaviour for host-less rooms.
+	hostAssignment bool
+
 	// roomIdleTTL is how long a room with no connected members may stay idle
 	// before StartRoomEvictor's sweep drops it from memory. <= 0 disables
 	// eviction. State survives in the store and reloads on rejoin.
@@ -506,6 +512,13 @@ func (h *Hub) WithChat(enabled bool) *Hub {
 // room.list). Default off (dark-ship, same posture as WithSync).
 func (h *Hub) WithPublicRooms(enabled bool) *Hub {
 	h.publicRoomsEnabled = enabled
+	return h
+}
+
+// WithHostAssignment declares whether connections always carry an identity
+// (FEATURE_ROOM_AUTH on). See Hub.hostAssignment.
+func (h *Hub) WithHostAssignment(enabled bool) *Hub {
+	h.hostAssignment = enabled
 	return h
 }
 
@@ -925,8 +938,34 @@ func (h *Hub) IsUserIDInRoom(roomID, userID string) bool {
 	return false
 }
 
-// GetHostUserID returns the hostUserID for a room, or empty if no host is assigned.
-// Called inside Authorize to enforce host-only methods.
+// hostAllows reports whether userID may run a host-only action in roomID.
+// It loads the room from the store when it is not resident: the in-memory map
+// alone cannot tell "no host" from "not loaded yet" (e.g. right after a
+// restart, when members re-enrol by resubscribing). It never creates a room.
+// A room with no host bound (or no room at all) is allowed only when host
+// assignment is off, the documented v0 equal-member behaviour; with host
+// assignment on it is unclaimed and denied until a room.join binds a host.
+// A store failure is returned so the caller fails closed.
+func (h *Hub) hostAllows(roomID, userID string) (bool, error) {
+	room, err := h.getOrLoadRoom(roomID, false)
+	if err != nil {
+		return false, err
+	}
+	host := ""
+	if room != nil {
+		room.mu.Lock()
+		host = room.State.HostUserID
+		room.mu.Unlock()
+	}
+	if host == "" {
+		return !h.hostAssignment, nil
+	}
+	return userID == host, nil
+}
+
+// GetHostUserID returns the hostUserID for a resident room, or empty if no
+// host is assigned or the room is not loaded. Host-only gates use hostAllows,
+// which also loads non-resident rooms.
 func (h *Hub) GetHostUserID(roomID string) string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -968,12 +1007,15 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 		return centrifuge.ErrorPermissionDenied
 	}
 
-	// Host-only gate (RFC-0005 U4): if method is host-only and room has a host,
-	// only the host can execute. When HostUserID is empty (flag off), this check
-	// is skipped, preserving v0 equal-member behavior.
+	// Host-only gate (RFC-0005 U4): only the room's host may run these. The
+	// room is loaded when not resident, and a host-less room is denied unless
+	// host assignment is off (v0 equal members); see hostAllows.
 	if hostOnlyMethods[method] {
-		hostUserID := h.GetHostUserID(probe.RoomID)
-		if hostUserID != "" && userID != hostUserID {
+		allowed, err := h.hostAllows(probe.RoomID, userID)
+		if err != nil {
+			return rpcClientError(err)
+		}
+		if !allowed {
 			// B16 (RFC-0005): a listener may remove a track they added.
 			if method == "queue.remove" && h.isTrackOwner(probe.RoomID, probe.TrackID, userID) {
 				return nil
@@ -1023,6 +1065,13 @@ func (h *Hub) isTrackOwner(roomID, trackID, userID string) bool {
 // share one *Room per roomID; a losing caller keeping its own instance would
 // split room.mu and orphan its mutations (never published, never persisted).
 func (h *Hub) GetOrCreateRoom(roomID string) (*Room, error) {
+	return h.getOrLoadRoom(roomID, true)
+}
+
+// getOrLoadRoom is GetOrCreateRoom with creation optional: with create false
+// a room missing from both memory and the store yields (nil, nil) and nothing
+// is persisted.
+func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 	h.mu.Lock()
 	if room, exists := h.rooms[roomID]; exists {
 		room.touch()
@@ -1048,6 +1097,9 @@ func (h *Hub) GetOrCreateRoom(roomID string) (*Room, error) {
 
 	// If not found, create fresh
 	if state == nil {
+		if !create {
+			return nil, nil
+		}
 		state = &queue.RoomState{
 			RoomID:    roomID,
 			Queue:     []queue.TrackRef{},

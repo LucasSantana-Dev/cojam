@@ -510,6 +510,11 @@ func main() {
 		h.WithRebind([]byte(roomAuthSecret), burns)
 	}
 
+	// With room auth on every connection carries an identity, so every joined
+	// room binds a host and a host-less room fails closed for host-only RPCs.
+	// Off keeps the v0 equal-member behaviour for host-less rooms.
+	h.WithHostAssignment(roomAuthEnabled)
+
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
 		// The display name and playback platform arrive as connect data

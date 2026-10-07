@@ -232,7 +232,11 @@ host leaves). Host-only RPCs are rejected with `ErrorPermissionDenied` for non-h
 moderation RPCs (`chat.delete`, `room.kick`, #181), which reject non-hosts with a client-visible
 UserError (code 400) instead; the server
 is authoritative (the web UI also hides these controls for listeners, but that is convenience
-only). When the flag is off, every member has equal rights (v0), unchanged.
+only). The host check reads the room's persisted state, loading it from the store when it is not
+in memory (e.g. after a restart), and fails closed: with the flag on, a room with no host bound
+yet rejects host-only RPCs until a `room.join` claims it. When the flag is off, every member has
+equal rights (v0), unchanged; a host bound by a signed-in account (`FEATURE_SUPABASE_AUTH`) is
+still enforced.
 
 | RPC | Who may call (flag on) |
 |---|---|

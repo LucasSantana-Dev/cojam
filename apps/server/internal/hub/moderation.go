@@ -20,11 +20,15 @@ import (
 // reconnect, and the web client maps the code to its "removed by host" state.
 var disconnectKicked = centrifuge.Disconnect{Code: 4500, Reason: "removed by host"}
 
-// requireHost rejects a non-host caller with a client-visible UserError when
-// the room has a host assigned. An empty HostUserID (room auth off) preserves
-// v0 equal-member behavior, same as the Authorize host-only gate.
+// requireHost rejects a non-host caller with a client-visible UserError. Same
+// rule as the Authorize host-only gate (hostAllows): non-resident rooms are
+// loaded, and a host-less room is equal-member only with host assignment off.
 func (h *Hub) requireHost(roomID, userID, action string) error {
-	if hostUserID := h.GetHostUserID(roomID); hostUserID != "" && userID != hostUserID {
+	allowed, err := h.hostAllows(roomID, userID)
+	if err != nil {
+		return err
+	}
+	if !allowed {
 		return userErrorf("only the host can %s", action)
 	}
 	return nil
