@@ -105,7 +105,7 @@ class YouTubePlayerAdapter implements IPlayer {
   async getDurationMs(): Promise<number> {
     try {
       const seconds = this.ytPlayer.getDuration();
-      return secondsToMs(seconds);
+      return Number.isFinite(seconds) ? secondsToMs(seconds) : 0;
     } catch {
       return 0;
     }
@@ -149,6 +149,7 @@ export function YouTubePlayer({
   onPlayerReady,
   onPlayerGone,
   onPlayError,
+  fill = false,
 }: {
   roomId: string;
   onPlayerReady?: (player: IPlayer) => void;
@@ -156,6 +157,9 @@ export function YouTubePlayer({
   // Per-user playback failure surface: called with the track id when this
   // client can't play the now-playing track, null when playback (re)starts.
   onPlayError?: (trackId: string | null) => void;
+  // Stage mode (#258): the host container owns sizing and the title, so render
+  // the bare player element filling it instead of the audio-room card.
+  fill?: boolean;
 }) {
   const playerRef = useRef<YTPlayerInstance | null>(null);
   const adapterRef = useRef<YouTubePlayerAdapter | null>(null);
@@ -252,6 +256,10 @@ export function YouTubePlayer({
   }, []);
 
   const nowPlaying = nowPlayingId ? queue.find((t) => t.id === nowPlayingId) : undefined;
+
+  if (fill) {
+    return <div id="youtube-player" className="h-full w-full" />;
+  }
 
   return (
     <div className="space-y-4">

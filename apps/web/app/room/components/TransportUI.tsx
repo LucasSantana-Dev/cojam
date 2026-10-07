@@ -43,13 +43,48 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
   // Duration comes from the now-playing track's metadata (a plain number),
   // not the player's async getDurationMs(); U4 owns live position tracking.
   const nowPlaying = store.state?.queue.find((t) => t.id === store.state?.nowPlayingId);
-  const duration = nowPlaying?.durationMs ?? 0;
+  const metaDuration = nowPlaying?.durationMs ?? 0;
+  // Hand-added video links carry no durationMs, which left the slider at
+  // max=0 (unseekable). Fall back to the player's own duration, polled until
+  // known; a track-supplied duration always wins.
+  const [playerDuration, setPlayerDuration] = useState<{ id: string; ms: number } | null>(null);
+  const nowPlayingId = nowPlaying?.id;
+  useEffect(() => {
+    if (!activePlayer || !nowPlayingId || metaDuration > 0) return;
+    let cancelled = false;
+    const poll = () =>
+      activePlayer
+        .getDurationMs()
+        .then((d) => {
+          if (cancelled || !Number.isFinite(d) || d <= 0) return;
+          setPlayerDuration({ id: nowPlayingId, ms: d });
+          clearInterval(timer); // known: stop polling (timer is initialised before any poll resolves)
+        })
+        .catch(() => {});
+    const timer = setInterval(poll, 1000);
+    poll();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [activePlayer, nowPlayingId, metaDuration]);
+  const fallbackDuration = playerDuration && playerDuration.id === nowPlayingId ? playerDuration.ms : 0;
+  const duration = metaDuration > 0 ? metaDuration : fallbackDuration;
   const canSeek = activePlayer?.canSeek?.() ?? false;
 
   // Sync display position with transport state when not dragging (adjust state
   // during render, keyed on the transport object identity).
   const [prevTransport, setPrevTransport] = useState(transport);
-  if (!isDragging && transport && transport !== prevTransport) {
+  // Compared by field, not identity: the server heartbeat (#258) delivers a
+  // fresh transport object every 10s with identical values, which must not
+  // snap the slider back to the last published position.
+  const transportChanged =
+    !!transport &&
+    (!prevTransport ||
+      transport.state !== prevTransport.state ||
+      transport.positionMs !== prevTransport.positionMs ||
+      transport.updatedAtServerMs !== prevTransport.updatedAtServerMs);
+  if (!isDragging && transport && transportChanged) {
     setPrevTransport(transport);
     setDisplayPosition(transport.positionMs);
   }

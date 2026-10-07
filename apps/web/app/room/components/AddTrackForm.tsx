@@ -150,6 +150,12 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
         title,
         artist,
         durationMs: undefined,
+        // E1 (#258): with FEATURE_VIDEO on, a YouTube link is a video track so
+        // the room renders the stage layout. Off (or no link) stays audio:
+        // `kind` is omitted, which every client reads as audio. Only a
+        // YouTube-only track qualifies: one that also carries a Spotify or
+        // Apple source is a song with a video alternate, not a video.
+        ...(f.video && ytId && !spUri && !appleSongId ? { kind: 'video' as const } : {}),
         sources: {
           ...(ytId ? { youtube: { videoId: ytId, confidence: 1 } } : {}),
           ...(appleSongId ? { apple: { songId: appleSongId, confidence: 1 } } : {}),
