@@ -81,7 +81,7 @@ export function PresenceBar({ roomId, canControl = false }: PresenceBarProps) {
                     })
                   }
                   aria-label={`Denunciar ${member.name}`}
-                  className="absolute -top-1 -left-1 w-4 h-4 rounded-full text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-150 focus:outline-none"
+                  className="report-user-btn absolute -top-1 -left-1 w-4 h-4 rounded-full text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-150 focus:outline-none"
                   style={{
                     backgroundColor: 'var(--color-surface-2)',
                     color: 'var(--color-text-secondary)',
