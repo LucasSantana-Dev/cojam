@@ -18,7 +18,7 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <html lang="en">
+    <html lang="pt-BR">
       <body
         style={{
           margin: 0,
@@ -33,10 +33,10 @@ export default function GlobalError({
       >
         <div style={{ maxWidth: '28rem', textAlign: 'center' }}>
           <h1 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>
-            CoJam failed to load
+            O CoJam não carregou
           </h1>
           <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '1.25rem' }}>
-            Something went wrong before the app started.
+            Algo deu errado antes de o app começar.
           </p>
           <button
             type="button"
@@ -51,7 +51,7 @@ export default function GlobalError({
               font: 'inherit',
             }}
           >
-            Reload
+            Recarregar
           </button>
           {error.digest && (
             <p style={{ marginTop: '1.25rem', fontSize: '0.75rem', opacity: 0.4 }}>

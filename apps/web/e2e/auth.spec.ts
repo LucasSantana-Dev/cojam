@@ -114,20 +114,20 @@ test('supabase: sign-in entry points render when the Supabase env is present', a
 
   // Landing header entry point (app/page.tsx).
   await page.goto('/');
-  await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Entrar', exact: true })).toBeVisible();
 
   // Account page sign-in form (app/account/page.tsx).
   await page.goto('/account');
-  await expect(page.getByRole('button', { name: 'Email me a sign-in link' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Receber link de acesso por e-mail' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continuar com o Google' })).toBeVisible();
 });
 
 test('supabase: entry points stay hidden when the Supabase env is absent', async ({ page }) => {
   // The e2e web server has no Supabase env, so /env.js omits it and the
   // hydration-safe useSyncExternalStore gates keep the UI hidden.
   await page.goto('/');
-  await expect(page.getByRole('link', { name: 'Sign in' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Entrar', exact: true })).toHaveCount(0);
 
   await page.goto('/account');
-  await expect(page.getByText('Accounts are not configured on this deployment.')).toBeVisible();
+  await expect(page.getByText('As contas não estão configuradas neste servidor.')).toBeVisible();
 });

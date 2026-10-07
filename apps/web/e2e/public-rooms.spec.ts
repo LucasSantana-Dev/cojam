@@ -2,12 +2,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { proxyConnectionToken } from './connectionTokenProxy';
 
 // F1 public rooms: the host opts the room into the public directory
-// (PublicRoomToggle), the landing page's LiveRoomsSlot swaps the static
-// example-room mock for the live strip once the poll sees it (LiveRoomsStrip),
-// and the card's join link lands the visitor in the room. Flag off or an empty
-// directory keeps the mock. Requires FEATURE_PUBLIC_ROOMS on the Go server and
-// NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS on the web dev server (both set in
-// playwright.config.ts).
+// (PublicRoomToggle), the landing page's LiveRoomsSlot renders the live strip
+// once the poll sees it (LiveRoomsStrip), and the card's join link lands the
+// visitor in the room. Flag off or an empty directory renders no strip and the
+// hero device (the static example room) stays. Requires FEATURE_PUBLIC_ROOMS on
+// the Go server and NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS on the web dev server (both
+// set in playwright.config.ts).
 
 async function join(page: Page, roomId: string, name: string) {
   await proxyConnectionToken(page);
@@ -26,12 +26,13 @@ test('host enables public, the landing strip lists the room, and the join link l
   const host = await (await browser.newContext()).newPage();
   await join(host, roomId, 'Host');
 
-  // Visitor on the landing page: with an empty directory the slot renders the
-  // static example-room mock (no live cards).
+  // Visitor on the landing page: with an empty directory the slot renders no
+  // live cards and the static hero device is the example room.
   const visitor = await (await browser.newContext()).newPage();
   await proxyConnectionToken(visitor);
   await visitor.goto('/');
-  await expect(visitor.getByText('Sala de exemplo · NEON-4821')).toBeVisible();
+  await expect(visitor.getByTestId('hero-device')).toBeVisible();
+  await expect(visitor.getByTestId('live-rooms')).toHaveCount(0);
   await expect(visitor.locator('.live-room-card')).toHaveCount(0);
 
   // The host (first joiner) opts the room into the directory with a label.
@@ -43,10 +44,11 @@ test('host enables public, the landing strip lists the room, and the join link l
   await host.getByLabel('Nome da sala pública').press('Enter');
 
   // The strip polls every 15s; the card must appear within one poll interval,
-  // replacing the mock.
+  // next to the hero device.
   const card = visitor.locator('.live-room-card').filter({ hasText: 'E2E Lounge' });
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(visitor.getByText('Sala de exemplo · NEON-4821')).toHaveCount(0);
+  await expect(visitor.getByTestId('live-rooms')).toBeVisible();
+  await expect(visitor.getByTestId('hero-device')).toBeVisible();
 
   // The card is the join link, but a directory join is age-gated (#259):
   // joining by invite link is untouched, joining a stranger room asks first.
@@ -60,7 +62,7 @@ test('host enables public, the landing strip lists the room, and the join link l
   await expect(visitor.getByTestId('room-me')).toContainText('Visitor');
 });
 
-test('flag off renders the static example-room fallback', async ({ page }) => {
+test('flag off renders the static hero device and no live strip', async ({ page }) => {
   // Simulate a flag-off deployment by intercepting /env.js (the runtime flag
   // map overrides the build-time one post-mount, RFC-0006). Same pattern as
   // auth.spec.ts's Supabase env simulation.
@@ -72,9 +74,10 @@ test('flag off renders the static example-room fallback', async ({ page }) => {
   );
 
   await page.goto('/');
-  // The directory never loads with the flag off: the mock stays and no live
+  // The directory never loads with the flag off: the hero device stays and no live
   // card renders, even though the previous test left a public room behind.
-  await expect(page.getByText('Sala de exemplo · NEON-4821')).toBeVisible();
+  await expect(page.getByTestId('hero-device')).toBeVisible();
+  await expect(page.getByTestId('live-rooms')).toHaveCount(0);
   await expect(page.locator('.live-room-card')).toHaveCount(0);
   await expect(page.locator('.live-rooms')).toHaveCount(0);
 });

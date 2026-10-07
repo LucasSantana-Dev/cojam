@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, CheckIcon } from '@/app/components/icons';
@@ -10,11 +9,25 @@ import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
 import { LiveCounter } from '@/app/components/LiveCounter';
 import { LogoMark } from '@/app/components/Logo';
 import { YourDataId } from '@/app/components/YourDataId';
+import { HeroDevice } from '@/app/components/HeroDevice';
+import { useDemoCycle } from '@/lib/useDemoCycle';
+import { groundPair } from '@/lib/trackColor';
+import { demoTintStyle, demoCover, DEMO_TRACKS } from '@/lib/demoTracks';
+import { GroundStack } from '@/app/components/GroundStack';
+import { useMotion } from '@/lib/motionFlags';
+import { ScrollStory } from '@/app/components/ScrollStory';
+import { SectionWave } from '@/app/components/SectionWave';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
 import { MINIMUM_AGE } from '@/lib/ageGate';
 import { readGuestName, saveGuestName } from '@/lib/guestName';
 import { trackEvent } from '@/lib/telemetry';
+
+const STEPS = [
+  { n: '01', t: 'Digite seu nome e crie a sala', d: 'Sem instalar nada e sem conta. A sala nasce privada: só entra quem tem o link.' },
+  { n: '02', t: 'Mande o link', d: 'Um link coloca seus amigos na mesma sala, onde estiverem. Cada um entra com o próprio nome.' },
+  { n: '03', t: 'Toquem em sincronia', d: 'Montem a fila juntos; a sala sincroniza quem toca o quê. Cada um ouve na própria conta, no Spotify ou no YouTube.' },
+];
 
 // Protocol commands cycled in the HUD readout. The product is a protocol
 // (RoomState, RPC dispatch, version bumps) — this is its voice.
@@ -130,6 +143,14 @@ export default function Home() {
   // protocol command. Both tick only when motion is allowed.
   const [clock, setClock] = useState('00:00');
   const [cmdIndex, setCmdIndex] = useState(0);
+  // Landing device: a demo room that changes colour with its (fictional) track.
+  const motion = useMotion();
+  // cycles slowly (8 s): the ground is the only thing allowed to drift
+  const demoIndex = useDemoCycle(8000);
+  // the pinned scroll story washes the same page ground (null when not pinned)
+  const [storyStep, setStoryStep] = useState<number | null>(null);
+  const groundIdx = storyStep !== null ? storyStep : demoIndex;
+  const groundDemo = DEMO_TRACKS[groundIdx % DEMO_TRACKS.length];
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const t0 = Date.now();
@@ -470,6 +491,9 @@ export default function Home() {
             // Sections: staggered parallax for depth perception.
             const sections = root.querySelectorAll('.section');
             sections.forEach((section, i) => {
+              // #how hosts the pinned scroll story: a transformed ancestor would break
+              // position:fixed pinning, so it is the one section without parallax.
+              if (section.id === 'how') return;
               gsap.default.to(section, {
                 y: (i + 1) * -35,
                 scrollTrigger: {
@@ -552,11 +576,6 @@ export default function Home() {
     };
   }, []);
 
-  const steps = [
-    { n: '01', t: 'Digite seu nome e crie a sala', d: 'Sem instalar nada e sem conta. A sala nasce privada: só entra quem tem o link.' },
-    { n: '02', t: 'Mande o link', d: 'Um link coloca seus amigos na mesma sala, onde estiverem. Cada um entra com o próprio nome.' },
-    { n: '03', t: 'Toquem em sincronia', d: 'Montem a fila juntos; a sala sincroniza quem toca o quê. Cada um ouve na própria conta, no Spotify ou no YouTube.' },
-  ];
 
   // Evergreen value phrases for the hero marquee. Decorative (the parent is
   // aria-hidden); the same claims appear in the readable sections below.
@@ -586,7 +605,12 @@ export default function Home() {
   ];
 
   return (
-    <div ref={rootRef} className="landing">
+    <div ref={rootRef} className="landing" data-bg="sintonia" data-tint="page" style={demoTintStyle(groundIdx)}>
+      <GroundStack
+        spec={{ palette: groundPair(groundDemo.tint, groundDemo.palette) }}
+        animate={motion.ground}
+        className="ground-stack--page"
+      />
       {/* Scroll progress rail: the page's own instrument readout. */}
       <div className="scroll-rail" aria-hidden><div className="scroll-rail__bar" /></div>
       <header className="site-header">
@@ -598,7 +622,7 @@ export default function Home() {
           <a href="https://github.com/LucasSantana-Dev/cojam" target="_blank" rel="noreferrer">
             GitHub
           </a>
-          {accountsEnabled && <Link href="/account">Sign in</Link>}
+          {accountsEnabled && <Link href="/account">Entrar</Link>}
         </nav>
         <button onClick={createRoom} className="btn-primary magnetic">
           Começar uma sala
@@ -606,13 +630,10 @@ export default function Home() {
       </header>
       <main id="main" className="landing-content">
         {/* Hero */}
-        <header className="hero">
+        <header className="hero" data-tint="hero" data-bg="sintonia" style={{ ...demoTintStyle(groundIdx), ['--demo-cover' as string]: `url("${demoCover(demoIndex)}")` }}>
           <div className="hero-aurora" aria-hidden />
           <div className="hero-glow" aria-hidden />
           <div className="hero-grid" aria-hidden />
-          <p className="hero-backdrop-word" aria-hidden>together</p>
-          <p className="hero-backdrop-word hero-backdrop-word--a" aria-hidden>together</p>
-          <p className="hero-backdrop-word hero-backdrop-word--b" aria-hidden>together</p>
 
           {/* HUD corner readouts: the landing reports state like a room does.
               Honest signals only — a real session clock and the protocol's own
@@ -625,6 +646,7 @@ export default function Home() {
             <span className="hud-label">SESSION</span>
             <span className="hud-clock">{clock}</span>
           </div>
+          <div className="hero-layout">
           <div className="hero-inner">
             <span className="eyebrow is-live">
               <span className="eyebrow-dot" aria-hidden />
@@ -685,58 +707,11 @@ export default function Home() {
 
             <LiveCounter />
 
-            {/* Example room artifact — evidence, not promise (Stationhead
-                steal). Labeled as an example; same people/track as the
-                RoomShowcase below, one consistent story. Decorative
-                illustration, hidden from assistive tech.
-                F1: when FEATURE_PUBLIC_ROOMS is on and the directory returns
-                live rooms, LiveRoomsSlot swaps this mock for the live strip;
-                flag off, empty list, or fetch failure keeps the mock. */}
-            <LiveRoomsSlot
-              fallback={
-                <aside className="room-card" aria-hidden="true">
-                  <div className="room-card__top">
-                    <span className="room-card__label">Sala de exemplo · NEON-4821</span>
-                    <span className="room-card__live">
-                      <span className="room-card__dot" />
-                      Ao vivo
-                    </span>
-                  </div>
-                  <div className="room-card__main">
-                    <Image
-                      src="https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/e8/43/5f/e8435ffa-b6b9-b171-40ab-4ff3959ab661/886443919266.jpg/600x600bb.jpg"
-                      alt=""
-                      className="room-card__art"
-                      width={52}
-                      height={52}
-                      loading="lazy"
-                      decoding="async"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="room-card__meta">
-                      <span className="room-card__title">Instant Crush</span>
-                      <span className="room-card__artist">Daft Punk &amp; Julian Casablancas</span>
-                    </div>
-                    <div className="eq">
-                      <span />
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  </div>
-                  <div className="room-card__bottom">
-                    <span className="room-card__avatars">
-                      <i style={{ background: 'var(--color-ident-1)' }}>L</i>
-                      <i style={{ background: 'var(--color-ident-2)' }}>M</i>
-                      <i style={{ background: 'var(--color-ident-3)' }}>T</i>
-                    </span>
-                    <span className="room-card__chat">
-                      <b>Maria</b> adicionou Borderline à fila
-                    </span>
-                  </div>
-                </aside>
-              }
-            />
+            {/* F1: when FEATURE_PUBLIC_ROOMS is on and the directory returns live
+                rooms, LiveRoomsSlot renders the live strip here; flag off, empty
+                list, or fetch failure renders nothing and the hero device (the
+                static example room, beside the copy) is the whole story. */}
+            <LiveRoomsSlot fallback={null} />
 
             <div className="hero-claims">
               <span className="claim"><CheckIcon size={13} /> Sem instalar</span>
@@ -754,6 +729,8 @@ export default function Home() {
               <a href="#faq">dúvidas</a>
             </nav>
           </div>
+          <HeroDevice index={demoIndex} waveAnimate={motion.ground} testId="hero-device" />
+          </div>
           <div className="hero-ticker" aria-hidden>
             <div className="hero-ticker__track">
               <span>{tickerPhrases}</span>
@@ -762,20 +739,25 @@ export default function Home() {
           </div>
         </header>
 
+        {motion.wave && <SectionWave animate={!motion.reduced} beat={motion.ground} />}
         {/* How it works */}
         <section id="how" className="section">
           <p className="section-eyebrow reveal">Como funciona em 3 passos</p>
           <h2 className="section-title reveal">Uma sala, seus serviços de streaming, <em>zero troca de app.</em></h2>
-          <div className="step-grid">
-            {steps.map((s) => (
-              <div key={s.n} className="step-card reveal">
-                <i className="step-rule" aria-hidden />
-                <span className="step-num">{s.n}]</span>
-                <h3>{s.t}</h3>
-                <p>{s.d}</p>
-              </div>
-            ))}
-          </div>
+          {motion.scrollstory ? (
+            <ScrollStory steps={STEPS} waveAnimate={motion.ground} onActive={setStoryStep} />
+          ) : (
+            <div className="step-grid">
+              {STEPS.map((s) => (
+                <div key={s.n} className="step-card reveal">
+                  <i className="step-rule" aria-hidden />
+                  <span className="step-num">{s.n}]</span>
+                  <h3>{s.t}</h3>
+                  <p>{s.d}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Room Showcase */}
@@ -790,6 +772,7 @@ export default function Home() {
 
         {/* Alone vs in a room (Direction B borrow: evidence as comparison table) */}
         <section id="vs" className="section">
+          {motion.wave && <SectionWave animate={!motion.reduced} beat={motion.ground} />}
           <p className="section-eyebrow reveal">Por que uma sala</p>
           <h2 className="section-title reveal">
             Sozinho funciona. <em>Junto é outra coisa.</em>
@@ -859,6 +842,7 @@ export default function Home() {
             array feeds the FAQPage JSON-LD, so markup and structured data
             cannot drift. Answers describe CoJam as it ships today. */}
         <section id="faq" className="section">
+          {motion.wave && <SectionWave animate={!motion.reduced} beat={motion.ground} />}
           <p className="section-eyebrow reveal">Perguntas frequentes</p>
           <h2 className="section-title reveal">O que as pessoas <em>perguntam antes de criar a sala.</em></h2>
           <div className="faq-list reveal">

@@ -8,6 +8,7 @@ import { subscribePublicRooms } from '@/lib/publicRooms';
 import { AGE_GATE_COPY_PT, useAgeGatedJoin } from '@/app/components/useAgeGatedJoin';
 import { useReportDialog } from '@/app/components/useReportDialog';
 import { LiveCounter } from '@/app/components/LiveCounter';
+import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 
 type SortKey = 'people' | 'recent';
 
@@ -76,18 +77,20 @@ export function RoomsDirectory() {
   const visible = useMemo(() => filterAndSortRooms(rooms, query, sort), [rooms, query, sort]);
 
   return (
-    <main className="rooms-page">
+    <SintoniaScreen>
+    <main id="main" className="rooms-page">
       <header className="rooms-page__head">
         <div>
           <h1 className="rooms-page__title">Salas públicas</h1>
           <p className="rooms-page__sub">Salas abertas tocando agora. Entre em uma e ouça junto.</p>
           <LiveCounter />
         </div>
-        <Link href="/" className="live-rooms__all">&larr; Início</Link>
+        <Link href="/" className="sx-link">&larr; Início</Link>
       </header>
+      <SineLine className="sx-wave--wide" />
 
       {!features.publicRooms ? (
-        <p className="rooms-page__empty" role="status">
+        <p className="rooms-page__empty sx-glass" role="status">
           O diretório de salas públicas não está disponível neste servidor.
         </p>
       ) : (
@@ -111,13 +114,13 @@ export function RoomsDirectory() {
           </div>
 
           {!loaded ? (
-            <p className="rooms-page__empty" role="status">Carregando salas...</p>
+            <p className="rooms-page__empty sx-glass" role="status">Carregando salas...</p>
           ) : rooms.length === 0 ? (
-            <p className="rooms-page__empty" role="status">
+            <p className="rooms-page__empty sx-glass" role="status">
               Nenhuma sala pública no ar agora. Crie uma e ative a opção Public.
             </p>
           ) : visible.length === 0 ? (
-            <p className="rooms-page__empty" role="status">Nenhuma sala encontrada para essa busca.</p>
+            <p className="rooms-page__empty sx-glass" role="status">Nenhuma sala encontrada para essa busca.</p>
           ) : (
             <div className="live-rooms__grid">
               {visible.map((room) => (
@@ -129,10 +132,7 @@ export function RoomsDirectory() {
                 >
                   <span className="live-room-card__top">
                     <span className="live-room-card__name">{room.name || room.roomId}</span>
-                    <span className="room-card__live">
-                      <span className="room-card__dot" />
-                      {room.kind === 'video' ? 'Vídeo' : 'Áudio'}
-                    </span>
+                    <span className="sx-kind">{room.kind === 'video' ? 'Vídeo' : 'Áudio'}</span>
                   </span>
                   <span className="live-room-card__track">
                     {room.nowPlaying ? (
@@ -148,7 +148,10 @@ export function RoomsDirectory() {
                     <span className="live-room-card__count">
                       {room.memberCount} ouvindo
                     </span>
-                    <span className="live-room-card__artist">{activeLabel(room.lastActiveMs, now)}</span>
+                    <span className="live-room-card__artist live-room-card__when">
+                      {activeLabel(room.lastActiveMs, now) === 'ativa agora' && <span className="room-card__dot" aria-hidden="true" />}
+                      {activeLabel(room.lastActiveMs, now)}
+                    </span>
                   </span>
                 </Link>
                 {/* A sibling of the link, not a child: a button inside an anchor is
@@ -171,5 +174,6 @@ export function RoomsDirectory() {
       {gate}
       {report.dialog}
     </main>
+    </SintoniaScreen>
   );
 }

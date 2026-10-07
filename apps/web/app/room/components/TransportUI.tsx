@@ -166,7 +166,7 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
         <button
           onClick={handlePlayPause}
           disabled={!activePlayer || !canControl}
-          className="flex-shrink-0 w-12 h-12 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 flex items-center justify-center"
+          className="transport-play flex-shrink-0 w-12 h-12 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 flex items-center justify-center"
           style={{
             backgroundColor: 'var(--color-accent)',
             color: 'var(--color-surface-0)',

@@ -39,7 +39,7 @@ test('voting a queued track increments the count, second click decrements', asyn
   await addTrack(page, 'Vote Me', 'Artista');
 
   const row = page.getByTestId('queue-item').first();
-  const voteButton = row.getByRole('button', { name: 'Votar' });
+  const voteButton = row.getByRole('button', { name: 'Votar', exact: true });
   await expect(row.getByTestId('vote-count')).toHaveText('0');
 
   await voteButton.click();
@@ -64,7 +64,7 @@ test('votes sync live to another member and the listeners pick is marked', async
   await addTrack(host, 'Challenger', 'B-Two');
 
   const challenger = listener.getByTestId('queue-item').filter({ hasText: 'Challenger' });
-  await challenger.getByRole('button', { name: 'Votar' }).click();
+  await challenger.getByRole('button', { name: 'Votar', exact: true }).click();
 
   // The count reaches the host via publication (no reload), and the marker
   // lands on the most-voted queued track (the now-playing song is excluded).

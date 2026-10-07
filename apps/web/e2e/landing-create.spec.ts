@@ -7,7 +7,7 @@ test('landing: name and create room lands inside the room as that name', async (
   await proxyConnectionToken(page);
   await page.goto('/');
   await page.getByLabel('Seu nome').fill('Ana');
-  await page.getByRole('button', { name: 'Criar sala' }).click();
+  await page.getByRole('button', { name: 'Criar sala', exact: true }).click();
 
   await expect(page).toHaveURL(/\/room\/[0-9A-Z]{12}$/);
   // Auto-joined: the room header shows the display name, never the join form.
