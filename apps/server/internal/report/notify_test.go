@@ -66,6 +66,12 @@ func TestWebhook_PostsMinimalSummary(t *testing.T) {
 			p.Category != CategoryMinorAtRisk || p.CreatedAt != "2026-10-07T12:00:00Z" {
 			t.Fatalf("unexpected payload %+v", p)
 		}
+		if !strings.Contains(string(body), `"allowed_mentions":{"parse":[]}`) {
+			t.Errorf("allowed_mentions missing: %s", body)
+		}
+		if !strings.Contains(p.Text, "`ROOM12345678`") {
+			t.Errorf("room id should sit in a code span: %q", p.Text)
+		}
 		for _, banned := range []string{"private chat content", "free text reason", "sub-secret", "m-9"} {
 			if strings.Contains(string(body), banned) {
 				t.Errorf("payload leaked %q: %s", banned, body)
@@ -172,4 +178,10 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("condition not met in time")
+}
+
+func TestSafeInline_StripsBreakouts(t *testing.T) {
+	if got := safeInline("a`b\nc\x00@everyone"); got != "abc@everyone" {
+		t.Fatalf("got %q", got)
+	}
 }

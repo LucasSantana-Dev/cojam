@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // A stored report nobody reads is the same as no reporting route (spec 3.2).
@@ -56,13 +58,31 @@ type Notifier interface {
 // "content" carry the same one-line summary so Slack-style and Discord-style
 // endpoints render it without configuration.
 type WebhookPayload struct {
-	Text      string `json:"text"`
-	Content   string `json:"content"`
-	ReportID  string `json:"reportId"`
-	Kind      string `json:"kind"`
-	RoomID    string `json:"roomId"`
-	Category  string `json:"category"`
-	CreatedAt string `json:"createdAt"`
+	// AllowedMentions is always {"parse": []} so a Discord channel never pings
+	// anyone from report-derived text.
+	AllowedMentions allowedMentions `json:"allowed_mentions"`
+	Text            string          `json:"text"`
+	Content         string          `json:"content"`
+	ReportID        string          `json:"reportId"`
+	Kind            string          `json:"kind"`
+	RoomID          string          `json:"roomId"`
+	Category        string          `json:"category"`
+	CreatedAt       string          `json:"createdAt"`
+}
+
+type allowedMentions struct {
+	Parse []string `json:"parse"`
+}
+
+// safeInline strips control characters and backticks so a value can sit inside
+// an inline code span without breaking out of it.
+func safeInline(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == '`' {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // WebhookNotifier posts report summaries to a URL, off the request path.
@@ -116,15 +136,16 @@ func (n *WebhookNotifier) Notify(r Report, category string) {
 
 func (n *WebhookNotifier) post(r Report, category string) error {
 	category = NormalizeCategory(category)
-	summary := fmt.Sprintf("CoJam report %s: %s in room %s (%s)", r.ID, r.Kind, r.RoomID, category)
+	summary := fmt.Sprintf("CoJam report `%s`: %s in room `%s` (%s)", safeInline(r.ID), r.Kind, safeInline(r.RoomID), category)
 	body, err := json.Marshal(WebhookPayload{
-		Text:      summary,
-		Content:   summary,
-		ReportID:  r.ID,
-		Kind:      string(r.Kind),
-		RoomID:    r.RoomID,
-		Category:  category,
-		CreatedAt: r.CreatedAt.UTC().Format(time.RFC3339),
+		AllowedMentions: allowedMentions{Parse: []string{}},
+		Text:            summary,
+		Content:         summary,
+		ReportID:        r.ID,
+		Kind:            string(r.Kind),
+		RoomID:          r.RoomID,
+		Category:        category,
+		CreatedAt:       r.CreatedAt.UTC().Format(time.RFC3339),
 	})
 	if err != nil {
 		return err

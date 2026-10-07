@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,13 +14,14 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/report"
 )
 
+var reportIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
 // Bounds for the report endpoint. It is an unauthenticated-ish public write
 // (membership is not checkable over HTTP), so it is bounded like /api/telemetry.
 const (
 	reportMaxBody    = 16 << 10
 	reportMaxContent = 500 // runes
 	reportMaxReason  = 300 // runes
-	reportMaxIDLen   = 128 // roomId and subjectId, bytes
 	reportBurst      = 5
 	reportRefill     = 20 * time.Second
 )
@@ -59,8 +61,11 @@ func reportHandler(
 		kind := report.Kind(req.Kind)
 		// ids are short by construction; an oversize one is abuse, not a typo,
 		// and would otherwise be stored verbatim (up to the body cap).
-		if req.RoomID == "" || !kind.Valid() ||
-			len(req.RoomID) > reportMaxIDLen || len(req.SubjectID) > reportMaxIDLen {
+		// Ids reach the operator's webhook channel, so they are restricted to a
+		// plain charset (no mentions, markdown or newlines). Real ids are
+		// base36, base64url or uuid; subjectId may be empty (room reports).
+		if !kind.Valid() || !reportIDRe.MatchString(req.RoomID) ||
+			(req.SubjectID != "" && !reportIDRe.MatchString(req.SubjectID)) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -78,14 +83,13 @@ func reportHandler(
 		// 500 and a lost report.
 		req.Content = stripNUL(req.Content)
 		req.Reason = stripNUL(req.Reason)
-		req.RoomID = stripNUL(req.RoomID)
-		req.SubjectID = stripNUL(req.SubjectID)
 
 		category := report.NormalizeCategory(req.Category)
 		reason := truncateRunes(req.Reason, reportMaxReason)
 		if category != report.CategoryOther {
 			// Stored with the report so the operator reading the table sees it.
-			reason = truncateRunes("["+category+"] "+req.Reason, reportMaxReason)
+			// Truncate first so the prefix does not eat the reporter's budget.
+			reason = "[" + category + "] " + reason
 		}
 
 		rec := report.Report{

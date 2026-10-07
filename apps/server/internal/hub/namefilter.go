@@ -64,13 +64,21 @@ var leetFold = map[rune]rune{
 	'@': 'a', '$': 's', '!': 'i', '+': 't', '€': 'e', '|': 'i',
 }
 
+// foldFullwidth maps fullwidth ASCII (U+FF01..U+FF5E) to its ASCII form.
+func foldFullwidth(r rune) rune {
+	if r >= 0xFF01 && r <= 0xFF5E {
+		return r - 0xFEE0
+	}
+	return r
+}
+
 // normalizeNameForFilter returns the lowercased, accent-folded, leetspeak
 // normalized form of s, keeping word separators as single spaces. oneAs is
 // what the digit 1 reads as: "i" (p1ca) or "l".
 func normalizeNameForFilter(s string, oneAs rune) string {
 	var b strings.Builder
 	lastSpace := true
-	for _, r := range strings.ToLower(s) {
+	for _, r := range strings.ToLower(strings.Map(foldFullwidth, s)) {
 		if f, ok := accentFold[r]; ok {
 			r = f
 		}

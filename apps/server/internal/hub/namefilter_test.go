@@ -21,7 +21,7 @@ func TestRoomNameBlocked_Blocks(t *testing.T) {
 		"child porn", "crianca nua", "criança_nua", "menor nua",
 		"hentai e nudes", "onlyfans",
 		"pornografia", "xoxota", "bUcEtA", "punhet@",
-		"musica e sexo", "​p​or​n",
+		"musica e sexo", "ｐｏｒｎ", "ＳＥＸＯ", "ｐ３ｄｏ", "​p​or​n",
 	} {
 		if !roomNameBlocked(name) {
 			t.Errorf("expected %q to be blocked", name)

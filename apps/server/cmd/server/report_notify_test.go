@@ -88,28 +88,37 @@ func TestReport_OversizedBodyRejected(t *testing.T) {
 	}
 }
 
-func TestReport_OversizedIDsRejected(t *testing.T) {
-	h, _ := reportSetup(t)
-	long := strings.Repeat("x", reportMaxIDLen+1)
+func TestReport_BadIDsRejected(t *testing.T) {
+	h, store := reportSetup(t)
+	long := strings.Repeat("x", 129)
 	for _, body := range []string{
+		`{"roomId":"@everyone\n[x](http://evil)","kind":"room"}`,
+		`{"roomId":"R1 R2","kind":"room"}`,
 		`{"roomId":"` + long + `","kind":"room"}`,
 		`{"roomId":"R1","kind":"member","subjectId":"` + long + `"}`,
+		`{"roomId":"R1","kind":"member","subjectId":"<@&123>"}`,
 	} {
 		if rec := postReport(h, body); rec.Code != http.StatusBadRequest {
-			t.Errorf("expected 400, got %d", rec.Code)
+			t.Errorf("%s: expected 400, got %d", body, rec.Code)
 		}
+	}
+	if got, _ := store.Recent(context.Background(), 1); len(got) != 0 {
+		t.Fatal("rejected reports must not be stored")
+	}
+	if rec := postReport(h, `{"roomId":"AB12-cd_34","kind":"member","subjectId":"a1b2-c3_d4"}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("real-shaped ids must pass, got %d", rec.Code)
 	}
 }
 
 // Postgres text columns reject NUL; it must be stripped, not become a 500.
 func TestReport_StripsNUL(t *testing.T) {
 	h, store := reportSetup(t)
-	rec := postReport(h, `{"roomId":"R\u00001","kind":"message","content":"a\u0000b","reason":"c\u0000d"}`)
+	rec := postReport(h, `{"roomId":"R1","kind":"message","content":"a\u0000b","reason":"c\u0000d"}`)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", rec.Code)
 	}
 	got, _ := store.Recent(context.Background(), 1)
-	if got[0].RoomID != "R1" || got[0].Content != "ab" || got[0].Reason != "cd" {
+	if got[0].Content != "ab" || got[0].Reason != "cd" {
 		t.Fatalf("NUL not stripped: %+v", got[0])
 	}
 }
@@ -121,8 +130,8 @@ func TestReport_ReasonTruncatesRuneSafe(t *testing.T) {
 	long := strings.Repeat("ã", reportMaxReason+50)
 	postReport(h, `{"roomId":"R1","kind":"room","category":"harassment","reason":"`+long+`"}`)
 	got, _ := store.Recent(context.Background(), 1)
-	if n := len([]rune(got[0].Reason)); n != reportMaxReason {
-		t.Fatalf("expected %d runes, got %d", reportMaxReason, n)
+	if n := strings.Count(got[0].Reason, "ã"); n != reportMaxReason {
+		t.Fatalf("expected %d runes of reason, got %d", reportMaxReason, n)
 	}
 	if strings.ContainsRune(got[0].Reason, '�') {
 		t.Fatal("truncation split a rune")
@@ -148,5 +157,16 @@ func TestReport_RateLimitIsPerCaller(t *testing.T) {
 	}
 	if send("203.0.113.2") != http.StatusNoContent {
 		t.Fatal("a different caller must not share the budget")
+	}
+}
+
+// The category prefix must not eat the reporter's reason budget.
+func TestReport_PrefixDoesNotEatReason(t *testing.T) {
+	h, store := reportSetup(t)
+	reason := strings.Repeat("r", reportMaxReason)
+	postReport(h, `{"roomId":"R1","kind":"room","category":"spam","reason":"`+reason+`"}`)
+	got, _ := store.Recent(context.Background(), 1)
+	if !strings.HasSuffix(got[0].Reason, reason) {
+		t.Fatalf("reason was truncated by the prefix: %q", got[0].Reason)
 	}
 }
