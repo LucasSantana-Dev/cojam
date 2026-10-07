@@ -55,21 +55,21 @@ func srRemoveRPC(trackID, roomID string) []byte {
 // B16 (RFC-0005): with room auth on, a listener may remove a track they added.
 func TestSelfRemove_ListenerRemovesOwnTrack(t *testing.T) {
 	h := NewHub(nil)
-	srJoin(t, h, "alice_client", "alice", "sr1") // host
-	srJoin(t, h, "bob_client", "bob", "sr1")     // listener
+	srJoin(t, h, "alice_client", "alice", "SR1") // host
+	srJoin(t, h, "bob_client", "bob", "SR1")     // listener
 
-	added := srAdd(t, h, "sr1", "bob", "")
+	added := srAdd(t, h, "SR1", "bob", "")
 	trackID := added.Queue[len(added.Queue)-1].ID
 	if got := added.Queue[len(added.Queue)-1].AddedByUserID; got != "bob" {
 		t.Fatalf("addedByUserId should be stamped from the connection identity: got %q, want bob", got)
 	}
 
 	bob := newTestClient("bob_client", "bob")
-	if err := h.Authorize(bob, "queue.remove", srRemoveRPC(trackID, "sr1")); err != nil {
+	if err := h.Authorize(bob, "queue.remove", srRemoveRPC(trackID, "SR1")); err != nil {
 		t.Fatalf("owner bob queue.remove: got %v, want nil", err)
 	}
 
-	res, err := h.HandleRPC("queue.remove", srRemoveRPC(trackID, "sr1"), "bob")
+	res, err := h.HandleRPC("queue.remove", srRemoveRPC(trackID, "SR1"), "bob")
 	if err != nil {
 		t.Fatalf("owner remove dispatch: %v", err)
 	}
@@ -88,20 +88,20 @@ func TestSelfRemove_ListenerRemovesOwnTrack(t *testing.T) {
 // B16: a different listener cannot remove someone else's track.
 func TestSelfRemove_OtherListenerDenied(t *testing.T) {
 	h := NewHub(nil)
-	srJoin(t, h, "alice_client", "alice", "sr2")
-	srJoin(t, h, "bob_client", "bob", "sr2")
-	srJoin(t, h, "carol_client", "carol", "sr2")
+	srJoin(t, h, "alice_client", "alice", "SR2")
+	srJoin(t, h, "bob_client", "bob", "SR2")
+	srJoin(t, h, "carol_client", "carol", "SR2")
 
-	added := srAdd(t, h, "sr2", "bob", "")
+	added := srAdd(t, h, "SR2", "bob", "")
 	trackID := added.Queue[len(added.Queue)-1].ID
 
 	carol := newTestClient("carol_client", "carol")
-	if err := h.Authorize(carol, "queue.remove", srRemoveRPC(trackID, "sr2")); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
+	if err := h.Authorize(carol, "queue.remove", srRemoveRPC(trackID, "SR2")); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("carol removing bob's track: got %v, want ErrorPermissionDenied", err)
 	}
 
 	// State unchanged: the track is still queued.
-	room := mustRoom(t, h, "sr2")
+	room := mustRoom(t, h, "SR2")
 	room.mu.Lock()
 	defer room.mu.Unlock()
 	if len(room.State.Queue) != 1 || room.State.Queue[0].ID != trackID {
@@ -115,17 +115,17 @@ func TestSelfRemove_OtherListenerDenied(t *testing.T) {
 // B16: the host can still remove anyone's track.
 func TestSelfRemove_HostRemovesAnyonesTrack(t *testing.T) {
 	h := NewHub(nil)
-	srJoin(t, h, "alice_client", "alice", "sr3")
-	srJoin(t, h, "bob_client", "bob", "sr3")
+	srJoin(t, h, "alice_client", "alice", "SR3")
+	srJoin(t, h, "bob_client", "bob", "SR3")
 
-	added := srAdd(t, h, "sr3", "bob", "")
+	added := srAdd(t, h, "SR3", "bob", "")
 	trackID := added.Queue[len(added.Queue)-1].ID
 
 	alice := newTestClient("alice_client", "alice")
-	if err := h.Authorize(alice, "queue.remove", srRemoveRPC(trackID, "sr3")); err != nil {
+	if err := h.Authorize(alice, "queue.remove", srRemoveRPC(trackID, "SR3")); err != nil {
 		t.Fatalf("host alice queue.remove: got %v, want nil", err)
 	}
-	if _, err := h.HandleRPC("queue.remove", srRemoveRPC(trackID, "sr3"), "alice"); err != nil {
+	if _, err := h.HandleRPC("queue.remove", srRemoveRPC(trackID, "SR3"), "alice"); err != nil {
 		t.Fatalf("host remove dispatch: %v", err)
 	}
 }
@@ -134,19 +134,19 @@ func TestSelfRemove_HostRemovesAnyonesTrack(t *testing.T) {
 // connection identity.
 func TestSelfRemove_ClientSuppliedAddedByUserIdOverwritten(t *testing.T) {
 	h := NewHub(nil)
-	srJoin(t, h, "alice_client", "alice", "sr4")
-	srJoin(t, h, "bob_client", "bob", "sr4")
+	srJoin(t, h, "alice_client", "alice", "SR4")
+	srJoin(t, h, "bob_client", "bob", "SR4")
 
-	added := srAdd(t, h, "sr4", "bob", `,"addedByUserId":"mallory"`)
+	added := srAdd(t, h, "SR4", "bob", `,"addedByUserId":"mallory"`)
 	if got := added.Queue[len(added.Queue)-1].AddedByUserID; got != "bob" {
 		t.Fatalf("client-supplied addedByUserId must be overwritten: got %q, want bob", got)
 	}
 
 	// And the spoofed identity grants nothing: "mallory" cannot remove it.
 	mallory := newTestClient("mallory_client", "mallory")
-	h.Join("mallory_client", "sr4")
+	h.Join("mallory_client", "SR4")
 	trackID := added.Queue[len(added.Queue)-1].ID
-	if err := h.Authorize(mallory, "queue.remove", srRemoveRPC(trackID, "sr4")); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
+	if err := h.Authorize(mallory, "queue.remove", srRemoveRPC(trackID, "SR4")); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("spoofed owner remove: got %v, want ErrorPermissionDenied", err)
 	}
 }
@@ -155,20 +155,20 @@ func TestSelfRemove_ClientSuppliedAddedByUserIdOverwritten(t *testing.T) {
 // remove any track, exactly as before.
 func TestSelfRemove_FlagOffEqualMember(t *testing.T) {
 	h := NewHub(nil)
-	srJoin(t, h, "anon1_client", "", "sr5")
-	srJoin(t, h, "anon2_client", "", "sr5")
+	srJoin(t, h, "anon1_client", "", "SR5")
+	srJoin(t, h, "anon2_client", "", "SR5")
 
-	added := srAdd(t, h, "sr5", "", "")
+	added := srAdd(t, h, "SR5", "", "")
 	trackID := added.Queue[len(added.Queue)-1].ID
 	if got := added.Queue[len(added.Queue)-1].AddedByUserID; got != "" {
 		t.Fatalf("anonymous add must carry no addedByUserId: got %q", got)
 	}
 
 	anon2 := newTestClient("anon2_client", "")
-	if err := h.Authorize(anon2, "queue.remove", srRemoveRPC(trackID, "sr5")); err != nil {
+	if err := h.Authorize(anon2, "queue.remove", srRemoveRPC(trackID, "SR5")); err != nil {
 		t.Fatalf("flag-off member remove: got %v, want nil", err)
 	}
-	if _, err := h.HandleRPC("queue.remove", srRemoveRPC(trackID, "sr5"), ""); err != nil {
+	if _, err := h.HandleRPC("queue.remove", srRemoveRPC(trackID, "SR5"), ""); err != nil {
 		t.Fatalf("flag-off remove dispatch: %v", err)
 	}
 }

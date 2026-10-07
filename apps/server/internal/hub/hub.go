@@ -312,6 +312,11 @@ type Hub struct {
 	// bucket (no third-party fanout, hence not in fanoutMethods).
 	listLimiter *rateLimiter
 
+	// joinLimiter rate-limits room.join per caller; roomCreateLimiter is the
+	// per-caller budget for creating rooms that do not exist yet (ensureRoom).
+	joinLimiter       *rateLimiter
+	roomCreateLimiter *rateLimiter
+
 	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
 	// up to 200 tracks at once; an unbounded goroutine per track would burst
 	// hundreds of simultaneous YouTube/Spotify requests and trip rate limits.
@@ -535,23 +540,25 @@ func (h *Hub) WithRebind(secret []byte, burns rebind.BurnList) *Hub {
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
 	return &Hub{
-		rooms:            make(map[string]*Room),
-		store:            store.NewMemory(),
-		node:             node,
-		members:          make(map[string]map[string]struct{}),
-		roomMembers:      make(map[string]map[string]struct{}),
-		memberJoinTimes:  make(map[string]map[string]int64),
-		clientUserID:     make(map[string]string),
-		clientName:       make(map[string]string),
-		enrichSem:        make(chan struct{}, enrichConcurrency),
-		enrichPending:    make(chan struct{}, enrichMaxPending),
-		fanoutLimiter:    newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
-		voteLimiter:      newRateLimiter(voteBurst, voteRefill, time.Now),
-		chatLimiter:      newRateLimiter(chatBurst, chatRefill, time.Now),
-		transportLimiter: newRateLimiter(transportBurst, transportRefill, time.Now),
-		heartbeatEvery:   videoHeartbeatEvery,
-		heartbeats:       make(map[string]chan struct{}),
-		listLimiter:      newRateLimiter(listBurst, listRefill, time.Now),
+		rooms:             make(map[string]*Room),
+		store:             store.NewMemory(),
+		node:              node,
+		members:           make(map[string]map[string]struct{}),
+		roomMembers:       make(map[string]map[string]struct{}),
+		memberJoinTimes:   make(map[string]map[string]int64),
+		clientUserID:      make(map[string]string),
+		clientName:        make(map[string]string),
+		enrichSem:         make(chan struct{}, enrichConcurrency),
+		enrichPending:     make(chan struct{}, enrichMaxPending),
+		fanoutLimiter:     newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
+		voteLimiter:       newRateLimiter(voteBurst, voteRefill, time.Now),
+		chatLimiter:       newRateLimiter(chatBurst, chatRefill, time.Now),
+		transportLimiter:  newRateLimiter(transportBurst, transportRefill, time.Now),
+		heartbeatEvery:    videoHeartbeatEvery,
+		heartbeats:        make(map[string]chan struct{}),
+		listLimiter:       newRateLimiter(listBurst, listRefill, time.Now),
+		joinLimiter:       newRateLimiter(joinBurst, joinRefill, time.Now),
+		roomCreateLimiter: newRateLimiter(roomCreateBurst, roomCreateRefill, time.Now),
 	}
 }
 
@@ -993,6 +1000,12 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 	}
 	_ = json.Unmarshal(data, &probe)
 
+	// Every RPC naming a room must name a well-formed one, before enrollment
+	// or dispatch can create or touch it.
+	if probe.RoomID != "" && !ValidRoomID(probe.RoomID) {
+		return errInvalidRoomID
+	}
+
 	if method == "room.join" {
 		h.Join(clientID, probe.RoomID)
 		return nil
@@ -1396,6 +1409,12 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 	}
 	if err == nil {
 		err = h.checkListLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.checkJoinLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.ensureRoom(method, data, rlKey)
 	}
 	if err == nil {
 		result, err = h.dispatch(method, data, clientID, userID, rlKey)

@@ -44,12 +44,12 @@ func listRooms(t *testing.T, h *Hub, userID string) []PublicRoomSummary {
 func TestSetPublic_NonMemberRejected(t *testing.T) {
 	h := newPublicHub()
 
-	if err := h.Authorize(newTestClient("attacker", ""), "room.set_public", setPublicPayload("x", true)); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
+	if err := h.Authorize(newTestClient("attacker", ""), "room.set_public", setPublicPayload("X", true)); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("unjoined room.set_public: got %v, want ErrorPermissionDenied", err)
 	}
 
-	h.Join("member", "x")
-	if err := h.Authorize(newTestClient("member", ""), "room.set_public", setPublicPayload("x", true)); err != nil {
+	h.Join("member", "X")
+	if err := h.Authorize(newTestClient("member", ""), "room.set_public", setPublicPayload("X", true)); err != nil {
 		t.Fatalf("member room.set_public: got %v, want nil", err)
 	}
 }
@@ -61,19 +61,19 @@ func TestSetPublic_HostOnly(t *testing.T) {
 
 	// alice becomes host of room1 (first authenticated joiner).
 	h.RecordClientUserID("alice_client", "alice")
-	h.Join("alice_client", "room1")
-	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"room1","name":"alice"}`), "alice"); err != nil {
+	h.Join("alice_client", "ROOM1")
+	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOM1","name":"alice"}`), "alice"); err != nil {
 		t.Fatalf("room.join: %v", err)
 	}
 
 	// bob is a member but not the host.
 	h.RecordClientUserID("bob_client", "bob")
-	h.Join("bob_client", "room1")
+	h.Join("bob_client", "ROOM1")
 
-	if err := h.Authorize(newTestClient("bob_client", "bob"), "room.set_public", setPublicPayload("room1", true)); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
+	if err := h.Authorize(newTestClient("bob_client", "bob"), "room.set_public", setPublicPayload("ROOM1", true)); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("non-host room.set_public: got %v, want ErrorPermissionDenied", err)
 	}
-	if err := h.Authorize(newTestClient("alice_client", "alice"), "room.set_public", setPublicPayload("room1", true)); err != nil {
+	if err := h.Authorize(newTestClient("alice_client", "alice"), "room.set_public", setPublicPayload("ROOM1", true)); err != nil {
 		t.Fatalf("host room.set_public: got %v, want nil", err)
 	}
 }
@@ -178,6 +178,10 @@ func TestRoomList_PrivacyDefaultAndToggle(t *testing.T) {
 // ascending for stability).
 func TestRoomList_CappedAndSorted(t *testing.T) {
 	h := newPublicHub()
+	// One anonymous caller seeds 105 rooms: lift the per-caller join and
+	// room-creation budgets, which are not under test here.
+	h.joinLimiter = nil
+	h.roomCreateLimiter = nil
 
 	// 105 public rooms, each with a queued track so the dead-room filter
 	// (0 members AND empty queue) does not apply.
@@ -296,7 +300,7 @@ func TestPublicRooms_FlagOff(t *testing.T) {
 	if _, err := h.HandleRPC("room.list", []byte(`{}`), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
 		t.Fatalf("room.list with flag off: got %v, want ErrorMethodNotFound", err)
 	}
-	if _, err := h.HandleRPC("room.set_public", setPublicPayload("x", true), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
+	if _, err := h.HandleRPC("room.set_public", setPublicPayload("X", true), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
 		t.Fatalf("room.set_public with flag off: got %v, want ErrorMethodNotFound", err)
 	}
 }
@@ -387,7 +391,7 @@ func TestSetPublic_NameValidation(t *testing.T) {
 	}
 
 	// Over the cap: rejected with a client-visible UserError.
-	long := strings.Repeat("x", maxRoomNameLen+1)
+	long := strings.Repeat("X", maxRoomNameLen+1)
 	_, err = h.HandleRPC("room.set_public", []byte(fmt.Sprintf(`{"roomId":"n1","public":true,"name":%q}`, long)), "")
 	var ue *UserError
 	if !errors.As(err, &ue) {

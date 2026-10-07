@@ -112,7 +112,7 @@ func setupGuestRoom(t *testing.T, h *Hub, roomID, guestSub, authUser string) {
 
 func TestRebind_MethodNotFoundWhenNotWired(t *testing.T) {
 	h := NewHub(nil) // no WithRebind: FEATURE_ROOM_AUTH off posture
-	_, err := rebindCall(h, "room", "proof", "c-auth", "sb:u1")
+	_, err := rebindCall(h, "ROOM", "proof", "c-auth", "sb:u1")
 	if !errors.Is(err, centrifuge.ErrorMethodNotFound) {
 		t.Fatalf("unwired rebind: got %v, want ErrorMethodNotFound", err)
 	}
@@ -124,7 +124,7 @@ func TestRebind_MembershipGated(t *testing.T) {
 	}
 	h := newRebindHub(t)
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
-	payload, _ := json.Marshal(map[string]string{"roomId": "room", "proof": proof})
+	payload, _ := json.Marshal(map[string]string{"roomId": "ROOM", "proof": proof})
 	err := h.Authorize(newTestClient("c-outsider", "sb:u1"), "room.rebind", payload)
 	if !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("non-member rebind: got %v, want ErrorPermissionDenied", err)
@@ -136,11 +136,11 @@ func TestRebind_UnauthenticatedRejected(t *testing.T) {
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
 
 	// No identity at all (room auth off transport path).
-	if _, err := rebindCall(h, "room", proof, "c-x", ""); err == nil {
+	if _, err := rebindCall(h, "ROOM", proof, "c-x", ""); err == nil {
 		t.Fatal("rebind with empty userID must be rejected")
 	}
 	// An anonymous identity has nothing to upgrade to.
-	if _, err := rebindCall(h, "room", proof, "c-x", "guestsub"); err == nil {
+	if _, err := rebindCall(h, "ROOM", proof, "c-x", "guestsub"); err == nil {
 		t.Fatal("rebind from a non-account identity must be rejected")
 	}
 	// Nothing was consumed or mutated.
@@ -151,7 +151,7 @@ func TestRebind_UnauthenticatedRejected(t *testing.T) {
 
 func TestRebind_MissingProofRejected(t *testing.T) {
 	h := newRebindHub(t)
-	if _, err := rebindCall(h, "room", "", "c-auth", "sb:u1"); err == nil {
+	if _, err := rebindCall(h, "ROOM", "", "c-auth", "sb:u1"); err == nil {
 		t.Fatal("rebind without a proof token must be rejected")
 	}
 }
@@ -160,7 +160,7 @@ func TestRebind_ForgedProofRejected(t *testing.T) {
 	h := newRebindHub(t)
 	// Signed with the wrong secret: proves nothing.
 	forged := mintProof(t, "attacker-secret", "guestsub", 24*time.Hour)
-	if _, err := rebindCall(h, "room", forged, "c-auth", "sb:u1"); err == nil {
+	if _, err := rebindCall(h, "ROOM", forged, "c-auth", "sb:u1"); err == nil {
 		t.Fatal("forged proof must be rejected")
 	}
 	if consumed, _ := h.rebindBurns.Consumed(context.Background(), "guestsub"); consumed {
@@ -171,20 +171,20 @@ func TestRebind_ForgedProofRejected(t *testing.T) {
 func TestRebind_ExpiredBeyondGraceRejected(t *testing.T) {
 	h := newRebindHub(t)
 	stale := mintProof(t, rebindTestSecret, "guestsub", -31*24*time.Hour)
-	if _, err := rebindCall(h, "room", stale, "c-auth", "sb:u1"); err == nil {
+	if _, err := rebindCall(h, "ROOM", stale, "c-auth", "sb:u1"); err == nil {
 		t.Fatal("proof expired beyond the refresh grace must be rejected")
 	}
 }
 
 func TestRebind_ExpiredWithinGraceStillUpgrades(t *testing.T) {
 	h := newRebindHub(t)
-	setupGuestRoom(t, h, "room", "guestsub", "sb:u1")
+	setupGuestRoom(t, h, "ROOM", "guestsub", "sb:u1")
 	proof := mintProof(t, rebindTestSecret, "guestsub", -1*time.Hour) // expired 1h ago, inside the 30d grace
 
-	if _, err := rebindCall(h, "room", proof, "c-auth", "sb:u1"); err != nil {
+	if _, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:u1"); err != nil {
 		t.Fatalf("expired-within-grace proof must still upgrade: %v", err)
 	}
-	state := rebindState(t, h, "room")
+	state := rebindState(t, h, "ROOM")
 	for _, tr := range state.Queue {
 		if tr.AddedByUserID != "sb:u1" {
 			t.Fatalf("track %q owner = %q, want sb:u1", tr.Title, tr.AddedByUserID)
@@ -194,15 +194,15 @@ func TestRebind_ExpiredWithinGraceStillUpgrades(t *testing.T) {
 
 func TestRebind_CollisionRejected(t *testing.T) {
 	h := newRebindHub(t)
-	joinAs(h, "c-guest", "guestsub", "room")
-	queueTrack(t, h, "room", "c-guest", "guestsub", "T1")
+	joinAs(h, "c-guest", "guestsub", "ROOM")
+	queueTrack(t, h, "ROOM", "c-guest", "guestsub", "T1")
 	// The account is already present on another connection (second tab).
-	joinAs(h, "c-other-tab", "sb:u1", "room")
-	joinAs(h, "c-auth", "sb:u1", "room")
-	versionBefore := rebindVersion(t, h, "room")
+	joinAs(h, "c-other-tab", "sb:u1", "ROOM")
+	joinAs(h, "c-auth", "sb:u1", "ROOM")
+	versionBefore := rebindVersion(t, h, "ROOM")
 
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
-	_, err := rebindCall(h, "room", proof, "c-auth", "sb:u1")
+	_, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:u1")
 	if err == nil {
 		t.Fatal("collision with the same account on another connection must be rejected")
 	}
@@ -210,7 +210,7 @@ func TestRebind_CollisionRejected(t *testing.T) {
 	if !errors.As(err, &ue) || ue.Error() != "This account is already in this room from another tab or device. Close it and retry." {
 		t.Fatalf("collision message: got %v", err)
 	}
-	if v := rebindVersion(t, h, "room"); v != versionBefore {
+	if v := rebindVersion(t, h, "ROOM"); v != versionBefore {
 		t.Fatalf("collision must change nothing: version %d -> %d", versionBefore, v)
 	}
 	if consumed, _ := h.rebindBurns.Consumed(context.Background(), "guestsub"); consumed {
@@ -220,11 +220,11 @@ func TestRebind_CollisionRejected(t *testing.T) {
 
 func TestRebind_HappyPathAcrossReconnect(t *testing.T) {
 	h := newRebindHub(t)
-	setupGuestRoom(t, h, "room", "guestsub", "sb:u1")
-	versionBefore := rebindVersion(t, h, "room")
+	setupGuestRoom(t, h, "ROOM", "guestsub", "sb:u1")
+	versionBefore := rebindVersion(t, h, "ROOM")
 
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
-	res, err := rebindCall(h, "room", proof, "c-auth", "sb:u1")
+	res, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:u1")
 	if err != nil {
 		t.Fatalf("rebind: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestRebind_HappyPathAcrossReconnect(t *testing.T) {
 		t.Fatalf("rebind result must be RoomState: %v", err)
 	}
 
-	state := rebindState(t, h, "room")
+	state := rebindState(t, h, "ROOM")
 	if len(state.Queue) != 2 {
 		t.Fatalf("queue length: got %d, want 2", len(state.Queue))
 	}
@@ -255,23 +255,23 @@ func TestRebind_HappyPathAcrossReconnect(t *testing.T) {
 
 func TestRebind_HostMoves(t *testing.T) {
 	h := newRebindHub(t)
-	joinAs(h, "c-guest", "guestsub", "room")
-	room := mustRoom(t, h, "room")
+	joinAs(h, "c-guest", "guestsub", "ROOM")
+	room := mustRoom(t, h, "ROOM")
 	room.mu.Lock()
 	room.State.HostUserID = "guestsub"
 	room.mu.Unlock()
 	disconnectAs(h, "c-guest")
-	joinAs(h, "c-auth", "sb:u1", "room")
+	joinAs(h, "c-auth", "sb:u1", "ROOM")
 
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
-	if _, err := rebindCall(h, "room", proof, "c-auth", "sb:u1"); err != nil {
+	if _, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:u1"); err != nil {
 		t.Fatalf("rebind: %v", err)
 	}
-	if host := rebindState(t, h, "room").HostUserID; host != "sb:u1" {
+	if host := rebindState(t, h, "ROOM").HostUserID; host != "sb:u1" {
 		t.Fatalf("HostUserID = %q, want sb:u1", host)
 	}
 	// The upgraded identity passes a host-only gate afterwards.
-	payload, _ := json.Marshal(map[string]string{"roomId": "room"})
+	payload, _ := json.Marshal(map[string]string{"roomId": "ROOM"})
 	if err := h.Authorize(newTestClient("c-auth", "sb:u1"), "radio.set", payload); err != nil {
 		t.Fatalf("upgraded host must pass host-only checks: %v", err)
 	}
@@ -279,23 +279,23 @@ func TestRebind_HostMoves(t *testing.T) {
 
 func TestRebind_VotesRewritten(t *testing.T) {
 	h := newRebindHub(t).WithVoting(true)
-	joinAs(h, "c-guest", "guestsub", "room")
-	trackID := queueTrack(t, h, "room", "c-guest", "guestsub", "T1")
-	votePayload, _ := json.Marshal(map[string]string{"roomId": "room", "trackId": trackID})
+	joinAs(h, "c-guest", "guestsub", "ROOM")
+	trackID := queueTrack(t, h, "ROOM", "c-guest", "guestsub", "T1")
+	votePayload, _ := json.Marshal(map[string]string{"roomId": "ROOM", "trackId": trackID})
 	if _, err := h.handleRPC("queue.vote", votePayload, "c-guest", "guestsub"); err != nil {
 		t.Fatalf("guest vote: %v", err)
 	}
-	if voters := rebindState(t, h, "room").Votes[trackID]; len(voters) != 1 || voters[0] != "user:guestsub" {
+	if voters := rebindState(t, h, "ROOM").Votes[trackID]; len(voters) != 1 || voters[0] != "user:guestsub" {
 		t.Fatalf("pre-rebind voters = %v, want [user:guestsub]", voters)
 	}
 	disconnectAs(h, "c-guest")
-	joinAs(h, "c-auth", "sb:u1", "room")
+	joinAs(h, "c-auth", "sb:u1", "ROOM")
 
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
-	if _, err := rebindCall(h, "room", proof, "c-auth", "sb:u1"); err != nil {
+	if _, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:u1"); err != nil {
 		t.Fatalf("rebind: %v", err)
 	}
-	if voters := rebindState(t, h, "room").Votes[trackID]; len(voters) != 1 || voters[0] != "user:sb:u1" {
+	if voters := rebindState(t, h, "ROOM").Votes[trackID]; len(voters) != 1 || voters[0] != "user:sb:u1" {
 		t.Fatalf("post-rebind voters = %v, want [user:sb:u1]", voters)
 	}
 
@@ -304,30 +304,30 @@ func TestRebind_VotesRewritten(t *testing.T) {
 	if _, err := h.handleRPC("queue.vote", votePayload, "c-auth", "sb:u1"); err != nil {
 		t.Fatalf("post-rebind vote: %v", err)
 	}
-	if voters := rebindState(t, h, "room").Votes[trackID]; len(voters) != 0 {
+	if voters := rebindState(t, h, "ROOM").Votes[trackID]; len(voters) != 0 {
 		t.Fatalf("after toggling, voters = %v, want none (no double vote)", voters)
 	}
 }
 
 func TestRebind_SeniorityTransferred(t *testing.T) {
 	h := newRebindHub(t)
-	room := setupHandoffRoom(t, h, "room", "c-host", "sb:host",
+	room := setupHandoffRoom(t, h, "ROOM", "c-host", "sb:host",
 		map[string]string{"c-other": "sb:other", "c-guest": "guestsub"},
 		map[string]int64{"guestsub": 100, "sb:other": 200})
 	_ = room
 	disconnectAs(h, "c-guest")
 	// The new connection joins at the rebind instant; the transfer must
 	// replace that with the guest's older standing.
-	joinAs(h, "c-auth", "sb:new", "room")
+	joinAs(h, "c-auth", "sb:new", "ROOM")
 
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
-	if _, err := rebindCall(h, "room", proof, "c-auth", "sb:new"); err != nil {
+	if _, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:new"); err != nil {
 		t.Fatalf("rebind: %v", err)
 	}
 
 	h.memberMu.RLock()
-	got, ok := h.memberJoinTimes["room"]["sb:new"]
-	_, oldGone := h.memberJoinTimes["room"]["guestsub"]
+	got, ok := h.memberJoinTimes["ROOM"]["sb:new"]
+	_, oldGone := h.memberJoinTimes["ROOM"]["guestsub"]
 	h.memberMu.RUnlock()
 	if !ok || got != 100 {
 		t.Fatalf("memberJoinTimes[sb:new] = %d (ok=%v), want the guest's 100", got, ok)
@@ -339,35 +339,35 @@ func TestRebind_SeniorityTransferred(t *testing.T) {
 	// Longest-present promotion: the upgraded member (100) outranks the
 	// member who joined later (200) when the host disconnects.
 	h.PromoteOnDisconnect("c-host")
-	if host := rebindState(t, h, "room").HostUserID; host != "sb:new" {
+	if host := rebindState(t, h, "ROOM").HostUserID; host != "sb:new" {
 		t.Fatalf("promoted host = %q, want sb:new (longest present)", host)
 	}
 }
 
 func TestRebind_ZombieConnectionsDisconnected(t *testing.T) {
 	h := newRebindHub(t)
-	setupGuestRoom(t, h, "room", "guestsub", "sb:u1")
+	setupGuestRoom(t, h, "ROOM", "guestsub", "sb:u1")
 	// A second tab still holds an anonymous connection under the old sub.
-	joinAs(h, "c-zombie", "guestsub", "room")
+	joinAs(h, "c-zombie", "guestsub", "ROOM")
 
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
-	if _, err := rebindCall(h, "room", proof, "c-auth", "sb:u1"); err != nil {
+	if _, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:u1"); err != nil {
 		t.Fatalf("rebind: %v", err)
 	}
 
 	// The zombie was kicked via the room.kick mechanism: its membership in
 	// the room is dropped (with a live node the connection is closed too).
-	if h.IsMember("c-zombie", "room") {
+	if h.IsMember("c-zombie", "ROOM") {
 		t.Fatal("zombie connection must be disconnected from the room after rebind")
 	}
-	if !h.IsMember("c-auth", "room") {
+	if !h.IsMember("c-auth", "ROOM") {
 		t.Fatal("the upgrading connection must stay a member")
 	}
 }
 
 func TestRebind_BurnRejectsReuse(t *testing.T) {
 	h := newRebindHub(t)
-	setupGuestRoom(t, h, "room", "guestsub", "sb:u1")
+	setupGuestRoom(t, h, "ROOM", "guestsub", "sb:u1")
 	// The same guest also contributed to a second room.
 	joinAs(h, "c-guest-b", "guestsub", "room-b")
 	queueTrack(t, h, "room-b", "c-guest-b", "guestsub", "TB")
@@ -375,12 +375,12 @@ func TestRebind_BurnRejectsReuse(t *testing.T) {
 	joinAs(h, "c-auth-b", "sb:u1", "room-b")
 
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
-	if _, err := rebindCall(h, "room", proof, "c-auth", "sb:u1"); err != nil {
+	if _, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:u1"); err != nil {
 		t.Fatalf("first rebind: %v", err)
 	}
 
 	// Reuse of the consumed sub is rejected, in any room.
-	if _, err := rebindCall(h, "room", proof, "c-auth", "sb:u1"); err == nil {
+	if _, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:u1"); err == nil {
 		t.Fatal("rebind reusing a consumed sub must be rejected")
 	}
 	if _, err := rebindCall(h, "room-b", proof, "c-auth-b", "sb:u1"); err == nil {
@@ -402,22 +402,22 @@ func TestRebind_BurnRejectsReuse(t *testing.T) {
 // must fail if a client-supplied identity field is ever honored.
 func TestRebind_ClientCannotNameIdentity(t *testing.T) {
 	h := newRebindHub(t)
-	joinAs(h, "c-victim", "victimsub", "room")
-	queueTrack(t, h, "room", "c-victim", "victimsub", "VictimTrack")
+	joinAs(h, "c-victim", "victimsub", "ROOM")
+	queueTrack(t, h, "ROOM", "c-victim", "victimsub", "VictimTrack")
 	disconnectAs(h, "c-victim")
-	joinAs(h, "c-guest", "guestsub", "room")
-	queueTrack(t, h, "room", "c-guest", "guestsub", "GuestTrack")
+	joinAs(h, "c-guest", "guestsub", "ROOM")
+	queueTrack(t, h, "ROOM", "c-guest", "guestsub", "GuestTrack")
 	disconnectAs(h, "c-guest")
-	joinAs(h, "c-auth", "sb:u1", "room")
+	joinAs(h, "c-auth", "sb:u1", "ROOM")
 
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
-	payload := []byte(`{"roomId":"room","proof":"` + proof + `","oldUserId":"victimsub"}`)
+	payload := []byte(`{"roomId":"ROOM","proof":"` + proof + `","oldUserId":"victimsub"}`)
 	if _, err := h.handleRPC("room.rebind", payload, "c-auth", "sb:u1"); err != nil {
 		t.Fatalf("rebind: %v", err)
 	}
 
 	owners := map[string]string{}
-	for _, tr := range rebindState(t, h, "room").Queue {
+	for _, tr := range rebindState(t, h, "ROOM").Queue {
 		owners[tr.Title] = tr.AddedByUserID
 	}
 	if owners["VictimTrack"] != "victimsub" {
@@ -432,7 +432,7 @@ func TestRebind_ClientCannotNameIdentity(t *testing.T) {
 // cleanly (run with -race).
 func TestRebind_ConcurrentJoinAddRebind(t *testing.T) {
 	h := newRebindHub(t).WithVoting(true)
-	joinAs(h, "c-guest", "guestsub", "room")
+	joinAs(h, "c-guest", "guestsub", "ROOM")
 	proof := mintProof(t, rebindTestSecret, "guestsub", 24*time.Hour)
 
 	var wg sync.WaitGroup
@@ -442,9 +442,9 @@ func TestRebind_ConcurrentJoinAddRebind(t *testing.T) {
 			defer wg.Done()
 			clientID := fmt.Sprintf("c-add-%d", i)
 			userID := fmt.Sprintf("sb:add-%d", i)
-			joinAs(h, clientID, userID, "room")
+			joinAs(h, clientID, userID, "ROOM")
 			payload, _ := json.Marshal(map[string]interface{}{
-				"roomId": "room",
+				"roomId": "ROOM",
 				"track":  map[string]interface{}{"title": "T", "artist": "A", "sources": map[string]interface{}{}, "addedBy": "n"},
 			})
 			_, _ = h.handleRPC("queue.add", payload, clientID, userID)
@@ -456,9 +456,9 @@ func TestRebind_ConcurrentJoinAddRebind(t *testing.T) {
 			defer wg.Done()
 			clientID := fmt.Sprintf("c-rebind-%d", i)
 			userID := fmt.Sprintf("sb:rebind-%d", i)
-			joinAs(h, clientID, userID, "room")
+			joinAs(h, clientID, userID, "ROOM")
 			// One wins the burn; the other is rejected. Both are fine here.
-			_, _ = rebindCall(h, "room", proof, clientID, userID)
+			_, _ = rebindCall(h, "ROOM", proof, clientID, userID)
 		}(i)
 	}
 	wg.Wait()

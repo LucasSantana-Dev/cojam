@@ -458,13 +458,19 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
+### Room ids and room creation
+
+A room id must match `^[0-9A-Z]{1,12}$`: the 12 uppercase base36 chars the web generator mints (`apps/web/lib/roomId.ts`), plus the shorter legacy ids (up to 6 chars) of the pre-#180 generator. Any RPC whose payload carries a malformed `roomId` is rejected at the transport boundary with a code-400 error (`invalid room id`) before enrollment or dispatch, and a subscription is accepted only for a `room:<id>` channel with a valid id (every other channel is refused with `ErrorPermissionDenied`). Ids are case-sensitive and never normalized, so lowercase ids are rejected rather than mapped.
+
+`room.join` draws from a per-caller rate limit (10 burst, one token per 2s). Creating a room draws from a separate per-caller budget (10 burst, one token per minute): it is charged only when the target room exists neither in memory nor in the store, so joining an existing room never spends it. Both reject with a code-400 UserError. The caller key is the same as the other per-caller limits (`user:<userID>`, else `client:<clientID>`).
+
 ### Trust model (#180)
 
 Room access is a **link capability**: subscribing to `room:<id>` *is* the access grant — there is deliberately no separate join-approval step. Mutation rights follow membership (subscribe or `room.join`), so anyone holding the link can read state, read chat history, and mutate the room. This is the product: share-a-link must keep working for guests with no account, and public rooms (`FEATURE_PUBLIC_ROOMS`) are listable and joinable by design.
 
 Consequences of that decision:
 
-- The privacy boundary of a **private** room is the unguessability of its room ID, not a server-side access check. Room IDs are generated client-side with crypto entropy (`crypto.getRandomValues`, 12 uppercase base36 chars ≈ 62 bits, `apps/web/lib/roomId.ts`). Room IDs minted by the pre-#180 generator (6 chars, `Math.random`) remain valid for existing links but must be treated as guessable.
+- The privacy boundary of a **private** room is the unguessability of its room ID, not a server-side access check. Room IDs are generated client-side with crypto entropy (`crypto.getRandomValues`, 12 uppercase base36 chars ≈ 62 bits, `apps/web/lib/roomId.ts`). Room IDs minted by the pre-#180 generator (up to 6 chars, `Math.random`) remain valid for existing links but must be treated as guessable. See "Room ids and room creation" for the accepted format.
 - Subscribing alone is sufficient for mutation rights *by decision* — the membership gate exists to bind RPCs to a room-scoped subscription (and to reconnect survival), not to keep link-holders out.
 - Opting into the public directory (`room.set_public`) trades exactly this obscurity for discoverability; `room.list` exposes only summary fields.
 

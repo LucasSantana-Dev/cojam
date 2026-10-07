@@ -38,7 +38,7 @@ async function addTrack(page: Page, title: string, artist: string) {
 }
 
 test('room auth: listener sees host-only controls disabled, host sees them enabled', async ({ browser }) => {
-  const roomId = `ra${Date.now().toString(36)}`;
+  const roomId = `RA${Date.now().toString(36).toUpperCase()}`;
 
   // First joiner becomes the room host (server assigns hostUserId on room.join).
   const host = await (await browser.newContext()).newPage();

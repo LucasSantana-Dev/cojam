@@ -413,6 +413,7 @@ func TestEvictIdleRoomsDeletesJoinTimes(t *testing.T) {
 // — a race-detector smoke test, mirroring TestEvictIdleRoomsConcurrent.
 func TestPromoteOnDisconnect_ConcurrentSmoke(t *testing.T) {
 	h := NewHub(nil)
+	h.joinLimiter = nil // a lock-ordering smoke test, not a rate-limit test
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)

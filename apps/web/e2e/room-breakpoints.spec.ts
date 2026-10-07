@@ -46,7 +46,7 @@ test.describe('room layout across the tablet range', () => {
   for (const width of [768, 834, 1023]) {
     test(`is two columns at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
-      await join(page, `e2eb${Date.now().toString(36)}`);
+      await join(page, `E2EB${Date.now().toString(36).toUpperCase()}`);
 
       // Polled, not sampled once. Two transients make a single measurement
       // unreliable, and both settle on their own:
@@ -69,7 +69,7 @@ test.describe('room layout across the tablet range', () => {
 
   test('is single column at 390px', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
-    await join(page, `e2eb${Date.now().toString(36)}`);
+    await join(page, `E2EB${Date.now().toString(36).toUpperCase()}`);
 
     await expect.poll(async () => (await geometry(page)).sideBySide).toBe(false);
 

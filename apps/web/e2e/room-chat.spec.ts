@@ -27,7 +27,7 @@ async function sendChatMessage(page: Page, text: string) {
 }
 
 test('two users see each other\'s chat messages live', async ({ browser }) => {
-  const roomId = `e2ec${Date.now().toString(36)}`;
+  const roomId = `E2EC${Date.now().toString(36).toUpperCase()}`;
 
   const lucas = await (await browser.newContext()).newPage();
   const ana = await (await browser.newContext()).newPage();
@@ -45,7 +45,7 @@ test('two users see each other\'s chat messages live', async ({ browser }) => {
 });
 
 test('chat history seeds from the server ring after a reload', async ({ page }) => {
-  const roomId = `e2eh${Date.now().toString(36)}`;
+  const roomId = `E2EH${Date.now().toString(36).toUpperCase()}`;
 
   await join(page, roomId, 'Lucas');
   await sendChatMessage(page, 'before reload');

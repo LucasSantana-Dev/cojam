@@ -574,21 +574,13 @@ func main() {
 		})
 
 		client.OnSubscribe(func(e centrifuge.SubscribeEvent, cb centrifuge.SubscribeCallback) {
-			logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
-			// Subscribing to room:<id> enrolls the client so it may mutate that room
-			// (link = capability; see docs/protocol.md "Trust model", #180).
-			// centrifuge re-subscribes on reconnect, so membership survives reconnects.
-			if roomID, ok := strings.CutPrefix(e.Channel, "room:"); ok {
-				h.Join(client.ID(), roomID)
+			reply, err := authorizeSubscribe(h, client.ID(), e.Channel)
+			if err != nil {
+				logger.Info("channel_subscribe_rejected", "client_id", client.ID())
+			} else {
+				logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
 			}
-			// Presence + join/leave so the room can show who is listening.
-			cb(centrifuge.SubscribeReply{
-				Options: centrifuge.SubscribeOptions{
-					EmitPresence:  true,
-					EmitJoinLeave: true,
-					PushJoinLeave: true,
-				},
-			}, nil)
+			cb(reply, err)
 		})
 
 		// Authorize presence queries (else client presence() returns code 108).

@@ -33,7 +33,7 @@ async function addTrack(page: Page, title: string, artist: string, videoId?: str
 }
 
 test('two users see each other\'s queue additions live', async ({ browser }) => {
-  const roomId = `e2e${Date.now().toString(36)}`;
+  const roomId = `E2E${Date.now().toString(36).toUpperCase()}`;
 
   const lucas = await (await browser.newContext()).newPage();
   const ana = await (await browser.newContext()).newPage();
@@ -66,7 +66,7 @@ test('two users see each other\'s queue additions live', async ({ browser }) => 
 });
 
 test('queue reorder syncs to both clients', async ({ browser }) => {
-  const roomId = `e2er${Date.now().toString(36)}`;
+  const roomId = `E2ER${Date.now().toString(36).toUpperCase()}`;
 
   const lucas = await (await browser.newContext()).newPage();
   const ana = await (await browser.newContext()).newPage();

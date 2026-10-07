@@ -40,9 +40,9 @@ func votePayload(roomID, trackID string) []byte {
 // rejects it with PermissionDenied before dispatch.
 func TestQueueVote_NonMemberRejected(t *testing.T) {
 	h := NewHub(nil).WithVoting(true)
-	trackID := setupVotingRoom(t, h, "vote_authz")
+	trackID := setupVotingRoom(t, h, "VOTEAUTHZ")
 
-	err := h.Authorize(newTestClient("intruder", ""), "queue.vote", votePayload("vote_authz", trackID))
+	err := h.Authorize(newTestClient("intruder", ""), "queue.vote", votePayload("VOTEAUTHZ", trackID))
 	if !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("non-member queue.vote: got %v, want ErrorPermissionDenied", err)
 	}
@@ -55,19 +55,19 @@ func TestQueueVote_ListenerCanVote(t *testing.T) {
 
 	// alice joins with auth and becomes host.
 	h.RecordClientUserID("alice_client", "alice")
-	h.Join("alice_client", "vote_host")
-	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"vote_host","name":"alice"}`), "alice"); err != nil {
+	h.Join("alice_client", "VOTEHOST")
+	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"VOTEHOST","name":"alice"}`), "alice"); err != nil {
 		t.Fatalf("room.join alice: %v", err)
 	}
 
 	// bob joins as a listener (member, not host).
 	h.RecordClientUserID("bob_client", "bob")
-	h.Join("bob_client", "vote_host")
-	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"vote_host","name":"bob"}`), "bob"); err != nil {
+	h.Join("bob_client", "VOTEHOST")
+	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"VOTEHOST","name":"bob"}`), "bob"); err != nil {
 		t.Fatalf("room.join bob: %v", err)
 	}
 
-	res, err := h.HandleRPC("queue.add", []byte(`{"roomId":"vote_host","track":{"title":"S","artist":"A","sources":{},"addedBy":"alice"}}`), "alice")
+	res, err := h.HandleRPC("queue.add", []byte(`{"roomId":"VOTEHOST","track":{"title":"S","artist":"A","sources":{},"addedBy":"alice"}}`), "alice")
 	if err != nil {
 		t.Fatalf("queue.add: %v", err)
 	}
@@ -78,11 +78,11 @@ func TestQueueVote_ListenerCanVote(t *testing.T) {
 	trackID := state.Queue[0].ID
 
 	bobClient := newTestClient("bob_client", "bob")
-	if err := h.Authorize(bobClient, "queue.vote", votePayload("vote_host", trackID)); err != nil {
+	if err := h.Authorize(bobClient, "queue.vote", votePayload("VOTEHOST", trackID)); err != nil {
 		t.Fatalf("listener queue.vote must be allowed (not host-only): %v", err)
 	}
 
-	if _, err := h.handleRPC("queue.vote", votePayload("vote_host", trackID), "bob_client", "bob"); err != nil {
+	if _, err := h.handleRPC("queue.vote", votePayload("VOTEHOST", trackID), "bob_client", "bob"); err != nil {
 		t.Fatalf("listener queue.vote: %v", err)
 	}
 }

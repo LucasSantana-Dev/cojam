@@ -28,7 +28,7 @@ func newTestClient(clientID, userID string) *testClient {
 func TestAuthorize_MembershipGate(t *testing.T) {
 	h := NewHub(nil)
 
-	addX := []byte(`{"roomId":"x","track":{"title":"t","artist":"a","sources":{},"addedBy":"u"}}`)
+	addX := []byte(`{"roomId":"X","track":{"title":"t","artist":"a","sources":{},"addedBy":"u"}}`)
 
 	// A client that has not joined room x cannot mutate it.
 	if err := h.Authorize(newTestClient("attacker", ""), "queue.add", addX); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
@@ -36,10 +36,10 @@ func TestAuthorize_MembershipGate(t *testing.T) {
 	}
 
 	// room.join enrolls the client and is always allowed.
-	if err := h.Authorize(newTestClient("c1", ""), "room.join", []byte(`{"roomId":"x","name":"c1"}`)); err != nil {
+	if err := h.Authorize(newTestClient("c1", ""), "room.join", []byte(`{"roomId":"X","name":"c1"}`)); err != nil {
 		t.Fatalf("room.join should be allowed: %v", err)
 	}
-	if !h.IsMember("c1", "x") {
+	if !h.IsMember("c1", "X") {
 		t.Fatalf("room.join should enroll c1 in x")
 	}
 
@@ -48,11 +48,11 @@ func TestAuthorize_MembershipGate(t *testing.T) {
 		method string
 		data   string
 	}{
-		{"queue.add", `{"roomId":"x","track":{"title":"t","artist":"a","sources":{},"addedBy":"u"}}`},
-		{"queue.remove", `{"roomId":"x","trackId":"z"}`},
-		{"queue.reorder", `{"roomId":"x","trackId":"z","toIndex":0}`},
-		{"now_playing.set", `{"roomId":"x","trackId":"z"}`},
-		{"now_playing.advance", `{"roomId":"x","afterId":"z"}`},
+		{"queue.add", `{"roomId":"X","track":{"title":"t","artist":"a","sources":{},"addedBy":"u"}}`},
+		{"queue.remove", `{"roomId":"X","trackId":"z"}`},
+		{"queue.reorder", `{"roomId":"X","trackId":"z","toIndex":0}`},
+		{"now_playing.set", `{"roomId":"X","trackId":"z"}`},
+		{"now_playing.advance", `{"roomId":"X","afterId":"z"}`},
 	} {
 		if err := h.Authorize(newTestClient("c1", ""), m.method, []byte(m.data)); err != nil {
 			t.Fatalf("member %s on x: got %v, want nil", m.method, err)
@@ -60,12 +60,12 @@ func TestAuthorize_MembershipGate(t *testing.T) {
 	}
 
 	// c1 is NOT a member of a different room y.
-	if err := h.Authorize(newTestClient("c1", ""), "queue.add", []byte(`{"roomId":"y","track":{"title":"t","artist":"a","sources":{},"addedBy":"u"}}`)); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
+	if err := h.Authorize(newTestClient("c1", ""), "queue.add", []byte(`{"roomId":"Y","track":{"title":"t","artist":"a","sources":{},"addedBy":"u"}}`)); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("c1 mutating y: got %v, want ErrorPermissionDenied", err)
 	}
 
 	// Subscribe-based enrollment (reconnect path) also grants membership.
-	h.Join("c2", "x")
+	h.Join("c2", "X")
 	if err := h.Authorize(newTestClient("c2", ""), "queue.add", addX); err != nil {
 		t.Fatalf("subscribed c2 on x: got %v, want nil", err)
 	}
@@ -84,9 +84,9 @@ func TestHostAssignment_FirstAuthenticatedJoinerBecomesHost(t *testing.T) {
 
 	// Simulate alice joining with authentication
 	h.RecordClientUserID("alice_client", "alice")
-	h.Join("alice_client", "room1")
+	h.Join("alice_client", "ROOM1")
 
-	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"room1","name":"alice"}`), "alice")
+	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOM1","name":"alice"}`), "alice")
 	if err != nil {
 		t.Fatalf("room.join alice: %v", err)
 	}
@@ -110,8 +110,8 @@ func TestHostAssignment_SecondAuthenticatedJoinerDoesNotOverwrite(t *testing.T) 
 
 	// alice joins first
 	h.RecordClientUserID("alice_client", "alice")
-	h.Join("alice_client", "room2")
-	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"room2","name":"alice"}`), "alice")
+	h.Join("alice_client", "ROOM2")
+	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOM2","name":"alice"}`), "alice")
 	if err != nil {
 		t.Fatalf("room.join alice: %v", err)
 	}
@@ -128,8 +128,8 @@ func TestHostAssignment_SecondAuthenticatedJoinerDoesNotOverwrite(t *testing.T) 
 
 	// bob joins
 	h.RecordClientUserID("bob_client", "bob")
-	h.Join("bob_client", "room2")
-	res, err = h.HandleRPC("room.join", []byte(`{"roomId":"room2","name":"bob"}`), "bob")
+	h.Join("bob_client", "ROOM2")
+	res, err = h.HandleRPC("room.join", []byte(`{"roomId":"ROOM2","name":"bob"}`), "bob")
 	if err != nil {
 		t.Fatalf("room.join bob: %v", err)
 	}
@@ -149,8 +149,8 @@ func TestHostAssignment_HostAbsentReclaim(t *testing.T) {
 
 	// alice joins first
 	h.RecordClientUserID("alice_client", "alice")
-	h.Join("alice_client", "room3")
-	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"room3","name":"alice"}`), "alice")
+	h.Join("alice_client", "ROOM3")
+	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOM3","name":"alice"}`), "alice")
 	if err != nil {
 		t.Fatalf("room.join alice: %v", err)
 	}
@@ -171,8 +171,8 @@ func TestHostAssignment_HostAbsentReclaim(t *testing.T) {
 
 	// bob joins - should claim host since alice is not present
 	h.RecordClientUserID("bob_client", "bob")
-	h.Join("bob_client", "room3")
-	res, err = h.HandleRPC("room.join", []byte(`{"roomId":"room3","name":"bob"}`), "bob")
+	h.Join("bob_client", "ROOM3")
+	res, err = h.HandleRPC("room.join", []byte(`{"roomId":"ROOM3","name":"bob"}`), "bob")
 	if err != nil {
 		t.Fatalf("room.join bob: %v", err)
 	}
@@ -191,8 +191,8 @@ func TestHostAssignment_AnonymousJoinerNoHost(t *testing.T) {
 	h := NewHub(nil)
 
 	// Anonymous join (empty userID)
-	h.Join("anon_client", "room4")
-	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"room4","name":"anonymous"}`), "")
+	h.Join("anon_client", "ROOM4")
+	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOM4","name":"anonymous"}`), "")
 	if err != nil {
 		t.Fatalf("room.join anonymous: %v", err)
 	}
@@ -216,8 +216,8 @@ func TestHostAssignment_PersistenceRoundTrip(t *testing.T) {
 
 	// Create a room with a host
 	h.RecordClientUserID("alice_client", "alice")
-	h.Join("alice_client", "room5")
-	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"room5","name":"alice"}`), "alice")
+	h.Join("alice_client", "ROOM5")
+	res, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOM5","name":"alice"}`), "alice")
 	if err != nil {
 		t.Fatalf("room.join: %v", err)
 	}
@@ -255,16 +255,16 @@ func TestAuthorize_HostOnlyMethods_ListenerBlocked(t *testing.T) {
 
 	// alice joins and becomes host
 	h.RecordClientUserID("alice_client", "alice")
-	h.Join("alice_client", "room_auth")
-	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"room_auth","name":"alice"}`), "alice")
+	h.Join("alice_client", "ROOMAUTH")
+	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOMAUTH","name":"alice"}`), "alice")
 	if err != nil {
 		t.Fatalf("room.join alice: %v", err)
 	}
 
 	// bob joins as a listener (member but not host)
 	h.RecordClientUserID("bob_client", "bob")
-	h.Join("bob_client", "room_auth")
-	_, err = h.HandleRPC("room.join", []byte(`{"roomId":"room_auth","name":"bob"}`), "bob")
+	h.Join("bob_client", "ROOMAUTH")
+	_, err = h.HandleRPC("room.join", []byte(`{"roomId":"ROOMAUTH","name":"bob"}`), "bob")
 	if err != nil {
 		t.Fatalf("room.join bob: %v", err)
 	}
@@ -276,15 +276,15 @@ func TestAuthorize_HostOnlyMethods_ListenerBlocked(t *testing.T) {
 		method string
 		data   string
 	}{
-		{"now_playing.set", `{"roomId":"room_auth","trackId":"t1"}`},
-		{"now_playing.advance", `{"roomId":"room_auth","afterId":"t1"}`},
-		{"queue.reorder", `{"roomId":"room_auth","trackId":"t1","toIndex":0}`},
-		{"queue.remove", `{"roomId":"room_auth","trackId":"t1"}`},
-		{"radio.set", `{"roomId":"room_auth","enabled":true}`},
-		{"playlist.import", `{"roomId":"room_auth","url":"http://example.com"}`},
-		{"transport.play", `{"roomId":"room_auth"}`},
-		{"transport.pause", `{"roomId":"room_auth"}`},
-		{"transport.seek", `{"roomId":"room_auth","positionMs":1000}`},
+		{"now_playing.set", `{"roomId":"ROOMAUTH","trackId":"t1"}`},
+		{"now_playing.advance", `{"roomId":"ROOMAUTH","afterId":"t1"}`},
+		{"queue.reorder", `{"roomId":"ROOMAUTH","trackId":"t1","toIndex":0}`},
+		{"queue.remove", `{"roomId":"ROOMAUTH","trackId":"t1"}`},
+		{"radio.set", `{"roomId":"ROOMAUTH","enabled":true}`},
+		{"playlist.import", `{"roomId":"ROOMAUTH","url":"http://example.com"}`},
+		{"transport.play", `{"roomId":"ROOMAUTH"}`},
+		{"transport.pause", `{"roomId":"ROOMAUTH"}`},
+		{"transport.seek", `{"roomId":"ROOMAUTH","positionMs":1000}`},
 	}
 
 	for _, test := range hostOnlyMethods {
@@ -302,8 +302,8 @@ func TestAuthorize_HostOnlyMethods_HostAllowed(t *testing.T) {
 
 	// alice joins and becomes host
 	h.RecordClientUserID("alice_client", "alice")
-	h.Join("alice_client", "room_host")
-	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"room_host","name":"alice"}`), "alice")
+	h.Join("alice_client", "ROOMHOST")
+	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOMHOST","name":"alice"}`), "alice")
 	if err != nil {
 		t.Fatalf("room.join alice: %v", err)
 	}
@@ -315,15 +315,15 @@ func TestAuthorize_HostOnlyMethods_HostAllowed(t *testing.T) {
 		method string
 		data   string
 	}{
-		{"now_playing.set", `{"roomId":"room_host","trackId":"t1"}`},
-		{"now_playing.advance", `{"roomId":"room_host","afterId":"t1"}`},
-		{"queue.reorder", `{"roomId":"room_host","trackId":"t1","toIndex":0}`},
-		{"queue.remove", `{"roomId":"room_host","trackId":"t1"}`},
-		{"radio.set", `{"roomId":"room_host","enabled":true}`},
-		{"playlist.import", `{"roomId":"room_host","url":"http://example.com"}`},
-		{"transport.play", `{"roomId":"room_host"}`},
-		{"transport.pause", `{"roomId":"room_host"}`},
-		{"transport.seek", `{"roomId":"room_host","positionMs":1000}`},
+		{"now_playing.set", `{"roomId":"ROOMHOST","trackId":"t1"}`},
+		{"now_playing.advance", `{"roomId":"ROOMHOST","afterId":"t1"}`},
+		{"queue.reorder", `{"roomId":"ROOMHOST","trackId":"t1","toIndex":0}`},
+		{"queue.remove", `{"roomId":"ROOMHOST","trackId":"t1"}`},
+		{"radio.set", `{"roomId":"ROOMHOST","enabled":true}`},
+		{"playlist.import", `{"roomId":"ROOMHOST","url":"http://example.com"}`},
+		{"transport.play", `{"roomId":"ROOMHOST"}`},
+		{"transport.pause", `{"roomId":"ROOMHOST"}`},
+		{"transport.seek", `{"roomId":"ROOMHOST","positionMs":1000}`},
 	}
 
 	for _, test := range hostOnlyMethods {
@@ -341,16 +341,16 @@ func TestAuthorize_QueueAddAllowedForListener(t *testing.T) {
 
 	// alice joins and becomes host
 	h.RecordClientUserID("alice_client", "alice")
-	h.Join("alice_client", "room_add")
-	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"room_add","name":"alice"}`), "alice")
+	h.Join("alice_client", "ROOMADD")
+	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOMADD","name":"alice"}`), "alice")
 	if err != nil {
 		t.Fatalf("room.join alice: %v", err)
 	}
 
 	// bob joins as a listener
 	h.RecordClientUserID("bob_client", "bob")
-	h.Join("bob_client", "room_add")
-	_, err = h.HandleRPC("room.join", []byte(`{"roomId":"room_add","name":"bob"}`), "bob")
+	h.Join("bob_client", "ROOMADD")
+	_, err = h.HandleRPC("room.join", []byte(`{"roomId":"ROOMADD","name":"bob"}`), "bob")
 	if err != nil {
 		t.Fatalf("room.join bob: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestAuthorize_QueueAddAllowedForListener(t *testing.T) {
 	bobClient := newTestClient("bob_client", "bob")
 
 	// queue.add should be allowed for bob
-	addData := []byte(`{"roomId":"room_add","track":{"title":"t","artist":"a","sources":{},"addedBy":"bob"}}`)
+	addData := []byte(`{"roomId":"ROOMADD","track":{"title":"t","artist":"a","sources":{},"addedBy":"bob"}}`)
 	err = h.Authorize(bobClient, "queue.add", addData)
 	if err != nil {
 		t.Fatalf("listener bob queue.add: got %v, want nil", err)
@@ -372,14 +372,14 @@ func TestAuthorize_HostOnlyMethods_FlagOffAllowed(t *testing.T) {
 	h := NewHub(nil)
 
 	// Anonymous join (no userID): HostUserID stays empty, simulating flag off
-	h.Join("anon_client1", "room_v0")
-	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"room_v0","name":"anon1"}`), "")
+	h.Join("anon_client1", "ROOMV0")
+	_, err := h.HandleRPC("room.join", []byte(`{"roomId":"ROOMV0","name":"anon1"}`), "")
 	if err != nil {
 		t.Fatalf("room.join anon1: %v", err)
 	}
 
-	h.Join("anon_client2", "room_v0")
-	_, err = h.HandleRPC("room.join", []byte(`{"roomId":"room_v0","name":"anon2"}`), "")
+	h.Join("anon_client2", "ROOMV0")
+	_, err = h.HandleRPC("room.join", []byte(`{"roomId":"ROOMV0","name":"anon2"}`), "")
 	if err != nil {
 		t.Fatalf("room.join anon2: %v", err)
 	}
@@ -393,9 +393,9 @@ func TestAuthorize_HostOnlyMethods_FlagOffAllowed(t *testing.T) {
 		method string
 		data   string
 	}{
-		{"now_playing.set", `{"roomId":"room_v0","trackId":"t1"}`},
-		{"queue.reorder", `{"roomId":"room_v0","trackId":"t1","toIndex":0}`},
-		{"transport.play", `{"roomId":"room_v0"}`},
+		{"now_playing.set", `{"roomId":"ROOMV0","trackId":"t1"}`},
+		{"queue.reorder", `{"roomId":"ROOMV0","trackId":"t1","toIndex":0}`},
+		{"transport.play", `{"roomId":"ROOMV0"}`},
 	}
 
 	for _, test := range hostOnlyMethods {

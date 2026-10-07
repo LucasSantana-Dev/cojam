@@ -32,7 +32,7 @@ async function addTrack(page: Page, title: string, artist: string) {
 }
 
 test('voting a queued track increments the count, second click decrements', async ({ browser }) => {
-  const roomId = `e2ev${Date.now().toString(36)}`;
+  const roomId = `E2EV${Date.now().toString(36).toUpperCase()}`;
 
   const page = await (await browser.newContext()).newPage();
   await join(page, roomId, 'Voter');
@@ -52,7 +52,7 @@ test('voting a queued track increments the count, second click decrements', asyn
 });
 
 test('votes sync live to another member and the listeners pick is marked', async ({ browser }) => {
-  const roomId = `e2ep${Date.now().toString(36)}`;
+  const roomId = `E2EP${Date.now().toString(36).toUpperCase()}`;
 
   const host = await (await browser.newContext()).newPage();
   const listener = await (await browser.newContext()).newPage();
