@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -310,6 +311,79 @@ func TestPostgresDeleteIdleRooms(t *testing.T) {
 	}
 	if removed != 1 {
 		t.Fatalf("second sweep removed = %d, want 1 (old-protected now unprotected)", removed)
+	}
+}
+
+// TestPostgresDeleteIdleRooms_RemovesEveryRoomLinkedPersonalDatum backs the
+// retention claim in the privacy policy (#319): once a room row passes the
+// idle TTL, nothing it held about a person survives in the database. Queue
+// attribution, votes, the host identity and the room name all live inside the
+// one jsonb state column, so deleting the row is the whole erasure. A second
+// table that copies room state would break that, which is what the schema
+// check below guards. Skips if TEST_DATABASE_URL is not set.
+func TestPostgresDeleteIdleRooms_RemovesEveryRoomLinkedPersonalDatum(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.Isolated(t)
+
+	const person = "retention-person"
+	s := NewPostgres(pool)
+	state := &queue.RoomState{
+		RoomID:     "retention-room",
+		HostUserID: person,
+		Name:       "sala da pessoa",
+		Queue: []queue.TrackRef{{
+			ID: "t1", Title: "Song", Artist: "Artist",
+			AddedBy: "Pessoa", AddedByUserID: person,
+		}},
+		Votes:   map[string][]string{"t1": {"user:" + person}},
+		Version: 1,
+	}
+	if err := s.Save(ctx, state); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		"UPDATE rooms SET updated_at = now() - interval '31 days' WHERE room_id = 'retention-room'"); err != nil {
+		t.Fatalf("failed to age row: %v", err)
+	}
+
+	removed, err := s.DeleteIdleRooms(ctx, time.Now().Add(-30*24*time.Hour), map[string]struct{}{})
+	if err != nil || removed != 1 {
+		t.Fatalf("DeleteIdleRooms = %d, %v; want 1, nil", removed, err)
+	}
+	if _, err := s.Load(ctx, "retention-room"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("room past the TTL must be gone, Load err = %v", err)
+	}
+	var leftovers int
+	if err := pool.QueryRow(ctx,
+		"SELECT count(*) FROM rooms WHERE strpos(state::text, $1) > 0", person).Scan(&leftovers); err != nil {
+		t.Fatalf("scan leftovers: %v", err)
+	}
+	if leftovers != 0 {
+		t.Fatalf("%d rows still mention the person after eviction", leftovers)
+	}
+
+	// Room state must live only in rooms. reports and moderation_actions carry
+	// a room_id on purpose (they outlive the room, #259) and have their own
+	// retention; any other table with a room_id needs its own eviction path.
+	rows, err := pool.Query(ctx, `
+		SELECT table_name FROM information_schema.columns
+		WHERE table_schema = current_schema() AND column_name = 'room_id'
+		ORDER BY table_name`)
+	if err != nil {
+		t.Fatalf("schema query: %v", err)
+	}
+	defer rows.Close()
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scan table: %v", err)
+		}
+		tables = append(tables, name)
+	}
+	want := []string{"moderation_actions", "reports", "rooms"}
+	if strings.Join(tables, ",") != strings.Join(want, ",") {
+		t.Fatalf("tables with room_id = %v, want %v: a new room-linked table needs an eviction path", tables, want)
 	}
 }
 

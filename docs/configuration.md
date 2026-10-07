@@ -50,6 +50,7 @@ CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 FEATURE_MATCHING=true
 ROOM_IDLE_TTL_MINUTES=30               # evict memberless rooms idle this long
 ROOM_PERSIST_IDLE_TTL_MINUTES=0        # delete memberless room ROWS idle this long (0=disabled, opt-in; single-instance only)
+REPORT_RETENTION_DAYS=0                # delete reports and moderation actions older than this (0=keep forever)
 YOUTUBE_API_KEY=<key>                  # YouTube matching
 SPOTIFY_CLIENT_ID=<id>                 # Spotify matching (client credentials)
 SPOTIFY_CLIENT_SECRET=<secret>
@@ -70,6 +71,24 @@ Read in `apps/server/cmd/server/main.go`. Same truthy and falsy values as the we
 
 > [!IMPORTANT]
 > `SPOTIFY_TOKEN_KEY` must be base64 of exactly 32 bytes (`openssl rand -base64 32`) and must be kept **separate from `DATABASE_URL`**, so leaking one does not imply leaking the other. Unset means no server-side custody: playback still works for the lifetime of one access token, then the user reconnects. Refusing is deliberate, because storing a long-lived credential in the clear is worse than not storing it.
+
+### Retention
+
+Both retention windows default to **keep forever**. Deleting data is an owner decision, and the privacy policy must state the values production actually runs with. A production boot (`APP_ENV=production`) warns when either is unset or 0.
+
+| Variable | What it deletes | Default |
+| --- | --- | --- |
+| `ROOM_PERSIST_IDLE_TTL_MINUTES` | Persisted room rows (queue, added-by names and ids, votes, host id, room name) with no connected member and no change for this long. Everything a room holds about a person lives in that one row. | `0` (keep). The policy intends 30 days, `43200`. |
+| `REPORT_RETENTION_DAYS` | `reports` and `moderation_actions` rows older than this many days, by `created_at`. | `0` (keep) |
+
+`REPORT_RETENTION_DAYS` must be a whole number from 0 to 36500; anything else refuses to start, because a typo that silently kept data forever would make the policy false. The purge runs once at boot and then hourly. Each `DELETE` is bounded to 5000 rows, oldest first; a run repeats while batches come back full, up to 10 per table, and logs `retention_backlog` if rows past the window remain for the next run. Logs carry counts only, and `music_jam_retention_purged_total{table}` counts deleted rows.
+
+> [!CAUTION]
+> The first run happens at boot and deletes immediately. A typo such as `1` for `100` destroys reports that cannot be recovered. Check the value (it is logged as `report_retention_enabled window_days=...`) before deploying.
+
+The purge is by age only. Neither table has a status or resolution column, so a report tied to an open case is purged on the same schedule as any other: holding one longer (legal hold) is not supported, and the window has to be long enough for ECA Digital reporting duties (#259). That length is a question for legal review.
+
+Room idleness is measured by the last change to the row, not the last visit. A room someone opened within the in-memory window (`ROOM_IDLE_TTL_MINUTES`) without changing anything is still held in memory, and a later change saves it again.
 
 ## Observability
 
