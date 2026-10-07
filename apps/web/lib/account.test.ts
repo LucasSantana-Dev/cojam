@@ -45,7 +45,7 @@ describe('signInWithGoogle', () => {
   it('errors cleanly when accounts are not configured', async () => {
     const { signInWithGoogle } = await import('./account');
     const { error } = await signInWithGoogle();
-    expect(error).toBe('Accounts are not configured');
+    expect(error).toBe('As contas não estão configuradas');
   });
 });
 
@@ -92,7 +92,7 @@ describe('signInWithEmail', () => {
 
     const { error } = await signInWithEmail('dj@example.com');
 
-    expect(error).toBe('Accounts are not configured');
+    expect(error).toBe('As contas não estão configuradas');
     expect(supabaseMock.signInWithOtp).not.toHaveBeenCalled();
   });
 });

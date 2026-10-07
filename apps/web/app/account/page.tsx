@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import { LogoMark } from '@/app/components/Logo';
+import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 import { supabaseEnabled } from '@/lib/supabase';
 import {
   getAccountSession,
@@ -58,7 +60,7 @@ export default function AccountPage() {
     const { error: err } = await signInWithEmail(email.trim());
     setBusy(false);
     if (err) setError(err);
-    else setMessage('Check your email for the sign-in link.');
+    else setMessage('Confira seu e-mail: enviamos o link de acesso.');
   };
 
   const handleGoogle = async () => {
@@ -79,7 +81,7 @@ export default function AccountPage() {
     const { error: err } = await saveDisplayName(displayName.trim());
     setBusy(false);
     if (err) setError(err);
-    else setMessage('Display name saved.');
+    else setMessage('Nome salvo.');
   };
 
   const handleSignOut = async () => {
@@ -92,7 +94,7 @@ export default function AccountPage() {
       setServices([]);
       setDisplayName('');
     } catch {
-      setError('Could not sign out. Try again.');
+      setError('Não deu para sair. Tente de novo.');
     } finally {
       setBusy(false);
     }
@@ -100,144 +102,132 @@ export default function AccountPage() {
 
   if (!mounted || !loaded) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="panel p-6 max-w-md w-full space-y-2">
-          <div className="skeleton-shimmer h-6 rounded" />
-          <div className="skeleton-shimmer h-10 rounded" />
-        </div>
-      </main>
+      <SintoniaScreen>
+        <main id="main" className="sx-main">
+          <div className="sx-glass sx-card" aria-busy="true">
+            <div className="skeleton-shimmer h-6 rounded" />
+            <div className="skeleton-shimmer h-10 rounded" />
+          </div>
+        </main>
+      </SintoniaScreen>
     );
   }
 
   if (!supabaseEnabled()) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="panel p-6 max-w-md w-full text-center space-y-3">
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>Accounts</h1>
-          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            Accounts are not configured on this deployment.
-          </p>
-          <Link href="/" className="text-sm underline" style={{ color: 'var(--color-accent)' }}>Back home</Link>
-        </div>
-      </main>
+      <SintoniaScreen>
+        <main id="main" className="sx-main">
+          <div className="sx-glass sx-card">
+            <div className="sx-brand">
+              <LogoMark size={20} /> CoJam
+            </div>
+            <h1 className="sx-title">Contas</h1>
+            <SineLine flat />
+            <p className="sx-text">As contas não estão configuradas neste servidor.</p>
+            <div className="sx-actions">
+              <Link href="/" className="btn-ghost">Voltar ao início</Link>
+            </div>
+          </div>
+        </main>
+      </SintoniaScreen>
     );
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6">
-      <div className="panel p-6 max-w-md w-full space-y-5">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>Account</h1>
-          <Link href="/" className="text-sm underline" style={{ color: 'var(--color-accent)' }}>Home</Link>
-        </div>
-
-        {!session ? (
-          <div className="space-y-3">
-            <form onSubmit={handleSignIn} className="space-y-3">
-              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                Sign in to keep your name and connected services across devices. Guests can keep using rooms without an account.
-              </p>
-              <input
-                type="email"
-                required
-                placeholder="you@example.com"
-                aria-label="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2.5 text-sm rounded-lg focus:outline-none border"
-                style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-              />
-              <button
-                type="submit"
-                disabled={busy || !email.trim()}
-                className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50"
-                style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
-              >
-                {busy ? 'Sending...' : 'Email me a sign-in link'}
-              </button>
-            </form>
-            <div className="flex items-center gap-3" aria-hidden>
-              <div className="flex-1 h-px" style={{ backgroundColor: 'var(--color-border)' }} />
-              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>or</span>
-              <div className="flex-1 h-px" style={{ backgroundColor: 'var(--color-border)' }} />
+    <SintoniaScreen>
+      <main id="main" className="sx-main">
+        <div className="sx-glass sx-card">
+          <div className="sx-bar">
+            <div className="sx-brand">
+              <LogoMark size={20} /> CoJam
             </div>
-            <button
-              type="button"
-              onClick={handleGoogle}
-              disabled={busy}
-              className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 border"
-              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-surface-2)' }}
-            >
-              Continue with Google
-            </button>
+            <Link href="/" className="sx-link">Início</Link>
           </div>
-        ) : (
-          <div className="space-y-5">
-            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              Signed in as <span style={{ color: 'var(--color-text-primary)' }}>{session.email ?? session.userId}</span>
-            </p>
+          <h1 className="sx-title">Sua conta</h1>
+          <SineLine flat={!session} />
 
-            <form onSubmit={handleSaveName} className="space-y-2">
-              <label className="block text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                Display name
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Your name in rooms"
-                  aria-label="Display name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="flex-1 px-4 py-2 text-sm rounded-lg focus:outline-none border"
-                  style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-                />
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50"
-                  style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
-                >
-                  Save
-                </button>
-              </div>
-            </form>
-
-            <div className="space-y-1">
-              <h2 className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Connected services</h2>
-              {services.length === 0 ? (
-                <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                  None yet. Connect Spotify inside a room and it shows up here.
+          {!session ? (
+            <div className="sx-stack">
+              <form onSubmit={handleSignIn} className="sx-stack">
+                <p className="sx-text">
+                  Entre para guardar seu nome e seus serviços conectados em todos os dispositivos. Quem entra como convidado continua usando as salas sem conta.
                 </p>
-              ) : (
-                <ul className="space-y-1">
-                  {services.map((p) => (
-                    <li key={p} className="text-sm" style={{ color: 'var(--color-text-primary)' }}>
-                      {PROVIDER_LABEL[p]}
-                    </li>
-                  ))}
-                </ul>
-              )}
+                <input
+                  type="email"
+                  required
+                  placeholder="voce@exemplo.com"
+                  aria-label="E-mail"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="join-input focus-ring-grow"
+                />
+                <button type="submit" disabled={busy || !email.trim()} className="btn-primary sx-block">
+                  {busy ? 'Enviando...' : 'Receber link de acesso por e-mail'}
+                </button>
+              </form>
+              <div className="sx-or" aria-hidden>
+                <span>ou</span>
+              </div>
+              <button type="button" onClick={handleGoogle} disabled={busy} className="btn-ghost sx-block">
+                Continuar com o Google
+              </button>
             </div>
+          ) : (
+            <div className="sx-stack">
+              <p className="sx-text">
+                Conectado como <strong>{session.email ?? session.userId}</strong>
+              </p>
 
-            <button
-              type="button"
-              onClick={handleSignOut}
-              disabled={busy}
-              className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 border"
-              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
-            >
-              Sign out
-            </button>
-          </div>
-        )}
+              <form onSubmit={handleSaveName} className="sx-stack sx-stack--tight">
+                <label htmlFor="account-display-name" className="sx-label">
+                  Nome de exibição
+                </label>
+                <div className="sx-row">
+                  <input
+                    id="account-display-name"
+                    type="text"
+                    placeholder="Seu nome nas salas"
+                    aria-label="Nome de exibição"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="join-input focus-ring-grow"
+                  />
+                  <button type="submit" disabled={busy} className="btn-primary">
+                    Salvar
+                  </button>
+                </div>
+              </form>
 
-        {error && (
-          <p role="alert" className="text-sm" style={{ color: 'var(--color-status-error)' }}>{error}</p>
-        )}
-        {message && (
-          <p role="status" className="text-sm" style={{ color: 'var(--color-status-ok)' }}>{message}</p>
-        )}
-      </div>
-    </main>
+              <div className="sx-stack sx-stack--tight">
+                <h2 className="sx-label">Serviços conectados</h2>
+                {services.length === 0 ? (
+                  <p className="sx-text sx-text--muted">
+                    Nenhum ainda. Conecte o Spotify dentro de uma sala e ele aparece aqui.
+                  </p>
+                ) : (
+                  <ul className="sx-list">
+                    {services.map((p) => (
+                      <li key={p}>{PROVIDER_LABEL[p]}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <button type="button" onClick={handleSignOut} disabled={busy} className="btn-ghost sx-block">
+                Sair
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <p role="alert" className="sx-feedback sx-feedback--error">{error}</p>
+          )}
+          {message && (
+            <p role="status" className="sx-feedback">{message}</p>
+          )}
+        </div>
+      </main>
+    </SintoniaScreen>
   );
 }

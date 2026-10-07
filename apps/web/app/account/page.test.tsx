@@ -39,10 +39,10 @@ describe('AccountPage', () => {
 
     render(<AccountPage />);
 
-    expect(await screen.findByText('Accounts are not configured on this deployment.'))
+    expect(await screen.findByText('As contas não estão configuradas neste servidor.'))
       .toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back home' })).toHaveAttribute('href', '/');
-    expect(screen.queryByRole('textbox', { name: 'Email' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Voltar ao início' })).toHaveAttribute('href', '/');
+    expect(screen.queryByRole('textbox', { name: 'E-mail' })).not.toBeInTheDocument();
   });
 
   it('renders the signed-out sign-in form when the accounts flag is on', async () => {
@@ -50,9 +50,9 @@ describe('AccountPage', () => {
 
     render(<AccountPage />);
 
-    expect(await screen.findByRole('button', { name: 'Email me a sign-in link' }))
+    expect(await screen.findByRole('button', { name: 'Receber link de acesso por e-mail' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Email' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'E-mail' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continuar com o Google' })).toBeInTheDocument();
   });
 });

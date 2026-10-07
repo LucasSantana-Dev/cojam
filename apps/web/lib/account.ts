@@ -38,7 +38,7 @@ export async function getAccountToken(): Promise<string | null> {
 // session is picked up from the URL by the Supabase client.
 export async function signInWithEmail(email: string): Promise<{ error: string | null }> {
   const sb = getSupabase();
-  if (!sb) return { error: 'Accounts are not configured' };
+  if (!sb) return { error: 'As contas não estão configuradas' };
   const { error } = await sb.auth.signInWithOtp({
     email,
     options: { emailRedirectTo: `${window.location.origin}/account` },
@@ -53,7 +53,7 @@ export async function signInWithEmail(email: string): Promise<{ error: string | 
 // needs nothing Google-specific.
 export async function signInWithGoogle(): Promise<{ error: string | null }> {
   const sb = getSupabase();
-  if (!sb) return { error: 'Accounts are not configured' };
+  if (!sb) return { error: 'As contas não estão configuradas' };
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: `${window.location.origin}/account` },

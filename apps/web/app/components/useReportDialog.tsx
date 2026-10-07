@@ -123,7 +123,7 @@ export function useReportDialog() {
               />
             </label>
             {status === 'error' && (
-              <p role="alert" className="age-gate__body" style={{ color: 'var(--color-status-error)', opacity: 1 }}>
+              <p role="alert" className="age-gate__body" style={{ color: 'var(--color-status-error-soft)', opacity: 1 }}>
                 Não foi possível enviar a denúncia. Tente de novo em instantes.
               </p>
             )}
