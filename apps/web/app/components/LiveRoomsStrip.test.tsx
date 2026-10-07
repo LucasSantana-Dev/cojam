@@ -44,8 +44,8 @@ describe('LiveRoomsStrip', () => {
     expect(screen.getByText('Neon Room')).toBeInTheDocument();
     // No host-set name: the room code is the label.
     expect(screen.getByText('ABC123')).toBeInTheDocument();
-    expect(screen.getByText('7 listening')).toBeInTheDocument();
-    expect(screen.getByText('3 listening')).toBeInTheDocument();
+    expect(screen.getByText('7 ouvindo')).toBeInTheDocument();
+    expect(screen.getByText('3 ouvindo')).toBeInTheDocument();
     expect(screen.getByText('Instant Crush')).toBeInTheDocument();
     expect(screen.getByText('Daft Punk')).toBeInTheDocument();
 
@@ -55,7 +55,7 @@ describe('LiveRoomsStrip', () => {
 
   it('renders a placeholder instead of now-playing when nothing is queued', () => {
     render(<LiveRoomsStrip rooms={[fixtures[1]]} />);
-    expect(screen.getByText('Nothing playing yet')).toBeInTheDocument();
+    expect(screen.getByText('Nada tocando ainda')).toBeInTheDocument();
   });
 
   it('caps the strip at 5 cards', () => {
@@ -140,7 +140,7 @@ describe('directory age gate (#259)', () => {
       screen.getByText('Sala').closest('a')!.click();
     });
     await act(async () => {
-      screen.getByRole('button', { name: /or over/i }).click();
+      screen.getByRole('button', { name: /anos ou mais/i }).click();
     });
 
     expect(push).toHaveBeenCalledWith('/room/ROOM1');

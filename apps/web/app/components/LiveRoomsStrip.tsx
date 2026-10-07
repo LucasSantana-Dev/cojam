@@ -46,7 +46,7 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
 
   return (
     <div className="live-rooms">
-      <span className="live-rooms__label">Live rooms</span>
+      <span className="live-rooms__label">Salas ao vivo</span>
       <div className="live-rooms__grid">
         {rooms.slice(0, MAX_CARDS).map((room) => (
           <Link
@@ -59,7 +59,7 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
               <span className="live-room-card__name">{room.name || room.roomId}</span>
               <span className="room-card__live">
                 <span className="room-card__dot" />
-                Live
+                Ao vivo
               </span>
             </span>
             <span className="live-room-card__track">
@@ -69,12 +69,12 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
                   <span className="live-room-card__artist">{room.nowPlaying.artist}</span>
                 </>
               ) : (
-                <span className="live-room-card__artist">Nothing playing yet</span>
+                <span className="live-room-card__artist">Nada tocando ainda</span>
               )}
             </span>
             <span className="live-room-card__bottom">
-              <span className="live-room-card__count">{room.memberCount} listening</span>
-              <span className="live-room-card__join" aria-hidden>Join &rarr;</span>
+              <span className="live-room-card__count">{room.memberCount} ouvindo</span>
+              <span className="live-room-card__join" aria-hidden>Entrar &rarr;</span>
             </span>
           </Link>
         ))}
@@ -94,17 +94,17 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
         onClose={() => setPendingRoomId(null)}
       >
         <div className="age-gate__panel">
-          <h2 id="age-gate-title" className="age-gate__title">Before you join</h2>
+          <h2 id="age-gate-title" className="age-gate__title">Antes de entrar</h2>
           <p className="age-gate__body">
-            Public rooms are open to people you have not met. You need to be{' '}
-            {MINIMUM_AGE} or over to join one.
+            Salas públicas são abertas a pessoas que você não conhece. É preciso ter{' '}
+            {MINIMUM_AGE} anos ou mais para entrar em uma.
           </p>
           <div className="age-gate__actions">
             <button type="button" className="btn-primary" onClick={confirmAge}>
-              I am {MINIMUM_AGE} or over
+              Tenho {MINIMUM_AGE} anos ou mais
             </button>
             <button type="button" className="btn-ghost" onClick={() => setPendingRoomId(null)}>
-              Cancel
+              Cancelar
             </button>
           </div>
         </div>
