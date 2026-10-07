@@ -222,3 +222,64 @@ describe('RoomClient guest-identity signal (#167)', () => {
     expect(document.querySelector('.guest-chip')).toBeNull();
   });
 });
+
+describe('RoomClient video stage layout (#258)', () => {
+  const base: TrackRef = {
+    id: 't1',
+    title: 'Clip',
+    artist: 'Chan',
+    sources: { youtube: { videoId: 'abc123', confidence: 1 } },
+    addedBy: 'Bob',
+  };
+
+  beforeEach(() => {
+    realtimeMocks.joinError = null;
+    accountMocks.session = null;
+    sessionStorage.clear();
+    delete window.__COJAM_ENV__;
+    useStore.setState({ state: null, signedIn: false, name: '' });
+  });
+
+  afterEach(() => {
+    delete window.__COJAM_ENV__;
+  });
+
+  it('shows stage + panels for a video track when the flag is on', async () => {
+    window.__COJAM_ENV__ = { features: { video: true } };
+    seedRoomState({ queue: [{ ...base, kind: 'video' }], nowPlayingId: 't1' });
+    render(<RoomClient roomId="NEON42" />);
+    await joinAs('Alice');
+    expect(screen.getByTestId('video-room')).toBeInTheDocument();
+    expect(screen.getByTestId('stage')).toBeInTheDocument();
+    expect(screen.queryByTestId('room-main-column')).toBeNull();
+  });
+
+  it('tabs switch which panel is active on phones', async () => {
+    window.__COJAM_ENV__ = { features: { video: true } };
+    seedRoomState({ queue: [{ ...base, kind: 'video' }], nowPlayingId: 't1' });
+    render(<RoomClient roomId="NEON42" />);
+    await joinAs('Alice');
+    const queuePanel = document.getElementById('video-panel-queue')!;
+    expect(queuePanel).toHaveAttribute('data-active', 'false');
+    fireEvent.click(screen.getByRole('tab', { name: 'Queue' }));
+    expect(queuePanel).toHaveAttribute('data-active', 'true');
+    expect(document.getElementById('video-panel-playing')).toHaveAttribute('data-active', 'false');
+  });
+
+  it('keeps the audio layout when the flag is off', async () => {
+    seedRoomState({ queue: [{ ...base, kind: 'video' }], nowPlayingId: 't1' });
+    render(<RoomClient roomId="NEON42" />);
+    await joinAs('Alice');
+    expect(screen.queryByTestId('video-room')).toBeNull();
+    expect(screen.getByTestId('room-main-column')).toBeInTheDocument();
+  });
+
+  it('keeps the audio layout for an audio track even with the flag on', async () => {
+    window.__COJAM_ENV__ = { features: { video: true } };
+    seedRoomState({ queue: [base], nowPlayingId: 't1' });
+    render(<RoomClient roomId="NEON42" />);
+    await joinAs('Alice');
+    expect(screen.queryByTestId('video-room')).toBeNull();
+    expect(screen.getByTestId('room-main-column')).toBeInTheDocument();
+  });
+});

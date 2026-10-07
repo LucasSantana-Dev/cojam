@@ -38,9 +38,12 @@ import { EnrichmentPanel } from '../components/EnrichmentPanel';
 import { UnavailableTrack } from '../components/UnavailableTrack';
 import { PlayFailedTrack } from '../components/PlayFailedTrack';
 import { TransportUI } from '../components/TransportUI';
+import { Stage } from '../components/Stage';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
 import type { IPlayer } from '@/lib/playerInterface';
+
+type VideoPanelTab = 'playing' | 'queue' | 'chat' | 'add';
 
 // mm:ss for the shared room-age clock on the now-playing card.
 function formatElapsed(totalSeconds: number): string {
@@ -64,6 +67,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // never touches transport state or other members.
   const [playFailedId, setPlayFailedId] = useState<string | null>(null);
   const [enrichmentOpen, setEnrichmentOpen] = useState(false);
+  // Video rooms below 768px: which panel the tab bar shows under the pinned
+  // stage. Ignored at md and up, where every panel is visible.
+  const [panelTab, setPanelTab] = useState<VideoPanelTab>('playing');
   // Feature flags resolve at runtime (via /env.js), not build time, so the
   // env-agnostic image can flip any flag. The hook's server snapshot (build-time
   // values) keeps SSR and the first client render in agreement.
@@ -314,79 +320,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
     );
   }
 
-  return (
-    <div className="room min-h-screen" style={{ color: 'var(--color-text-primary)' }}>
-      <StatusBanner />
-      {/* Rebind soft notice (#172): proof verification failed (secret rotation
-          or expiry), so guest contributions could not be linked. The room and
-          the sign-in keep working; only the attribution handoff is lost. The
-          live region stays mounted (empty when there is no notice) so screen
-          readers announce the text when it appears. */}
-      <p role="status" className="text-xs text-center px-4 py-2" style={{ color: 'var(--color-text-muted)' }}>
-        {store.rebindNotice}
-      </p>
-      <header className="room-header">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-            <div className="space-y-1 min-w-0">
-              <h1 className="text-2xl font-bold inline-flex items-center gap-2">
-                {/* Flows only while (re)connecting: colors moving = syncing. */}
-                <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
-              </h1>
-              <p className="text-sm flex items-center gap-2 flex-wrap" style={{ color: 'var(--color-text-secondary)' }}>
-                <span>Room</span>
-                <span className="room-code-chip">{roomId}</span>
-                <span aria-hidden style={{ opacity: 0.5 }}>·</span>
-                <span className="truncate">you&rsquo;re {store.name}</span>
-                {accountsEnabled && !store.signedIn && <span className="guest-chip">Guest</span>}
-              </p>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <PresenceBar roomId={roomId} canControl={hostControl} />
-              <ShareRoomButton />
-              {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
-              {hostControl && f.publicRooms && <PublicRoomToggle roomId={roomId} />}
-              {accountsEnabled && (
-                <Link
-                  href="/account"
-                  className="text-sm underline"
-                  style={{ color: 'var(--color-text-secondary)' }}
-                >
-                  Account
-                </Link>
-              )}
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
-                <div
-                  className="connection-dot"
-                  data-state={store.reconnecting ? 'reconnecting' : store.connected ? 'connected' : 'lost'}
-                  style={{
-                    backgroundColor: store.reconnecting
-                      ? 'var(--color-status-warn)'
-                      : store.connected
-                        ? 'var(--color-accent)'
-                        : 'var(--color-status-error)',
-                    animation: (store.reconnecting || store.connected)
-                      ? 'pulse-breath 1s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-                      : 'none',
-                  }}
-                />
-                <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                  {store.reconnecting
-                    ? 'Reconnecting...'
-                    : store.connected
-                      ? 'Connected'
-                      : 'Disconnected'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+  // Video rooms (#258): stage + panels, only when the flag is on, the
+  // now-playing track is video and this client plays it through YouTube. Every
+  // other case (audio track, flag off, Spotify/Apple source) keeps the
+  // original two-column layout untouched.
+  const videoMode =
+    f.video && f.youtube && nowPlaying?.kind === 'video' && activeSource === 'youtube';
 
-      <main id="main" className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-5 lg:grid-cols-3 gap-8">
-          <div data-testid="room-main-column" className="md:col-span-3 lg:col-span-2 space-y-6 room-arrival" style={{ ['--i' as string]: 0 }}>
-            {queueEmpty && <OnboardingCard />}
+  const videoTabs: ReadonlyArray<readonly [VideoPanelTab, string]> = [
+    ['playing', 'Playing'],
+    ['queue', 'Queue'],
+    ...(f.roomChat ? ([['chat', 'Chat']] as const) : []),
+    ['add', 'Add'],
+  ];
+
+  const playerPanel = (
             <div className="panel p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {f.spotify && (
@@ -409,7 +357,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 )}
               </div>
 
-              {f.youtube && activeSource === 'youtube' && (
+              {!videoMode && f.youtube && activeSource === 'youtube' && (
                 <div className="pt-4" style={{ borderTop: '1px solid var(--color-border)' }}>
                   <YouTubePlayer
                     roomId={roomId}
@@ -420,8 +368,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 </div>
               )}
             </div>
+  );
 
-            {/* Now-Playing Hero */}
+  const heroPanel = (
             <div className={`panel now-playing p-6 space-y-4${nowPlaying && isPlaying ? ' is-live' : ''}`}>
               {/* Header row: section label anchors the left, Radio control the right,
                   so the toggle never floats alone above an empty panel. Eq + accent
@@ -573,16 +522,169 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 </div>
               )}
             </div>
+  );
 
-            <AddTrackForm roomId={roomId} spotifyAuthorized={spotifyAuthorized} appleAuthorized={appleAuthorized} />
+  const addTrackForm = (
+    <AddTrackForm roomId={roomId} spotifyAuthorized={spotifyAuthorized} appleAuthorized={appleAuthorized} />
+  );
+
+  const queuePanels = (
+    <>
+      <QueuePanel roomId={roomId} canControl={hostControl} />
+      <ActivityRail />
+    </>
+  );
+  const chatPanel = f.roomChat ? <ChatPanel roomId={roomId} canControl={hostControl} /> : null;
+
+  return (
+    <div className="room min-h-screen" style={{ color: 'var(--color-text-primary)' }}>
+      <StatusBanner />
+      {/* Rebind soft notice (#172): proof verification failed (secret rotation
+          or expiry), so guest contributions could not be linked. The room and
+          the sign-in keep working; only the attribution handoff is lost. The
+          live region stays mounted (empty when there is no notice) so screen
+          readers announce the text when it appears. */}
+      <p role="status" className="text-xs text-center px-4 py-2" style={{ color: 'var(--color-text-muted)' }}>
+        {store.rebindNotice}
+      </p>
+      <header className="room-header">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <div className="space-y-1 min-w-0">
+              <h1 className="text-2xl font-bold inline-flex items-center gap-2">
+                {/* Flows only while (re)connecting: colors moving = syncing. */}
+                <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
+              </h1>
+              <p className="text-sm flex items-center gap-2 flex-wrap" style={{ color: 'var(--color-text-secondary)' }}>
+                <span>Room</span>
+                <span className="room-code-chip">{roomId}</span>
+                <span aria-hidden style={{ opacity: 0.5 }}>·</span>
+                <span className="truncate">you&rsquo;re {store.name}</span>
+                {accountsEnabled && !store.signedIn && <span className="guest-chip">Guest</span>}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <PresenceBar roomId={roomId} canControl={hostControl} />
+              <ShareRoomButton />
+              {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
+              {hostControl && f.publicRooms && <PublicRoomToggle roomId={roomId} />}
+              {accountsEnabled && (
+                <Link
+                  href="/account"
+                  className="text-sm underline"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  Account
+                </Link>
+              )}
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+                <div
+                  className="connection-dot"
+                  data-state={store.reconnecting ? 'reconnecting' : store.connected ? 'connected' : 'lost'}
+                  style={{
+                    backgroundColor: store.reconnecting
+                      ? 'var(--color-status-warn)'
+                      : store.connected
+                        ? 'var(--color-accent)'
+                        : 'var(--color-status-error)',
+                    animation: (store.reconnecting || store.connected)
+                      ? 'pulse-breath 1s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                      : 'none',
+                  }}
+                />
+                <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                  {store.reconnecting
+                    ? 'Reconnecting...'
+                    : store.connected
+                      ? 'Connected'
+                      : 'Disconnected'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main id="main" className="max-w-7xl mx-auto px-6 py-8">
+        {videoMode ? (
+          <div className="video-room" data-testid="video-room" data-tab={panelTab}>
+            <Stage
+              label="Video stage"
+              caption={
+                nowPlaying && (
+                  <div className="min-w-0">
+                    <div className="font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
+                      {nowPlaying.title}
+                    </div>
+                    <div className="text-xs truncate">by {nowPlaying.artist}</div>
+                  </div>
+                )
+              }
+            >
+              <YouTubePlayer
+                roomId={roomId}
+                fill
+                onPlayerReady={setActivePlayer}
+                onPlayerGone={() => setActivePlayer(null)}
+                onPlayError={setPlayFailedId}
+              />
+            </Stage>
+
+            <div className="video-tabs" role="tablist" aria-label="Room panels">
+              {videoTabs.map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  id={`video-tab-${id}`}
+                  aria-selected={panelTab === id}
+                  aria-controls={`video-panel-${id}`}
+                  className="video-tab"
+                  onClick={() => setPanelTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div data-testid="video-main-column" className="video-main space-y-6">
+              {(f.spotify || f.apple) && playerPanel}
+              <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel" data-active={panelTab === 'playing'}>
+                {heroPanel}
+              </div>
+              <div id="video-panel-add" role="tabpanel" aria-labelledby="video-tab-add" className="video-panel" data-active={panelTab === 'add'}>
+                {addTrackForm}
+              </div>
+            </div>
+
+            <div data-testid="video-side-column" className="video-side">
+              <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel" data-active={panelTab === 'queue'}>
+                {queuePanels}
+              </div>
+              {chatPanel && (
+                <div id="video-panel-chat" role="tabpanel" aria-labelledby="video-tab-chat" className="video-panel" data-active={panelTab === 'chat'}>
+                  {chatPanel}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-5 lg:grid-cols-3 gap-8">
+          <div data-testid="room-main-column" className="md:col-span-3 lg:col-span-2 space-y-6 room-arrival" style={{ ['--i' as string]: 0 }}>
+            {queueEmpty && <OnboardingCard />}
+            {playerPanel}
+
+            {heroPanel}
+
+            {addTrackForm}
           </div>
 
           <div data-testid="room-side-column" className="md:col-span-2 lg:col-span-1 room-arrival md:sticky md:top-24 md:self-start" style={{ ['--i' as string]: 1 }}>
-            <QueuePanel roomId={roomId} canControl={hostControl} />
-            <ActivityRail />
-            {f.roomChat && <ChatPanel roomId={roomId} canControl={hostControl} />}
+            {queuePanels}
+            {chatPanel}
           </div>
         </div>
+        )}
       </main>
 
       {/* Track Depth Panel */}

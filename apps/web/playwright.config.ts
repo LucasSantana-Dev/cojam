@@ -26,6 +26,9 @@ export default defineConfig({
         FEATURE_ROOM_CHAT: 'on',
         // F1: room.set_public/room.list dark-ship default-off; e2e exercises them.
         FEATURE_PUBLIC_ROOMS: 'on',
+        // E1 (#258): transport sync + video co-watch; video-cowatch.spec.ts.
+        FEATURE_SYNC: 'on',
+        FEATURE_VIDEO: 'on',
       },
     },
     {
@@ -50,6 +53,8 @@ export default defineConfig({
         NEXT_PUBLIC_FEATURE_QUEUE_VOTING: 'on',
         NEXT_PUBLIC_FEATURE_ROOM_CHAT: 'on',
         NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS: 'on',
+        NEXT_PUBLIC_FEATURE_SYNC: 'on',
+        NEXT_PUBLIC_FEATURE_VIDEO: 'on',
       },
     },
   ],

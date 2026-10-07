@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { TransportUI, formatTime, playPauseLabel } from './TransportUI';
 import { useStore } from '@/lib/realtime';
 import type { IPlayer } from '@/lib/playerInterface';
@@ -170,5 +170,32 @@ describe('TransportUI keyboard seek', () => {
 
     expect(rpcMocks.transportSeek).toHaveBeenCalledTimes(2);
     expect(rpcMocks.transportSeek).toHaveBeenLastCalledWith('r1', 20000);
+  });
+});
+
+describe('TransportUI duration fallback (#258)', () => {
+  it('uses the player duration when the track carries none, so video seeks work', async () => {
+    useStore.setState({
+      state: {
+        roomId: 'r1',
+        queue: [{ id: 'v1', title: 'Clip', artist: 'A', sources: {}, addedBy: 'Ana' }],
+        nowPlayingId: 'v1',
+        radioEnabled: false,
+        version: 1,
+        transport: { state: 'paused', positionMs: 0, updatedAtServerMs: 0 },
+      },
+    });
+    const player: IPlayer = {
+      play: vi.fn(async () => {}),
+      pause: vi.fn(async () => {}),
+      seekToMs: vi.fn(async () => {}),
+      getCurrentPositionMs: vi.fn(async () => 0),
+      getDurationMs: vi.fn(async () => 90000),
+      canSeek: () => true,
+      onEnded: vi.fn(),
+      onPositionChanged: vi.fn(),
+    };
+    render(<TransportUI roomId="r1" activePlayer={player} canControl />);
+    await waitFor(() => expect(screen.getByLabelText('Track position')).toHaveAttribute('max', '90000'));
   });
 });

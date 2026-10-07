@@ -179,3 +179,44 @@ describe('AddTrackForm search failure states', () => {
     expect(screen.getByText(/No matches found/)).toBeInTheDocument();
   });
 });
+
+describe('AddTrackForm video kind (#258)', () => {
+  beforeEach(() => {
+    rpcMocks.queueAdd.mockClear();
+    useStore.setState({ name: 'Ana' });
+  });
+  afterEach(() => {
+    delete window.__COJAM_ENV__;
+  });
+
+  async function submit(link: string) {
+    render(<AddTrackForm roomId="r1" />);
+    fireEvent.change(screen.getByPlaceholderText('Title'), { target: { value: 'T' } });
+    fireEvent.change(screen.getByPlaceholderText('Artist'), { target: { value: 'A' } });
+    if (link) {
+      fireEvent.change(screen.getByPlaceholderText('YouTube link or video ID (optional)'), { target: { value: link } });
+    }
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add to Queue' }));
+    });
+  }
+
+  it('marks a YouTube link as video when FEATURE_VIDEO is on', async () => {
+    window.__COJAM_ENV__ = { features: { video: true } };
+    await submit('https://youtu.be/abcdefghijk');
+    expect(rpcMocks.queueAdd).toHaveBeenCalledWith('r1', expect.objectContaining({ kind: 'video' }));
+  });
+
+  it('leaves kind unset (audio) when the flag is off', async () => {
+    await submit('https://youtu.be/abcdefghijk');
+    const track = (rpcMocks.queueAdd.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
+    expect('kind' in track).toBe(false);
+  });
+
+  it('leaves kind unset when there is no YouTube link', async () => {
+    window.__COJAM_ENV__ = { features: { video: true } };
+    await submit('');
+    const track = (rpcMocks.queueAdd.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
+    expect('kind' in track).toBe(false);
+  });
+});
