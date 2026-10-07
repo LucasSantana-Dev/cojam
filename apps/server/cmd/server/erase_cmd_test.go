@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
 )
@@ -47,25 +50,48 @@ func TestRunErase_DryRunPrintsCountsOnly(t *testing.T) {
 		t.Skip("TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := db.Open(ctx, dbURL)
+
+	// A private schema: migrating the shared public schema here would race
+	// the other test packages' migrations on a fresh database.
+	admin, err := db.Open(ctx, dbURL)
 	if err != nil {
 		t.Fatalf("open: %v", err)
+	}
+	schema := fmt.Sprintf("erase_cmd_test_%d_%d", os.Getpid(), time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		admin.Close()
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() {
+		admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+		admin.Close()
+	})
+	u, err := url.Parse(dbURL)
+	if err != nil {
+		t.Fatalf("parse url: %v", err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	isolatedURL := u.String()
+
+	pool, err := db.Open(ctx, isolatedURL)
+	if err != nil {
+		t.Fatalf("open isolated: %v", err)
 	}
 	defer pool.Close()
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	const sub = "eraseCmdSubject77"
-	pool.Exec(ctx, "DELETE FROM reports WHERE id = 'erase-cmd-r1'")
 	if _, err := pool.Exec(ctx, `INSERT INTO reports (id, room_id, kind, reporter_sub, content, reason)
 		VALUES ('erase-cmd-r1', 'erase-cmd-room', 'room', $1, 'conteudo privado', 'motivo')`, sub); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	t.Cleanup(func() { pool.Exec(context.Background(), "DELETE FROM reports WHERE id = 'erase-cmd-r1'") })
 
 	var out, errOut bytes.Buffer
 	code := runErase([]string{"--sub", sub, "--name", "Fulana", "--dry-run"},
-		envOf(map[string]string{"DATABASE_URL": dbURL}), &out, &errOut)
+		envOf(map[string]string{"DATABASE_URL": isolatedURL}), &out, &errOut)
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr %q", code, errOut.String())
 	}
