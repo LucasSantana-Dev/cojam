@@ -178,10 +178,11 @@ func TestRoomList_PrivacyDefaultAndToggle(t *testing.T) {
 // ascending for stability).
 func TestRoomList_CappedAndSorted(t *testing.T) {
 	h := newPublicHub()
-	// One anonymous caller seeds 105 rooms: lift the per-caller join and
-	// room-creation budgets, which are not under test here.
+	// One anonymous caller seeds 105 rooms: lift the per-caller join,
+	// room-creation and mutation budgets, which are not under test here.
 	h.joinLimiter = nil
 	h.roomCreateLimiter = nil
+	h.mutationLimiter = nil
 
 	// 105 public rooms, each with a queued track so the dead-room filter
 	// (0 members AND empty queue) does not apply.

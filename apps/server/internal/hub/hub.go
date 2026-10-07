@@ -317,6 +317,10 @@ type Hub struct {
 	joinLimiter       *rateLimiter
 	roomCreateLimiter *rateLimiter
 
+	// mutationLimiter rate-limits state-fanout mutations per caller
+	// (mutationMethods).
+	mutationLimiter *rateLimiter
+
 	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
 	// up to 200 tracks at once; an unbounded goroutine per track would burst
 	// hundreds of simultaneous YouTube/Spotify requests and trip rate limits.
@@ -559,6 +563,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		listLimiter:       newRateLimiter(listBurst, listRefill, time.Now),
 		joinLimiter:       newRateLimiter(joinBurst, joinRefill, time.Now),
 		roomCreateLimiter: newRateLimiter(roomCreateBurst, roomCreateRefill, time.Now),
+		mutationLimiter:   newRateLimiter(mutationBurst, mutationRefill, time.Now),
 	}
 }
 
@@ -1412,6 +1417,9 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 	}
 	if err == nil {
 		err = h.checkJoinLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.checkMutationLimit(method, rlKey)
 	}
 	if err == nil {
 		err = h.ensureRoom(method, data, rlKey)

@@ -473,6 +473,8 @@ A room id must match `^[0-9A-Z]{1,12}$`: the 12 uppercase base36 chars the web g
 
 `room.join` draws from a per-caller rate limit (10 burst, one token per 2s). Creating a room draws from a separate per-caller budget (10 burst, one token per minute): it is charged only when the target room exists neither in memory nor in the store, so joining an existing room never spends it. Both reject with a code-400 UserError. The caller key is the same as the other per-caller limits (`user:<userID>`, else `client:<clientID>`).
 
+State-fanout mutations (`queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `radio.set`, `room.set_public`) share one per-caller bucket (20 burst, one token per second), since every accepted call republishes the full `RoomState`. `queue.vote`, `transport.*`, the chat and moderation RPCs, and `playlist.import` keep their own buckets.
+
 ### Trust model (#180)
 
 Room access is a **link capability**: subscribing to `room:<id>` *is* the access grant — there is deliberately no separate join-approval step. Mutation rights follow membership (subscribe or `room.join`), so anyone holding the link can read state, read chat history, and mutate the room. This is the product: share-a-link must keep working for guests with no account, and public rooms (`FEATURE_PUBLIC_ROOMS`) are listable and joinable by design.

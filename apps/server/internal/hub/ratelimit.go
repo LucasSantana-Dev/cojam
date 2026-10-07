@@ -124,3 +124,39 @@ func (l *rateLimiter) allow(key string) bool {
 	b.tokens--
 	return true
 }
+
+// mutationMethods are state-fanout RPCs: every accepted call bumps the room
+// version and republishes the full RoomState to every subscriber, so they
+// share one per-caller bucket. Methods already throttled elsewhere stay in
+// their own bucket (queue.vote: voteMethods; transport.*: transportMethods;
+// room.kick/chat.*: chatMethods; playlist.import: fanoutMethods).
+var mutationMethods = map[string]bool{
+	"queue.add":           true,
+	"queue.remove":        true,
+	"queue.reorder":       true,
+	"now_playing.set":     true,
+	"now_playing.advance": true,
+	"radio.set":           true,
+	"room.set_public":     true,
+}
+
+// Defaults for the mutation limiter: a host curating a queue clicks in
+// bursts, so the burst is generous. Tests shrink h.mutationLimiter.
+const (
+	mutationBurst  = 20
+	mutationRefill = time.Second
+)
+
+// checkMutationLimit enforces the per-caller bucket on mutationMethods.
+func (h *Hub) checkMutationLimit(method, rlKey string) error {
+	if !mutationMethods[method] || h.mutationLimiter == nil {
+		return nil
+	}
+	if !h.mutationLimiter.allow(rlKey) {
+		if h.metrics != nil {
+			h.metrics.RateLimitReject(method)
+		}
+		return userErrorf("too many requests, slow down")
+	}
+	return nil
+}
