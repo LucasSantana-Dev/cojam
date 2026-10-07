@@ -86,14 +86,14 @@ describe('ChatPanel', () => {
 
   it('renders system messages distinctly: mono, muted, no avatar or name', () => {
     const systemMsg: ChatMessage = {
-      ...msg('s1', 'Tocando agora: Song Two — B', ''),
+      ...msg('s1', 'Now playing: Song Two - B', ''),
       kind: 'system',
     };
     useStore.setState({ chat: [msg('m1', 'hello room'), systemMsg] });
     render(<ChatPanel roomId="r1" />);
 
     const row = screen.getByTestId('chat-system-message');
-    expect(row).toHaveTextContent('Tocando agora: Song Two — B');
+    expect(row).toHaveTextContent('Now playing: Song Two - B');
     // Mono font marks the row as a room event, not a member's line.
     expect(row.querySelector('.font-mono')).not.toBeNull();
     // No avatar chip and no sender-name header for system rows.
