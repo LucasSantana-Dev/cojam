@@ -327,8 +327,9 @@ services feed the `prefer` parameter of `track.search` on any device.
 HTTP endpoint on the Go server (`cmd/server/connection_token.go`) that mints the
 anonymous connection token used above. Returns `501 {"error": "connection auth not enabled"}`
 when `FEATURE_ROOM_AUTH` is off, and `429` when the caller's IP exceeds its
-budget (30 burst, one token per second; the IP is resolved as for the other
-public endpoints, from `CF-Connecting-IP` behind the proxy chain).
+budget (30 burst, one token per second; `CONNECTION_TOKEN_RATE_BURST` overrides
+the burst; the IP is resolved as for the other public endpoints, from
+`CF-Connecting-IP` behind the proxy chain).
 
 Body fields (both optional), form-encoded (`application/x-www-form-urlencoded`,
 what the web client sends: a CORS simple request) or JSON:

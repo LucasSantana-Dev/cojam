@@ -681,8 +681,11 @@ func main() {
 	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented). POST carries
 	// the refresh proof in the body; GET with query params is the deprecated
 	// form, kept for one release. Rate-limited per client IP.
-	connToken := connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns,
-		newCallerLimiter(connTokenBurst, connTokenRefill), logger)
+	// CONNECTION_TOKEN_RATE_BURST raises the per-IP burst where many callers
+	// share one address (local dev, e2e); production keeps the default.
+	connTokenLimiter := newCallerLimiter(
+		float64(envPositiveInt(os.Getenv, "CONNECTION_TOKEN_RATE_BURST", connTokenBurst)), connTokenRefill)
+	connToken := connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns, connTokenLimiter, logger)
 	r.Post("/api/connection-token", connToken)
 	r.Get("/api/connection-token", connToken)
 

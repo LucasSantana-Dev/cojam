@@ -33,6 +33,7 @@ export default defineConfig({
         // Every e2e browser arrives from 127.0.0.1, so per-IP budgets are
         // shared by the whole suite; raise them so specs never throttle.
         ROOM_CREATE_RATE_BURST: '1000',
+        CONNECTION_TOKEN_RATE_BURST: '1000',
       },
     },
     {
