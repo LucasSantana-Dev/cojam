@@ -612,8 +612,19 @@ func main() {
 	r.Get("/api/healthz", publicHealthzHandler())
 	// Member reports (#259). Durable by design: chat is ephemeral, so the
 	// report copies what it concerns.
+	// REPORT_WEBHOOK_URL (optional) pushes a minimal summary of each report to
+	// the operator; unset means DB and logs only.
+	var reportNotifier report.Notifier
+	if wh, err := report.NewWebhookNotifier(os.Getenv("REPORT_WEBHOOK_URL"), logger); err != nil {
+		log.Fatalf("invalid REPORT_WEBHOOK_URL: %v", err)
+	} else if wh != nil {
+		reportNotifier = wh
+		logger.Info("report_webhook_enabled")
+	} else {
+		logger.Warn("report_webhook_disabled", "hint", "set REPORT_WEBHOOK_URL so reports reach the operator")
+	}
 	r.Post("/api/report", reportHandler(reports, roomAuthSecret, metrics, logger,
-		newCallerLimiter(reportBurst, reportRefill)))
+		newCallerLimiter(reportBurst, reportRefill), reportNotifier))
 
 	// Client telemetry (#245/#251): folds browser-reported errors, funnel
 	// events and web vitals into the existing Prometheus surface.

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
@@ -18,6 +19,7 @@ const (
 	reportMaxBody    = 16 << 10
 	reportMaxContent = 500 // runes
 	reportMaxReason  = 300 // runes
+	reportMaxIDLen   = 128 // roomId and subjectId, bytes
 	reportBurst      = 5
 	reportRefill     = 20 * time.Second
 )
@@ -28,8 +30,11 @@ type reportRequest struct {
 	SubjectID string `json:"subjectId"`
 	// Content is the reporter's copy of what they are reporting. The server
 	// cannot fetch it: chat is ephemeral and may already be gone.
-	Content   string `json:"content"`
-	Reason    string `json:"reason"`
+	Content string `json:"content"`
+	Reason  string `json:"reason"`
+	// Category is a closed set (report.NormalizeCategory); it is the only
+	// reporter-chosen field that reaches the webhook.
+	Category  string `json:"category"`
 	ConnToken string `json:"connToken"`
 }
 
@@ -37,7 +42,7 @@ type reportRequest struct {
 // account would exclude most of the people reporting exists to protect.
 func reportHandler(
 	store report.Store, roomAuthSecret string, metrics *obs.Metrics,
-	logger *slog.Logger, limiter *callerLimiter,
+	logger *slog.Logger, limiter *callerLimiter, notifier report.Notifier,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !limiter.allow(callerKey(r), time.Now()) {
@@ -52,7 +57,10 @@ func reportHandler(
 		}
 
 		kind := report.Kind(req.Kind)
-		if req.RoomID == "" || !kind.Valid() {
+		// ids are short by construction; an oversize one is abuse, not a typo,
+		// and would otherwise be stored verbatim (up to the body cap).
+		if req.RoomID == "" || !kind.Valid() ||
+			len(req.RoomID) > reportMaxIDLen || len(req.SubjectID) > reportMaxIDLen {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -66,6 +74,20 @@ func reportHandler(
 			}
 		}
 
+		// Postgres text rejects NUL, which would turn a hostile report into a
+		// 500 and a lost report.
+		req.Content = stripNUL(req.Content)
+		req.Reason = stripNUL(req.Reason)
+		req.RoomID = stripNUL(req.RoomID)
+		req.SubjectID = stripNUL(req.SubjectID)
+
+		category := report.NormalizeCategory(req.Category)
+		reason := truncateRunes(req.Reason, reportMaxReason)
+		if category != report.CategoryOther {
+			// Stored with the report so the operator reading the table sees it.
+			reason = truncateRunes("["+category+"] "+req.Reason, reportMaxReason)
+		}
+
 		rec := report.Report{
 			ID:          connauth.NewSub(), // random id, same generator as anon subs
 			RoomID:      req.RoomID,
@@ -73,7 +95,7 @@ func reportHandler(
 			ReporterSub: sub,
 			SubjectID:   req.SubjectID,
 			Content:     truncateRunes(req.Content, reportMaxContent),
-			Reason:      truncateRunes(req.Reason, reportMaxReason),
+			Reason:      reason,
 			CreatedAt:   time.Now().UTC(),
 		}
 
@@ -90,6 +112,15 @@ func reportHandler(
 		logger.Warn("report_filed", "room_id", rec.RoomID, "kind", string(rec.Kind),
 			"subject_id", rec.SubjectID, "has_reporter", sub != "")
 
+		// Push to the operator after the write is durable. The notifier is
+		// async and swallows its own failures: a dead webhook must never turn a
+		// stored report into an error for the reporter.
+		if notifier != nil {
+			notifier.Notify(rec, category)
+		}
+
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
+func stripNUL(s string) string { return strings.ReplaceAll(s, "\x00", "") }
