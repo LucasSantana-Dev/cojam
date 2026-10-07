@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAgeGatedJoin } from './useAgeGatedJoin';
+import { AGE_GATE_COPY_PT, useAgeGatedJoin } from './useAgeGatedJoin';
 import type { PublicRoomSummary } from '@cojam/shared';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { subscribePublicRooms } from '@/lib/publicRooms';
@@ -14,12 +14,12 @@ const MAX_CARDS = 5;
 // when present, listener count, and a Join link. Purely presentational; data
 // fetching lives in LiveRoomsSlot + lib/publicRooms.
 export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
-  const { onCardClick, gate } = useAgeGatedJoin();
+  const { onCardClick, gate } = useAgeGatedJoin(AGE_GATE_COPY_PT);
 
   return (
     <div className="live-rooms">
       <div className="live-rooms__head">
-        <span className="live-rooms__label">Live rooms</span>
+        <span className="live-rooms__label">Salas ao vivo</span>
         <Link href="/rooms" className="live-rooms__all">ver todas &rarr;</Link>
       </div>
       <div className="live-rooms__grid">
@@ -34,7 +34,7 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
               <span className="live-room-card__name">{room.name || room.roomId}</span>
               <span className="room-card__live">
                 <span className="room-card__dot" />
-                Live
+                Ao vivo
               </span>
             </span>
             <span className="live-room-card__track">
@@ -44,12 +44,12 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
                   <span className="live-room-card__artist">{room.nowPlaying.artist}</span>
                 </>
               ) : (
-                <span className="live-room-card__artist">Nothing playing yet</span>
+                <span className="live-room-card__artist">Nada tocando ainda</span>
               )}
             </span>
             <span className="live-room-card__bottom">
-              <span className="live-room-card__count">{room.memberCount} listening</span>
-              <span className="live-room-card__join" aria-hidden>Join &rarr;</span>
+              <span className="live-room-card__count">{room.memberCount} ouvindo</span>
+              <span className="live-room-card__join" aria-hidden>Entrar &rarr;</span>
             </span>
           </Link>
         ))}

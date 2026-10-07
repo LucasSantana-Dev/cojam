@@ -113,7 +113,7 @@ export function RoomShowcase() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-[var(--color-accent)]/10">
             <div>
               <h3 className="text-sm font-mono uppercase tracking-widest text-[var(--color-accent)]">
-                Room: {roomData.roomId}
+                Sala: {roomData.roomId}
               </h3>
             </div>
 
@@ -148,7 +148,7 @@ export function RoomShowcase() {
                   className="w-2 h-2 rounded-full animate-pulse-breath"
                   style={{ backgroundColor: 'var(--color-accent)' }}
                 />
-                Connected
+                Conectado
               </div>
             </div>
           </div>
@@ -179,7 +179,7 @@ export function RoomShowcase() {
               <div className="flex-1 min-w-0 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2 mb-2">
                   <span className="text-xs font-mono uppercase tracking-widest text-[var(--color-accent)]">
-                    Now Playing
+                    Tocando agora
                   </span>
                   <div className="eq">
                     <span />
@@ -242,7 +242,7 @@ export function RoomShowcase() {
               className="text-xs font-mono uppercase tracking-widest px-2"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              Queue
+              Fila
             </h5>
 
             <div className="space-y-1.5 showcase-queue-list">
@@ -288,7 +288,7 @@ export function RoomShowcase() {
                           className="text-xs truncate"
                           style={{ color: 'var(--color-text-muted)' }}
                         >
-                          {item.artist} · added by {item.addedBy}
+                          {item.artist} · adicionada por {item.addedBy}
                         </div>
                       </div>
 

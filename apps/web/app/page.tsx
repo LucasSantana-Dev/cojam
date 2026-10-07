@@ -11,6 +11,7 @@ import { LiveCounter } from '@/app/components/LiveCounter';
 import { LogoMark } from '@/app/components/Logo';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
+import { MINIMUM_AGE } from '@/lib/ageGate';
 import { readGuestName, saveGuestName } from '@/lib/guestName';
 import { trackEvent } from '@/lib/telemetry';
 
@@ -35,6 +36,50 @@ function Words({ text, start = 0 }: { text: string; start?: number }) {
       ))}
     </>
   );
+}
+
+// Honest, current-state answers (README platform table, CONTEXT.md trust model).
+// Keep this list true: no video, no screen share, no unsupported services.
+const FAQ: Array<{ q: string; a: string }> = [
+  {
+    q: 'O CoJam é grátis?',
+    a: 'Sim, usar o CoJam não custa nada. O que continua por conta de cada pessoa é o próprio serviço de streaming: o Spotify, por exemplo, exige Premium para tocar no navegador.',
+  },
+  {
+    q: 'Preciso criar uma conta?',
+    a: 'Não. Para criar ou entrar numa sala basta digitar um nome. Nada de instalar app nem cadastrar e-mail.',
+  },
+  {
+    q: 'Como todo mundo ouve a mesma música se cada um usa um serviço?',
+    a: 'Cada pessoa toca na própria conta de streaming. O CoJam sincroniza só os metadados (a fila, quem toca o quê e em que ponto da faixa), nunca retransmite áudio. Entre serviços diferentes pode haver uma diferença de cerca de meio segundo, porque cada um usa a sua própria gravação.',
+  },
+  {
+    q: 'Quais serviços funcionam?',
+    a: 'Hoje funcionam o YouTube e o Spotify (com Premium). O Apple Music ainda está em desenvolvimento. YouTube Music e Tidal não são compatíveis por falta de API oficial ou de licença.',
+  },
+  {
+    q: 'Funciona no celular?',
+    a: 'A sala abre no navegador do celular, sem instalar nada. Como o som sai do player do próprio serviço dentro do navegador, o comportamento pode variar conforme o aparelho e o navegador.',
+  },
+  {
+    q: 'A sala é pública ou privada?',
+    a: `Toda sala nasce privada: só entra quem tem o link, e o link é a permissão. Quem cria a sala pode torná-la pública para aparecer na lista de salas ao vivo. Para entrar numa sala pública pela lista, é preciso confirmar que tem ${MINIMUM_AGE} anos ou mais.`,
+  },
+];
+
+function faqJsonLd(): string {
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    inLanguage: 'pt-BR',
+    mainEntity: FAQ.map(({ q, a }) => ({
+      '@type': 'Question',
+      name: q,
+      acceptedAnswer: { '@type': 'Answer', text: a },
+    })),
+  };
+  // Escape "<" so a future answer can never close the script tag.
+  return JSON.stringify(data).replace(/</g, '\\u003c');
 }
 
 export default function Home() {
@@ -507,19 +552,19 @@ export default function Home() {
   }, []);
 
   const steps = [
-    { n: '01', t: 'Everyone brings their own', d: 'Spotify, YouTube, or Apple Music. No one switches services or shares a login.' },
-    { n: '02', t: 'Share the room link', d: 'One link drops your friends into the same room, wherever they are.' },
-    { n: '03', t: 'Play in sync', d: 'Queue tracks together; the room syncs who plays what. Each of you streams on your own account.' },
+    { n: '01', t: 'Digite seu nome e crie a sala', d: 'Sem instalar nada e sem conta. A sala nasce privada: só entra quem tem o link.' },
+    { n: '02', t: 'Mande o link', d: 'Um link coloca seus amigos na mesma sala, onde estiverem. Cada um entra com o próprio nome.' },
+    { n: '03', t: 'Toquem em sincronia', d: 'Montem a fila juntos; a sala sincroniza quem toca o quê. Cada um ouve na própria conta, no Spotify ou no YouTube.' },
   ];
 
   // Evergreen value phrases for the hero marquee. Decorative (the parent is
   // aria-hidden); the same claims appear in the readable sections below.
   const tickerPhrases = [
-    'Per-user streams',
-    'Metadata only, never a rebroadcast',
-    'Everyone on their own account',
-    'The queue stays in sync',
-    'Bring the service you already pay for',
+    'Um stream por pessoa',
+    'Só metadados, nunca uma retransmissão',
+    'Cada um na própria conta',
+    'A fila fica em sincronia',
+    'Traga o serviço que você já paga',
   ].map((phrase, i) => (
     <span key={i} className="ticker-item">
       {phrase}
@@ -536,7 +581,7 @@ export default function Home() {
   const platforms: Array<[string, boolean]> = [
     ['YouTube', true],
     ['Spotify', true],
-    ['Apple Music', true],
+    ['Apple Music', false],
   ];
 
   return (
@@ -546,15 +591,16 @@ export default function Home() {
       <header className="site-header">
         <span className="brand"><LogoMark size={18} /> CoJam</span>
         <nav className="site-nav" aria-label="Primary">
-          <a href="#how">How it works</a>
-          <a href="#showcase">See it live</a>
+          <a href="#how">Como funciona</a>
+          <a href="#showcase">Veja ao vivo</a>
+          <a href="#faq">Dúvidas</a>
           <a href="https://github.com/LucasSantana-Dev/cojam" target="_blank" rel="noreferrer">
             GitHub
           </a>
           {accountsEnabled && <Link href="/account">Sign in</Link>}
         </nav>
         <button onClick={createRoom} className="btn-primary magnetic">
-          Start a room
+          Começar uma sala
         </button>
       </header>
       <main id="main" className="landing-content">
@@ -581,28 +627,28 @@ export default function Home() {
           <div className="hero-inner">
             <span className="eyebrow is-live">
               <span className="eyebrow-dot" aria-hidden />
-              Live sync, across services
+              Sincronia ao vivo, entre serviços
             </span>
             <h1 className="hero-title">
-              <Words text="Your friends." start={0} />
+              <Words text="Seus amigos." start={0} />
               <br />
-              <Words text="Your platforms." start={2} />
+              <Words text="Suas plataformas." start={2} />
               <br />
-              <Words text="One" start={4} />
+              <Words text="Uma" start={4} />
               {/* Signature payoff word: italic + brighter glow, wrapped in mask. */}
               <span className="word-mask word-accent" style={{ ['--i' as string]: 5 }}>
-                <span className="word">room.</span>
+                <span className="word">sala.</span>
               </span>
             </h1>
             <p className="hero-sub">
-              Queued by people, not algorithms. CoJam keeps a shared queue in sync while everyone
-              plays on their own streaming account. Per-user streams, metadata only, never a
-              rebroadcast.
+              A fila é de quem está na sala, não de um algoritmo. O CoJam mantém a fila
+              sincronizada enquanto cada pessoa toca na própria conta de streaming. Um stream por
+              pessoa, só metadados, nunca uma retransmissão.
             </p>
             <div className="hero-cta">
               <form onSubmit={createNamedRoom} className="hero-create">
                 <label htmlFor="hero-name" className="hero-join__label">
-                  Your name
+                  Seu nome
                 </label>
                 <input
                   id="hero-name"
@@ -615,23 +661,23 @@ export default function Home() {
                   className="hero-create__input"
                 />
                 <button type="submit" disabled={!nameInput.trim()} className="btn-primary magnetic">
-                  Create room
+                  Criar sala
                 </button>
               </form>
               <form onSubmit={joinRoom} className="hero-join">
                 <label htmlFor="hero-room-code" className="hero-join__label">
-                  Have a code?
+                  Tem um código?
                 </label>
                 <input
                   id="hero-room-code"
                   type="text"
-                  placeholder="Room code"
+                  placeholder="Código"
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value)}
                   style={{ width: '8rem', textAlign: 'center', textTransform: 'uppercase' }}
                 />
                 <button type="submit" disabled={!roomId.trim()} className="btn-ghost">
-                  Join
+                  Entrar
                 </button>
               </form>
             </div>
@@ -649,10 +695,10 @@ export default function Home() {
               fallback={
                 <aside className="room-card" aria-hidden="true">
                   <div className="room-card__top">
-                    <span className="room-card__label">Example room · NEON-4821</span>
+                    <span className="room-card__label">Sala de exemplo · NEON-4821</span>
                     <span className="room-card__live">
                       <span className="room-card__dot" />
-                      Live
+                      Ao vivo
                     </span>
                   </div>
                   <div className="room-card__main">
@@ -684,7 +730,7 @@ export default function Home() {
                       <i style={{ background: 'var(--color-ident-3)' }}>T</i>
                     </span>
                     <span className="room-card__chat">
-                      <b>Maria</b> added Borderline to the queue
+                      <b>Maria</b> adicionou Borderline à fila
                     </span>
                   </div>
                 </aside>
@@ -692,18 +738,19 @@ export default function Home() {
             />
 
             <div className="hero-claims">
-              <span className="claim"><CheckIcon size={13} /> No install</span>
-              <span className="claim"><CheckIcon size={13} /> No account for guests</span>
-              <span className="claim"><CheckIcon size={13} /> Free</span>
+              <span className="claim"><CheckIcon size={13} /> Sem instalar</span>
+              <span className="claim"><CheckIcon size={13} /> Sem conta para convidados</span>
+              <span className="claim"><CheckIcon size={13} /> Grátis</span>
               <span className="claim-sep" aria-hidden />
               <span className="claim"><SpotifyIcon size={13} /> Spotify</span>
               <span className="claim"><YouTubeIcon size={13} /> YouTube</span>
             </div>
             <nav className="hero-manifest" aria-label="Page sections">
-              <a href="#how">how</a>
-              <a href="#showcase">live</a>
-              <a href="#vs">vs</a>
-              <a href="#platforms">platforms</a>
+              <a href="#how">como</a>
+              <a href="#showcase">ao vivo</a>
+              <a href="#vs">por quê</a>
+              <a href="#platforms">serviços</a>
+              <a href="#faq">dúvidas</a>
             </nav>
           </div>
           <div className="hero-ticker" aria-hidden>
@@ -716,8 +763,8 @@ export default function Home() {
 
         {/* How it works */}
         <section id="how" className="section">
-          <p className="section-eyebrow reveal">How it works</p>
-          <h2 className="section-title reveal">One room, your streaming services, <em>zero switching.</em></h2>
+          <p className="section-eyebrow reveal">Como funciona em 3 passos</p>
+          <h2 className="section-title reveal">Uma sala, seus serviços de streaming, <em>zero troca de app.</em></h2>
           <div className="step-grid">
             {steps.map((s) => (
               <div key={s.n} className="step-card reveal">
@@ -732,58 +779,58 @@ export default function Home() {
 
         {/* Room Showcase */}
         <section id="showcase" className="section">
-          <p className="section-eyebrow reveal">In the room right now</p>
-          <h2 className="section-title reveal">See it <em>in sync.</em></h2>
+          <p className="section-eyebrow reveal">Na sala agora</p>
+          <h2 className="section-title reveal">Veja <em>em sincronia.</em></h2>
           <p className="max-w-2xl mx-auto text-center reveal" style={{ color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
-            Watch how CoJam keeps everyone&rsquo;s queue in perfect sync while each person plays on their own service.
+            Veja como o CoJam mantém a fila de todo mundo em sincronia enquanto cada pessoa toca no próprio serviço.
           </p>
           <RoomShowcase />
         </section>
 
         {/* Alone vs in a room (Direction B borrow: evidence as comparison table) */}
         <section id="vs" className="section">
-          <p className="section-eyebrow reveal">Why a room</p>
+          <p className="section-eyebrow reveal">Por que uma sala</p>
           <h2 className="section-title reveal">
-            Alone works. <em>Together hits different.</em>
+            Sozinho funciona. <em>Junto é outra coisa.</em>
           </h2>
           <table className="vs-table">
             <thead>
               <tr>
-                <th scope="col"><span className="sr-only">Topic</span></th>
-                <th scope="col">Listening alone</th>
-                <th scope="col">In a CoJam room</th>
+                <th scope="col"><span className="sr-only">Tema</span></th>
+                <th scope="col">Ouvindo sozinho</th>
+                <th scope="col">Numa sala do CoJam</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <th scope="row">Queue</th>
-                <td>You, alone</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Everyone adds, everyone hears</span></td>
+                <th scope="row">Fila</th>
+                <td>Só você</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Todo mundo adiciona, todo mundo ouve</span></td>
               </tr>
               <tr>
-                <th scope="row">What plays</th>
-                <td>Whatever the algorithm serves</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Picked by the people in the room</span></td>
+                <th scope="row">O que toca</th>
+                <td>O que o algoritmo servir</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Escolhido por quem está na sala</span></td>
               </tr>
               <tr>
-                <th scope="row">Inviting</th>
-                <td>Send songs one by one</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> One link</span></td>
+                <th scope="row">Convite</th>
+                <td>Mandar música por música</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Um link</span></td>
               </tr>
               <tr>
-                <th scope="row">Services</th>
-                <td>Everyone needs the same one</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Each brings their own</span></td>
+                <th scope="row">Serviços</th>
+                <td>Todo mundo precisa do mesmo</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Cada um traz o seu</span></td>
               </tr>
               <tr>
-                <th scope="row">Sync</th>
-                <td>Count down out loud, press play</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Automatic, on metadata</span></td>
+                <th scope="row">Sincronia</th>
+                <td>Contar &ldquo;3, 2, 1&rdquo; e apertar play</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Automática, por metadados</span></td>
               </tr>
               <tr>
-                <th scope="row">Setup</th>
-                <td>An app per person</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> A browser tab</span></td>
+                <th scope="row">Preparo</th>
+                <td>Um app por pessoa</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Uma aba do navegador</span></td>
               </tr>
             </tbody>
           </table>
@@ -791,8 +838,8 @@ export default function Home() {
 
         {/* Platforms */}
         <section id="platforms" className="section" style={{ textAlign: 'center' }}>
-          <p className="section-eyebrow reveal">Works with</p>
-          <h2 className="section-title reveal">Bring the service <em>you already pay for.</em></h2>
+          <p className="section-eyebrow reveal">Funciona com</p>
+          <h2 className="section-title reveal">Traga o serviço <em>que você já paga.</em></h2>
           <div className="platform-row">
             {platforms.map(([name, live]) => {
               const Icon = platformIcons[name];
@@ -800,19 +847,40 @@ export default function Home() {
                 <span key={name} className="platform-chip reveal inline-flex items-center gap-2" data-live={live ? '1' : '0'}>
                   <Icon size={16} />
                   {name}
+                  {!live && <span className="platform-chip__soon">em breve</span>}
                 </span>
               );
             })}
           </div>
         </section>
 
+        {/* FAQ: native details/summary (keyboard + a11y for free). The same
+            array feeds the FAQPage JSON-LD, so markup and structured data
+            cannot drift. Answers describe CoJam as it ships today. */}
+        <section id="faq" className="section">
+          <p className="section-eyebrow reveal">Perguntas frequentes</p>
+          <h2 className="section-title reveal">O que as pessoas <em>perguntam antes de criar a sala.</em></h2>
+          <div className="faq-list reveal">
+            {FAQ.map((item) => (
+              <details key={item.q} className="faq-item">
+                <summary>{item.q}</summary>
+                <p>{item.a}</p>
+              </details>
+            ))}
+          </div>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: faqJsonLd() }}
+          />
+        </section>
+
         {/* Final CTA */}
         <section className="final-cta">
           <h2 className="section-title reveal" style={{ marginBottom: '1.5rem' }}>
-            Start a room <em>in one click.</em>
+            Crie uma sala <em>em um clique.</em>
           </h2>
           <button onClick={createRoom} className="btn-primary magnetic reveal">
-            Start a room
+            Começar uma sala
           </button>
         </section>
       </main>

@@ -5,8 +5,7 @@ import Link from 'next/link';
 import type { PublicRoomSummary } from '@cojam/shared';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { subscribePublicRooms } from '@/lib/publicRooms';
-import { useAgeGatedJoin, type AgeGateCopy } from '@/app/components/useAgeGatedJoin';
-import { MINIMUM_AGE } from '@/lib/ageGate';
+import { AGE_GATE_COPY_PT, useAgeGatedJoin } from '@/app/components/useAgeGatedJoin';
 import { LiveCounter } from '@/app/components/LiveCounter';
 
 type SortKey = 'people' | 'recent';
@@ -14,13 +13,6 @@ type SortKey = 'people' | 'recent';
 // If the first poll has not landed by then (unreachable server), stop showing
 // the loading state and fall through to the empty state.
 const LOADING_GRACE_MS = 3000;
-
-const AGE_GATE_COPY_PT: AgeGateCopy = {
-  title: 'Antes de entrar',
-  body: `Salas públicas são abertas a pessoas que você não conhece. Você precisa ter ${MINIMUM_AGE} anos ou mais para entrar em uma.`,
-  confirm: `Tenho ${MINIMUM_AGE} anos ou mais`,
-  cancel: 'Cancelar',
-};
 
 // Accent- and case-insensitive match key ("Música" matches "musica").
 function fold(text: string): string {

@@ -30,8 +30,8 @@ export function LiveCounter() {
   return (
     <p className="live-counter" role="status">
       <span className="room-card__dot" aria-hidden />
-      {stats.people} {stats.people === 1 ? 'person' : 'people'} in{' '}
-      {stats.rooms} {stats.rooms === 1 ? 'room' : 'rooms'} right now
+      {stats.people} {stats.people === 1 ? 'pessoa' : 'pessoas'} em{' '}
+      {stats.rooms} {stats.rooms === 1 ? 'sala' : 'salas'} agora
     </p>
   );
 }
