@@ -70,7 +70,7 @@ func (h *Hub) checkJoinLimit(method, rlKey string) error {
 // charging the caller's creation budget only when the room exists neither in
 // memory nor in the store. Afterwards the room is resident, so dispatch's own
 // GetOrCreateRoom is a cache hit. Non-room-scoped methods pass through.
-func (h *Hub) ensureRoom(method string, data []byte, rlKey string) error {
+func (h *Hub) ensureRoom(method string, data []byte, clientID, rlKey string) error {
 	if method != "room.join" && !mutatingMethods[method] {
 		return nil
 	}

@@ -321,6 +321,11 @@ type Hub struct {
 	// (mutationMethods).
 	mutationLimiter *rateLimiter
 
+	// notFound caches rooms recently confirmed absent from the store, so
+	// read-only lookups (getOrLoadRoom with create false) do not query the
+	// store on every RPC for a room that does not exist.
+	notFound *notFoundCache
+
 	// enrichSem bounds concurrent outbound matcher lookups. Bulk imports can add
 	// up to 200 tracks at once; an unbounded goroutine per track would burst
 	// hundreds of simultaneous YouTube/Spotify requests and trip rate limits.
@@ -564,6 +569,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		joinLimiter:       newRateLimiter(joinBurst, joinRefill, time.Now),
 		roomCreateLimiter: newRateLimiter(roomCreateBurst, roomCreateRefill, time.Now),
 		mutationLimiter:   newRateLimiter(mutationBurst, mutationRefill, time.Now),
+		notFound:          newNotFoundCache(notFoundMax),
 	}
 }
 
@@ -1098,6 +1104,11 @@ func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 	}
 	h.mu.Unlock()
 
+	// A recent "not found" answers read-only lookups without a store query.
+	if !create && h.notFound.has(roomID) {
+		return nil, nil
+	}
+
 	// Try to load from store (bounded: a hung store must not wedge the hub)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1116,8 +1127,10 @@ func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 	// If not found, create fresh
 	if state == nil {
 		if !create {
+			h.notFound.add(roomID)
 			return nil, nil
 		}
+		h.notFound.forget(roomID)
 		state = &queue.RoomState{
 			RoomID:    roomID,
 			Queue:     []queue.TrackRef{},
@@ -1393,15 +1406,32 @@ func (h *Hub) HandleRPC(method string, data []byte, userID string) (json.RawMess
 // when authenticated, else "client:<clientID>", so the server stamps identity
 // and clients never send who they are.
 func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (json.RawMessage, error) {
-	rlKey := rateLimitKey(clientID, userID)
-	start := time.Now()
-	// Fanout RPCs are rate-limited per caller before doing any work; a
-	// rejection surfaces as a UserError (centrifuge code 400) via
-	// rpcClientError and does not touch other methods' budgets. Vote RPCs get
-	// their own bucket (each toggle republishes the full room state), and the
-	// room.list directory read gets its own (listMethods): no third-party
-	// fanout, but landing visitors poll it unauthenticated.
-	var result json.RawMessage
+	return h.runRPC(method, data, clientID, userID, true)
+}
+
+// serveRPC is the transport path for one client RPC: the per-caller rate
+// limits run first, then Authorize, then dispatch (without charging the limits
+// again). Limiting before Authorize keeps a throttled caller from driving the
+// host check and the store load behind it.
+func (h *Hub) serveRPC(client Client, method string, data []byte) (json.RawMessage, error) {
+	clientID, userID := client.ID(), client.UserID()
+	if err := h.checkRateLimits(method, rateLimitKey(clientID, userID)); err != nil {
+		h.observeRPC(method, data, err, 0)
+		return nil, err
+	}
+	// Trust boundary: reject mutations of rooms this client hasn't joined.
+	if err := h.Authorize(client, method, data); err != nil {
+		return nil, err
+	}
+	return h.runRPC(method, data, clientID, userID, false)
+}
+
+// checkRateLimits applies every per-caller bucket the method draws from. A
+// rejection is a UserError (centrifuge code 400 via rpcClientError) and does
+// not touch other methods' budgets. Fanout RPCs protect upstream quotas, vote
+// and mutation RPCs republish the full room state, and room.list is an
+// unauthenticated directory read that landing visitors poll.
+func (h *Hub) checkRateLimits(method, rlKey string) error {
 	err := h.checkFanoutLimit(method, rlKey)
 	if err == nil {
 		err = h.checkVoteLimit(method, rlKey)
@@ -1421,14 +1451,33 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 	if err == nil {
 		err = h.checkMutationLimit(method, rlKey)
 	}
+	return err
+}
+
+// runRPC resolves the room (creation budget), dispatches and records one
+// metric observation and one log line. limit applies the per-caller rate
+// limits first; serveRPC has already applied them.
+func (h *Hub) runRPC(method string, data []byte, clientID, userID string, limit bool) (json.RawMessage, error) {
+	rlKey := rateLimitKey(clientID, userID)
+	start := time.Now()
+	var result json.RawMessage
+	var err error
+	if limit {
+		err = h.checkRateLimits(method, rlKey)
+	}
 	if err == nil {
-		err = h.ensureRoom(method, data, rlKey)
+		err = h.ensureRoom(method, data, clientID, rlKey)
 	}
 	if err == nil {
 		result, err = h.dispatch(method, data, clientID, userID, rlKey)
 	}
-	d := time.Since(start)
+	h.observeRPC(method, data, err, time.Since(start))
+	return result, err
+}
 
+// observeRPC records the RPC histogram and the rpc log line under a bounded
+// method label.
+func (h *Hub) observeRPC(method string, data []byte, err error, d time.Duration) {
 	label := metricMethod(method)
 	if h.metrics != nil {
 		h.metrics.ObserveRPC(label, rpcMetricStatus(err), d)
@@ -1449,7 +1498,6 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 			h.logger.Info("rpc", attrs...)
 		}
 	}
-	return result, err
 }
 
 // checkFanoutLimit enforces the per-caller token bucket on RPCs that fan out
@@ -2291,13 +2339,7 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 	}
 
 	client.OnRPC(func(e centrifuge.RPCEvent, cb centrifuge.RPCCallback) {
-		// Trust boundary: reject mutations of rooms this client hasn't joined.
-		// Authorize has access to client.UserID() for authenticated requests.
-		if err := h.Authorize(client, e.Method, e.Data); err != nil {
-			cb(centrifuge.RPCReply{}, err)
-			return
-		}
-		reply, err := h.handleRPC(e.Method, e.Data, clientID, userID)
+		reply, err := h.serveRPC(client, e.Method, e.Data)
 		cb(centrifuge.RPCReply{Data: reply}, rpcClientError(err))
 	})
 }
