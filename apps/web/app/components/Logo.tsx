@@ -7,7 +7,17 @@
 // SSR-safe (renders static first) and disabled under prefers-reduced-motion.
 import { useId, useSyncExternalStore } from 'react';
 
-import { MARK_FRAME, MARK_DISC, MARK_VIEWBOX, FRAME_GRADIENT, CORE_GRADIENT } from './logoMark';
+import {
+  MARK_FRAME,
+  MARK_DISC,
+  MARK_FRAME_SMALL,
+  MARK_DISC_SMALL,
+  MARK_SMALL_MAX,
+  MARK_VIEWBOX,
+  FRAME_GRADIENT,
+  CORE_GRADIENT,
+  CORE_GRADIENT_SMALL,
+} from './logoMark';
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
@@ -36,6 +46,8 @@ export function LogoMark({
   const raw = useId().replace(/:/g, '');
   const frame = `cjF-${raw}`;
   const core = `cjC-${raw}`;
+  const small = size <= MARK_SMALL_MAX;
+  const CG = small ? CORE_GRADIENT_SMALL : CORE_GRADIENT;
 
   // Static on the server + first client render (server snapshot is true =
   // reduced); flow is enabled only when requested and motion is allowed.
@@ -61,7 +73,7 @@ export function LogoMark({
               <stop offset="1" stopColor="var(--logo-frame-from, oklch(0.587 0.232 281.2))" />
               <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="116 0" dur="9s" repeatCount="indefinite" />
             </linearGradient>
-            <linearGradient id={core} x1={CORE_GRADIENT.x} y1={CORE_GRADIENT.y1 + 6} x2={CORE_GRADIENT.x} y2={CORE_GRADIENT.y1 + 6 + 87} gradientUnits="userSpaceOnUse" spreadMethod="repeat">
+            <linearGradient id={core} x1={CG.x} y1={CG.y1 + 6} x2={CG.x} y2={CG.y1 + 6 + 87} gradientUnits="userSpaceOnUse" spreadMethod="repeat">
               <stop offset="0" stopColor="var(--logo-core-from, oklch(0.849 0.207 128.8))" />
               <stop offset="0.5" stopColor="var(--logo-core-to, oklch(0.696 0.149 162.5))" />
               <stop offset="1" stopColor="var(--logo-core-from, oklch(0.849 0.207 128.8))" />
@@ -74,15 +86,15 @@ export function LogoMark({
               <stop offset="0" stopColor="var(--logo-frame-from, oklch(0.587 0.232 281.2))" />
               <stop offset="1" stopColor="var(--logo-frame-to, oklch(0.681 0.233 311.2))" />
             </linearGradient>
-            <linearGradient id={core} x1={CORE_GRADIENT.x} y1={CORE_GRADIENT.y1} x2={CORE_GRADIENT.x} y2={CORE_GRADIENT.y2} gradientUnits="userSpaceOnUse">
+            <linearGradient id={core} x1={CG.x} y1={CG.y1} x2={CG.x} y2={CG.y2} gradientUnits="userSpaceOnUse">
               <stop offset="0" stopColor="var(--logo-core-from, oklch(0.849 0.207 128.8))" />
               <stop offset="1" stopColor="var(--logo-core-to, oklch(0.696 0.149 162.5))" />
             </linearGradient>
           </>
         )}
       </defs>
-      <path d={MARK_FRAME} fill={`url(#${frame})`} />
-      <path d={MARK_DISC} fill={`url(#${core})`} fillRule="evenodd" />
+      <path d={small ? MARK_FRAME_SMALL : MARK_FRAME} fill={`url(#${frame})`} />
+      <path d={small ? MARK_DISC_SMALL : MARK_DISC} fill={`url(#${core})`} fillRule="evenodd" />
     </svg>
   );
 }
