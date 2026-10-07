@@ -105,7 +105,7 @@ class YouTubePlayerAdapter implements IPlayer {
   async getDurationMs(): Promise<number> {
     try {
       const seconds = this.ytPlayer.getDuration();
-      return secondsToMs(seconds);
+      return Number.isFinite(seconds) ? secondsToMs(seconds) : 0;
     } catch {
       return 0;
     }

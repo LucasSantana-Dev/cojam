@@ -160,6 +160,11 @@ func (h *Hub) heartbeatTick(roomID string, stop chan struct{}) bool {
 		h.endHeartbeat(roomID, stop)
 		return false
 	}
+	// The beat is persisted on purpose (mutateRoom saves on a Version bump).
+	// Web clients drop any publication whose version is not higher than the
+	// one they hold, so a Version that only ever lived in memory would, after
+	// a restart, load lower than what clients remember and every later
+	// publication would be dropped until it caught up.
 	_, err := h.mutateRoom(roomID, room, func(s *queue.RoomState) error {
 		if !shouldHeartbeat(s) {
 			return nil // raced a pause: no bump, loop ends on next reconcile

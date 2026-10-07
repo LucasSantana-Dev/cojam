@@ -606,6 +606,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
       </header>
 
       <main id="main" className="max-w-7xl mx-auto px-6 py-8">
+        {/* Switching between a video and an audio track changes layouts and remounts
+            the YouTube player once (accepted: tracks rarely alternate mid-session). */}
         {videoMode ? (
           <div className="video-room" data-testid="video-room" data-tab={panelTab}>
             <Stage

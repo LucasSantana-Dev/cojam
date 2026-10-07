@@ -30,7 +30,23 @@ window.YT = { Player: function (id, opts) {
 setTimeout(function () { window.onYouTubeIframeAPIReady && window.onYouTubeIframeAPIReady(); }, 0);
 `;
 
+// Web flags are build/runtime config, off for every other spec. Append an
+// override to the real /env.js so only this spec's pages see sync + video.
+async function enableVideoFlags(page: Page) {
+  await page.route('**/env.js', async (route) => {
+    const res = await route.fetch();
+    const body = await res.text();
+    await route.fulfill({
+      response: res,
+      body:
+        body +
+        ';window.__COJAM_ENV__.features=Object.assign({},window.__COJAM_ENV__.features,{sync:true,video:true});',
+    });
+  });
+}
+
 async function stubYouTube(page: Page) {
+  await enableVideoFlags(page);
   await page.route('**/iframe_api', (route) =>
     route.fulfill({ contentType: 'application/javascript', body: YT_STUB }),
   );

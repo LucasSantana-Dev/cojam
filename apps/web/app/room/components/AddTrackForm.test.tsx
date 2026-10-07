@@ -213,6 +213,20 @@ describe('AddTrackForm video kind (#258)', () => {
     expect('kind' in track).toBe(false);
   });
 
+  it('leaves kind unset when the track also carries a Spotify source', async () => {
+    window.__COJAM_ENV__ = { features: { video: true, spotify: true } };
+    render(<AddTrackForm roomId="r1" />);
+    fireEvent.change(screen.getByPlaceholderText('Title'), { target: { value: 'T' } });
+    fireEvent.change(screen.getByPlaceholderText('Artist'), { target: { value: 'A' } });
+    fireEvent.change(screen.getByPlaceholderText('YouTube link or video ID (optional)'), { target: { value: 'abcdefghijk' } });
+    fireEvent.change(screen.getByPlaceholderText(/Spotify/), { target: { value: 'spotify:track:4uLU6hMCjMI75M1A2tKUQC' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add to Queue' }));
+    });
+    const track = (rpcMocks.queueAdd.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
+    expect('kind' in track).toBe(false);
+  });
+
   it('leaves kind unset when there is no YouTube link', async () => {
     window.__COJAM_ENV__ = { features: { video: true } };
     await submit('');

@@ -56,7 +56,7 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
       activePlayer
         .getDurationMs()
         .then((d) => {
-          if (cancelled || d <= 0) return;
+          if (cancelled || !Number.isFinite(d) || d <= 0) return;
           setPlayerDuration({ id: nowPlayingId, ms: d });
           clearInterval(timer); // known: stop polling (timer is initialised before any poll resolves)
         })
@@ -75,7 +75,16 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
   // Sync display position with transport state when not dragging (adjust state
   // during render, keyed on the transport object identity).
   const [prevTransport, setPrevTransport] = useState(transport);
-  if (!isDragging && transport && transport !== prevTransport) {
+  // Compared by field, not identity: the server heartbeat (#258) delivers a
+  // fresh transport object every 10s with identical values, which must not
+  // snap the slider back to the last published position.
+  const transportChanged =
+    !!transport &&
+    (!prevTransport ||
+      transport.state !== prevTransport.state ||
+      transport.positionMs !== prevTransport.positionMs ||
+      transport.updatedAtServerMs !== prevTransport.updatedAtServerMs);
+  if (!isDragging && transport && transportChanged) {
     setPrevTransport(transport);
     setDisplayPosition(transport.positionMs);
   }

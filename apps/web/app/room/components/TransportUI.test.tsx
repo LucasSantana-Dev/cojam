@@ -198,4 +198,60 @@ describe('TransportUI duration fallback (#258)', () => {
     render(<TransportUI roomId="r1" activePlayer={player} canControl />);
     await waitFor(() => expect(screen.getByLabelText('Track position')).toHaveAttribute('max', '90000'));
   });
+
+  it('ignores a non-finite player duration', async () => {
+    useStore.setState({
+      state: {
+        roomId: 'r1',
+        queue: [{ id: 'v1', title: 'Clip', artist: 'A', sources: {}, addedBy: 'Ana' }],
+        nowPlayingId: 'v1',
+        radioEnabled: false,
+        version: 1,
+        transport: { state: 'paused', positionMs: 0, updatedAtServerMs: 0 },
+      },
+    });
+    const player: IPlayer = {
+      play: vi.fn(async () => {}),
+      pause: vi.fn(async () => {}),
+      seekToMs: vi.fn(async () => {}),
+      getCurrentPositionMs: vi.fn(async () => 0),
+      getDurationMs: vi.fn(async () => NaN),
+      canSeek: () => true,
+      onEnded: vi.fn(),
+      onPositionChanged: vi.fn(),
+    };
+    render(<TransportUI roomId="r1" activePlayer={player} canControl />);
+    await waitFor(() => expect(player.getDurationMs).toHaveBeenCalled());
+    expect(screen.getByLabelText('Track position')).toHaveAttribute('max', '0');
+  });
+});
+
+describe('TransportUI heartbeat republish (#258)', () => {
+  it('keeps the slider position when an identical transport arrives as a new object', () => {
+    const base = {
+      roomId: 'r1',
+      queue: [{ id: 't1', title: 'S', artist: 'A', durationMs: 60000, sources: {}, addedBy: 'Ana' }],
+      nowPlayingId: 't1',
+      radioEnabled: false,
+    };
+    useStore.setState({ state: { ...base, version: 1, transport: { state: 'playing', positionMs: 1000, updatedAtServerMs: 5 } } });
+    const player: IPlayer = {
+      play: vi.fn(async () => {}),
+      pause: vi.fn(async () => {}),
+      seekToMs: vi.fn(async () => {}),
+      getCurrentPositionMs: vi.fn(async () => 0),
+      getDurationMs: vi.fn(async () => 60000),
+      canSeek: () => true,
+      onEnded: vi.fn(),
+      onPositionChanged: vi.fn(),
+    };
+    render(<TransportUI roomId="r1" activePlayer={player} canControl />);
+    const slider = screen.getByLabelText('Track position');
+    fireEvent.change(slider, { target: { value: '30000' } });
+    expect(slider).toHaveValue('30000');
+    act(() => {
+      useStore.setState({ state: { ...base, version: 2, transport: { state: 'playing', positionMs: 1000, updatedAtServerMs: 5 } } });
+    });
+    expect(screen.getByLabelText('Track position')).toHaveValue('30000');
+  });
 });
