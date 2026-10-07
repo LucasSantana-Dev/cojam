@@ -28,7 +28,7 @@ All notable changes to this project are documented here. Format follows
 - Room layout gains a tablet breakpoint (#294)
 - Violet is now a design token instead of scattered literals (#295)
 - Deployment docs describe how CoJam is actually deployed (#267)
-- Dependency bumps (npm minor/patch groups, GitHub Actions, jsdom 30) (#164, #235, #236, #240, #305)
+- Dependency bumps (npm minor/patch groups, GitHub Actions, jsdom 30) (#164, #235, #236, #240, #304, #305)
 
 ### Fixed
 
