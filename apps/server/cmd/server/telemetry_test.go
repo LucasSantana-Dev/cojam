@@ -151,15 +151,35 @@ func TestTelemetryLimiter_RefillsOverTime(t *testing.T) {
 	}
 }
 
-func TestCallerKey_PrefersForwardedFor(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/telemetry", nil)
-	req.Header.Set("X-Forwarded-For", "203.0.113.5, 70.41.3.18")
-	if got := callerKey(req); got != "203.0.113.5" {
-		t.Fatalf("expected the client IP, got %q", got)
+// callerKey keys IP-based limiters on the real client: CF-Connecting-IP when
+// the request arrived through the local proxy chain (Cloudflare Tunnel ->
+// Caddy -> server, so the peer is a private or loopback address), else the
+// peer address itself. X-Forwarded-For is client-controlled and ignored.
+func TestCallerKey(t *testing.T) {
+	cases := []struct {
+		name   string
+		remote string
+		hdr    map[string]string
+		want   string
+	}{
+		{"cloudflare via proxy", "172.18.0.5:41234", map[string]string{"CF-Connecting-IP": "203.0.113.5"}, "203.0.113.5"},
+		{"cloudflare via loopback", "127.0.0.1:5000", map[string]string{"CF-Connecting-IP": "2001:db8::1"}, "2001:db8::1"},
+		{"spoofed header from a public peer", "198.51.100.7:443", map[string]string{"CF-Connecting-IP": "203.0.113.5"}, "198.51.100.7"},
+		{"malformed header falls back", "10.0.0.2:80", map[string]string{"CF-Connecting-IP": "not-an-ip"}, "10.0.0.2"},
+		{"forwarded-for is ignored", "10.0.0.2:80", map[string]string{"X-Forwarded-For": "203.0.113.9, 10.0.0.1"}, "10.0.0.2"},
+		{"port is stripped", "198.51.100.7:51000", nil, "198.51.100.7"},
+		{"ipv6 peer", "[2001:db8::2]:443", nil, "2001:db8::2"},
 	}
-
-	bare := httptest.NewRequest(http.MethodPost, "/api/telemetry", nil)
-	if got := callerKey(bare); got == "" {
-		t.Fatal("expected a fallback key when the header is absent")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/telemetry", nil)
+			req.RemoteAddr = tc.remote
+			for k, v := range tc.hdr {
+				req.Header.Set(k, v)
+			}
+			if got := callerKey(req); got != tc.want {
+				t.Fatalf("callerKey = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
