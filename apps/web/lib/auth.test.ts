@@ -126,14 +126,61 @@ describe('auth module', () => {
       
       const auth = await import('./auth');
 
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      });
+      // POST 404, then the legacy GET fallback also 404s.
+      (global.fetch as any)
+        .mockResolvedValueOnce({ ok: false, status: 404 })
+        .mockResolvedValueOnce({ ok: false, status: 404 });
 
       const result = await auth.fetchConnectionToken('http://localhost:8080');
 
       expect(result).toBeNull();
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(auth.getLastTokenFetchError()).toBe('HTTP 404');
+    });
+
+    it('falls back to the legacy GET form when an older server rejects POST (405)', async () => {
+      const mockLS = mockLocalStorage();
+      mockLS.setItem('cojam_uid', 'stored-user-789');
+      mockLS.setItem('cojam_token', 'previous-jwt');
+      (global as any).localStorage = mockLS;
+      (global as any).window = (global as any).window || {};
+      (global as any).window.localStorage = mockLS;
+
+      const auth = await import('./auth');
+
+      (global.fetch as any)
+        .mockResolvedValueOnce({ ok: false, status: 405 })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ token: 'legacy-jwt', userId: 'stored-user-789' }),
+        });
+
+      const result = await auth.fetchConnectionToken('http://localhost:8080');
+
+      expect(result).toEqual({ token: 'legacy-jwt', userId: 'stored-user-789' });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect((global.fetch as any).mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'POST' }));
+      expect((global.fetch as any).mock.calls[1]).toEqual([
+        'http://localhost:8080/api/connection-token?userId=stored-user-789&token=previous-jwt',
+      ]);
+      expect(auth.getLastTokenFetchError()).toBeNull();
+    });
+
+    it('does not fall back to GET on other errors', async () => {
+      const mockLS = mockLocalStorage();
+      (global as any).localStorage = mockLS;
+      (global as any).window = (global as any).window || {};
+      (global as any).window.localStorage = mockLS;
+
+      const auth = await import('./auth');
+
+      (global.fetch as any).mockResolvedValueOnce({ ok: false, status: 429 });
+
+      const result = await auth.fetchConnectionToken('http://localhost:8080');
+
+      expect(result).toBeNull();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(auth.getLastTokenFetchError()).toBe('HTTP 429');
     });
 
     it('returns null on network error', async () => {

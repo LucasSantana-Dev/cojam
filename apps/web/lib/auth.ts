@@ -146,7 +146,17 @@ export async function fetchConnectionToken(baseUrl?: string): Promise<Connection
       }
     }
 
-    const res = await fetch(url.toString(), { method: 'POST', body });
+    let res = await fetch(url.toString(), { method: 'POST', body });
+
+    // Rollout fallback: a server older than the POST form answers 405 (or
+    // 404). Retry once with the legacy GET query form so a web deploy that
+    // lands before the server deploy keeps users connecting. Remove once
+    // every server accepts POST.
+    if (res.status === 405 || res.status === 404) {
+      const legacy = new URL(url.toString());
+      body.forEach((value, key) => legacy.searchParams.set(key, value));
+      res = await fetch(legacy.toString());
+    }
 
     // 501 means feature is off; return null (caller falls back to v0 behavior)
     if (res.status === 501) {

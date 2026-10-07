@@ -340,7 +340,9 @@ what the web client sends: a CORS simple request) or JSON:
 Deprecated: `GET /api/connection-token?userId=&token=` is still honored for one
 release so older clients keep their identity, and logs a
 `connection_token_query_deprecated` warning (without the values). It puts the
-proof in the URL, so it will be removed.
+proof in the URL, so it will be removed. Deploy order: server first. The web
+client falls back to the GET form once when a POST gets 405 or 404, so a web
+deploy that lands before the server keeps working.
 
 Response `200`: `{ "token": string, "userId": string }`, where `token` is an HS256
 JWT (secret `ROOM_AUTH_SECRET`, claims `{sub, exp, iat}`, TTL 24h) with `sub` = `userId`.
