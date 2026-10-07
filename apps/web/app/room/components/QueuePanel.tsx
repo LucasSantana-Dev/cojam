@@ -2,28 +2,17 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage, getClockOffsetMs, isTrackNotFoundError } from '@/lib/realtime';
+import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage, isTrackNotFoundError } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import type { TrackRef } from '@cojam/shared';
 import {
-  SpotifyIcon,
-  YouTubeIcon,
-  AppleMusicIcon,
   PlayIcon,
   ArrowUpIcon,
   ArrowDownIcon,
   TrashIcon,
-  ThumbsUpIcon,
   MusicNoteIcon,
 } from '@/app/components/icons';
-import { formatTime } from './TransportUI';
-import { formatRelativeTime } from '@/lib/relativeTime';
-
-// addedAt is server time; apply the measured sync.ping offset before diffing
-// so skewed client clocks agree on the age (same pattern as ChatPanel).
-function addedAgo(addedAt: number): string {
-  return formatRelativeTime(addedAt, Date.now() + getClockOffsetMs()) ?? '';
-}
+import { avatarGradient } from '@/lib/avatar';
 
 // Deezer-style total duration: "1 hr 23 min" / "42 min" / "< 1 min".
 function formatTotal(ms: number): string {
@@ -42,6 +31,16 @@ export function queueArtwork(track: TrackRef): string | null {
   if (track.artworkUrl) return track.artworkUrl;
   const videoId = track.sources.youtube?.videoId;
   return videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null;
+}
+
+const VOTER_STACK_MAX = 3;
+
+function ChevronUp() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 15l7-7 7 7" />
+    </svg>
+  );
 }
 
 interface QueuePanelProps {
@@ -69,6 +68,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   // value is the SSR snapshot, the /env.js runtime map flips it post-mount.
   const { queueVoting: queueVotingEnabled } = useRuntimeFeatures();
   const listRef = useRef<HTMLDivElement>(null);
+  const members = useStore((s) => s.members);
 
   // Keep the now-playing row in view when it advances (Vibrdrome steal: the
   // queue auto-scrolls to now playing). Guarded for jsdom (no scrollIntoView /
@@ -262,16 +262,166 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     }
   }
 
+  // Who a vote belongs to. Vote keys are the server's rate-limit key:
+  // "user:<userId>" (room auth) or "client:<clientId>" (no auth). Presence
+  // entries carry both ids, so a voter resolves to a member while connected.
+  // A voter who left the room stays anonymous ("alguém").
+  const voterName = (key: string): string | null => {
+    const m = members.find((x) => (key.startsWith('user:') ? x.userId === key.slice(5) : `client:${x.clientId}` === key));
+    return m ? m.name : null;
+  };
+
+  const renderRow = (track: TrackRef, index: number, pinned: boolean) => {
+    const art = queueArtwork(track);
+    const isNow = track.id === nowPlayingId;
+    const isRemoving = removingIds.has(track.id);
+    const pendingTitle = 'Remoção pendente. Desfaça para restaurar';
+    const voters = state?.votes?.[track.id] ?? [];
+    const voted = Boolean(myVotes[track.id]);
+    const count = voters.length;
+    const names = voters.map((k) => voterName(k) ?? 'alguém');
+    const votersLabel = count > 0 ? `Votaram: ${names.join(', ')}` : '';
+    const nameId = `fq-voters-${track.id}`;
+    return (
+      <div
+        key={track.id}
+        data-testid="queue-item"
+        data-track-id={track.id}
+        data-more={moreOpenId === track.id}
+        role="listitem"
+        className={`fq-row${isNow ? ' is-now' : ''}${pinned ? ' is-pinned' : ''}${isRemoving ? ' removing' : ''} group`}
+      >
+        <div className="fq-main">
+          <span
+            className="fq-av"
+            role="img"
+            aria-label={`Adicionada por ${track.addedBy}`}
+            title={`Adicionada por ${track.addedBy}`}
+            style={{ background: avatarGradient(track.addedBy) }}
+          >
+            {getInitial(track.addedBy)}
+          </span>
+          <div className="fq-art queue-thumb-wrap">
+            {art ? (
+              <Image src={art} alt="" width={pinned ? 56 : 44} height={pinned ? 56 : 44} unoptimized />
+            ) : (
+              <span className="fq-art__fallback" aria-hidden="true"><MusicNoteIcon size={16} /></span>
+            )}
+            {isNow && isPlaying && (
+              <span className="queue-thumb-eq" aria-hidden="true"><span /><span /><span /></span>
+            )}
+          </div>
+          <div className="fq-text">
+            <span className="fq-kicker">
+              {isNow ? 'Tocando agora · ' : ''}
+              {track.addedBy} pediu
+            </span>
+            <div data-testid="queue-title" className="fq-title">{track.title}</div>
+            <div className="fq-artist">{track.artist}</div>
+            {track.id === listenersPickId && (
+              <span data-testid="listeners-pick" className="fq-pick" title="Mais votada pelos ouvintes">
+                Escolha dos ouvintes
+              </span>
+            )}
+          </div>
+          {queueVotingEnabled && (
+            <button
+              type="button"
+              onClick={() => handleVote(track.id)}
+              disabled={!connected || isRemoving}
+              aria-label="Votar"
+              aria-pressed={voted}
+              aria-describedby={votersLabel ? nameId : undefined}
+              title={isRemoving ? pendingTitle : votersLabel || (voted ? 'Remover seu voto' : 'Votar nesta faixa')}
+              className="fq-vote"
+              data-voted={voted}
+            >
+              <span className="fq-stack" aria-hidden="true">
+                {voters.slice(0, VOTER_STACK_MAX).map((key) => {
+                  const name = voterName(key);
+                  return (
+                    <i key={key} className={name ? undefined : 'fq-stack__anon'} style={name ? { background: avatarGradient(key) } : undefined}>
+                      {name ? getInitial(name) : '?'}
+                    </i>
+                  );
+                })}
+                {count > VOTER_STACK_MAX && <i className="fq-stack__more">+{count - VOTER_STACK_MAX}</i>}
+                {count === 0 && <i className="fq-stack__empty" />}
+              </span>
+              <ChevronUp />
+              <span data-testid="vote-count" className="fq-vote__n">{count}</span>
+              {votersLabel && <span id={nameId} className="sr-only">{votersLabel}</span>}
+            </button>
+          )}
+          {/* Phone and touch: opens the secondary actions on their own line so
+              44px targets fit a 390px row (#289). */}
+          <button
+            type="button"
+            onClick={() => setMoreOpenId((cur) => (cur === track.id ? null : track.id))}
+            aria-label="Mais ações"
+            aria-expanded={moreOpenId === track.id}
+            title="Mais ações"
+            className="fq-more"
+          >
+            <span aria-hidden="true">&#8943;</span>
+          </button>
+          <div className="fq-controls">
+            <button
+              onClick={() => handlePlay(track.id)}
+              disabled={!canControl || isRemoving}
+              aria-label="Tocar"
+              title={isRemoving ? pendingTitle : canControl ? 'Tocar' : 'Só o anfitrião pode tocar faixas'}
+            >
+              <PlayIcon size={14} />
+            </button>
+            <button
+              onClick={() => handleMoveUp(track.id, index)}
+              disabled={index === 0 || !canControl || isRemoving}
+              aria-label="Mover para cima"
+              title={isRemoving ? pendingTitle : canControl ? 'Mover para cima' : 'Só o anfitrião pode reordenar faixas'}
+            >
+              <ArrowUpIcon size={14} />
+            </button>
+            <button
+              onClick={() => handleMoveDown(track.id, index)}
+              disabled={index === queue.length - 1 || !canControl || isRemoving}
+              aria-label="Mover para baixo"
+              title={isRemoving ? pendingTitle : canControl ? 'Mover para baixo' : 'Só o anfitrião pode reordenar faixas'}
+            >
+              <ArrowDownIcon size={14} />
+            </button>
+            <button
+              onClick={() => handleRemove(track.id)}
+              disabled={!canControl || isRemoving}
+              aria-label="Remover"
+              title={isRemoving ? pendingTitle : canControl ? 'Remover' : 'Só o anfitrião pode remover faixas'}
+            >
+              <TrashIcon size={14} />
+            </button>
+          </div>
+        </div>
+        {isRemoving && (
+          <div className="undo-affordance fq-undo">
+            <span>Removida: {track.title.length > 30 ? track.title.slice(0, 27) + '...' : track.title}</span>
+            <button onClick={() => handleUndo(track.id)}>Desfazer</button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // The current track is pinned on top with CSS `order`, so the DOM keeps the
+  // real queue order (reorder buttons, tab order and tests agree with it).
+  const hasNow = queue.some((t) => t.id === nowPlayingId);
+
   return (
     // Not sticky itself: the side column (client.tsx) already pins the whole
     // rail. A second sticky here slid this panel over the Activity rail, which
     // shares its parent, whenever the page scrolled.
-    <div data-testid="queue-panel" className="panel p-6 space-y-4 h-fit">
+    <div data-testid="queue-panel" className="panel fq p-6 space-y-4 h-fit">
       <div>
-        <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          Fila
-        </h3>
-        {queue.length > 0 && <p className="queue-agg">{aggregate}</p>}
+        <h3 className="fq-h">Fila</h3>
+        {queue.length > 0 && <p className="fq-agg">{aggregate}</p>}
       </div>
 
       {actionError && (
@@ -293,224 +443,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
           </p>
         </div>
       ) : (
-        <div ref={listRef} className="space-y-2 max-h-96 overflow-y-auto pr-2">
-          {queue.map((track, index) => {
-            const art = queueArtwork(track);
-            // #179: during the undo window the row is marked pending-removal
-            // and every interaction on it is disabled (Undo stays live).
-            const isRemoving = removingIds.has(track.id);
-            const pendingTitle = 'Remoção pendente. Desfaça para restaurar';
-            return (
-            <div
-              key={track.id}
-              data-testid="queue-item"
-              data-track-id={track.id}
-              data-more={moreOpenId === track.id}
-              className={`queue-item-row animate-fade-in-up group${track.id === nowPlayingId ? ' is-now' : ''}${removingIds.has(track.id) ? ' removing' : ''}`}
-            >
-              <div className="queue-row-main flex w-full items-center gap-2.5 p-2.5 rounded-lg transition-all duration-150 hover:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)] focus-within:bg-[color-mix(in_oklab,var(--color-accent)_3%,transparent)]">
-                {/* Position: plain number, accent when now playing. The eq moved
-                    onto the thumb (Spotify-style overlay). */}
-                <div className="text-xs font-semibold flex-shrink-0 w-5 text-center" style={{ color: track.id === nowPlayingId ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>
-                  {index + 1}
-                </div>
-
-                {/* Thumb: album art (stored or YouTube-derived) or a fallback
-                    tile. Now-playing gets the eq overlay only while actually
-                    playing (state honesty, DESIGN.md R6). */}
-                <div className="queue-thumb-wrap">
-                  {art ? (
-                    // Artwork hosts vary by provider (Spotify, Apple, Deezer,
-                    // YouTube CDNs); serve unoptimized like the search dropdown.
-                    <Image
-                      src={art}
-                      alt=""
-                      className="queue-thumb"
-                      width={40}
-                      height={40}
-                      unoptimized
-                    />
-                  ) : (
-                    <span className="queue-thumb queue-thumb-fallback" aria-hidden="true">
-                      <MusicNoteIcon size={16} />
-                    </span>
-                  )}
-                  {track.id === nowPlayingId && isPlaying && (
-                    <span className="queue-thumb-eq" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </span>
-                  )}
-                </div>
-
-                {/* Title + one meta line. Source icons and provenance fold into
-                    the meta line; the listeners' pick rides the title row. */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <div data-testid="queue-title" className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
-                      {track.title}
-                    </div>
-                    {track.id === listenersPickId && (
-                      <span
-                        data-testid="listeners-pick"
-                        className="inline-flex items-center text-xs font-semibold flex-shrink-0"
-                        style={{ color: 'var(--color-accent)' }}
-                        title="Mais votada pelos ouvintes"
-                      >
-                        Escolha dos ouvintes
-                      </span>
-                    )}
-                  </div>
-                  <div className="queue-meta">
-                    <span className="truncate">{track.artist}</span>
-                    {track.sources.youtube && (
-                      <span
-                        className="badge-source badge-youtube inline-flex items-center flex-shrink-0"
-                        title={`Correspondência no YouTube ${Math.round(track.sources.youtube.confidence * 100)}%`}
-                      >
-                        <YouTubeIcon size={10} />
-                      </span>
-                    )}
-                    {track.sources.apple && (
-                      <span
-                        className="badge-source badge-apple inline-flex items-center flex-shrink-0"
-                        title={`Correspondência no Apple Music ${Math.round(track.sources.apple.confidence * 100)}%`}
-                      >
-                        <AppleMusicIcon size={10} />
-                      </span>
-                    )}
-                    {track.sources.spotify && (
-                      <span
-                        className="badge-source badge-spotify inline-flex items-center flex-shrink-0"
-                        title={`Correspondência no Spotify ${Math.round(track.sources.spotify.confidence * 100)}%`}
-                      >
-                        <SpotifyIcon size={10} />
-                      </span>
-                    )}
-                    <span className="queue-meta-sep" aria-hidden="true">·</span>
-                    <span className="avatar-chip-sm inline-flex flex-shrink-0" style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)', width: '16px', height: '16px', fontSize: '0.55rem', padding: 0 }}>
-                      {getInitial(track.addedBy)}
-                    </span>
-                    <span className="flex-shrink-0">{track.addedBy}</span>
-                    {/* Server-stamped addedAt (R1 provenance). Silent when 0/absent
-                        on tracks queued before timestamps existed (honest data). The
-                        sync.ping offset keeps the age right on skewed client clocks. */}
-                    {track.addedAt ? (
-                      <>
-                        <span className="queue-meta-sep" aria-hidden="true">·</span>
-                        <span className="flex-shrink-0">{addedAgo(track.addedAt)}</span>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Per-row duration (R9): right-aligned tabular, before the
-                    hover-revealed controls. */}
-                {track.durationMs != null && (
-                  <span className="queue-duration">{formatTime(track.durationMs)}</span>
-                )}
-
-                {/* Vote (F4): always visible, for every member regardless of
-                    canControl (voting is the listener control); disabled only
-                    while disconnected. The count must stay on screen, so this
-                    sits outside the hover-revealed controls below. */}
-                {queueVotingEnabled && (
-                  <button
-                    onClick={() => handleVote(track.id)}
-                    disabled={!connected || isRemoving}
-                    aria-label="Votar"
-                    aria-pressed={Boolean(myVotes[track.id])}
-                    title={isRemoving ? pendingTitle : myVotes[track.id] ? 'Remover seu voto' : 'Votar nesta faixa'}
-                    className="p-1.5 rounded transition-all duration-150 hover:brightness-110 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 flex-shrink-0"
-                    style={{
-                      backgroundColor: myVotes[track.id] ? 'var(--color-accent)' : 'var(--color-surface-3)',
-                      color: myVotes[track.id] ? 'var(--color-surface-0)' : 'var(--color-text-primary)',
-                    }}
-                  >
-                    <ThumbsUpIcon size={14} />
-                    <span data-testid="vote-count" className="text-xs font-semibold">
-                      {state?.votes?.[track.id]?.length ?? 0}
-                    </span>
-                  </button>
-                )}
-
-                {/* Phone only (CSS hides it from 768px): opens the secondary actions
-                    on their own line so 44px targets fit a 390px row (#289). */}
-                <button
-                  type="button"
-                  onClick={() => setMoreOpenId((cur) => (cur === track.id ? null : track.id))}
-                  aria-label="Mais ações"
-                  aria-expanded={moreOpenId === track.id}
-                  title="Mais ações"
-                  className="queue-more p-1.5 rounded flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
-                >
-                  <span aria-hidden="true">&#8943;</span>
-                </button>
-
-                {/* Right side: controls (hidden on desktop hover, always visible on touch) */}
-                <div className="queue-controls flex gap-1 flex-shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-                  <button
-                    onClick={() => handlePlay(track.id)}
-                    disabled={!canControl || isRemoving}
-                    aria-label="Tocar"
-                    title={isRemoving ? pendingTitle : canControl ? 'Tocar' : 'Só o anfitrião pode tocar faixas'}
-                    className="p-1.5 rounded transition-all duration-150 hover:brightness-110 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
-                  >
-                    <PlayIcon size={14} />
-                  </button>
-                  <button
-                    onClick={() => handleMoveUp(track.id, index)}
-                    disabled={index === 0 || !canControl || isRemoving}
-                    aria-label="Mover para cima"
-                    title={isRemoving ? pendingTitle : canControl ? 'Mover para cima' : 'Só o anfitrião pode reordenar faixas'}
-                    className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
-                  >
-                    <ArrowUpIcon size={14} />
-                  </button>
-                  <button
-                    onClick={() => handleMoveDown(track.id, index)}
-                    disabled={index === queue.length - 1 || !canControl || isRemoving}
-                    aria-label="Mover para baixo"
-                    title={isRemoving ? pendingTitle : canControl ? 'Mover para baixo' : 'Só o anfitrião pode reordenar faixas'}
-                    className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
-                  >
-                    <ArrowDownIcon size={14} />
-                  </button>
-                  <button
-                    onClick={() => handleRemove(track.id)}
-                    disabled={!canControl || isRemoving}
-                    aria-label="Remover"
-                    title={isRemoving ? pendingTitle : canControl ? 'Remover' : 'Só o anfitrião pode remover faixas'}
-                    className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
-                  >
-                    <TrashIcon size={14} />
-                  </button>
-                </div>
-              </div>
-
-              {removingIds.has(track.id) && (
-                <div className="undo-affordance w-full flex items-center justify-between">
-                  <span style={{ color: 'var(--color-text-secondary)' }}>
-                    Removida: {track.title.length > 30 ? track.title.slice(0, 27) + '...' : track.title}
-                  </span>
-                  <button
-                    onClick={() => handleUndo(track.id)}
-                    className="text-xs font-semibold px-2 py-1 rounded transition-all duration-150 hover:brightness-110"
-                    style={{ color: 'var(--color-accent)' }}
-                  >
-                    Desfazer
-                  </button>
-                </div>
-              )}
-            </div>
-            );
-          })}
+        <div ref={listRef} role="list" aria-label="Faixas na fila" className="fq-list">
+          {hasNow && queue.length > 1 && <p className="fq-sub">A seguir</p>}
+          {queue.map((t, i) => renderRow(t, i, hasNow && t.id === nowPlayingId))}
         </div>
       )}
     </div>

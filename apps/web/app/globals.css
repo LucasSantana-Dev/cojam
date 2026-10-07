@@ -259,12 +259,6 @@ input:focus, textarea:focus, select:focus {
   flex-shrink: 0;
 }
 
-.avatar-chip-sm {
-  width: 24px;
-  height: 24px;
-  font-size: 0.65rem;
-}
-
 /* Avatar stack for presence */
 .presence-stack {
   display: flex;
@@ -309,74 +303,6 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
-/* Queue item list polish */
-.queue-item {
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.queue-item:hover {
-  border-color: var(--color-accent);
-  background: var(--color-surface-3);
-}
-
-/* Queue item row (redesigned, clean single-line layout) */
-.queue-item-row {
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border);
-  border-left: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  overflow: hidden;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.queue-item-row:hover {
-  border-color: var(--color-accent);
-  background: var(--color-surface-3);
-}
-
-/* On now-playing, add left accent bar */
-.queue-item-row.is-now {
-  border-left: 3px solid var(--color-accent);
-  background: color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-2));
-}
-
-/* Pending-removal (#179): during the 4s undo window the row stays visible but
-   dimmed; its controls are disabled in the component, only Undo stays live. */
-.queue-item-row.removing {
-  opacity: 0.55;
-}
-
-/* Queue thumb (v2, ref-board-queue-v2 direction A): album art is the
-   recognition layer. Fallback tile is a muted music note on surface-3. */
-.queue-thumb-wrap {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  border-radius: 0.375rem;
-  overflow: hidden;
-}
-
-.queue-thumb {
-  width: 40px;
-  height: 40px;
-  border-radius: 0.375rem;
-  object-fit: cover;
-  display: block;
-}
-
-.queue-thumb-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-surface-3);
-  color: var(--color-text-muted);
-}
-
 /* Now-playing eq overlay on the thumb (renders only while transport is
    playing). Bars are green (--color-accent-2): green = sound playing right
    now, consistent with the LIVE-only lock. Static bars under reduced motion. */
@@ -405,52 +331,6 @@ input:focus, textarea:focus, select:focus {
 
 @media (prefers-reduced-motion: reduce) {
   .queue-thumb-eq span { animation: none; }
-}
-
-/* Single meta line under the title: truncating artist, then non-wrapping
-   provenance chunks (source icons, avatar, name, age) separated by middots. */
-.queue-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-  min-width: 0;
-  margin-top: 1px;
-}
-
-.queue-meta-sep {
-  opacity: 0.6;
-  flex-shrink: 0;
-}
-
-/* Icon-only source badges ride the meta line: shrink the standalone-badge
-   padding so the line stays text-height. */
-.queue-meta .badge-source {
-  padding: 0.125rem 0.25rem;
-  line-height: 1;
-}
-
-/* Touch-capable devices (incl. hybrid touch+mouse laptops): always show
-   controls. any-pointer:coarse matches if ANY pointer is touch, so a
-   touchscreen laptop is covered even when its primary pointer is a mouse. */
-@media (any-pointer: coarse) or (hover: none) {
-  .queue-controls {
-    opacity: 1 !important;
-  }
-}
-
-/* Desktop with fine pointer: hide controls until hover/focus-within */
-@media (pointer: fine) and (hover: hover) {
-  .queue-item-row:not(:hover):not(:focus-within) .queue-controls {
-    opacity: 0;
-  }
-}
-
-/* Keyboard focus must stay visible on the controls (they set outline-none). */
-.queue-controls button:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
 }
 
 /* Source badge polish */
@@ -484,14 +364,6 @@ input:focus, textarea:focus, select:focus {
 .presence-stack .avatar-chip:nth-child(4) { animation-delay: 150ms; }
 .presence-stack .avatar-chip:nth-child(5) { animation-delay: 200ms; }
 .presence-stack .avatar-chip:nth-child(6) { animation-delay: 250ms; }
-
-/* Stagger animation for queue items */
-.queue-item:nth-child(1) { animation-delay: 0ms; }
-.queue-item:nth-child(2) { animation-delay: 50ms; }
-.queue-item:nth-child(3) { animation-delay: 100ms; }
-.queue-item:nth-child(4) { animation-delay: 150ms; }
-.queue-item:nth-child(5) { animation-delay: 200ms; }
-.queue-item:nth-child(n+6) { animation-delay: 250ms; }
 
 /* ============================================================
    Landing page (marketing register) — Cyber / neon-violet.
@@ -1747,12 +1619,6 @@ input:focus, textarea:focus, select:focus {
   50% { transform: scaleY(1); }
 }
 
-/* Now-playing item highlight in the queue. */
-.queue-item.is-now {
-  border-color: color-mix(in oklab, var(--color-accent) 55%, transparent);
-  background: color-mix(in oklab, var(--color-accent) 8%, transparent);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .hero-glow { animation: none; }
   .hero-aurora::before,
@@ -1951,23 +1817,6 @@ input:focus, textarea:focus, select:focus {
   .status-banner {
     animation: none;
     opacity: 1;
-  }
-}
-
-/* Queue reorder: FLIP animation via CSS transforms. Rows transition
-   to new positions when reorder RPC completes; removed rows collapse. */
-@media (prefers-reduced-motion: no-preference) {
-  .queue-item {
-    transition: all var(--dur-base) var(--ease-out-quart);
-  }
-
-  .queue-item.removing {
-    opacity: 0;
-    transform: scale(0.95);
-    height: 0;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
   }
 }
 
@@ -2202,26 +2051,6 @@ input:focus, textarea:focus, select:focus {
   letter-spacing: 0.06em;
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
-}
-
-/* Queue aggregate header (R2): "N tracks · total duration · M contributors". */
-.queue-agg {
-  margin-top: 0.125rem;
-  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Per-row duration (R9): right-aligned, tabular, out of the truncation path. */
-.queue-duration {
-  flex-shrink: 0;
-  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-  align-self: center;
 }
 
 /* Metadata rail (R8): tracked-uppercase mono LABEL / value pairs. */
@@ -2564,35 +2393,9 @@ input:focus, textarea:focus, select:focus {
     outline-offset: 2px;
   }
 
-  /* Queue rows: the thumb, title and vote stay on the row; the secondary
-     actions (play, move, remove) sit behind a 44px "more" toggle and open on
-     a second line of 44px targets, so the row never needs five buttons side
-     by side at 390px. */
-  .queue-item-row .queue-row-main {
-    flex-wrap: wrap;
-  }
-  .queue-item-row :is(button, a) {
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .queue-item-row .queue-controls {
-    display: none;
-    flex-basis: 100%;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-  .queue-item-row[data-more="true"] .queue-controls {
-    display: flex;
-    opacity: 1 !important;
-  }
-  .queue-item-row .queue-controls button {
-    justify-content: center;
-    align-items: center;
-  }
 }
 @media (min-width: 48rem) {
-  .audio-tabs,
-  .queue-more {
+  .audio-tabs {
     display: none;
   }
   .chat-scroll {
@@ -3368,3 +3171,131 @@ input:focus, textarea:focus, select:focus {
 .age-gate__panel { width: 100%; max-width: none; }
 .age-gate__title { font-family: var(--font-display), system-ui, sans-serif; font-weight: 700; font-size: 1.35rem; letter-spacing: -0.01em; }
 .age-gate__actions > * { flex: 1 1 auto; justify-content: center; text-align: center; min-height: 44px; }
+
+/* ============================================================
+   Fila: flat rows on the one glass panel (Apple Music Up Next, Spotify queue),
+   Stationhead social: who asked leads, votes are the voters' avatars. Violet is only for actions and the
+   voted state; no coloured source badges, no mono counters, no row boxes.
+   ============================================================ */
+.fq-h { font-family: var(--font-display), system-ui, sans-serif; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; color: var(--color-text-primary); }
+.fq-agg { margin-top: 0.25rem; font-size: 0.8125rem; color: var(--color-text-muted); }
+
+.fq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin-inline: -0.5rem;
+  max-height: min(40rem, calc(100vh - 11rem));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(1 0 0 / 0.28) transparent;
+}
+.fq-sub { order: -1; margin: 0.75rem 0.5rem 0.25rem; font-family: var(--font-display), system-ui, sans-serif; font-size: 0.8125rem; font-weight: 600; color: var(--color-text-muted); }
+
+.fq-row { position: relative; flex: none; border-radius: 0.5rem; transition: background-color 120ms ease; }
+.fq-row:hover, .fq-row:focus-within { background: oklch(1 0 0 / 0.07); }
+.fq-row.is-now { background: oklch(1 0 0 / 0.1); }
+.fq-row.removing { opacity: 0.55; }
+.fq-main { position: relative; display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem; }
+
+.fq-art { position: relative; flex: none; width: 44px; height: 44px; border-radius: 0.375rem; overflow: hidden; background: oklch(1 0 0 / 0.1); }
+.fq-art img, .fq-art__fallback { width: 100%; height: 100%; object-fit: cover; display: grid; place-items: center; color: var(--color-text-muted); }
+.fq-art .queue-thumb-eq { border-radius: 0; }
+
+.fq-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fq-kicker { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); }
+.fq-title {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.fq-artist { font-size: 0.8125rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fq-pick { font-size: 0.75rem; font-weight: 600; color: var(--tint-pale, var(--color-text-primary)); }
+
+.fq-av { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 0.6875rem; font-weight: 700; color: oklch(0.99 0.004 280); }
+
+.fq-vote {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.fq-vote:hover:not(:disabled) { color: var(--color-text-primary); background: oklch(1 0 0 / 0.1); }
+.fq-vote[data-voted="true"] { color: var(--color-accent); }
+.fq-vote:disabled { opacity: 0.5; cursor: not-allowed; }
+.fq-vote:focus-visible, .fq-controls button:focus-visible, .fq-more:focus-visible, .fq-undo button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* reorder / play / remove: only on hover or focus, over the end of the row */
+.fq-controls {
+  position: absolute;
+  right: 3.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 0.125rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.fq-row:hover .fq-controls, .fq-row:focus-within .fq-controls { opacity: 1; }
+.fq-controls button { width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: 50%; background: none; color: var(--color-text-secondary); }
+.fq-controls button:hover:not(:disabled) { background: oklch(1 0 0 / 0.14); color: var(--color-text-primary); }
+.fq-controls button:first-child:not(:disabled) { background: var(--color-accent); color: oklch(0.99 0.004 280); }
+.fq-controls button:disabled { opacity: 0.35; cursor: not-allowed; }
+.fq-more { display: none; }
+
+.fq-undo { display: flex; align-items: center; justify-content: space-between; padding: 0 0.5rem 0.5rem; font-size: 0.8125rem; color: var(--color-text-secondary); }
+.fq-undo button { color: var(--color-accent); font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 0.375rem; }
+
+/* social (Stationhead): who asked leads the row; votes are stacked avatars */
+.fq-main { gap: 0.625rem; }
+.fq-row .fq-av { width: 32px; height: 32px; font-size: 0.8125rem; }
+.fq-row .fq-art { width: 40px; height: 40px; }
+.fq-controls { top: 0.125rem; right: 0.375rem; transform: none; }
+.fq-row.is-pinned .fq-controls { top: auto; bottom: 0.125rem; }
+.fq-controls button { width: 1.75rem; height: 1.75rem; }
+.fq-stack { display: inline-flex; align-items: center; padding-left: 0.375rem; }
+.fq-stack i { width: 20px; height: 20px; border-radius: 50%; margin-left: -0.375rem; border: 1.5px solid oklch(0.2 0.02 280); display: grid; place-items: center; font-style: normal; font-size: 0.625rem; font-weight: 700; color: oklch(0.99 0.004 280); }
+.fq-stack__anon { background: oklch(0.45 0.01 280); }
+.fq-stack__more { background: oklch(0.3 0.01 280); }
+.fq-stack__empty { background: none !important; border: 1.5px dashed oklch(1 0 0 / 0.45) !important; }
+.fq-row.is-pinned { order: -2; margin-bottom: 0.25rem; border-radius: 0.7rem; background: color-mix(in oklab, var(--tint-hi, oklch(0.45 0.1 300)) 72%, oklch(0 0 0 / 0.1)); }
+.fq-row.is-pinned:hover, .fq-row.is-pinned:focus-within { background: color-mix(in oklab, var(--tint-hi, oklch(0.45 0.1 300)) 80%, oklch(0 0 0 / 0.1)); }
+.fq-row.is-pinned .fq-art { width: 56px; height: 56px; }
+.fq-row.is-pinned .fq-title { font-size: 1.05rem; font-weight: 700; }
+.fq-row.is-pinned .fq-kicker { color: var(--color-text-secondary); }
+
+@media (max-width: 47.999rem) {
+  .fq-list { max-height: none; overflow: visible; }
+  .fq-main { flex-wrap: wrap; gap: 0.625rem; }
+  .fq-main { gap: 0.5rem; }
+  .fq-row .fq-av { width: 28px; height: 28px; }
+  .fq-text { flex-basis: 0; }
+}
+/* phones and touch screens at any width: no hover, so the secondary actions
+   sit behind a 44px "more" toggle and open on their own line */
+@media (max-width: 47.999rem), (hover: none) {
+  .fq-main { flex-wrap: wrap; }
+  .fq-row :is(button, a) { min-width: 44px; min-height: 44px; }
+  .fq-more { display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 50%; background: none; color: var(--color-text-secondary); font-size: 1.1rem; }
+  .fq-controls { display: none; position: static; transform: none; flex-basis: 100%; justify-content: flex-end; gap: 0.5rem; opacity: 1; padding: 0; }
+  .fq-row[data-more="true"] .fq-controls { display: flex; }
+  .fq-controls button { width: 44px; height: 44px; }
+}

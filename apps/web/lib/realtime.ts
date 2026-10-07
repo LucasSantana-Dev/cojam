@@ -8,7 +8,7 @@ import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
 import type { ChatDeletePub, ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
-export type Member = { clientId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' };
+export type Member = { clientId: string; userId?: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' };
 
 // Client-side chat scrollback cap (F8). The server ring holds the last 50;
 // the client keeps a bit more so a long session does not visibly drop lines.
@@ -400,6 +400,7 @@ export async function joinRoom(
         const info = parseConnInfo(c.connInfo);
         return {
           clientId: c.client,
+          userId: c.user || undefined,
           name: info.name,
           platform: info.platform,
         };
@@ -409,7 +410,7 @@ export async function joinRoom(
   });
   sub.on('join', (ctx) => {
     const info = parseConnInfo(ctx.info.connInfo);
-    store.addMember({ clientId: ctx.info.client, name: info.name, platform: info.platform });
+    store.addMember({ clientId: ctx.info.client, userId: ctx.info.user || undefined, name: info.name, platform: info.platform });
   });
   sub.on('leave', (ctx) => {
     store.removeMember(ctx.info.client);
