@@ -99,7 +99,9 @@ func (l *callerLimiter) allow(key string, now time.Time) bool {
 	}
 	l.seen[key] = now
 
-	if l.buckets[key] >= l.burst {
+	// Admit only a whole token: a bucket refilled to just under the burst
+	// must not let one extra request through.
+	if l.buckets[key]+1 > l.burst {
 		return false
 	}
 	l.buckets[key]++

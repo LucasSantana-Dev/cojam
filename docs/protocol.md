@@ -322,16 +322,25 @@ Account data lives in the Supabase project, written client-direct with row-level
 that Spotify/Apple is connected; OAuth tokens never leave the client). Persisted connected
 services feed the `prefer` parameter of `track.search` on any device.
 
-## Connection token endpoint (`GET /api/connection-token`)
+## Connection token endpoint (`POST /api/connection-token`)
 
 HTTP endpoint on the Go server (`cmd/server/connection_token.go`) that mints the
 anonymous connection token used above. Returns `501 {"error": "connection auth not enabled"}`
-when `FEATURE_ROOM_AUTH` is off.
+when `FEATURE_ROOM_AUTH` is off, and `429` when the caller's IP exceeds its
+budget (30 burst, one token per second; the IP is resolved as for the other
+public endpoints, from `CF-Connecting-IP` behind the proxy chain).
 
-Query params (both optional):
+Body fields (both optional), form-encoded (`application/x-www-form-urlencoded`,
+what the web client sends: a CORS simple request) or JSON:
 
 - `userId`: a previous anonymous identity the caller wants to keep.
 - `token`: the previous connection JWT, proving ownership of that `userId`.
+  May instead be sent as an `Authorization` header with the `Bearer` scheme.
+
+Deprecated: `GET /api/connection-token?userId=&token=` is still honored for one
+release so older clients keep their identity, and logs a
+`connection_token_query_deprecated` warning (without the values). It puts the
+proof in the URL, so it will be removed.
 
 Response `200`: `{ "token": string, "userId": string }`, where `token` is an HS256
 JWT (secret `ROOM_AUTH_SECRET`, claims `{sub, exp, iat}`, TTL 24h) with `sub` = `userId`.

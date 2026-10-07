@@ -653,8 +653,13 @@ func main() {
 	})
 
 	// Connection token endpoint: returns a signed JWT token for anonymous connection auth.
-	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented).
-	r.Get("/api/connection-token", connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns))
+	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented). POST carries
+	// the refresh proof in the body; GET with query params is the deprecated
+	// form, kept for one release. Rate-limited per client IP.
+	connToken := connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns,
+		newCallerLimiter(connTokenBurst, connTokenRefill), logger)
+	r.Post("/api/connection-token", connToken)
+	r.Get("/api/connection-token", connToken)
 
 	// WebSocket handler for centrifuge. Origin allowlist prevents cross-site
 	// WebSocket hijacking: without it any page could open a socket and mutate rooms.

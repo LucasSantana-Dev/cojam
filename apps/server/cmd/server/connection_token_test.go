@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +28,7 @@ func doConnectionTokenWithBurns(t *testing.T, url string, enabled bool, burns re
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	rec := httptest.NewRecorder()
-	connectionTokenHandler(enabled, testRoomAuthSecret, burns).ServeHTTP(rec, req)
+	connectionTokenHandler(enabled, testRoomAuthSecret, burns, newCallerLimiter(1000, time.Second), discardLogger()).ServeHTTP(rec, req)
 	var body map[string]string
 	_ = json.NewDecoder(rec.Body).Decode(&body)
 	return rec.Code, body
@@ -151,5 +156,102 @@ func TestConnectionTokenHonorsUnconsumedSub(t *testing.T) {
 	_, body := doConnectionTokenWithBurns(t, "/api/connection-token?userId=live-sub&token="+prev, true, burns)
 	if body["userId"] != "live-sub" {
 		t.Errorf("Expected identity continuity for an unconsumed sub, got userId %q", body["userId"])
+	}
+}
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }
+
+// mintPrev returns a valid previous connection token for userID.
+func mintPrev(t *testing.T, userID string) string {
+	t.Helper()
+	prev, err := connauth.Mint([]byte(testRoomAuthSecret), userID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	return prev
+}
+
+func serveToken(t *testing.T, req *http.Request, limiter *callerLimiter, logger *slog.Logger) (int, map[string]string) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	connectionTokenHandler(true, testRoomAuthSecret, nil, limiter, logger).ServeHTTP(rec, req)
+	var body map[string]string
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	return rec.Code, body
+}
+
+// The refresh proof travels in a POST body or the Authorization header, so it
+// never lands in a URL (and so never in access logs or proxy logs).
+func TestConnectionToken_PostProofKeepsIdentity(t *testing.T) {
+	prev := mintPrev(t, "returning-user")
+
+	jsonBody, _ := json.Marshal(map[string]string{"userId": "returning-user", "token": prev})
+	jsonReq := httptest.NewRequest(http.MethodPost, "/api/connection-token", bytes.NewReader(jsonBody))
+	jsonReq.Header.Set("Content-Type", "application/json")
+
+	form := url.Values{"userId": {"returning-user"}, "token": {prev}}
+	formReq := httptest.NewRequest(http.MethodPost, "/api/connection-token", strings.NewReader(form.Encode()))
+	formReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	headerReq := httptest.NewRequest(http.MethodPost, "/api/connection-token", strings.NewReader(url.Values{"userId": {"returning-user"}}.Encode()))
+	headerReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	headerReq.Header.Set("Authorization", "Bearer "+prev)
+
+	for name, req := range map[string]*http.Request{"json": jsonReq, "form": formReq, "header": headerReq} {
+		code, body := serveToken(t, req, newCallerLimiter(100, time.Second), discardLogger())
+		if code != http.StatusOK || body["userId"] != "returning-user" {
+			t.Fatalf("%s: got %d %v, want 200 with the kept identity", name, code, body)
+		}
+	}
+}
+
+// A POST without proof still mints a fresh identity (never an error).
+func TestConnectionToken_PostWithoutProofMintsFresh(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/connection-token", strings.NewReader(url.Values{"userId": {"someone-else"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	code, body := serveToken(t, req, newCallerLimiter(100, time.Second), discardLogger())
+	if code != http.StatusOK || body["userId"] == "" || body["userId"] == "someone-else" {
+		t.Fatalf("got %d %v, want 200 with a fresh identity", code, body)
+	}
+}
+
+// The legacy GET form keeps working for one release, with a deprecation log
+// line that never contains the proof.
+func TestConnectionToken_QueryProofDeprecatedButHonored(t *testing.T) {
+	prev := mintPrev(t, "returning-user")
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/connection-token?userId=returning-user&token="+url.QueryEscape(prev), nil)
+	code, body := serveToken(t, req, newCallerLimiter(100, time.Second), logger)
+	if code != http.StatusOK || body["userId"] != "returning-user" {
+		t.Fatalf("got %d %v, want the kept identity", code, body)
+	}
+	if !strings.Contains(logs.String(), "connection_token_query_deprecated") {
+		t.Fatalf("missing deprecation log line: %q", logs.String())
+	}
+	if strings.Contains(logs.String(), prev) || strings.Contains(logs.String(), "returning-user") {
+		t.Fatalf("deprecation log must not carry the proof or identity: %q", logs.String())
+	}
+}
+
+// Minting is rate-limited per client IP.
+func TestConnectionToken_RateLimitedPerIP(t *testing.T) {
+	limiter := newCallerLimiter(2, time.Hour)
+	call := func(remote string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/connection-token", nil)
+		req.RemoteAddr = remote
+		code, _ := serveToken(t, req, limiter, discardLogger())
+		return code
+	}
+	for i := 0; i < 2; i++ {
+		if code := call("198.51.100.7:1000"); code != http.StatusOK {
+			t.Fatalf("request %d within burst: %d", i+1, code)
+		}
+	}
+	if code := call("198.51.100.7:2000"); code != http.StatusTooManyRequests {
+		t.Fatalf("over budget: got %d, want 429", code)
+	}
+	if code := call("198.51.100.8:1000"); code != http.StatusOK {
+		t.Fatalf("another IP: got %d, want 200", code)
 	}
 }
