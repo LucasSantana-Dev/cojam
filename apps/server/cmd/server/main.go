@@ -593,7 +593,7 @@ func main() {
 	r := chi.NewRouter()
 
 	// Add middleware
-	r.Use(middleware.Logger)
+	r.Use(accessLog(logger))
 	r.Use(middleware.Recoverer)
 
 	// Liveness: the process is up. Readiness (/readyz) additionally gates on the
