@@ -3,8 +3,14 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
-import { beginAuth, getAccessToken, isAuthed } from '@/lib/spotifyAuth';
-import { decidePlayable } from '@/lib/spotifyAccount';
+import { beginAuth, getAccessToken, isAuthed, needsSpotifyReconnect } from '@/lib/spotifyAuth';
+import { checkAccount } from '@/lib/spotifyAccount';
+import {
+  canRetrySpotifyConnect,
+  kindFromAccountCheck,
+  spotifyConnectMessage,
+  type SpotifyConnectErrorKind,
+} from '@/lib/spotifyConnectError';
 import { getRuntimeEnv, pickEnv } from '@/lib/runtimeEnv';
 import { SpotifyIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
@@ -186,6 +192,8 @@ export function SpotifyPlayer({
   const deviceId = useRef<string | null>(null);
   const playerRef = useRef<SpotifyPlayerAdapter | null>(null);
   const [status, setStatus] = useState<'idle' | 'ready' | 'error'>('idle');
+  // Why Spotify is not usable right now; shown next to the connect button.
+  const [problem, setProblem] = useState<SpotifyConnectErrorKind | null>(null);
   const state = useStore((s) => s.state);
   const nowPlaying = state?.nowPlayingId
     ? state.queue.find((t) => t.id === state.nowPlayingId)
@@ -227,12 +235,14 @@ export function SpotifyPlayer({
         const token = await getAccessToken();
         if (cancelled) return;
         if (!token) {
+          setProblem(needsSpotifyReconnect() ? 'reconnect' : 'unknown');
           onAuthorized(false);
           return;
         }
-        const playable = await decidePlayable(token);
+        const problemKind = kindFromAccountCheck(await checkAccount(token));
         if (cancelled) return;
-        if (!playable) {
+        if (problemKind) {
+          setProblem(problemKind);
           onAuthorized(false);
           return;
         }
@@ -253,15 +263,28 @@ export function SpotifyPlayer({
           const adapter = new SpotifyPlayerAdapter(player, device_id, canSeek);
           playerRef.current = adapter;
           onPlayerReadyRef.current?.(adapter);
+          setProblem(null);
           setStatus('ready');
         });
-        player.addListener('authentication_error', () => onAuthorized(false));
-        player.addListener('initialization_error', () => setStatus('error'));
-        player.addListener('account_error', () => setStatus('error'));
+        player.addListener('authentication_error', () => {
+          setProblem('reconnect');
+          onAuthorized(false);
+        });
+        player.addListener('initialization_error', () => {
+          setProblem('sdk');
+          setStatus('error');
+        });
+        player.addListener('account_error', () => {
+          setProblem('premium');
+          setStatus('error');
+        });
         await player.connect();
       } catch (e) {
         console.error('Spotify SDK init failed:', e);
-        if (!cancelled) setStatus('error');
+        if (!cancelled) {
+          setProblem('sdk');
+          setStatus('error');
+        }
       }
     })();
     return () => {
@@ -303,24 +326,50 @@ export function SpotifyPlayer({
   }, [authorized, status, spotifyUri]);
 
   if (!clientId) return null;
+  const connect = () => {
+    setProblem(null);
+    beginAuth(window.location.pathname).catch(() => setProblem('unknown'));
+  };
+  const problemKind = problem ?? 'unknown';
+  const problemNote = (
+    <div
+      role="alert"
+      data-testid="spotify-connect-error"
+      className="text-sm"
+      style={{ color: 'var(--color-status-error)' }}
+    >
+      {spotifyConnectMessage(problemKind)}
+    </div>
+  );
+  const connectButton = (label: string) => (
+    <button
+      onClick={connect}
+      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
+      style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+    >
+      <SpotifyIcon size={16} />
+      {label}
+    </button>
+  );
+
   if (status === 'error') {
     return (
-      <div className="text-sm" style={{ color: 'var(--color-status-error)' }}>
-        Spotify indisponível (requer Premium)
+      <div className="flex flex-col items-start gap-2">
+        {problemNote}
+        {canRetrySpotifyConnect(problemKind) && connectButton('Tentar de novo')}
       </div>
     );
   }
 
   if (!authorized) {
+    if (!problem) return connectButton('Conectar Spotify');
+    // Premium: the account is the problem, so offer no button to loop on.
+    if (!canRetrySpotifyConnect(problem)) return problemNote;
     return (
-      <button
-        onClick={() => beginAuth(window.location.pathname)}
-        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
-        style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
-      >
-        <SpotifyIcon size={16} />
-        Conectar Spotify
-      </button>
+      <div className="flex flex-col items-start gap-2">
+        {connectButton('Tentar de novo')}
+        {problemNote}
+      </div>
     );
   }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { decidePlayable } from './spotifyAccount';
+import { decidePlayable, checkAccount } from './spotifyAccount';
 
 describe('decidePlayable', () => {
   beforeEach(() => {
@@ -67,5 +67,28 @@ describe('decidePlayable', () => {
     });
     const result = await decidePlayable('mock-token');
     expect(result).toBe(false);
+  });
+});
+
+describe('checkAccount', () => {
+  beforeEach(() => {
+    global.fetch = vi.fn();
+  });
+
+  it.each([
+    [{ ok: true, status: 200, json: async () => ({ product: 'premium' }) }, 'premium'],
+    [{ ok: true, status: 200, json: async () => ({ product: 'free' }) }, 'free'],
+    [{ ok: false, status: 403 }, 'forbidden'],
+    [{ ok: false, status: 401 }, 'unauthorized'],
+    [{ ok: false, status: 500 }, 'error'],
+  ])('maps %j to %s', async (res, expected) => {
+    (global.fetch as any).mockResolvedValueOnce(res);
+    expect(await checkAccount('t')).toBe(expected);
+  });
+
+  it('reports unauthorized for a missing token and error for a network failure', async () => {
+    expect(await checkAccount(null)).toBe('unauthorized');
+    (global.fetch as any).mockRejectedValueOnce(new Error('down'));
+    expect(await checkAccount('t')).toBe('error');
   });
 });
