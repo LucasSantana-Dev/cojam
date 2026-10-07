@@ -3,9 +3,6 @@ package erase
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"net/url"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/LucasSantana-Dev/cojam/server/internal/db"
+	"github.com/LucasSantana-Dev/cojam/server/internal/dbtest"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
@@ -117,50 +114,6 @@ func TestScrubRoom_Idempotent(t *testing.T) {
 	}
 }
 
-// isolatedPool opens TEST_DATABASE_URL in a private schema, migrated from
-// scratch and dropped afterwards. Other test packages truncate and age rows in
-// the shared public schema concurrently; a private schema keeps both sides
-// from seeing each other. Skips if TEST_DATABASE_URL is not set.
-func isolatedPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	ctx := context.Background()
-	schema := fmt.Sprintf("erase_test_%d_%d", os.Getpid(), time.Now().UnixNano())
-
-	admin, err := db.Open(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
-		admin.Close()
-		t.Fatalf("create schema: %v", err)
-	}
-	t.Cleanup(func() {
-		admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
-		admin.Close()
-	})
-
-	u, err := url.Parse(dbURL)
-	if err != nil {
-		t.Fatalf("parse url: %v", err)
-	}
-	q := u.Query()
-	q.Set("search_path", schema)
-	u.RawQuery = q.Encode()
-	pool, err := db.Open(ctx, u.String())
-	if err != nil {
-		t.Fatalf("open isolated: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return pool
-}
-
 func mustExec(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {
 	t.Helper()
 	if _, err := pool.Exec(context.Background(), sql, args...); err != nil {
@@ -238,7 +191,7 @@ func snapshot(t *testing.T, pool *pgxpool.Pool) string {
 
 // #318: dry-run reports exactly what apply would do and changes nothing.
 func TestRun_DryRunChangesNothingAndMatchesApply(t *testing.T) {
-	pool := isolatedPool(t)
+	pool := dbtest.Isolated(t)
 	seed(t, pool)
 	before := snapshot(t, pool)
 
@@ -261,7 +214,7 @@ func TestRun_DryRunChangesNothingAndMatchesApply(t *testing.T) {
 
 // #318: per-table behaviour of apply, against every row seeded.
 func TestRun_ApplyPerTable(t *testing.T) {
-	pool := isolatedPool(t)
+	pool := dbtest.Isolated(t)
 	seed(t, pool)
 	ctx := context.Background()
 
@@ -348,7 +301,7 @@ func TestRun_ApplyPerTable(t *testing.T) {
 // #318: --include-subject-reports deletes the reports about the person, and
 // with them the reason to keep linked moderation rows.
 func TestRun_IncludeSubjectReports(t *testing.T) {
-	pool := isolatedPool(t)
+	pool := dbtest.Isolated(t)
 	seed(t, pool)
 	ctx := context.Background()
 	req := baseRequest()
@@ -379,7 +332,7 @@ func TestRun_IncludeSubjectReports(t *testing.T) {
 // #318: a second apply finds nothing left to change; only the retained
 // counts repeat.
 func TestRun_Idempotent(t *testing.T) {
-	pool := isolatedPool(t)
+	pool := dbtest.Isolated(t)
 	seed(t, pool)
 	ctx := context.Background()
 
@@ -404,7 +357,7 @@ func TestRun_Idempotent(t *testing.T) {
 // the person cannot be found (they are keyed by client id and name), and
 // nothing else is touched.
 func TestRun_SubOnly(t *testing.T) {
-	pool := isolatedPool(t)
+	pool := dbtest.Isolated(t)
 	seed(t, pool)
 
 	got, err := Run(context.Background(), pool, Request{Sub: person}, true)
