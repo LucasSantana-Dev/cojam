@@ -3,11 +3,10 @@ package store
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/LucasSantana-Dev/cojam/server/internal/db"
+	"github.com/LucasSantana-Dev/cojam/server/internal/dbtest"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
@@ -27,28 +26,7 @@ func TestStoreInterface(t *testing.T) {
 		{
 			name: "Postgres",
 			store: func(tb testing.TB) Store {
-				dbURL := os.Getenv("TEST_DATABASE_URL")
-				if dbURL == "" {
-					tb.Skip("TEST_DATABASE_URL not set")
-				}
-
-				ctx := context.Background()
-				pool, err := db.Open(ctx, dbURL)
-				if err != nil {
-					tb.Fatalf("failed to open database: %v", err)
-				}
-				tb.Cleanup(func() { pool.Close() })
-
-				if err := db.Migrate(ctx, pool); err != nil {
-					tb.Fatalf("failed to migrate database: %v", err)
-				}
-
-				// Truncate rooms table to start fresh
-				if _, err := pool.Exec(ctx, "TRUNCATE TABLE rooms"); err != nil {
-					tb.Fatalf("failed to truncate rooms table: %v", err)
-				}
-
-				return NewPostgres(pool)
+				return NewPostgres(dbtest.Isolated(tb))
 			},
 		},
 	}
@@ -83,53 +61,15 @@ func TestStoreInterface(t *testing.T) {
 // TestPostgresStaleWriteRejection tests the version-guarded upsert feature specific to Postgres.
 // This test skips if TEST_DATABASE_URL is not set.
 func TestPostgresStaleWriteRejection(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-
-	ctx := context.Background()
-	pool, err := db.Open(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
-	}
-	defer pool.Close()
-
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
-
-	if _, err := pool.Exec(ctx, "TRUNCATE TABLE rooms"); err != nil {
-		t.Fatalf("failed to truncate rooms table: %v", err)
-	}
-
-	store := NewPostgres(pool)
-	testStaleWriteRejection(t, store)
+	testStaleWriteRejection(t, NewPostgres(dbtest.Isolated(t)))
 }
 
 // TestPostgresVersionGuardObserver verifies the WithVersionGuardObserver hook
 // fires exactly when the upsert's RowsAffected is 0 (stale write dropped) and
 // not on accepted writes. Skips if TEST_DATABASE_URL is not set.
 func TestPostgresVersionGuardObserver(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-
 	ctx := context.Background()
-	pool, err := db.Open(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
-	}
-	defer pool.Close()
-
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
-
-	if _, err := pool.Exec(ctx, "TRUNCATE TABLE rooms"); err != nil {
-		t.Fatalf("failed to truncate rooms table: %v", err)
-	}
+	pool := dbtest.Isolated(t)
 
 	rejected := 0
 	store := NewPostgres(pool).WithVersionGuardObserver(func() { rejected++ })
@@ -326,25 +266,8 @@ func testDeleteIdleRoomsNilProtected(t *testing.T, store Store) {
 // rows inside the TTL survive, and the returned count is accurate. Skips if
 // TEST_DATABASE_URL is not set.
 func TestPostgresDeleteIdleRooms(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-
 	ctx := context.Background()
-	pool, err := db.Open(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
-	}
-	defer pool.Close()
-
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("failed to migrate database: %v", err)
-	}
-
-	if _, err := pool.Exec(ctx, "TRUNCATE TABLE rooms"); err != nil {
-		t.Fatalf("failed to truncate rooms table: %v", err)
-	}
+	pool := dbtest.Isolated(t)
 
 	store := NewPostgres(pool)
 	for _, id := range []string{"old-memberless", "old-protected", "fresh"} {
