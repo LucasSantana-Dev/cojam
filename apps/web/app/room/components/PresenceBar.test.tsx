@@ -82,4 +82,13 @@ describe('PresenceBar', () => {
     expect(screen.queryByTitle('apple')).not.toBeInTheDocument();
     expect(screen.queryByTitle('youtube')).not.toBeInTheDocument();
   });
+
+  it('lets any member report another member, but not themselves (#259)', () => {
+    useStore.setState({ clientId: 'a' });
+    useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
+    render(<PresenceBar roomId="r" />);
+
+    expect(screen.getByLabelText('Denunciar Bob')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Denunciar Alice')).not.toBeInTheDocument();
+  });
 });

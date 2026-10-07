@@ -100,7 +100,11 @@ host revokes it; the default is private (zero value), so existing rooms are
 unaffected. `name` is an optional plain-text room label: trimmed, capped at 60
 chars (longer is rejected with a UserError, code 400), empty after trim clears
 the label, and an absent key leaves it untouched. The mutation bumps
-`RoomState.version` like every other mutation.
+`RoomState.version` like every other mutation. A label matching the server's
+blocklist of sexual, slur and minor-sexualizing terms (#259) is rejected with a
+UserError (code 400, message `room name not allowed`); going public with an
+already stored blocked label is rejected the same way, and `room.list` skips any
+room whose label matches.
 
 `room.list` is the directory read: any connected client may call it (not
 membership-gated), rate-limited per caller (burst 5, one token per 2s; a

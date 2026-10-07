@@ -260,4 +260,6 @@ Greenfield MVP (started 2026-07-16), built in public.
 
 The Go server emits structured JSON logs to stdout; Prometheus metrics are
 served at `/metrics` on a dedicated listener when `METRICS_ADDR` is set (never
-on the public port). Architecture decisions live in `docs/adr/` (local-only).
+on the public port). Set `REPORT_WEBHOOK_URL` to push a minimal summary of each
+member report (id, kind, room id, category, time; no chat content) to a channel you
+monitor; unset means reports are stored and logged only. Architecture decisions live in `docs/adr/` (local-only).
