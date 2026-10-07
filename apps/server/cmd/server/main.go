@@ -93,6 +93,14 @@ func envDurationMinutes(key string, dflt time.Duration) time.Duration {
 	return time.Duration(n) * time.Minute
 }
 
+// Retention sweep cadence and bound (#319): one bounded DELETE per table per
+// hour. 5000 rows an hour is far above the report rate this deployment sees,
+// and a first-enable backlog drains over successive sweeps.
+const (
+	retentionInterval = time.Hour
+	retentionBatch    = 5000
+)
+
 // maxDisplayNameLen caps the connect-time display name, in runes. The name
 // is client-chosen and fans out to every member through presence, queue
 // attribution and chat.
@@ -137,6 +145,11 @@ func presenceConnInfo(data []byte) []byte {
 }
 
 func main() {
+	// Operator subcommands run and exit before any server setup.
+	if len(os.Args) > 1 && os.Args[1] == "erase" {
+		os.Exit(runErase(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
+	}
+
 	var shutdownHooks []func()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -515,6 +528,27 @@ func main() {
 			}
 		}()
 	})
+
+	// Retention for reports and moderation actions (#319). REPORT_RETENTION_DAYS
+	// unset or 0 keeps them forever: the window is an owner decision tied to
+	// ECA Digital reporting duties, so the code does not pick one. Purge is by
+	// age only (no status column exists, so no legal-hold exemption).
+	reportWindow, err := reportRetention(os.Getenv)
+	if err != nil {
+		log.Fatal(err)
+	}
+	retention := report.NewRetention(reportWindow, retentionBatch,
+		report.RetentionTarget{Table: "reports", Purger: reports},
+		report.RetentionTarget{Table: "moderation_actions", Purger: audit},
+	).WithLogger(logger).WithPurgeObserver(metrics.RetentionPurged)
+	// Stopped before every other hook: the pool-close hook is already
+	// registered, and an in-flight purge must not race a closed pool.
+	shutdownHooks = append([]func(){retention.Start(retentionInterval)}, shutdownHooks...)
+	if retention.Enabled() {
+		logger.Info("report_retention_enabled", "window_days", int(reportWindow.Hours()/24))
+	} else {
+		logger.Info("report_retention_disabled", "hint", "set REPORT_RETENTION_DAYS to purge reports and moderation actions")
+	}
 
 	// Connection authentication setup
 	roomAuthEnabled := featureEnabled("FEATURE_ROOM_AUTH", false)

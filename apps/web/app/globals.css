@@ -1540,6 +1540,27 @@ input:focus, textarea:focus, select:focus {
 }
 .landing-footer a { color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 2px; }
 
+/* "Seus dados" (#318): the guest id a person sends to ask for erasure. */
+.your-data {
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 0;
+  font-size: 0.8rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+.your-data summary { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.your-data p { margin-top: 0.5rem; }
+.your-data-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.5rem; }
+.your-data code { overflow-wrap: anywhere; color: var(--color-text-primary); }
+.your-data button {
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
 /* Sticky landing header — hides on scroll-down, reveals on scroll-up. --------
    Persistent CTA + brand; glass so the hero reads through it. */
 .site-header {

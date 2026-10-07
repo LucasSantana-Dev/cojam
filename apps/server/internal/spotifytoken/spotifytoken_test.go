@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/LucasSantana-Dev/cojam/server/internal/db"
+	"github.com/LucasSantana-Dev/cojam/server/internal/dbtest"
 )
 
 func testSealer(t *testing.T) *Sealer {
@@ -182,25 +181,12 @@ func TestMemory_WithoutSealerRefuses(t *testing.T) {
 
 // Runs in CI via the Postgres service container added in #247.
 func TestPostgres_RoundTripAndExpiry(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	pool := dbtest.Isolated(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pool, err := db.Open(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer pool.Close()
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-
 	store := NewPostgres(pool, testSealer(t))
 	sub := "test-sub-" + time.Now().Format("150405.000000")
-	defer store.Delete(ctx, sub)
 
 	if _, err := store.Get(ctx, sub); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound before Put, got %v", err)
@@ -238,25 +224,12 @@ func TestPostgres_RoundTripAndExpiry(t *testing.T) {
 // The row must hold ciphertext. Verified against the real column, because this
 // is the property a database dump would expose.
 func TestPostgres_ColumnHoldsCiphertext(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	pool := dbtest.Isolated(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pool, err := db.Open(ctx, dbURL)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer pool.Close()
-	if err := db.Migrate(ctx, pool); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-
 	store := NewPostgres(pool, testSealer(t))
 	sub := "test-cipher-" + time.Now().Format("150405.000000")
-	defer store.Delete(ctx, sub)
 
 	const token = "AQC-refresh-token-value-9f3a"
 	if err := store.Put(ctx, sub, token, time.Now().Add(time.Hour)); err != nil {
