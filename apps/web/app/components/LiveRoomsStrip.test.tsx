@@ -33,8 +33,8 @@ vi.mock('@/lib/publicRooms', () => ({
 }));
 
 const fixtures: PublicRoomSummary[] = [
-  { roomId: 'NEON42', name: 'Neon Room', memberCount: 7, nowPlaying: { title: 'Instant Crush', artist: 'Daft Punk' } },
-  { roomId: 'ABC123', memberCount: 3 },
+  { roomId: 'NEON42', name: 'Neon Room', memberCount: 7, kind: 'audio', lastActiveMs: 1_000, nowPlaying: { title: 'Instant Crush', artist: 'Daft Punk' } },
+  { roomId: 'ABC123', memberCount: 3, kind: 'audio', lastActiveMs: 1_000 },
 ];
 
 describe('LiveRoomsStrip', () => {
@@ -58,13 +58,20 @@ describe('LiveRoomsStrip', () => {
     expect(screen.getByText('Nothing playing yet')).toBeInTheDocument();
   });
 
+  it('links to the full directory', () => {
+    render(<LiveRoomsStrip rooms={fixtures} />);
+    expect(screen.getByRole('link', { name: /ver todas/ })).toHaveAttribute('href', '/rooms');
+  });
+
   it('caps the strip at 5 cards', () => {
     const many: PublicRoomSummary[] = Array.from({ length: 8 }, (_, i) => ({
       roomId: `ROOM${i}`,
       memberCount: 1,
+      kind: 'audio',
+      lastActiveMs: 1_000,
     }));
     render(<LiveRoomsStrip rooms={many} />);
-    expect(screen.getAllByRole('link')).toHaveLength(5);
+    expect(screen.getAllByRole('link').filter((a) => a.getAttribute('href')?.startsWith('/room/'))).toHaveLength(5);
   });
 });
 

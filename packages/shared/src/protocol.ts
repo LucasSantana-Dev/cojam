@@ -68,6 +68,8 @@ export type PublicRoomSummary = {
   name?: string;          // present only if the host set one
   memberCount: number;    // connected members (join + subscribe enrollment)
   nowPlaying?: { title: string; artist: string };
+  kind: 'audio' | 'video'; // now-playing track kind; audio when nothing plays
+  lastActiveMs: number;    // room's last activity, unix ms (server clock)
 };
 
 export type RoomStatePub = {

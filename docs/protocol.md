@@ -107,8 +107,8 @@ membership-gated), rate-limited per caller (burst 5, one token per 2s; a
 rejection is the same code-400 UserError as fanout rejections). It returns
 only rooms currently loaded in the hub with `public == true`, never creates or
 loads rooms, skips dead rooms (0 members AND an empty queue), sorts by
-`memberCount` descending (`roomId` ascending for stability), and caps at 20
-entries. `memberCount` counts connected members (join + subscribe enrollment),
+`memberCount` descending (`roomId` ascending for stability), and caps at 100
+entries (search and sort run client-side, #306). `memberCount` counts connected members (join + subscribe enrollment),
 so one person in two tabs counts twice. Only the summary fields are exposed:
 queue contents, host id, transport, and vote data stay room-channel-only. When
 `FEATURE_PUBLIC_ROOMS` is off, both RPCs reply `ErrorMethodNotFound`.
@@ -119,6 +119,8 @@ type PublicRoomSummary = {
   name?: string;          // present only if the host set one
   memberCount: number;    // connected members
   nowPlaying?: { title: string; artist: string };
+  kind: 'audio' | 'video'; // now-playing track kind; 'audio' when nothing plays
+  lastActiveMs: number;    // room's last activity, unix ms (server clock)
 };
 ```
 

@@ -3,10 +3,14 @@ package hub
 import (
 	"encoding/json"
 	"sort"
+
+	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
-// maxPublicRoomsListed caps the v1 public directory (no pagination, no search).
-const maxPublicRoomsListed = 20
+// maxPublicRoomsListed caps the public directory. Search and sort run
+// client-side over this list (#306), so it must be large enough for the
+// /rooms page and small enough to stay one cheap RPC reply.
+const maxPublicRoomsListed = 100
 
 // publicRoomTrack is the nowPlaying brief of a PublicRoomSummary.
 type publicRoomTrack struct {
@@ -22,6 +26,11 @@ type PublicRoomSummary struct {
 	Name        string           `json:"name,omitempty"`
 	MemberCount int              `json:"memberCount"`
 	NowPlaying  *publicRoomTrack `json:"nowPlaying,omitempty"`
+	// Kind is "audio" or "video", from the now-playing track (audio when
+	// nothing plays or the track predates kinds).
+	Kind string `json:"kind"`
+	// LastActiveMs is the room's last activity as unix milliseconds.
+	LastActiveMs int64 `json:"lastActiveMs"`
 }
 
 // listPublicRooms returns the summaries of rooms currently loaded in the hub
@@ -51,11 +60,17 @@ func (h *Hub) listPublicRooms() (json.RawMessage, error) {
 		summary := PublicRoomSummary{
 			RoomID: roomID,
 			Name:   room.State.Name,
+			Kind:   queue.KindAudio,
+
+			LastActiveMs: room.lastActivity().UnixMilli(),
 		}
 		if room.State.NowPlayingID != "" {
 			for _, t := range room.State.Queue {
 				if t.ID == room.State.NowPlayingID {
 					summary.NowPlaying = &publicRoomTrack{Title: t.Title, Artist: t.Artist}
+					if t.Kind == queue.KindVideo {
+						summary.Kind = queue.KindVideo
+					}
 					break
 				}
 			}
