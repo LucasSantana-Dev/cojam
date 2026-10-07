@@ -107,8 +107,8 @@ membership-gated), rate-limited per caller (burst 5, one token per 2s; a
 rejection is the same code-400 UserError as fanout rejections). It returns
 only rooms currently loaded in the hub with `public == true`, never creates or
 loads rooms, skips dead rooms (0 members AND an empty queue), sorts by
-`memberCount` descending (`roomId` ascending for stability), and caps at 20
-entries. `memberCount` counts connected members (join + subscribe enrollment),
+`memberCount` descending (`roomId` ascending for stability), and caps at 100
+entries (search and sort run client-side, #306). `memberCount` counts connected members (join + subscribe enrollment),
 so one person in two tabs counts twice. Only the summary fields are exposed:
 queue contents, host id, transport, and vote data stay room-channel-only. When
 `FEATURE_PUBLIC_ROOMS` is off, both RPCs reply `ErrorMethodNotFound`.
@@ -119,6 +119,8 @@ type PublicRoomSummary = {
   name?: string;          // present only if the host set one
   memberCount: number;    // connected members
   nowPlaying?: { title: string; artist: string };
+  kind: 'audio' | 'video'; // now-playing track kind; 'audio' when nothing plays
+  lastActiveMs: number;    // room's last activity, unix ms (server clock)
 };
 ```
 
@@ -128,6 +130,21 @@ type PublicRoomSummary = {
 `nowPlayingId` first. All three stamp `transport.updatedAtServerMs` server-side
 and publish the full `RoomState`. `sync.ping` is a read returning the server
 clock (unix ms) for client offset estimation.
+
+Transport RPCs draw from their own per-caller limiter (burst 20, one token per
+250ms), separate from the fanout limiter: scrubbing is bursty and touches no
+third-party API.
+
+Video co-watch (E1, #258) is gated by its own flag, `FEATURE_VIDEO` on the
+server and `COJAM_FEATURE_VIDEO` on the web runtime (default off, independent
+of `FEATURE_SYNC`; the transport controls still need sync). A track is a video
+track when `TrackRef.kind === "video"`; the web client sets it when a YouTube
+link is added from the manual form with the flag on. While the now-playing
+track is `kind: "video"` and `transport.state === "playing"`, the server
+republishes the room state every 10s with `version` bumped and `transport`
+unchanged, so clients that missed a publication converge on the next beat. The
+ticker stops on pause, track end, a non-video track, an empty room and room
+eviction. No video bytes cross the server: each client renders its own IFrame.
 
 `chat.send` / `chat.history` (F8) exist only when `FEATURE_ROOM_CHAT` is on
 (default off); otherwise the server replies `ErrorMethodNotFound`. Chat is

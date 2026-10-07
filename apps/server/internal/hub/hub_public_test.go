@@ -174,15 +174,15 @@ func TestRoomList_PrivacyDefaultAndToggle(t *testing.T) {
 	}
 }
 
-// The directory is capped at 20 and sorted by memberCount descending (roomId
+// The directory is capped at 100 and sorted by memberCount descending (roomId
 // ascending for stability).
 func TestRoomList_CappedAndSorted(t *testing.T) {
 	h := newPublicHub()
 
-	// 25 public rooms, each with a queued track so the dead-room filter
+	// 105 public rooms, each with a queued track so the dead-room filter
 	// (0 members AND empty queue) does not apply.
-	for i := 0; i < 25; i++ {
-		roomID := fmt.Sprintf("r%02d", i)
+	for i := 0; i < 105; i++ {
+		roomID := fmt.Sprintf("r%03d", i)
 		if _, err := h.HandleRPC("room.join", []byte(fmt.Sprintf(`{"roomId":%q,"name":"alice"}`, roomID)), ""); err != nil {
 			t.Fatalf("room.join %s: %v", roomID, err)
 		}
@@ -198,26 +198,26 @@ func TestRoomList_CappedAndSorted(t *testing.T) {
 	// Distinct member counts on the first three rooms.
 	for i := 0; i < 3; i++ {
 		for j := 0; j < 3-i; j++ {
-			h.Join(fmt.Sprintf("m%d-%d", i, j), fmt.Sprintf("r%02d", i))
+			h.Join(fmt.Sprintf("m%d-%d", i, j), fmt.Sprintf("r%03d", i))
 		}
 	}
 
 	rooms := listRooms(t, h, "anon")
-	if len(rooms) != 20 {
-		t.Fatalf("listed %d rooms, want cap of 20", len(rooms))
+	if len(rooms) != maxPublicRoomsListed {
+		t.Fatalf("listed %d rooms, want cap of %d", len(rooms), maxPublicRoomsListed)
 	}
 	wantOrder := []struct {
 		roomID string
 		count  int
-	}{{"r00", 3}, {"r01", 2}, {"r02", 1}}
+	}{{"r000", 3}, {"r001", 2}, {"r002", 1}}
 	for i, want := range wantOrder {
 		if rooms[i].RoomID != want.roomID || rooms[i].MemberCount != want.count {
 			t.Fatalf("rooms[%d] = %+v, want %s with %d members", i, rooms[i], want.roomID, want.count)
 		}
 	}
 	// The remaining entries tie at 0 members: roomId ascending fills the cap.
-	for i := 3; i < 20; i++ {
-		want := fmt.Sprintf("r%02d", i)
+	for i := 3; i < maxPublicRoomsListed; i++ {
+		want := fmt.Sprintf("r%03d", i)
 		if rooms[i].RoomID != want {
 			t.Fatalf("rooms[%d] = %s, want %s (stable roomId order)", i, rooms[i].RoomID, want)
 		}
@@ -392,5 +392,47 @@ func TestSetPublic_NameValidation(t *testing.T) {
 	var ue *UserError
 	if !errors.As(err, &ue) {
 		t.Fatalf("over-long name must be a *UserError, got %T: %v", err, err)
+	}
+}
+
+// kind comes from the now-playing track (audio by default) and lastActiveMs is
+// the room's last activity (#306).
+func TestRoomList_KindAndLastActive(t *testing.T) {
+	h := newPublicHub()
+
+	mk := func(roomID, trackJSON string) {
+		t.Helper()
+		if _, err := h.HandleRPC("room.join", []byte(fmt.Sprintf(`{"roomId":%q,"name":"alice"}`, roomID)), ""); err != nil {
+			t.Fatalf("room.join %s: %v", roomID, err)
+		}
+		if trackJSON != "" {
+			add := []byte(fmt.Sprintf(`{"roomId":%q,"track":%s}`, roomID, trackJSON))
+			if _, err := h.HandleRPC("queue.add", add, ""); err != nil {
+				t.Fatalf("queue.add %s: %v", roomID, err)
+			}
+		}
+		if _, err := h.HandleRPC("room.set_public", setPublicPayload(roomID, true), ""); err != nil {
+			t.Fatalf("room.set_public %s: %v", roomID, err)
+		}
+		h.Join("c-"+roomID, roomID)
+	}
+	before := time.Now().UnixMilli()
+	mk("vid", `{"title":"V","artist":"A","kind":"video","sources":{},"addedBy":"alice"}`)
+	mk("aud", `{"title":"T","artist":"A","kind":"audio","sources":{},"addedBy":"alice"}`)
+	mk("old", `{"title":"O","artist":"A","sources":{},"addedBy":"alice"}`)
+	mk("none", "")
+
+	want := map[string]string{"vid": "video", "aud": "audio", "old": "audio", "none": "audio"}
+	rooms := listRooms(t, h, "anon")
+	if len(rooms) != len(want) {
+		t.Fatalf("listed %d rooms, want %d", len(rooms), len(want))
+	}
+	for _, r := range rooms {
+		if r.Kind != want[r.RoomID] {
+			t.Errorf("room %s kind = %q, want %q", r.RoomID, r.Kind, want[r.RoomID])
+		}
+		if r.LastActiveMs < before || r.LastActiveMs > time.Now().UnixMilli() {
+			t.Errorf("room %s lastActiveMs = %d, want within [%d, now]", r.RoomID, r.LastActiveMs, before)
+		}
 	}
 }

@@ -252,6 +252,22 @@ type Hub struct {
 	votingEnabled   bool
 	chatEnabled     bool
 
+	// videoEnabled gates the video heartbeat (FEATURE_VIDEO, #258). Its own
+	// flag, not syncEnabled: video carries ToS exposure and must switch off
+	// without disabling audio sync.
+	videoEnabled bool
+
+	// transportLimiter rate-limits transport.* per caller (transportMethods):
+	// scrubbing is bursty, so it gets its own bucket rather than fanoutLimiter
+	// (transport touches no third-party API).
+	transportLimiter *rateLimiter
+
+	// heartbeatEvery is the video heartbeat period; heartbeats tracks the
+	// running per-room tickers (see heartbeat.go).
+	heartbeatEvery time.Duration
+	hbMu           sync.Mutex
+	heartbeats     map[string]chan struct{}
+
 	// publicRoomsEnabled gates the public room directory RPCs
 	// (room.set_public, room.list; FEATURE_PUBLIC_ROOMS). Dark-shipped off:
 	// when false both RPCs return ErrorMethodNotFound (transport.* precedent).
@@ -435,6 +451,12 @@ func (h *Hub) WithModerationAudit(fn ModerationAudit) *Hub {
 	return h
 }
 
+// WithVideo enables the video co-watch heartbeat (FEATURE_VIDEO, #258).
+func (h *Hub) WithVideo(enabled bool) *Hub {
+	h.videoEnabled = enabled
+	return h
+}
+
 func (h *Hub) WithChat(enabled bool) *Hub {
 	h.chatEnabled = enabled
 	return h
@@ -460,20 +482,23 @@ func (h *Hub) WithRebind(secret []byte, burns rebind.BurnList) *Hub {
 // Defaults to an in-memory store; use WithStore to inject a different implementation.
 func NewHub(node *centrifuge.Node) *Hub {
 	return &Hub{
-		rooms:           make(map[string]*Room),
-		store:           store.NewMemory(),
-		node:            node,
-		members:         make(map[string]map[string]struct{}),
-		roomMembers:     make(map[string]map[string]struct{}),
-		memberJoinTimes: make(map[string]map[string]int64),
-		clientUserID:    make(map[string]string),
-		clientName:      make(map[string]string),
-		enrichSem:       make(chan struct{}, enrichConcurrency),
-		enrichPending:   make(chan struct{}, enrichMaxPending),
-		fanoutLimiter:   newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
-		voteLimiter:     newRateLimiter(voteBurst, voteRefill, time.Now),
-		chatLimiter:     newRateLimiter(chatBurst, chatRefill, time.Now),
-		listLimiter:     newRateLimiter(listBurst, listRefill, time.Now),
+		rooms:            make(map[string]*Room),
+		store:            store.NewMemory(),
+		node:             node,
+		members:          make(map[string]map[string]struct{}),
+		roomMembers:      make(map[string]map[string]struct{}),
+		memberJoinTimes:  make(map[string]map[string]int64),
+		clientUserID:     make(map[string]string),
+		clientName:       make(map[string]string),
+		enrichSem:        make(chan struct{}, enrichConcurrency),
+		enrichPending:    make(chan struct{}, enrichMaxPending),
+		fanoutLimiter:    newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
+		voteLimiter:      newRateLimiter(voteBurst, voteRefill, time.Now),
+		chatLimiter:      newRateLimiter(chatBurst, chatRefill, time.Now),
+		transportLimiter: newRateLimiter(transportBurst, transportRefill, time.Now),
+		heartbeatEvery:   videoHeartbeatEvery,
+		heartbeats:       make(map[string]chan struct{}),
+		listLimiter:      newRateLimiter(listBurst, listRefill, time.Now),
 	}
 }
 
@@ -552,6 +577,8 @@ func (h *Hub) Join(clientID, roomID string) {
 	if !alreadyMember {
 		h.announceMembership(roomID, h.displayName(clientID), "joined")
 	}
+	// A room reloaded from the store may already be playing video.
+	h.reconcileHeartbeat(roomID)
 }
 
 // observeFirstShared emits the "room became shared" signal exactly once per
@@ -1089,6 +1116,7 @@ func (h *Hub) evictIdleRooms(now time.Time) {
 		}
 		delete(h.rooms, roomID)
 		delete(h.memberJoinTimes, roomID)
+		h.stopHeartbeat(roomID)
 		if h.logger != nil {
 			h.logger.Info("room_evicted", "room_id", roomID)
 		}
@@ -1158,7 +1186,17 @@ func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMe
 	if err != nil {
 		return nil, err
 	}
+	data, err := h.mutateRoom(roomID, room, fn)
+	if err == nil {
+		h.reconcileHeartbeat(roomID)
+	}
+	return data, err
+}
 
+// mutateRoom is mutate on an already-resolved room. The video heartbeat calls
+// it directly so a tick does not touch() the room and keep it from idle
+// eviction.
+func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) error) (json.RawMessage, error) {
 	room.mu.Lock()
 	versionBefore := room.State.Version
 	if fn != nil {
@@ -1260,6 +1298,9 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 	}
 	if err == nil {
 		err = h.checkChatLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.checkTransportLimit(method, rlKey)
 	}
 	if err == nil {
 		err = h.checkListLimit(method, rlKey)

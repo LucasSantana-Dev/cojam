@@ -16,6 +16,10 @@ export type Features = {
   roomChat: boolean;
   publicRooms: boolean;
   telemetry: boolean;
+  // Video co-watch (E1, #258). Its own flag, NOT sync: video carries the ToS
+  // exposure accepted in ADR-0007 and must switch off without disabling audio
+  // drift correction.
+  video: boolean;
 };
 
 export type FeatureName = keyof Features;
@@ -38,6 +42,7 @@ export const FEATURE_ENV_VARS: Record<FeatureName, string> = {
   roomChat: 'COJAM_FEATURE_ROOM_CHAT',
   publicRooms: 'COJAM_FEATURE_PUBLIC_ROOMS',
   telemetry: 'COJAM_FEATURE_TELEMETRY',
+  video: 'COJAM_FEATURE_VIDEO',
 };
 
 const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
@@ -67,6 +72,7 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
     roomChat: flag(env.NEXT_PUBLIC_FEATURE_ROOM_CHAT, false),
     publicRooms: flag(env.NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS, false),
     telemetry: flag(env.NEXT_PUBLIC_FEATURE_TELEMETRY, false),
+    video: flag(env.NEXT_PUBLIC_FEATURE_VIDEO, false),
   };
 }
 
@@ -86,4 +92,5 @@ export const features: Features = resolveFeatures({
   NEXT_PUBLIC_FEATURE_ROOM_CHAT: process.env.NEXT_PUBLIC_FEATURE_ROOM_CHAT,
   NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS: process.env.NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS,
   NEXT_PUBLIC_FEATURE_TELEMETRY: process.env.NEXT_PUBLIC_FEATURE_TELEMETRY,
+  NEXT_PUBLIC_FEATURE_VIDEO: process.env.NEXT_PUBLIC_FEATURE_VIDEO,
 });

@@ -26,6 +26,10 @@ export default defineConfig({
         FEATURE_ROOM_CHAT: 'on',
         // F1: room.set_public/room.list dark-ship default-off; e2e exercises them.
         FEATURE_PUBLIC_ROOMS: 'on',
+        // E1 (#258): server-side only gates. The web flags stay off for every
+        // spec; video-cowatch.spec.ts turns them on per page through /env.js.
+        FEATURE_SYNC: 'on',
+        FEATURE_VIDEO: 'on',
       },
     },
     {

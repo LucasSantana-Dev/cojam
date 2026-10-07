@@ -153,7 +153,9 @@ func main() {
 		WithSync(featureEnabled("FEATURE_SYNC", false)).
 		WithVoting(featureEnabled("FEATURE_QUEUE_VOTING", false)).
 		WithChat(featureEnabled("FEATURE_ROOM_CHAT", false)).
-		WithPublicRooms(featureEnabled("FEATURE_PUBLIC_ROOMS", false))
+		WithPublicRooms(featureEnabled("FEATURE_PUBLIC_ROOMS", false)).
+		WithVideo(featureEnabled("FEATURE_VIDEO", false))
+	defer h.StopHeartbeats()
 
 	if featureEnabled("FEATURE_SYNC", false) {
 		logger.Info("sync_enabled")
@@ -172,6 +174,13 @@ func main() {
 		logger.Info("chat_enabled")
 	} else {
 		logger.Info("chat_disabled")
+	}
+
+	// Video co-watch (E1, #258): its own flag, deliberately not FEATURE_SYNC.
+	if featureEnabled("FEATURE_VIDEO", false) {
+		logger.Info("video_enabled")
+	} else {
+		logger.Info("video_disabled")
 	}
 
 	if featureEnabled("FEATURE_PUBLIC_ROOMS", false) {
