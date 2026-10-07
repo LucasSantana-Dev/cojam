@@ -121,3 +121,13 @@ func TestPresenceConnInfo_CapsName(t *testing.T) {
 		t.Fatalf("blank name must yield no ConnInfo, got %s", got)
 	}
 }
+
+func TestEnvPositiveInt(t *testing.T) {
+	env := map[string]string{"A": "250", "B": "0", "C": "x", "D": " 7 "}
+	get := func(k string) string { return env[k] }
+	for key, want := range map[string]int{"A": 250, "B": 30, "C": 30, "D": 7, "MISSING": 30} {
+		if got := envPositiveInt(get, key, 30); got != want {
+			t.Errorf("%s: got %d, want %d", key, got, want)
+		}
+	}
+}

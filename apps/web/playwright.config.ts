@@ -30,6 +30,9 @@ export default defineConfig({
         // spec; video-cowatch.spec.ts turns them on per page through /env.js.
         FEATURE_SYNC: 'on',
         FEATURE_VIDEO: 'on',
+        // Every e2e browser arrives from 127.0.0.1, so per-IP budgets are
+        // shared by the whole suite; raise them so specs never throttle.
+        ROOM_CREATE_RATE_BURST: '1000',
       },
     },
     {

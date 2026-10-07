@@ -368,6 +368,7 @@ type Hub struct {
 	clientUserIDMu sync.RWMutex
 	clientUserID   map[string]string // clientID -> userID
 	clientName     map[string]string // clientID -> connect-time display name
+	clientIP       map[string]string // clientID -> client IP of the websocket upgrade
 
 	// rebindSecret verifies the anonymous connection JWT presented to
 	// room.rebind as proof of guest ownership (#172); rebindBurns records
@@ -557,6 +558,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		memberJoinTimes:   make(map[string]map[string]int64),
 		clientUserID:      make(map[string]string),
 		clientName:        make(map[string]string),
+		clientIP:          make(map[string]string),
 		enrichSem:         make(chan struct{}, enrichConcurrency),
 		enrichPending:     make(chan struct{}, enrichMaxPending),
 		fanoutLimiter:     newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
@@ -798,6 +800,26 @@ func (h *Hub) RecordClientName(clientID, name string) {
 	}
 }
 
+// RecordClientIP tracks the client IP of a connection's websocket upgrade
+// (resolved with the same proxy trust rules as the HTTP limiters). The room
+// creation budget is charged per IP as well as per identity, since anonymous
+// identities are free to mint.
+func (h *Hub) RecordClientIP(clientID, ip string) {
+	if clientID == "" || ip == "" {
+		return
+	}
+	h.clientUserIDMu.Lock()
+	defer h.clientUserIDMu.Unlock()
+	h.clientIP[clientID] = ip
+}
+
+// clientIPOf returns the recorded client IP, or "" when none is known.
+func (h *Hub) clientIPOf(clientID string) string {
+	h.clientUserIDMu.RLock()
+	defer h.clientUserIDMu.RUnlock()
+	return h.clientIP[clientID]
+}
+
 // displayName returns the connect-time display name recorded for a
 // connection, or "" when none was presented (or the caller is
 // transport-independent, e.g. tests calling HandleRPC).
@@ -814,6 +836,7 @@ func (h *Hub) RemoveClientUserID(clientID string) {
 	defer h.clientUserIDMu.Unlock()
 	delete(h.clientUserID, clientID)
 	delete(h.clientName, clientID)
+	delete(h.clientIP, clientID)
 }
 
 // recordJoinTime stamps when an authenticated userID joined a room, for

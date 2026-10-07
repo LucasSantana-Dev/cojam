@@ -48,9 +48,22 @@ const (
 // create a room missing from memory and the store draw from it, so joining an
 // existing room never does. Tests shrink h.roomCreateLimiter.
 const (
-	roomCreateBurst  = 10
+	roomCreateBurst  = DefaultRoomCreateBurst
 	roomCreateRefill = time.Minute
 )
+
+// DefaultRoomCreateBurst is the default room-creation burst per identity and
+// per client IP (ROOM_CREATE_RATE_BURST overrides it).
+const DefaultRoomCreateBurst = 10
+
+// WithRoomCreateBurst sets the room-creation burst (refill stays one room per
+// minute). Values <= 0 keep the default.
+func (h *Hub) WithRoomCreateBurst(burst int) *Hub {
+	if burst > 0 {
+		h.roomCreateLimiter = newRateLimiter(burst, roomCreateRefill, time.Now)
+	}
+	return h
+}
 
 // checkJoinLimit enforces the per-caller bucket on room.join.
 func (h *Hub) checkJoinLimit(method, rlKey string) error {
@@ -67,8 +80,9 @@ func (h *Hub) checkJoinLimit(method, rlKey string) error {
 }
 
 // ensureRoom resolves the target room of a room-scoped RPC before dispatch,
-// charging the caller's creation budget only when the room exists neither in
-// memory nor in the store. Afterwards the room is resident, so dispatch's own
+// charging the creation budget only when the room exists neither in memory
+// nor in the store. The budget is charged per identity and, when the
+// connection's client IP is known, per IP too (denied if either is empty). Afterwards the room is resident, so dispatch's own
 // GetOrCreateRoom is a cache hit. Non-room-scoped methods pass through.
 func (h *Hub) ensureRoom(method string, data []byte, clientID, rlKey string) error {
 	if method != "room.join" && !mutatingMethods[method] {
@@ -84,7 +98,11 @@ func (h *Hub) ensureRoom(method string, data []byte, clientID, rlKey string) err
 	if err != nil || room != nil {
 		return err
 	}
-	if h.roomCreateLimiter != nil && !h.roomCreateLimiter.allow(rlKey) {
+	keys := []string{rlKey}
+	if ip := h.clientIPOf(clientID); ip != "" {
+		keys = append(keys, "ip:"+ip)
+	}
+	if h.roomCreateLimiter != nil && !h.roomCreateLimiter.allowAll(keys...) {
 		if h.metrics != nil {
 			h.metrics.RateLimitReject(method)
 		}

@@ -98,6 +98,17 @@ func envDurationMinutes(key string, dflt time.Duration) time.Duration {
 // attribution and chat.
 const maxDisplayNameLen = 40
 
+// envPositiveInt reads a positive integer (unset/invalid/<=0 = dflt). Used to
+// tune rate-limit bursts for environments where many callers share one IP
+// (local dev and e2e all arrive from 127.0.0.1).
+func envPositiveInt(getenv func(string) string, key string, dflt int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(getenv(key)))
+	if err != nil || n <= 0 {
+		return dflt
+	}
+	return n
+}
+
 // presenceConnInfo builds the centrifuge ConnInfo carried into presence from
 // the connect data {name, platform?}. The name is trimmed and capped at
 // maxDisplayNameLen runes (rune-safe). The platform is the client's playback
@@ -211,6 +222,9 @@ func main() {
 	// only (the membership gate is process-local).
 	roomPersistIdleTTL := envDurationMinutes("ROOM_PERSIST_IDLE_TTL_MINUTES", 0)
 	h.WithRoomPersistIdleTTL(roomPersistIdleTTL)
+
+	// Room-creation budget burst, per identity and per client IP.
+	h.WithRoomCreateBurst(envPositiveInt(os.Getenv, "ROOM_CREATE_RATE_BURST", hub.DefaultRoomCreateBurst))
 
 	shutdownHooks = append(shutdownHooks, h.StartRoomEvictor())
 	logger.Info("room_eviction_enabled", "idle_ttl", roomIdleTTL.String())
@@ -572,6 +586,7 @@ func main() {
 		logger.Info("client_connected", "client_id", client.ID(), "transport", client.Transport().Name())
 
 		// Room routing happens per-RPC via params.roomId (docs/protocol.md)
+		h.RecordClientIP(client.ID(), clientIPFromContext(client.Context()))
 		h.RegisterClient(client)
 
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
@@ -688,7 +703,7 @@ func main() {
 			return allowedOrigins[origin]
 		},
 	})
-	r.Handle("/connection/websocket", wsHandler)
+	r.Handle("/connection/websocket", withClientIP(wsHandler))
 
 	// Prometheus metrics (custom registry from obs). Served only on a dedicated
 	// listener when METRICS_ADDR is set (e.g. 127.0.0.1:9090), never on the

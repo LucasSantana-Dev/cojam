@@ -133,3 +133,39 @@ func TestRoomJoin_RateLimited(t *testing.T) {
 		t.Fatalf("other caller join: %v", err)
 	}
 }
+
+// The creation budget is charged per user AND per client IP: minting fresh
+// identities from one address does not buy more rooms. A denial charges
+// neither bucket.
+func TestRoomCreationBudget_AlsoKeyedOnClientIP(t *testing.T) {
+	h := NewHub(nil)
+	h.roomCreateLimiter = newRateLimiter(2, time.Hour, time.Now)
+	h.RecordClientIP("c1", "198.51.100.7")
+	h.RecordClientIP("c2", "198.51.100.7")
+	h.RecordClientIP("c3", "203.0.113.9")
+
+	for _, id := range []string{"IPROOM1", "IPROOM2"} {
+		if _, err := h.handleRPC("room.join", []byte(`{"roomId":"`+id+`"}`), "c1", "u1"); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	var ue *UserError
+	if _, err := h.handleRPC("room.join", []byte(`{"roomId":"IPROOM3"}`), "c2", "u2"); !errors.As(err, &ue) {
+		t.Fatalf("fresh identity on the same IP: got %v, want the creation-budget UserError", err)
+	}
+	// u2's own bucket was not charged by the denial: from another IP it still
+	// has its full budget.
+	h.RecordClientIP("c2b", "203.0.113.10")
+	for _, id := range []string{"IPROOM4", "IPROOM5"} {
+		if _, err := h.handleRPC("room.join", []byte(`{"roomId":"`+id+`"}`), "c2b", "u2"); err != nil {
+			t.Fatalf("u2 from another IP, %s: %v", id, err)
+		}
+	}
+	if _, err := h.handleRPC("room.join", []byte(`{"roomId":"IPROOM6"}`), "c3", "u3"); err != nil {
+		t.Fatalf("other IP and user: %v", err)
+	}
+	h.RemoveClientUserID("c1")
+	if ip := h.clientIPOf("c1"); ip != "" {
+		t.Fatalf("client IP must be cleared on disconnect, got %q", ip)
+	}
+}

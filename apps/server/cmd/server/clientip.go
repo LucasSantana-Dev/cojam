@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strings"
@@ -25,4 +26,23 @@ func callerKey(r *http.Request) string {
 		}
 	}
 	return peer
+}
+
+// clientIPKey is the context key for the websocket upgrade's client IP.
+type clientIPKey struct{}
+
+// withClientIP stores callerKey(r) in the request context. centrifuge derives
+// each connection's context from the upgrade request, so OnConnect can hand
+// the IP to the hub (room creation budget per IP).
+func withClientIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), clientIPKey{}, callerKey(r))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// clientIPFromContext returns the IP stored by withClientIP, or "".
+func clientIPFromContext(ctx context.Context) string {
+	ip, _ := ctx.Value(clientIPKey{}).(string)
+	return ip
 }
