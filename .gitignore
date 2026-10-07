@@ -5,6 +5,7 @@ dist/
 .env
 *.log
 apps/server/server
+apps/server/coverage.out
 .DS_Store
 
 *.p8
