@@ -2,9 +2,12 @@ import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
 import { Bricolage_Grotesque, Instrument_Sans } from 'next/font/google';
 import './globals.css';
+import './brand-axes.css';
 import { resolveSiteUrl } from '@/lib/siteUrl';
 import { jsonLdScript } from '@/lib/jsonLd';
 import { WebVitals } from '@/app/components/WebVitals';
+import { AXES_BOOT_SCRIPT } from '@/lib/brandAxesConfig';
+import { BrandAxesSwitcher } from '@/app/components/BrandAxesSwitcher';
 
 // Display face: characterful humanist-grotesque with a display optical cut —
 // carries the hero title + oversized backdrop word. Body: clean humanist sans,
@@ -71,14 +74,26 @@ export default async function RootLayout({
     description,
   };
   return (
-    <html lang="pt-BR" className={`dark ${display.variable} ${body.variable}`}>
+    <html
+      lang="pt-BR"
+      className={`dark ${display.variable} ${body.variable}`}
+      data-fx="current"
+      data-ground="default"
+      data-presence="none"
+      data-wordmark="text"
+      suppressHydrationWarning
+    >
       <head>
+        {/* Brand axes preview (#325): sets data-fx/ground/presence/wordmark from the
+            query string before first paint. No param and nothing stored = defaults. */}
+        <script dangerouslySetInnerHTML={{ __html: AXES_BOOT_SCRIPT }} />
         {/* Runtime client config (WS URL, Spotify client id). Loaded before the
             app so window.__COJAM_ENV__ is set when realtime/auth code runs. */}
         <Script src="/env.js" strategy="beforeInteractive" />
       </head>
       <body>
         <WebVitals />
+        <BrandAxesSwitcher />
         <a href="#main" className="sr-only focus:not-sr-only">
           Pular para o conteúdo
         </a>

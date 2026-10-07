@@ -4,6 +4,8 @@ import { useStore } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { memberLabel } from '@/lib/nameSuffix';
 import { avatarGradient } from '@/lib/avatar';
+import { ListenerBand } from '@/app/components/ListenerBand';
+import { useAxis } from '@/lib/brandAxes';
 
 // PresenceMeta is the fused now-playing chip's presence fragment: avatar stack,
 // listener count, and the trailing separator dot. Membership is per connection
@@ -12,6 +14,7 @@ export function PresenceMeta() {
   const f = useRuntimeFeatures();
   const members = useStore((s) => s.members);
   const nameSuffixes = useStore((s) => s.nameSuffixes);
+  const presenceAxis = useAxis('presence');
 
   if (!f.presence || members.length === 0) {
     return null;
@@ -19,6 +22,11 @@ export function PresenceMeta() {
 
   return (
     <>
+      {presenceAxis === 'all' && (
+        <span className="np-pair" aria-hidden>
+          <ListenerBand listeners={members.slice(0, 2).map((m) => ({ name: m.name }))} size={24} />
+        </span>
+      )}
       <span className="presence-stack presence-stack--sm" aria-hidden>
         {members.slice(0, 4).map((m) => (
           <span

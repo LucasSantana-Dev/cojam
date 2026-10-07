@@ -8,6 +8,7 @@ import { subscribePublicRooms } from '@/lib/publicRooms';
 import { AGE_GATE_COPY_PT, useAgeGatedJoin } from '@/app/components/useAgeGatedJoin';
 import { useReportDialog } from '@/app/components/useReportDialog';
 import { LiveCounter } from '@/app/components/LiveCounter';
+import { RoomBand } from '@/app/components/ListenerBand';
 
 type SortKey = 'people' | 'recent';
 
@@ -146,6 +147,7 @@ export function RoomsDirectory() {
                   </span>
                   <span className="live-room-card__bottom">
                     <span className="live-room-card__count">
+                      <RoomBand count={room.memberCount} />
                       {room.memberCount} ouvindo
                     </span>
                     <span className="live-room-card__artist">{activeLabel(room.lastActiveMs, now)}</span>

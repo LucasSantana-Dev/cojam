@@ -11,12 +11,13 @@ cd "$(dirname "$0")/.."
 fail=0
 
 css=apps/web/app/globals.css
+axes_css=apps/web/app/brand-axes.css
 
 # 1. Every `animation: <name>` in globals.css must have a matching @keyframes.
-refs=$(grep -oE 'animation: [a-zA-Z0-9-]+' "$css" | awk '{print $2}' | sort -u | grep -v '^none$' || true)
+refs=$(cat "$css" "$axes_css" | grep -oE 'animation: [a-zA-Z0-9-]+'  | awk '{print $2}' | sort -u | grep -v '^none$' || true)
 for name in $refs; do
-  if ! grep -q "@keyframes $name" "$css"; then
-    echo "DRIFT: animation '$name' referenced in $css but no '@keyframes $name' exists"
+  if ! grep -q "@keyframes $name" "$css" "$axes_css"; then
+    echo "DRIFT: animation '$name' referenced in $css or $axes_css but no '@keyframes $name' exists"
     fail=1
   fi
 done
@@ -45,8 +46,13 @@ if [ -n "$green" ]; then
   echo "DRIFT: green (accent-2 / logo-core) used outside a LIVE selector in $css; actions use var(--color-accent)"
   fail=1
 fi
+# brand-axes.css (preview overrides, #325) has no LIVE surface of its own: no green at all.
+if grep -nE 'color-accent-2|logo-core' "$axes_css" | grep -vE '^[0-9]+:[[:space:]]*(/\*|\*)'; then
+  echo "DRIFT: green used in $axes_css; overrides must not touch green (LIVE selectors live in globals.css)"
+  fail=1
+fi
 if grep -rnE 'color-accent-2|logo-core' apps/web/app --include='*.tsx' \
-  | grep -vE 'Logo\.tsx|\.test\.tsx|opengraph-image\.tsx'; then
+  | grep -vE 'Logo\.tsx|\.test\.tsx|opengraph-image\.tsx|og/ogCard\.tsx'; then
   echo "DRIFT: green token referenced from a component above; green is LIVE-only (add a CSS class under a LIVE selector)"
   fail=1
 fi

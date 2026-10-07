@@ -6,6 +6,7 @@ import { AGE_GATE_COPY_PT, useAgeGatedJoin } from './useAgeGatedJoin';
 import type { PublicRoomSummary } from '@cojam/shared';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { subscribePublicRooms } from '@/lib/publicRooms';
+import { RoomBand } from './ListenerBand';
 
 const MAX_CARDS = 5;
 
@@ -48,7 +49,10 @@ export function LiveRoomsStrip({ rooms }: { rooms: PublicRoomSummary[] }) {
               )}
             </span>
             <span className="live-room-card__bottom">
-              <span className="live-room-card__count">{room.memberCount} ouvindo</span>
+              <span className="live-room-card__count">
+                <RoomBand count={room.memberCount} />
+                {room.memberCount} ouvindo
+              </span>
               <span className="live-room-card__join" aria-hidden>Entrar &rarr;</span>
             </span>
           </Link>

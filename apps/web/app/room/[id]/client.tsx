@@ -41,7 +41,7 @@ import { PlayFailedTrack } from '../components/PlayFailedTrack';
 import { TransportUI } from '../components/TransportUI';
 import { Stage } from '../components/Stage';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
-import { LogoMark } from '@/app/components/Logo';
+import { Wordmark } from '@/app/components/Wordmark';
 import type { IPlayer } from '@/lib/playerInterface';
 
 type VideoPanelTab = 'playing' | 'queue' | 'chat' | 'add';
@@ -555,7 +555,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold inline-flex items-center gap-2">
                   {/* Flows only while (re)connecting: colors moving = syncing. */}
-                  <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
+                  <Wordmark size={20} animated={store.reconnecting || !store.connected} />
                 </h1>
                 <ReportRoomButton roomId={roomId} variant="icon" />
               </div>

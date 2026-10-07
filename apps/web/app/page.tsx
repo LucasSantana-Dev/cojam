@@ -8,7 +8,9 @@ import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, CheckIcon } from '@/app/compo
 import { RoomShowcase } from '@/app/components/RoomShowcase';
 import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
 import { LiveCounter } from '@/app/components/LiveCounter';
-import { LogoMark } from '@/app/components/Logo';
+import { Wordmark } from '@/app/components/Wordmark';
+import { HeroListeners } from '@/app/components/ListenerBand';
+import { useAxis } from '@/lib/brandAxes';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
 import { MINIMUM_AGE } from '@/lib/ageGate';
@@ -83,6 +85,7 @@ function faqJsonLd(): string {
 }
 
 export default function Home() {
+  const presence = useAxis('presence');
   const [roomId, setRoomId] = useState('');
   // Name for the one-step create. Prefilled from the shared guest name (the
   // same session key the room's join form uses); null until the user types.
@@ -589,7 +592,7 @@ export default function Home() {
       {/* Scroll progress rail: the page's own instrument readout. */}
       <div className="scroll-rail" aria-hidden><div className="scroll-rail__bar" /></div>
       <header className="site-header">
-        <span className="brand"><LogoMark size={18} /> CoJam</span>
+        <span className="brand"><Wordmark size={18} /></span>
         <nav className="site-nav" aria-label="Primary">
           <a href="#how">Como funciona</a>
           <a href="#showcase">Veja ao vivo</a>
@@ -625,6 +628,7 @@ export default function Home() {
             <span className="hud-clock">{clock}</span>
           </div>
           <div className="hero-inner">
+            {presence !== 'none' && <HeroListeners />}
             <span className="eyebrow is-live">
               <span className="eyebrow-dot" aria-hidden />
               Sincronia ao vivo, entre serviços

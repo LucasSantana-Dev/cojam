@@ -7,6 +7,8 @@ import { memberLabel } from '@/lib/nameSuffix';
 import { platformIcon } from '@/app/components/icons';
 import { avatarGradient } from '@/lib/avatar';
 import { useReportDialog } from '@/app/components/useReportDialog';
+import { ListenerBand } from '@/app/components/ListenerBand';
+import { useAxis } from '@/lib/brandAxes';
 
 interface PresenceBarProps {
   roomId: string;
@@ -21,6 +23,7 @@ export function PresenceBar({ roomId, canControl = false }: PresenceBarProps) {
   const members = useStore((s) => s.members);
   const nameSuffixes = useStore((s) => s.nameSuffixes);
   const myClientId = useStore((s) => s.clientId);
+  const presenceAxis = useAxis('presence');
 
   // Presence entries are per connection (#165): no name dedupe — two listeners
   // that picked the same name are two people, disambiguated by the label suffix.
@@ -43,7 +46,15 @@ export function PresenceBar({ roomId, canControl = false }: PresenceBarProps) {
 
   return (
     <div className="flex items-center gap-3">
-      <div className="flex items-center flex-wrap gap-2">
+      {presenceAxis === 'all' && members.length > 0 && (
+        <span className="presence-band" aria-hidden>
+          <ListenerBand
+            listeners={members.slice(0, 6).map((m) => ({ name: m.name }))}
+            size={30}
+          />
+        </span>
+      )}
+      <div className="presence-bar__avatars flex items-center flex-wrap gap-2">
         {visible.map((member) => {
           const label = memberLabel(member, nameSuffixes);
           const initial = member.name.charAt(0).toUpperCase();

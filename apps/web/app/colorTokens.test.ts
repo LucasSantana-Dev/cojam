@@ -19,6 +19,7 @@ const APP = path.resolve(__dirname, '..');
 const EXEMPT_FILES = new Set([
   'app/layout.tsx', //            themeColor is browser metadata, parsed outside CSS
   'app/opengraph-image.tsx', //   Satori renders at the edge: no cascade, no vars
+  'app/og/ogCard.tsx', //         the card body behind opengraph-image and og-preview
   'app/global-error.tsx', //      runs after a crash, possibly before CSS loads
   'app/colorTokens.test.ts', //   this file names the colours it forbids
 ]);
