@@ -382,6 +382,46 @@ var mutatingMethods = map[string]bool{
 	"chat.delete":         true,
 }
 
+// knownMethods is the dispatch set. RPC method names are client-supplied, so
+// metrics and logs label anything outside it as "unknown" (metricMethod):
+// echoing the raw name would let a client mint unbounded time series.
+var knownMethods = map[string]bool{
+	"room.join":           true,
+	"queue.add":           true,
+	"queue.remove":        true,
+	"now_playing.set":     true,
+	"now_playing.advance": true,
+	"queue.reorder":       true,
+	"queue.vote":          true,
+	"track.search":        true,
+	"track.depth":         true,
+	"track.lyrics":        true,
+	"track.listenbrainz":  true,
+	"track.lastfm":        true,
+	"playlist.import":     true,
+	"radio.set":           true,
+	"room.set_public":     true,
+	"room.list":           true,
+	"transport.play":      true,
+	"transport.pause":     true,
+	"transport.seek":      true,
+	"chat.send":           true,
+	"chat.history":        true,
+	"chat.delete":         true,
+	"room.kick":           true,
+	"room.rebind":         true,
+	"sync.ping":           true,
+}
+
+// metricMethod is the bounded label for method: itself when known, else
+// "unknown".
+func metricMethod(method string) string {
+	if knownMethods[method] {
+		return method
+	}
+	return "unknown"
+}
+
 // hostOnlyMethods are mutating RPCs that disrupt room control and therefore
 // require the caller to be the room's host (RFC-0005 U4).
 // queue.add and room.join are always allowed for members.
@@ -1310,8 +1350,9 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 	}
 	d := time.Since(start)
 
+	label := metricMethod(method)
 	if h.metrics != nil {
-		h.metrics.ObserveRPC(method, rpcMetricStatus(err), d)
+		h.metrics.ObserveRPC(label, rpcMetricStatus(err), d)
 	}
 	if h.logger != nil {
 		var probe struct {
@@ -1319,7 +1360,7 @@ func (h *Hub) handleRPC(method string, data []byte, clientID, userID string) (js
 		}
 		_ = json.Unmarshal(data, &probe)
 		attrs := []any{
-			"method", method,
+			"method", label,
 			"room_id", probe.RoomID,
 			"duration_ms", float64(d.Microseconds()) / 1000.0,
 		}
