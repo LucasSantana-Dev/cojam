@@ -552,10 +552,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-4">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 md:gap-y-3">
             <div className="space-y-1 min-w-0">
-              <h1 className="text-2xl font-bold inline-flex items-center gap-2">
-                {/* Flows only while (re)connecting: colors moving = syncing. */}
-                <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
-              </h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold inline-flex items-center gap-2">
+                  {/* Flows only while (re)connecting: colors moving = syncing. */}
+                  <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
+                </h1>
+                <ReportRoomButton roomId={roomId} variant="icon" />
+              </div>
               <p className="text-sm flex items-center gap-2 flex-wrap" style={{ color: 'var(--color-text-secondary)' }}>
                 <span>Room</span>
                 <span className="room-code-chip">{roomId}</span>
@@ -567,7 +570,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <div className="room-header-controls flex items-center gap-2 md:gap-3 flex-wrap">
               <PresenceBar roomId={roomId} canControl={hostControl} />
               <ShareRoomButton />
-              <ReportRoomButton roomId={roomId} />
+              <ReportRoomButton roomId={roomId} variant="text" />
               {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
               {hostControl && f.publicRooms && <PublicRoomToggle roomId={roomId} />}
               {accountsEnabled && (

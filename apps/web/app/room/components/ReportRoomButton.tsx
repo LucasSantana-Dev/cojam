@@ -3,8 +3,19 @@
 import { useReportDialog } from '@/app/components/useReportDialog';
 
 // Report this room (#259). Visible to everyone in the room, guests included.
-export function ReportRoomButton({ roomId }: { roomId: string }) {
+// Two presentations of the same action: an icon-only button beside the title
+// on phones (the sticky header must stay one short band, and the .room-header
+// rule in globals.css gives it a 44px target), and a text button in the
+// controls row from md up. Each owns its dialog; only one is ever displayed.
+export function ReportRoomButton({
+  roomId,
+  variant,
+}: {
+  roomId: string;
+  variant: 'icon' | 'text';
+}) {
   const report = useReportDialog();
+  const icon = variant === 'icon';
   return (
     <>
       <button
@@ -12,13 +23,14 @@ export function ReportRoomButton({ roomId }: { roomId: string }) {
         onClick={() => report.open({ roomId, kind: 'room' })}
         aria-label="Denunciar sala"
         title="Denunciar sala"
-        className="report-room-btn inline-flex items-center justify-center text-sm md:underline"
+        className={
+          icon
+            ? 'report-room-btn md:hidden inline-flex items-center justify-center text-sm'
+            : 'report-room-btn hidden md:inline-flex items-center text-sm underline'
+        }
         style={{ color: 'var(--color-text-secondary)' }}
       >
-        {/* Phone: icon only, so the sticky header stays one short band. The
-            44px target comes from the .room-header rule in globals.css. */}
-        <span aria-hidden className="md:hidden">⚑</span>
-        <span className="hidden md:inline">Denunciar sala</span>
+        {icon ? <span aria-hidden>⚑</span> : 'Denunciar sala'}
       </button>
       {report.dialog}
     </>
