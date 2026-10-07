@@ -10,16 +10,16 @@ async function join(page: Page, roomId: string, name: string) {
   await proxyConnectionToken(page);
   await page.goto(`/room/${roomId}`);
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Your name').fill(name);
-  await page.getByRole('button', { name: 'Join & Play' }).click();
-  await expect(page.getByText(`you’re ${name}`)).toBeVisible();
+  await page.getByPlaceholder('Seu nome').fill(name);
+  await page.getByRole('button', { name: 'Entrar na sala' }).click();
+  await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
 async function makePublic(page: Page, label: string) {
-  await page.getByRole('checkbox', { name: 'Public' }).click();
-  await expect(page.getByRole('checkbox', { name: 'Public' })).toBeChecked();
-  await page.getByLabel('Public room label').fill(label);
-  await page.getByLabel('Public room label').press('Enter');
+  await page.getByRole('checkbox', { name: 'Pública' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Pública' })).toBeChecked();
+  await page.getByLabel('Nome da sala pública').fill(label);
+  await page.getByLabel('Nome da sala pública').press('Enter');
 }
 
 test('/rooms lists public rooms only, filters by search and reorders by sort', async ({ browser }) => {

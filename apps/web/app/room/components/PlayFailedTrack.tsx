@@ -2,10 +2,10 @@ export function PlayFailedTrack() {
   return (
     <div className="hero-unavailable">
       <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>
-        Couldn&apos;t play this track on your service
+        Não deu para tocar esta faixa no seu serviço
       </p>
       <p className="text-sm mt-2" style={{ color: 'var(--color-text-secondary)' }}>
-        The track may be removed or restricted on your connected provider. Others in the room may still be listening.
+        A faixa pode ter sido removida ou estar restrita no serviço conectado. Outras pessoas na sala ainda podem estar ouvindo.
       </p>
     </div>
   );

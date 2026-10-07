@@ -120,7 +120,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       setSearchQuery('');
       setSearchResults([]);
     } catch (err) {
-      setError(rpcErrorMessage(err, 'Couldn\'t add that track. Try again.'));
+      setError(rpcErrorMessage(err, 'Não deu para adicionar esta faixa. Tente de novo.'));
     } finally {
       setLoading(false);
     }
@@ -134,12 +134,12 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
     // surfaced inline, not silently dropped.
     const ytId = videoId.trim() ? parseYouTube(videoId) : null;
     if (videoId.trim() && !ytId) {
-      setError("Couldn't read that YouTube link - paste a YouTube link or 11-character video ID.");
+      setError("Não deu para ler esse link do YouTube. Cole um link do YouTube ou um ID de vídeo de 11 caracteres.");
       return;
     }
     const spUri = spotifyUri.trim() ? parseSpotify(spotifyUri) : null;
     if (spotifyUri.trim() && !spUri) {
-      setError("Couldn't read that Spotify link - paste a Spotify track link or URI.");
+      setError("Não deu para ler esse link do Spotify. Cole um link de faixa do Spotify ou um URI.");
       return;
     }
     setError('');
@@ -169,7 +169,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       setAppleSongId('');
       setSpotifyUri('');
     } catch (err) {
-      setError(rpcErrorMessage(err, 'Couldn\'t add that track. Try again.'));
+      setError(rpcErrorMessage(err, 'Não deu para adicionar esta faixa. Tente de novo.'));
     } finally {
       setLoading(false);
     }
@@ -190,12 +190,12 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       // firing a doomed server RPC (the old else-branch failed opaquely).
       const plan = planPlaylistImport(playlistUrl, isSpotifyAuthed());
       if (plan.route === 'spotify-needs-auth') {
-        throw new Error('Connect Spotify to import Spotify playlists.');
+        throw new Error('Conecte o Spotify para importar playlists do Spotify.');
       }
       if (plan.route === 'spotify-client') {
         if (!canReadPlaylists()) {
           // Token predates the playlist-read scopes; only a fresh consent helps.
-          throw new Error('Reconnect Spotify to import playlists (a new permission is required).');
+          throw new Error('Reconecte o Spotify para importar playlists (é preciso uma nova permissão).');
         }
         const tracks = await fetchSpotifyPlaylistTracks(plan.playlistId);
         await importPlaylist(roomId, playlistUrl, name, tracks);
@@ -203,10 +203,10 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
         await importPlaylist(roomId, playlistUrl, name);
       }
       setPlaylistUrl('');
-      setPlaylistSuccess('Playlist tracks added to queue');
+      setPlaylistSuccess('Faixas da playlist adicionadas à fila');
       setTimeout(() => setPlaylistSuccess(''), 3000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to import playlist';
+      const message = err instanceof Error ? err.message : 'Não foi possível importar a playlist';
       setPlaylistError(message);
       setImportErrorShake(true);
       setTimeout(() => setImportErrorShake(false), 600);
@@ -218,15 +218,15 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
   return (
     <div className="panel p-6 space-y-4">
       <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-        Add Track
+        Adicionar música
       </h3>
 
       <div className="space-y-2">
         <div className="relative">
           <input
             type="text"
-            placeholder="Search for a song"
-            aria-label="Search for a song"
+            placeholder="Buscar uma música"
+            aria-label="Buscar uma música"
             value={searchQuery}
             onChange={(e) => {
               const q = e.target.value;
@@ -322,8 +322,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               <div className="p-4 text-center space-y-2">
                 <p role="alert" className="text-sm" style={{ color: 'var(--color-status-error)' }}>
                   {searchError === 'rate-limit'
-                    ? 'Too many searches. Slow down and try again in a moment.'
-                    : 'Search failed. Check your connection and try again.'}
+                    ? 'Muitas buscas seguidas. Aguarde um instante e tente de novo.'
+                    : 'A busca falhou. Confira sua conexão e tente de novo.'}
                 </p>
                 <button
                   type="button"
@@ -331,7 +331,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none border"
                   style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
                 >
-                  Try again
+                  Tentar de novo
                 </button>
               </div>
             )}
@@ -339,7 +339,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
             {!isSearching && !searchError && searchResults.length === 0 && (
               <div className="p-4 text-center">
                 <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                  No matches found. Try a different search, or add manually.
+                  Nada encontrado. Tente outra busca ou adicione manualmente.
                 </p>
               </div>
             )}
@@ -349,7 +349,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
         {/* Empty state: before any typing */}
         {!searchQuery && (
           <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            Start typing to search...
+            Digite para buscar...
           </p>
         )}
       </div>
@@ -357,14 +357,14 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       <div className="pt-3 border-t" style={{ borderColor: 'var(--color-border)' }}>
         <form onSubmit={handlePlaylistImport} className="space-y-2">
           <label className="block text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-            Import a playlist
+            Importar uma playlist
           </label>
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <input
                 type="url"
-                placeholder="Paste playlist link"
-                aria-label="Playlist URL"
+                placeholder="Cole o link da playlist"
+                aria-label="Link da playlist"
                 value={playlistUrl}
                 onChange={(e) => setPlaylistUrl(e.target.value)}
                 className={`w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150${importErrorShake ? ' import-error-shake' : ''}`}
@@ -383,7 +383,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 focus:outline-none whitespace-nowrap"
               style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
             >
-              {playlistLoading ? 'Importing...' : 'Import'}
+              {playlistLoading ? 'Importando...' : 'Importar'}
             </button>
           </div>
           {playlistError && (
@@ -407,13 +407,13 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
 
       <details className="cursor-pointer">
         <summary className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-          Add manually
+          Adicionar manualmente
         </summary>
         <form onSubmit={handleSubmit} className="space-y-3 mt-3 pt-3 border-t" style={{ borderColor: 'var(--color-border)' }}>
           <input
             type="text"
-            placeholder="Title"
-            aria-label="Title"
+            placeholder="Título"
+            aria-label="Título"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
@@ -421,8 +421,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
           />
           <input
             type="text"
-            placeholder="Artist"
-            aria-label="Artist"
+            placeholder="Artista"
+            aria-label="Artista"
             value={artist}
             onChange={(e) => setArtist(e.target.value)}
             className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
@@ -432,8 +432,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
           {f.youtube && (
             <input
               type="text"
-              placeholder="YouTube link or video ID (optional)"
-              aria-label="YouTube link or video ID (optional)"
+              placeholder="Link do YouTube ou ID do vídeo (opcional)"
+              aria-label="Link do YouTube ou ID do vídeo (opcional)"
               value={videoId}
               onChange={(e) => setVideoId(e.target.value)}
               className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
@@ -443,8 +443,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
           {f.apple && (
             <input
               type="text"
-              placeholder="Apple Music Song ID (optional)"
-              aria-label="Apple Music Song ID (optional)"
+              placeholder="ID da música no Apple Music (opcional)"
+              aria-label="ID da música no Apple Music (opcional)"
               value={appleSongId}
               onChange={(e) => setAppleSongId(e.target.value)}
               className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
@@ -454,8 +454,8 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
           {f.spotify && (
             <input
               type="text"
-              placeholder="Spotify link or track URI (optional)"
-              aria-label="Spotify link or track URI (optional)"
+              placeholder="Link do Spotify ou URI da faixa (opcional)"
+              aria-label="Link do Spotify ou URI da faixa (opcional)"
               value={spotifyUri}
               onChange={(e) => setSpotifyUri(e.target.value)}
               className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
@@ -469,7 +469,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
             className="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 focus:outline-none"
             style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
           >
-            {loading ? 'Adding...' : 'Add to Queue'}
+            {loading ? 'Adicionando...' : 'Adicionar à fila'}
           </button>
         </form>
       </details>

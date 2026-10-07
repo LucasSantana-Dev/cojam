@@ -47,7 +47,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
         const result = await fetchTrackDepth(roomId, track.isrc || '', track.title, track.artist);
         if (!cancelled) setData(result);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch track details');
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Não foi possível carregar os detalhes da faixa');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -82,14 +82,14 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
         ref={containerRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`Track details for ${track.title}`}
+        aria-label={`Detalhes de ${track.title}`}
       >
         {/* Header */}
         <div className="flex-shrink-0 px-6 py-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-accent)', letterSpacing: '0.15em' }}>
-                Track Depth
+                Sobre a faixa
               </p>
               <h2 className="text-lg font-semibold mt-1 truncate" style={{ color: 'var(--color-text-primary)' }}>
                 {track.title}
@@ -102,7 +102,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
               onClick={onClose}
               className="flex-shrink-0 p-2 rounded-lg hover:opacity-70 transition-opacity"
               style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              aria-label="Close track details"
+              aria-label="Fechar detalhes"
             >
               ✕
             </button>
@@ -135,23 +135,23 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
           <dl className="meta-rail">
             <div className="meta-rail__row">
               <dt>ISRC</dt>
-              <dd>{track.isrc || 'Unknown'}</dd>
+              <dd>{track.isrc || 'Desconhecido'}</dd>
             </div>
             <div className="meta-rail__row">
-              <dt>Duration</dt>
-              <dd>{track.durationMs != null ? formatTime(track.durationMs) : 'Unknown'}</dd>
+              <dt>Duração</dt>
+              <dd>{track.durationMs != null ? formatTime(track.durationMs) : 'Desconhecido'}</dd>
             </div>
             <div className="meta-rail__row">
-              <dt>Added by</dt>
+              <dt>Adicionada por</dt>
               <dd>{track.addedBy}</dd>
             </div>
             <div className="meta-rail__row">
-              <dt>Services</dt>
+              <dt>Serviços</dt>
               <dd>
                 {(['youtube', 'spotify', 'apple'] as const)
                   .filter((s) => track.sources[s])
                   .map((s) => (s === 'youtube' ? 'YouTube' : s === 'spotify' ? 'Spotify' : 'Apple'))
-                  .join(' · ') || 'None'}
+                  .join(' · ') || 'Nenhum'}
               </dd>
             </div>
           </dl>
@@ -162,7 +162,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
               {data.credits && data.credits.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold mb-2 uppercase" style={{ color: 'var(--color-accent)', letterSpacing: '0.05em' }}>
-                    Credits
+                    Créditos
                   </h3>
                   <div className="space-y-2">
                     {data.credits.map((credit, idx: number) => (
@@ -181,18 +181,18 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
               {(data.releaseYear || data.label) && (
                 <div>
                   <h3 className="text-sm font-semibold mb-2 uppercase" style={{ color: 'var(--color-accent)', letterSpacing: '0.05em' }}>
-                    Release
+                    Lançamento
                   </h3>
                   <div className="space-y-1 text-sm">
                     {data.releaseYear && (
                       <p style={{ color: 'var(--color-text-primary)' }}>
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Year: </span>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Ano: </span>
                         {data.releaseYear}
                       </p>
                     )}
                     {data.label && (
                       <p style={{ color: 'var(--color-text-primary)' }}>
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Label: </span>
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Selo: </span>
                         {data.label}
                       </p>
                     )}
@@ -223,14 +223,14 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
               {/* No data state */}
               {(!data.credits || data.credits.length === 0) && !data.releaseYear && !data.label && (!data.tags || data.tags.length === 0) && (
                 <div style={{ color: 'var(--color-text-secondary)' }}>
-                  <p className="text-sm">No deeper data for this track yet.</p>
+                  <p className="text-sm">Ainda não há mais dados sobre esta faixa.</p>
                 </div>
               )}
 
               {/* Source attribution */}
               <div className="pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
                 <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  Data from MusicBrainz
+                  Dados do MusicBrainz
                 </p>
               </div>
             </>

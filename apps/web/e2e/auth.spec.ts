@@ -18,21 +18,21 @@ async function join(page: Page, roomId: string, name: string) {
   await page.goto(`/room/${roomId}`);
   // Waiting-room card shows the room code in a chip ("You're about to join <CODE>").
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Your name').fill(name);
-  await page.getByRole('button', { name: 'Join & Play' }).click();
-  // Joined header shows the room-code chip + "you're <name>" (see RoomClient header).
-  await expect(page.getByText(`you\u2019re ${name}`)).toBeVisible();
+  await page.getByPlaceholder('Seu nome').fill(name);
+  await page.getByRole('button', { name: 'Entrar na sala' }).click();
+  // Joined header shows the room-code chip + "você é <name>" (see RoomClient header).
+  await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
 async function addTrack(page: Page, title: string, artist: string) {
-  // Open the "Add manually" details element using JavaScript to ensure it opens
+  // Open the "Adicionar manualmente" details element using JavaScript to ensure it opens
   await page.evaluate(() => {
     const details = document.querySelector('details');
     if (details) details.open = true;
   });
-  await page.getByPlaceholder('Title').fill(title);
-  await page.getByPlaceholder('Artist').fill(artist);
-  await page.getByRole('button', { name: 'Add to Queue' }).click();
+  await page.getByPlaceholder('Título').fill(title);
+  await page.getByPlaceholder('Artista').fill(artist);
+  await page.getByRole('button', { name: 'Adicionar à fila' }).click();
   // Wait for the add to land (queue shows the title) before returning.
   await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
 }
@@ -51,19 +51,19 @@ test('room auth: listener sees host-only controls disabled, host sees them enabl
   await addTrack(host, 'Beta', 'B-Two');
 
   // Host: queue controls are enabled.
-  await expect(host.getByRole('button', { name: 'Play' }).first()).toBeEnabled();
-  await expect(host.getByRole('button', { name: 'Remove' }).first()).toBeEnabled();
-  await expect(host.getByRole('button', { name: 'Move up' }).nth(1)).toBeEnabled();
-  await expect(host.getByRole('button', { name: 'Move down' }).first()).toBeEnabled();
+  await expect(host.getByRole('button', { name: 'Tocar' }).first()).toBeEnabled();
+  await expect(host.getByRole('button', { name: 'Remover' }).first()).toBeEnabled();
+  await expect(host.getByRole('button', { name: 'Mover para cima' }).nth(1)).toBeEnabled();
+  await expect(host.getByRole('button', { name: 'Mover para baixo' }).first()).toBeEnabled();
 
   // Listener: the same controls render but stay disabled and say why (gating
   // is disabled={!canControl} in QueuePanel, driven by room/[id]/client.tsx).
-  await expect(listener.getByRole('button', { name: 'Play' }).first()).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Remove' }).first()).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Move up' }).nth(1)).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Move down' }).first()).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Remove' }).first())
-    .toHaveAttribute('title', 'Only the host can remove tracks');
+  await expect(listener.getByRole('button', { name: 'Tocar' }).first()).toBeDisabled();
+  await expect(listener.getByRole('button', { name: 'Remover' }).first()).toBeDisabled();
+  await expect(listener.getByRole('button', { name: 'Mover para cima' }).nth(1)).toBeDisabled();
+  await expect(listener.getByRole('button', { name: 'Mover para baixo' }).first()).toBeDisabled();
+  await expect(listener.getByRole('button', { name: 'Remover' }).first())
+    .toHaveAttribute('title', 'Só o anfitrião pode remover faixas');
 
   // Listeners can still add to the queue: membership-gated, not host-gated.
   await addTrack(listener, 'Listener Song', 'Someone');

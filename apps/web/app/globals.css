@@ -36,12 +36,17 @@
      -soft is for inline form errors, which sit on a card and need the extra
      contrast headroom (7.19:1 vs 4.55:1 for the base token). */
   --color-status-error-soft: oklch(0.711 0.166 22);  /* was #f87171 */
-  --color-status-ok: oklch(0.871 0.136 152);         /* was #86efac, accent-2 hue */
+  /* Success feedback is not LIVE, so it must not be green (green = LIVE only,
+     accent-roles ADR). Same lightness as before, on the violet accent hue. */
+  --color-status-ok: oklch(0.871 0.09 300);
   /* Member and provider identity scale. Three fixed hues, previously duplicated
      as six literals across page.tsx and RoomShowcase.tsx with no definition. */
   --color-ident-1: oklch(0.654 0.211 296.6);    /* was #a06bff */
   --color-ident-2: oklch(0.714 0.143 254.6);    /* was #60a5fa */
-  --color-ident-3: oklch(0.773 0.153 163.2);    /* was #34d399 */
+  /* Hue 345 (rose). Was 163 (green), which broke green = LIVE only. 345 is
+     clear of violet 296, blue 254, green ~150, amber 55 and red 25, and sits at
+     the sibling lightness/chroma so dark initials keep far more than 4.5:1. */
+  --color-ident-3: oklch(0.773 0.153 345);
   /* Motion tokens (premium timing band). Enter = decelerate; never linear for UI. */
   --dur-micro: 160ms;
   --dur-base: 320ms;
@@ -837,7 +842,7 @@ input:focus, textarea:focus, select:focus {
 }
 .hero-ticker__track span { display: inline-flex; align-items: center; gap: 2.5rem; }
 .hero-ticker__track b {
-  color: var(--color-accent-2);
+  color: var(--color-accent);
   font-weight: 400;
 }
 @keyframes ticker-scroll {
@@ -1221,7 +1226,7 @@ input:focus, textarea:focus, select:focus {
 .live-room-card__join {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--color-accent-2);
+  color: var(--color-accent);
 }
 
 /* Strip header + /rooms page (#306). Reuses the .live-room-card language. */
@@ -1236,7 +1241,7 @@ input:focus, textarea:focus, select:focus {
 .live-rooms__all {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--color-accent-2);
+  color: var(--color-accent);
   text-decoration: none;
 }
 .live-rooms__all:hover { text-decoration: underline; }

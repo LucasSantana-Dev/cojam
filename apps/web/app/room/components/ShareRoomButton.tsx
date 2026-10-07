@@ -39,12 +39,12 @@ export function ShareRoomButton() {
   return (
     <button
       onClick={copy}
-      aria-label={copied ? 'Invite link copied' : 'Copy invite link'}
+      aria-label={copied ? 'Link de convite copiado' : 'Copiar link de convite'}
       className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
       style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)' }}
     >
       {copied ? <CheckIcon size={16} /> : <LinkIcon size={16} />}
-      {copied ? 'Copied' : 'Invite'}
+      {copied ? 'Copiado' : 'Convidar'}
     </button>
   );
 }

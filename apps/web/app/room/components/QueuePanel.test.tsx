@@ -105,10 +105,10 @@ describe('QueuePanel undo window', () => {
     vi.useRealTimers();
   });
 
-  it('toggles a row\'s secondary actions from the phone "More actions" button (#289)', () => {
+  it('toggles a row\'s secondary actions from the phone "Mais ações" button (#289)', () => {
     render(<QueuePanel roomId="r1" canControl />);
     const row = screen.getByTestId('queue-item');
-    const more = within(row).getByRole('button', { name: 'More actions' });
+    const more = within(row).getByRole('button', { name: 'Mais ações' });
 
     expect(row).toHaveAttribute('data-more', 'false');
     expect(more).toHaveAttribute('aria-expanded', 'false');
@@ -122,20 +122,20 @@ describe('QueuePanel undo window', () => {
   it('opens the undo window on Remove without calling queue.remove yet', () => {
     render(<QueuePanel roomId="r1" canControl />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
 
-    expect(screen.getByText('Removed First Song')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(screen.getByText('Removida: First Song')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Desfazer' })).toBeInTheDocument();
     expect(rpcMocks.queueRemove).not.toHaveBeenCalled();
   });
 
   it('cancels the removal when Undo is clicked inside the window', async () => {
     render(<QueuePanel roomId="r1" canControl />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Desfazer' }));
 
-    expect(screen.queryByText('Removed First Song')).not.toBeInTheDocument();
+    expect(screen.queryByText('Removida: First Song')).not.toBeInTheDocument();
 
     // The pending 4s timer must have been cleared: no RPC fires on expiry.
     await act(async () => {
@@ -147,21 +147,21 @@ describe('QueuePanel undo window', () => {
   it('calls queue.remove when the window expires without Undo', async () => {
     render(<QueuePanel roomId="r1" canControl />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4000);
     });
 
     expect(rpcMocks.queueRemove).toHaveBeenCalledWith('r1', 't1');
-    expect(screen.queryByText('Removed First Song')).not.toBeInTheDocument();
+    expect(screen.queryByText('Removida: First Song')).not.toBeInTheDocument();
   });
 
   // #179: the window must not race concurrent room activity.
   it('cancels the pending remove when the track becomes now playing', async () => {
     render(<QueuePanel roomId="r1" canControl />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
+    expect(screen.getByRole('button', { name: 'Desfazer' })).toBeInTheDocument();
 
     // The track starts playing mid-window: the pending removal is cancelled
     // and the undo affordance clears.
@@ -170,7 +170,7 @@ describe('QueuePanel undo window', () => {
         state: { ...roomState([track('t1', 'First Song')]), nowPlayingId: 't1', version: 2 },
       });
     });
-    expect(screen.queryByText('Removed First Song')).not.toBeInTheDocument();
+    expect(screen.queryByText('Removida: First Song')).not.toBeInTheDocument();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
@@ -188,15 +188,15 @@ describe('QueuePanel undo window', () => {
     render(<QueuePanel roomId="r1" canControl />);
 
     const rows = screen.getAllByTestId('queue-item');
-    fireEvent.click(within(rows[1]).getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(rows[1]).getByRole('button', { name: 'Remover' }));
 
     // The pending row's interactions are disabled (move-up would otherwise be
     // enabled for the second row), the unaffected row stays interactive.
-    const vote = within(rows[1]).getByRole('button', { name: 'Vote' });
+    const vote = within(rows[1]).getByRole('button', { name: 'Votar' });
     expect(vote).toBeDisabled();
-    expect(within(rows[1]).getByRole('button', { name: 'Play' })).toBeDisabled();
-    expect(within(rows[1]).getByRole('button', { name: 'Move up' })).toBeDisabled();
-    expect(within(rows[0]).getByRole('button', { name: 'Vote' })).toBeEnabled();
+    expect(within(rows[1]).getByRole('button', { name: 'Tocar' })).toBeDisabled();
+    expect(within(rows[1]).getByRole('button', { name: 'Mover para cima' })).toBeDisabled();
+    expect(within(rows[0]).getByRole('button', { name: 'Votar' })).toBeEnabled();
 
     // A dispatched click on the blocked row still reaches no RPC.
     fireEvent.click(vote);
@@ -209,7 +209,7 @@ describe('QueuePanel undo window', () => {
     rpcMocks.queueRemove.mockRejectedValueOnce({ code: 400, message: 'track not found' });
     render(<QueuePanel roomId="r1" canControl />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4000);
     });
@@ -222,7 +222,7 @@ describe('QueuePanel undo window', () => {
     rpcMocks.queueRemove.mockRejectedValueOnce(new Error('connection closed'));
     render(<QueuePanel roomId="r1" canControl />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4000);
     });
@@ -261,7 +261,7 @@ describe('QueuePanel voting (F4)', () => {
     render(<QueuePanel roomId="r1" canControl={false} />);
 
     const rows = screen.getAllByTestId('queue-item');
-    expect(screen.getAllByRole('button', { name: 'Vote' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Votar' })).toHaveLength(2);
     expect(within(rows[0]).getByTestId('vote-count')).toHaveTextContent('0');
     expect(within(rows[1]).getByTestId('vote-count')).toHaveTextContent('2');
   });
@@ -270,7 +270,7 @@ describe('QueuePanel voting (F4)', () => {
     setQueueVotingEnv(false);
     render(<QueuePanel roomId="r1" canControl />);
 
-    expect(screen.queryByRole('button', { name: 'Vote' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Votar' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('vote-count')).not.toBeInTheDocument();
   });
 
@@ -278,13 +278,13 @@ describe('QueuePanel voting (F4)', () => {
     useStore.setState({ connected: false });
     render(<QueuePanel roomId="r1" canControl />);
 
-    expect(screen.getAllByRole('button', { name: 'Vote' })[0]).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Votar' })[0]).toBeDisabled();
   });
 
   it('marks the track voted only after the RPC succeeds', async () => {
     render(<QueuePanel roomId="r1" canControl />);
     const row = screen.getAllByTestId('queue-item')[0];
-    const button = within(row).getByRole('button', { name: 'Vote' });
+    const button = within(row).getByRole('button', { name: 'Votar' });
 
     fireEvent.click(button);
 
@@ -298,12 +298,12 @@ describe('QueuePanel voting (F4)', () => {
     render(<QueuePanel roomId="r1" canControl />);
     const row = screen.getAllByTestId('queue-item')[0];
 
-    fireEvent.click(within(row).getByRole('button', { name: 'Vote' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Votar' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('too many requests, slow down');
     expect(useStore.getState().myVotes.t1).toBeUndefined();
-    expect(within(row).getByRole('button', { name: 'Vote' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(row).getByRole('button', { name: 'Votar' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('restores the pressed state after a reload, so toggling un-votes (#188)', async () => {
@@ -314,7 +314,7 @@ describe('QueuePanel voting (F4)', () => {
     render(<QueuePanel roomId="r1" canControl />);
 
     const rows = screen.getAllByTestId('queue-item');
-    const button = within(rows[1]).getByRole('button', { name: 'Vote' });
+    const button = within(rows[1]).getByRole('button', { name: 'Votar' });
     expect(button).toHaveAttribute('aria-pressed', 'true');
 
     // The control is no longer inverted: clicking a pressed button removes

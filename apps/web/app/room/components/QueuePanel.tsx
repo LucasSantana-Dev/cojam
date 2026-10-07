@@ -31,7 +31,7 @@ function formatTotal(ms: number): string {
   if (totalMin < 1) return '< 1 min';
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  return h > 0 ? `${h} hr ${m.toString().padStart(2, '0')} min` : `${m} min`;
+  return h > 0 ? `${h} h ${m.toString().padStart(2, '0')} min` : `${m} min`;
 }
 
 // queueArtwork resolves the row thumb: the stored artwork URL first (search
@@ -120,7 +120,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
       // state, so a rejection (rate limit, disconnect) leaves it alone.
       markVoted(trackId, voted);
     } catch (err) {
-      setActionError(rpcErrorMessage(err, 'Couldn\'t vote for that track. Try again.'));
+      setActionError(rpcErrorMessage(err, 'Não deu para votar nesta faixa. Tente de novo.'));
     }
   };
 
@@ -159,7 +159,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
         if (!isTrackNotFoundError(error)) {
           // Disconnected/unauthorized: the track stays; restore and say why.
           console.error('queue.remove failed:', error);
-          setActionError(rpcErrorMessage(error, 'Couldn\'t remove that track. Try again.'));
+          setActionError(rpcErrorMessage(error, 'Não deu para remover esta faixa. Tente de novo.'));
         }
       } finally {
         timersRef.current.delete(trackId);
@@ -204,7 +204,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     try {
       await nowPlayingSet(roomId, trackId);
     } catch (err) {
-      setActionError(rpcErrorMessage(err, 'Couldn\'t play that track. Try again.'));
+      setActionError(rpcErrorMessage(err, 'Não deu para tocar esta faixa. Tente de novo.'));
     }
   };
 
@@ -214,7 +214,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     try {
       await queueReorder(roomId, trackId, toIndex);
     } catch (err) {
-      setActionError(rpcErrorMessage(err, 'Couldn\'t reorder the queue. Try again.'));
+      setActionError(rpcErrorMessage(err, 'Não deu para reordenar a fila. Tente de novo.'));
     }
   };
 
@@ -241,9 +241,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   const contributors = new Set(queue.map((t) => t.addedBy)).size;
   const isPlaying = state?.transport?.state === 'playing';
   const aggregate = [
-    `${queue.length} ${queue.length === 1 ? 'track' : 'tracks'}`,
+    `${queue.length} ${queue.length === 1 ? 'faixa' : 'faixas'}`,
     allDurationsKnown ? formatTotal(totalDurationMs) : null,
-    `${contributors} ${contributors === 1 ? 'contributor' : 'contributors'}`,
+    `${contributors} ${contributors === 1 ? 'colaborador' : 'colaboradores'}`,
   ].filter(Boolean).join(' · ');
 
   // Listeners' pick (F4): the queued track with the most votes, excluding now
@@ -269,7 +269,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     <div className="panel p-6 space-y-4 h-fit lg:sticky lg:top-24 z-10">
       <div>
         <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          Queue
+          Fila
         </h3>
         {queue.length > 0 && <p className="queue-agg">{aggregate}</p>}
       </div>
@@ -286,10 +286,10 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
             <MusicNoteIcon size={28} />
           </div>
           <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            Queue is empty
+            A fila está vazia
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-            Add a track to get started
+            Adicione uma faixa para começar
           </p>
         </div>
       ) : (
@@ -299,7 +299,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
             // #179: during the undo window the row is marked pending-removal
             // and every interaction on it is disabled (Undo stays live).
             const isRemoving = removingIds.has(track.id);
-            const pendingTitle = 'Removal pending — Undo to restore';
+            const pendingTitle = 'Remoção pendente. Desfaça para restaurar';
             return (
             <div
               key={track.id}
@@ -356,9 +356,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                         data-testid="listeners-pick"
                         className="inline-flex items-center text-xs font-semibold flex-shrink-0"
                         style={{ color: 'var(--color-accent)' }}
-                        title="Most upvoted by listeners"
+                        title="Mais votada pelos ouvintes"
                       >
-                        Listeners&rsquo; pick
+                        Escolha dos ouvintes
                       </span>
                     )}
                   </div>
@@ -367,7 +367,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                     {track.sources.youtube && (
                       <span
                         className="badge-source badge-youtube inline-flex items-center flex-shrink-0"
-                        title={`YouTube match ${Math.round(track.sources.youtube.confidence * 100)}%`}
+                        title={`Correspondência no YouTube ${Math.round(track.sources.youtube.confidence * 100)}%`}
                       >
                         <YouTubeIcon size={10} />
                       </span>
@@ -375,7 +375,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                     {track.sources.apple && (
                       <span
                         className="badge-source badge-apple inline-flex items-center flex-shrink-0"
-                        title={`Apple Music match ${Math.round(track.sources.apple.confidence * 100)}%`}
+                        title={`Correspondência no Apple Music ${Math.round(track.sources.apple.confidence * 100)}%`}
                       >
                         <AppleMusicIcon size={10} />
                       </span>
@@ -383,7 +383,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                     {track.sources.spotify && (
                       <span
                         className="badge-source badge-spotify inline-flex items-center flex-shrink-0"
-                        title={`Spotify match ${Math.round(track.sources.spotify.confidence * 100)}%`}
+                        title={`Correspondência no Spotify ${Math.round(track.sources.spotify.confidence * 100)}%`}
                       >
                         <SpotifyIcon size={10} />
                       </span>
@@ -419,9 +419,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                   <button
                     onClick={() => handleVote(track.id)}
                     disabled={!connected || isRemoving}
-                    aria-label="Vote"
+                    aria-label="Votar"
                     aria-pressed={Boolean(myVotes[track.id])}
-                    title={isRemoving ? pendingTitle : myVotes[track.id] ? 'Remove your vote' : 'Vote for this track'}
+                    title={isRemoving ? pendingTitle : myVotes[track.id] ? 'Remover seu voto' : 'Votar nesta faixa'}
                     className="p-1.5 rounded transition-all duration-150 hover:brightness-110 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 flex-shrink-0"
                     style={{
                       backgroundColor: myVotes[track.id] ? 'var(--color-accent)' : 'var(--color-surface-3)',
@@ -440,9 +440,9 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                 <button
                   type="button"
                   onClick={() => setMoreOpenId((cur) => (cur === track.id ? null : track.id))}
-                  aria-label="More actions"
+                  aria-label="Mais ações"
                   aria-expanded={moreOpenId === track.id}
-                  title="More actions"
+                  title="Mais ações"
                   className="queue-more p-1.5 rounded flex items-center justify-center flex-shrink-0"
                   style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
                 >
@@ -454,8 +454,8 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                   <button
                     onClick={() => handlePlay(track.id)}
                     disabled={!canControl || isRemoving}
-                    aria-label="Play"
-                    title={isRemoving ? pendingTitle : canControl ? 'Play' : 'Only the host can play tracks'}
+                    aria-label="Tocar"
+                    title={isRemoving ? pendingTitle : canControl ? 'Tocar' : 'Só o anfitrião pode tocar faixas'}
                     className="p-1.5 rounded transition-all duration-150 hover:brightness-110 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
                   >
@@ -464,8 +464,8 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                   <button
                     onClick={() => handleMoveUp(track.id, index)}
                     disabled={index === 0 || !canControl || isRemoving}
-                    aria-label="Move up"
-                    title={isRemoving ? pendingTitle : canControl ? 'Move up' : 'Only the host can reorder tracks'}
+                    aria-label="Mover para cima"
+                    title={isRemoving ? pendingTitle : canControl ? 'Mover para cima' : 'Só o anfitrião pode reordenar faixas'}
                     className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
                   >
@@ -474,8 +474,8 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                   <button
                     onClick={() => handleMoveDown(track.id, index)}
                     disabled={index === queue.length - 1 || !canControl || isRemoving}
-                    aria-label="Move down"
-                    title={isRemoving ? pendingTitle : canControl ? 'Move down' : 'Only the host can reorder tracks'}
+                    aria-label="Mover para baixo"
+                    title={isRemoving ? pendingTitle : canControl ? 'Mover para baixo' : 'Só o anfitrião pode reordenar faixas'}
                     className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
                   >
@@ -484,8 +484,8 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
                   <button
                     onClick={() => handleRemove(track.id)}
                     disabled={!canControl || isRemoving}
-                    aria-label="Remove"
-                    title={isRemoving ? pendingTitle : canControl ? 'Remove' : 'Only the host can remove tracks'}
+                    aria-label="Remover"
+                    title={isRemoving ? pendingTitle : canControl ? 'Remover' : 'Só o anfitrião pode remover faixas'}
                     className="p-1.5 rounded transition-all duration-150 hover:opacity-70 active:scale-90 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--color-surface-3)', color: 'var(--color-text-primary)' }}
                   >
@@ -497,14 +497,14 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
               {removingIds.has(track.id) && (
                 <div className="undo-affordance w-full flex items-center justify-between">
                   <span style={{ color: 'var(--color-text-secondary)' }}>
-                    Removed {track.title.length > 30 ? track.title.slice(0, 27) + '...' : track.title}
+                    Removida: {track.title.length > 30 ? track.title.slice(0, 27) + '...' : track.title}
                   </span>
                   <button
                     onClick={() => handleUndo(track.id)}
                     className="text-xs font-semibold px-2 py-1 rounded transition-all duration-150 hover:brightness-110"
                     style={{ color: 'var(--color-accent)' }}
                   >
-                    Undo
+                    Desfazer
                   </button>
                 </div>
               )}

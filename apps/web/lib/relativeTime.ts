@@ -5,10 +5,10 @@
 export function formatRelativeTime(timestampMs: number | undefined, nowMs: number = Date.now()): string | null {
   if (!timestampMs) return null;
   const elapsedMs = nowMs - timestampMs;
-  if (elapsedMs < 45_000) return 'just now'; // also clamps slight future skew
+  if (elapsedMs < 45_000) return 'agora há pouco'; // also clamps slight future skew
   const minutes = Math.round(elapsedMs / 60_000);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `há ${minutes} min`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  if (hours < 24) return `há ${hours} h`;
+  return `há ${Math.round(hours / 24)} d`;
 }

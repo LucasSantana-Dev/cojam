@@ -16,7 +16,7 @@ export function ErrorRetry({ error, onRetry }: ErrorRetryProps) {
         className="mt-2 text-xs underline hover:opacity-70 transition-opacity"
         style={{ color: 'var(--color-accent)' }}
       >
-        Retry
+        Tentar de novo
       </button>
     </div>
   );

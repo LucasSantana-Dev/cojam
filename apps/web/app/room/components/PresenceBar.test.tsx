@@ -56,7 +56,7 @@ describe('PresenceBar', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
     render(<PresenceBar roomId="r" />);
 
-    expect(screen.getByText('2 listening')).toBeInTheDocument();
+    expect(screen.getByText('2 ouvindo')).toBeInTheDocument();
   });
 
   it('"+N" overflow counts connections, not unique names', () => {
@@ -68,7 +68,7 @@ describe('PresenceBar', () => {
     render(<PresenceBar roomId="r" />);
 
     expect(screen.getByText('+2')).toBeInTheDocument();
-    expect(screen.getByText('8 listening')).toBeInTheDocument();
+    expect(screen.getByText('8 ouvindo')).toBeInTheDocument();
     // Both Alices are inside the visible 6 — no dedupe collapsed them.
     expect(screen.getByTitle('Alice')).toBeInTheDocument();
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();

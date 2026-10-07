@@ -2,10 +2,10 @@ export function UnavailableTrack() {
   return (
     <div className="hero-unavailable">
       <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>
-        Not available on your connected services
+        Indisponível nos serviços conectados
       </p>
       <p className="text-sm mt-2" style={{ color: 'var(--color-text-secondary)' }}>
-        This track has no source compatible with your connected services. Try adding another track or connecting a different service.
+        Esta faixa não tem fonte compatível com os serviços que você conectou. Adicione outra faixa ou conecte outro serviço.
       </p>
     </div>
   );
