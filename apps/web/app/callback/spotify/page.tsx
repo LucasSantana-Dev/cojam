@@ -27,7 +27,7 @@ export default function SpotifyCallback() {
       return;
     }
 
-    handleCallback(code)
+    handleCallback(code, params.get('state'))
       .then((returnPath) => {
         setState('success');
         setTimeout(() => router.replace(returnPath), 800);
