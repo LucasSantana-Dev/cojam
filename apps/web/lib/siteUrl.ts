@@ -7,9 +7,16 @@ import { headers } from 'next/headers';
 // prefix needed since this is server-only) is the recommended override;
 // falling back to the request's own Host header keeps behavior correct even
 // if it's unset, at the cost of opting this route into dynamic rendering.
+
+// Canonical origin used in production when COJAM_SITE_URL is unset. Request
+// headers are never trusted to derive the canonical URL there: it ends up in
+// metadata, sitemap and structured data.
+export const PRODUCTION_FALLBACK_SITE_URL = 'https://cojam.lucassantana.tech';
+
 export async function resolveSiteUrl(): Promise<string> {
   const configured = process.env.COJAM_SITE_URL;
   if (configured) return configured;
+  if (process.env.NODE_ENV === 'production') return PRODUCTION_FALLBACK_SITE_URL;
   const h = await headers();
   const host = h.get('x-forwarded-host') ?? h.get('host');
   if (!host) return 'http://localhost:3000';
@@ -21,7 +28,7 @@ export async function resolveSiteUrl(): Promise<string> {
   // openGraph.url/jsonLd.url (this same value, used directly) came out http.
   // This deployment has no legitimate non-HTTPS production case, so decide
   // by NODE_ENV alone and skip the unreliable header entirely.
-  const proto =
-    process.env.NODE_ENV === 'production' ? 'https' : (h.get('x-forwarded-proto') ?? 'http');
+  // (Production never reaches here: it returned the constant origin above.)
+  const proto = h.get('x-forwarded-proto') ?? 'http';
   return `${proto}://${host}`;
 }
