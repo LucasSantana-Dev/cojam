@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next';
 import path from 'path';
+import { buildCsp } from './lib/csp';
 
 const config: NextConfig = {
   reactStrictMode: true,
@@ -18,7 +19,12 @@ const config: NextConfig = {
   outputFileTracingRoot: path.resolve(__dirname, '../..'),
   async rewrites() {
     const server = process.env.SERVER_ORIGIN ?? 'http://localhost:8080';
-    return [{ source: '/api/apple/:path*', destination: `${server}/api/apple/:path*` }];
+    // Dev/e2e only in practice: in production Caddy routes /api/* to the Go
+    // server before Next sees it.
+    return [
+      { source: '/api/apple/:path*', destination: `${server}/api/apple/:path*` },
+      { source: '/api/stats/:path*', destination: `${server}/api/stats/:path*` },
+    ];
   },
   // Security headers — CoJam shipped none of these. connect-src covers the
   // same-origin websocket (wss upgrades keep the http(s) origin), Spotify's
@@ -37,24 +43,8 @@ const config: NextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              // 'unsafe-inline' is required: Next.js App Router injects several
-              // inline bootstrap/hydration scripts (flight-data payloads) that
-              // are unavoidable without a per-request nonce pipeline (proxy.ts
-              // + header threading) — verified via a real browser CSP check,
-              // not assumed. A nonce-based policy is a reasonable follow-up;
-              // script-src still blocks loading any *external* script, and
-              // frame-ancestors/object-src/base-uri/form-action stay strict.
-              "script-src 'self' 'unsafe-inline'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https://is1-ssl.mzstatic.com",
-              "connect-src 'self' https://accounts.spotify.com https://api.spotify.com https://*.supabase.co",
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-              "object-src 'none'",
-            ].join('; '),
+            // Built in lib/csp.ts (per-directive origin allowlist, unit tested).
+            value: buildCsp(),
           },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },

@@ -6,11 +6,11 @@ import { useStore, joinRoom, setRadio, nowPlayingAdvance, getClockOffsetMs } fro
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
+import { NAME_KEY } from '@/lib/guestName';
 
-// Persist the chosen name for the session so a full-page redirect (Spotify OAuth
-// returns to /callback/spotify then back here) auto-rejoins instead of dropping
-// the user back to the name form. Session-scoped; cleared when the tab closes.
-const NAME_KEY = 'mj_room_name';
+// The chosen name is persisted for the session (lib/guestName) so a full-page
+// redirect (Spotify OAuth) and the landing's name+create both auto-rejoin
+// instead of dropping the user on the name form.
 
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
 const noopSubscribe = () => () => {};

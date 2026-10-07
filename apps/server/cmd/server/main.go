@@ -610,6 +610,8 @@ func main() {
 	// Carries no version: this one is internet-facing and the build stamp only
 	// helps someone fingerprint the deployment.
 	r.Get("/api/healthz", publicHealthzHandler())
+	// Live counter (#307): totals only, cached 10s in the hub.
+	r.Get("/api/stats/live", liveStatsHandler(h))
 	// Member reports (#259). Durable by design: chat is ephemeral, so the
 	// report copies what it concerns.
 	r.Post("/api/report", reportHandler(reports, roomAuthSecret, metrics, logger,
@@ -774,6 +776,17 @@ func publicHealthzHandler() http.HandlerFunc {
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}
+}
+
+// liveStatsHandler serves {people, rooms} for the landing hero. Unauthenticated
+// and public, so it exposes only the aggregate the hub caches (never per-room
+// data) and lets browsers and the proxy cache it for the same 10s.
+func liveStatsHandler(h *hub.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=10")
+		json.NewEncoder(w).Encode(h.LiveStats())
 	}
 }
 
