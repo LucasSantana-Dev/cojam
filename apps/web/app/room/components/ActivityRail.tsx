@@ -33,7 +33,7 @@ export function ActivityRail() {
   if (entries.length === 0) return null;
 
   return (
-    <div className="panel p-6 space-y-4 mt-6">
+    <div data-testid="activity-panel" className="panel p-6 space-y-4 mt-6">
       <div>
         <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Activity
