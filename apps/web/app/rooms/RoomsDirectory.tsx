@@ -8,6 +8,7 @@ import { subscribePublicRooms } from '@/lib/publicRooms';
 import { useAgeGatedJoin, type AgeGateCopy } from '@/app/components/useAgeGatedJoin';
 import { MINIMUM_AGE } from '@/lib/ageGate';
 import { useReportDialog } from '@/app/components/useReportDialog';
+import { LiveCounter } from '@/app/components/LiveCounter';
 
 type SortKey = 'people' | 'recent';
 
@@ -88,6 +89,7 @@ export function RoomsDirectory() {
         <div>
           <h1 className="rooms-page__title">Salas públicas</h1>
           <p className="rooms-page__sub">Salas abertas tocando agora. Entre em uma e ouça junto.</p>
+          <LiveCounter />
         </div>
         <Link href="/" className="live-rooms__all">&larr; Início</Link>
       </header>

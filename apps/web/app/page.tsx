@@ -7,9 +7,11 @@ import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, CheckIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
 import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
+import { LiveCounter } from '@/app/components/LiveCounter';
 import { LogoMark } from '@/app/components/Logo';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
+import { readGuestName, saveGuestName } from '@/lib/guestName';
 import { trackEvent } from '@/lib/telemetry';
 
 // Protocol commands cycled in the HUD readout. The product is a protocol
@@ -37,6 +39,11 @@ function Words({ text, start = 0 }: { text: string; start?: number }) {
 
 export default function Home() {
   const [roomId, setRoomId] = useState('');
+  // Name for the one-step create. Prefilled from the shared guest name (the
+  // same session key the room's join form uses); null until the user types.
+  const savedName = useSyncExternalStore(noopSubscribe, readGuestName, () => '');
+  const [typedName, setTypedName] = useState<string | null>(null);
+  const nameInput = typedName ?? savedName;
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   // Accounts are optional and resolved at runtime (via /env.js); the server
@@ -49,6 +56,18 @@ export default function Home() {
   }, []);
 
   const createRoom = () => {
+    trackEvent('room_create');
+    router.push(`/room/${generateRoomId()}`);
+  };
+  // Name + create in one submit: store the name where the room page already
+  // looks for it, then land in a fresh room that auto-joins with it. The room
+  // is born private (the unguessable link is the permission); going public
+  // stays the host's PublicRoomToggle.
+  const createNamedRoom = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = nameInput.trim();
+    if (!name) return;
+    saveGuestName(name);
     trackEvent('room_create');
     router.push(`/room/${generateRoomId()}`);
   };
@@ -581,9 +600,24 @@ export default function Home() {
               rebroadcast.
             </p>
             <div className="hero-cta">
-              <button onClick={createRoom} className="btn-primary magnetic">
-                Start a room
-              </button>
+              <form onSubmit={createNamedRoom} className="hero-create">
+                <label htmlFor="hero-name" className="hero-join__label">
+                  Your name
+                </label>
+                <input
+                  id="hero-name"
+                  type="text"
+                  autoComplete="nickname"
+                  maxLength={40}
+                  placeholder="Ana"
+                  value={nameInput}
+                  onChange={(e) => setTypedName(e.target.value)}
+                  className="hero-create__input"
+                />
+                <button type="submit" disabled={!nameInput.trim()} className="btn-primary magnetic">
+                  Create room
+                </button>
+              </form>
               <form onSubmit={joinRoom} className="hero-join">
                 <label htmlFor="hero-room-code" className="hero-join__label">
                   Have a code?
@@ -601,6 +635,8 @@ export default function Home() {
                 </button>
               </form>
             </div>
+
+            <LiveCounter />
 
             {/* Example room artifact — evidence, not promise (Stationhead
                 steal). Labeled as an example; same people/track as the

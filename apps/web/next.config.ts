@@ -18,7 +18,12 @@ const config: NextConfig = {
   outputFileTracingRoot: path.resolve(__dirname, '../..'),
   async rewrites() {
     const server = process.env.SERVER_ORIGIN ?? 'http://localhost:8080';
-    return [{ source: '/api/apple/:path*', destination: `${server}/api/apple/:path*` }];
+    // Dev/e2e only in practice: in production Caddy routes /api/* to the Go
+    // server before Next sees it.
+    return [
+      { source: '/api/apple/:path*', destination: `${server}/api/apple/:path*` },
+      { source: '/api/stats/:path*', destination: `${server}/api/stats/:path*` },
+    ];
   },
   // Security headers — CoJam shipped none of these. connect-src covers the
   // same-origin websocket (wss upgrades keep the http(s) origin), Spotify's
