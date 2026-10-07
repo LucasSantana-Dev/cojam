@@ -7,18 +7,18 @@ import { LinkIcon, PlusIcon, PlayIcon } from '@/app/components/icons';
 const STEPS = [
   {
     Icon: LinkIcon,
-    title: 'Invite your friends',
-    body: 'Hit Invite up top to copy the room link, then send it to whoever you want listening.',
+    title: 'Convide seus amigos',
+    body: 'Toque em Convidar, no topo, para copiar o link da sala e mande para quem você quiser ouvir junto.',
   },
   {
     Icon: PlusIcon,
-    title: 'Add a song',
-    body: 'Paste a YouTube or Spotify link (or its ID) into Add Track. Everyone sees it in the queue.',
+    title: 'Adicione uma música',
+    body: 'Cole um link do YouTube ou do Spotify (ou o ID) em Adicionar música. Todo mundo vê na fila.',
   },
   {
     Icon: PlayIcon,
-    title: 'Listen together',
-    body: 'Press play on a track. Each person streams it on their own account, kept in sync by the room.',
+    title: 'Ouçam juntos',
+    body: 'Toque em uma faixa. Cada pessoa ouve na própria conta e a sala mantém todo mundo em sincronia.',
   },
 ];
 
@@ -27,10 +27,10 @@ export function OnboardingCard() {
     <section className="panel p-6 space-y-4" aria-labelledby="onboarding-heading">
       <div className="space-y-1">
         <h2 id="onboarding-heading" className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          Get the room going
+          Coloque a sala para tocar
         </h2>
         <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          Three steps and you are listening together.
+          Três passos e vocês já estão ouvindo juntos.
         </p>
       </div>
       <ol className="space-y-3">

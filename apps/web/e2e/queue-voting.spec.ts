@@ -12,21 +12,21 @@ async function join(page: Page, roomId: string, name: string) {
   await page.goto(`/room/${roomId}`);
   // Waiting-room card shows the room code in a chip ("You're about to join <CODE>").
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Your name').fill(name);
-  await page.getByRole('button', { name: 'Join & Play' }).click();
-  // Joined header shows the room-code chip + "you're <name>" (see RoomClient header).
-  await expect(page.getByText(`you\u2019re ${name}`)).toBeVisible();
+  await page.getByPlaceholder('Seu nome').fill(name);
+  await page.getByRole('button', { name: 'Entrar na sala' }).click();
+  // Joined header shows the room-code chip + "você é <name>" (see RoomClient header).
+  await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
 async function addTrack(page: Page, title: string, artist: string) {
-  // Open the "Add manually" details element using JavaScript to ensure it opens
+  // Open the "Adicionar manualmente" details element using JavaScript to ensure it opens
   await page.evaluate(() => {
     const details = document.querySelector('details');
     if (details) details.open = true;
   });
-  await page.getByPlaceholder('Title').fill(title);
-  await page.getByPlaceholder('Artist').fill(artist);
-  await page.getByRole('button', { name: 'Add to Queue' }).click();
+  await page.getByPlaceholder('Título').fill(title);
+  await page.getByPlaceholder('Artista').fill(artist);
+  await page.getByRole('button', { name: 'Adicionar à fila' }).click();
   // Wait for the add to land (queue shows the title) before returning.
   await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
 }
@@ -36,10 +36,10 @@ test('voting a queued track increments the count, second click decrements', asyn
 
   const page = await (await browser.newContext()).newPage();
   await join(page, roomId, 'Voter');
-  await addTrack(page, 'Vote Me', 'Artist');
+  await addTrack(page, 'Vote Me', 'Artista');
 
   const row = page.getByTestId('queue-item').first();
-  const voteButton = row.getByRole('button', { name: 'Vote' });
+  const voteButton = row.getByRole('button', { name: 'Votar' });
   await expect(row.getByTestId('vote-count')).toHaveText('0');
 
   await voteButton.click();
@@ -64,7 +64,7 @@ test('votes sync live to another member and the listeners pick is marked', async
   await addTrack(host, 'Challenger', 'B-Two');
 
   const challenger = listener.getByTestId('queue-item').filter({ hasText: 'Challenger' });
-  await challenger.getByRole('button', { name: 'Vote' }).click();
+  await challenger.getByRole('button', { name: 'Votar' }).click();
 
   // The count reaches the host via publication (no reload), and the marker
   // lands on the most-voted queued track (the now-playing song is excluded).

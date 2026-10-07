@@ -54,7 +54,7 @@ describe('PublicRoomToggle', () => {
     useStore.setState({ state: state({ public: true, name: 'Neon' }) });
     render(<PublicRoomToggle roomId="room-1" />);
 
-    const input = screen.getByRole('textbox', { name: 'Public room label' });
+    const input = screen.getByRole('textbox', { name: 'Nome da sala pública' });
     // Prefilled from the room state.
     await waitFor(() => expect(input).toHaveValue('Neon'));
 
@@ -70,7 +70,7 @@ describe('PublicRoomToggle', () => {
     useStore.setState({ state: state({ public: true, name: '' }) });
     render(<PublicRoomToggle roomId="room-1" />);
 
-    const input = screen.getByRole('textbox', { name: 'Public room label' });
+    const input = screen.getByRole('textbox', { name: 'Nome da sala pública' });
     fireEvent.change(input, { target: { value: 'Late Night' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
@@ -83,7 +83,7 @@ describe('PublicRoomToggle', () => {
     useStore.setState({ state: state({ public: true, name: 'Neon' }) });
     render(<PublicRoomToggle roomId="room-1" />);
 
-    const input = screen.getByRole('textbox', { name: 'Public room label' });
+    const input = screen.getByRole('textbox', { name: 'Nome da sala pública' });
     await waitFor(() => expect(input).toHaveValue('Neon'));
     fireEvent.blur(input);
 

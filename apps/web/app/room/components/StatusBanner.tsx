@@ -61,7 +61,7 @@ export function StatusBanner() {
           }}
         />
         <span style={{ color: reconnecting ? 'var(--color-status-warn)' : 'var(--color-status-error)' }}>
-          {reconnecting ? 'Reconnecting...' : 'Connection lost'}
+          {reconnecting ? 'Reconectando...' : 'Conexão perdida'}
         </span>
         {lost && (
           <>
@@ -71,7 +71,7 @@ export function StatusBanner() {
               className="px-3 py-1 text-xs font-semibold rounded-md transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
               style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
             >
-              Retry
+              Tentar de novo
             </button>
             <button
               type="button"
@@ -79,7 +79,7 @@ export function StatusBanner() {
               className="px-3 py-1 text-xs font-semibold rounded-md transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
               style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
             >
-              Reload
+              Recarregar
             </button>
           </>
         )}

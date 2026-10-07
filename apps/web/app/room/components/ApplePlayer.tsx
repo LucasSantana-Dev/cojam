@@ -217,7 +217,7 @@ export function ApplePlayer({
   if (status === 'error') {
     return (
       <div className="text-sm" style={{ color: 'var(--color-status-error)' }}>
-        Apple Music unavailable
+        Apple Music indisponível
       </div>
     );
   }
@@ -240,7 +240,7 @@ export function ApplePlayer({
         style={{ backgroundColor: 'var(--color-info)', color: 'var(--color-surface-0)' }}
       >
         <AppleMusicIcon size={16} />
-        Connect Apple Music
+        Conectar Apple Music
       </button>
     );
   }
@@ -249,7 +249,7 @@ export function ApplePlayer({
     <div className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-info)' }} />
       <span>
-        Apple Music connected
+        Apple Music conectado
         {nowPlaying && pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple' && (
           <span style={{ color: 'var(--color-info)' }}> playing &quot;{nowPlaying.title}&quot;</span>
         )}

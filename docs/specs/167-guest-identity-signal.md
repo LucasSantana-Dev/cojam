@@ -33,8 +33,8 @@ Non-goals:
 A single line below the join control, shown only when accounts are available and the visitor
 is not signed in.
 
-Copy: "Your identity is stored in this browser. Sign in before leaving this room to keep
-your room role across devices."
+Copy (PT-BR since #325): "Sua identidade fica guardada neste navegador. Entre na sua conta antes de sair
+da sala para manter seu papel em outros dispositivos."
 
 Four things about the wording are deliberate:
 

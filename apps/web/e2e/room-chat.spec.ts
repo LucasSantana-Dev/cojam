@@ -10,17 +10,17 @@ async function join(page: Page, roomId: string, name: string) {
   await page.goto(`/room/${roomId}`);
   // Waiting-room card shows the room code in a chip ("You're about to join <CODE>").
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Your name').fill(name);
-  await page.getByRole('button', { name: 'Join & Play' }).click();
-  // Joined header shows the room-code chip + "you're <name>" (see RoomClient header).
-  await expect(page.getByText(`you\u2019re ${name}`)).toBeVisible();
+  await page.getByPlaceholder('Seu nome').fill(name);
+  await page.getByRole('button', { name: 'Entrar na sala' }).click();
+  // Joined header shows the room-code chip + "você é <name>" (see RoomClient header).
+  await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
 async function sendChatMessage(page: Page, text: string) {
-  // exact: the report control's aria-label ("Report message from …", #259)
+  // exact: the report control's aria-label ("Denunciar mensagem from …", #259)
   // also contains "message", so a substring match now resolves to two nodes.
-  await page.getByLabel('Message', { exact: true }).fill(text);
-  await page.getByRole('button', { name: 'Send' }).click();
+  await page.getByLabel('Mensagem', { exact: true }).fill(text);
+  await page.getByRole('button', { name: 'Enviar' }).click();
   // Wait for the publication round-trip so a subsequent send/assert cannot
   // race the field reset.
   await expect(page.getByTestId('chat-message').filter({ hasText: text })).toBeVisible();
@@ -53,6 +53,6 @@ test('chat history seeds from the server ring after a reload', async ({ page }) 
   // Reload auto-rejoins with the session-persisted name; chat.history must
   // reseed the panel even though this connection never saw the publication.
   await page.reload();
-  await expect(page.getByText('you\u2019re Lucas')).toBeVisible();
+  await expect(page.getByTestId('room-me')).toContainText('Lucas');
   await expect(page.getByTestId('chat-message').filter({ hasText: 'before reload' })).toBeVisible();
 });

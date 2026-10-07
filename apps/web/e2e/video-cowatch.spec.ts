@@ -57,23 +57,23 @@ async function join(page: Page, roomId: string, name: string) {
   await proxyConnectionToken(page);
   await page.goto(`/room/${roomId}`);
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Your name').fill(name);
-  await page.getByRole('button', { name: 'Join & Play' }).click();
-  await expect(page.getByText(`you’re ${name}`)).toBeVisible();
+  await page.getByPlaceholder('Seu nome').fill(name);
+  await page.getByRole('button', { name: 'Entrar na sala' }).click();
+  await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
 async function addVideo(page: Page, title: string) {
   // Phone width (#289): the audio room keeps the add form behind its Add tab.
-  const addTab = page.getByRole('tab', { name: 'Add' });
+  const addTab = page.getByRole('tab', { name: 'Adicionar' });
   if (await addTab.isVisible()) await addTab.click();
   await page.evaluate(() => {
     const details = document.querySelector('details');
     if (details) details.open = true;
   });
-  await page.getByPlaceholder('Title').fill(title);
-  await page.getByPlaceholder('Artist').fill('Channel');
-  await page.getByPlaceholder('YouTube link or video ID (optional)').fill('https://youtu.be/abcdefghijk');
-  await page.getByRole('button', { name: 'Add to Queue' }).click();
+  await page.getByPlaceholder('Título').fill(title);
+  await page.getByPlaceholder('Artista').fill('Channel');
+  await page.getByPlaceholder('Link do YouTube ou ID do vídeo (opcional)').fill('https://youtu.be/abcdefghijk');
+  await page.getByRole('button', { name: 'Adicionar à fila' }).click();
 }
 
 const position = (page: Page) =>
@@ -93,12 +93,12 @@ test('host seek converges on the member within the drift threshold', async ({ br
   await expect(lucas.getByTestId('stage')).toBeVisible();
 
   // Host starts playback; both stubs run.
-  await lucas.getByTestId('video-main-column').getByRole('button', { name: 'Play', exact: true }).click();
+  await lucas.getByTestId('video-main-column').getByRole('button', { name: 'Tocar', exact: true }).click();
   await expect.poll(() => position(ana)).toBeGreaterThan(0);
 
   // Host scrubs to the middle of the 600s video (the slider max comes from the
   // player duration since hand-added links carry none).
-  const slider = lucas.getByLabel('Track position');
+  const slider = lucas.getByLabel('Posição da faixa');
   await expect(slider).toHaveAttribute('max', '600000');
   await slider.click({ position: { x: (await slider.boundingBox())!.width / 2, y: 4 } });
 
@@ -117,7 +117,7 @@ test('phone layout pins the stage and puts the panels in tabs', async ({ browser
   await addVideo(page, 'Clip');
 
   await expect(page.getByTestId('video-room')).toBeVisible();
-  await expect(page.getByRole('tablist', { name: 'Room panels' })).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Painéis da sala' })).toBeVisible();
 
   // Pinned: still in view after scrolling the page.
   await page.evaluate(() => window.scrollTo(0, 400));
@@ -128,11 +128,11 @@ test('phone layout pins the stage and puts the panels in tabs', async ({ browser
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   // Tab targets are at least 44px tall.
-  const tab = await page.getByRole('tab', { name: 'Queue' }).boundingBox();
+  const tab = await page.getByRole('tab', { name: 'Fila' }).boundingBox();
   expect(tab!.height).toBeGreaterThanOrEqual(44);
 
   await expect(page.getByTestId('queue-title').first()).toBeHidden();
-  await page.getByRole('tab', { name: 'Queue' }).click();
+  await page.getByRole('tab', { name: 'Fila' }).click();
   await expect(page.getByTestId('queue-title').first()).toBeVisible();
 });
 
@@ -143,7 +143,7 @@ test('desktop shows stage with queue beside it and no tab bar', async ({ browser
   await addVideo(page, 'Clip');
 
   await expect(page.getByTestId('stage')).toBeVisible();
-  await expect(page.getByRole('tablist', { name: 'Room panels' })).toBeHidden();
+  await expect(page.getByRole('tablist', { name: 'Painéis da sala' })).toBeHidden();
   const stage = await page.getByTestId('stage').boundingBox();
   const side = await page.getByTestId('video-side-column').boundingBox();
   expect(side!.x).toBeGreaterThanOrEqual(stage!.x + stage!.width);

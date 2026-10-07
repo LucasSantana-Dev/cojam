@@ -42,9 +42,9 @@ async function join(page: Page, roomId: string) {
   await proxyConnectionToken(page);
   await page.goto(`/room/${roomId}`);
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Your name').fill('Probe');
-  await page.getByRole('button', { name: 'Join & Play' }).click();
-  await expect(page.getByText('you\u2019re Probe')).toBeVisible();
+  await page.getByPlaceholder('Seu nome').fill('Probe');
+  await page.getByRole('button', { name: 'Entrar na sala' }).click();
+  await expect(page.getByTestId('room-me')).toContainText('Probe');
 }
 
 test.describe('room layout across the tablet range', () => {
@@ -124,15 +124,15 @@ async function noHorizontalOverflow(page: Page) {
 }
 
 async function addTrack(page: Page, title: string, artist: string) {
-  await page.getByRole('tab', { name: 'Add' }).click();
+  await page.getByRole('tab', { name: 'Adicionar' }).click();
   await page.evaluate(() => {
     const details = document.querySelector('details');
     if (details) details.open = true;
   });
-  await page.getByPlaceholder('Title').fill(title);
-  await page.getByPlaceholder('Artist').fill(artist);
-  await page.getByRole('button', { name: 'Add to Queue' }).click();
-  await page.getByRole('tab', { name: 'Queue' }).click();
+  await page.getByPlaceholder('Título').fill(title);
+  await page.getByPlaceholder('Artista').fill(artist);
+  await page.getByRole('button', { name: 'Adicionar à fila' }).click();
+  await page.getByRole('tab', { name: 'Fila' }).click();
   await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
 }
 
@@ -194,16 +194,16 @@ test.describe('room at 390x844', () => {
 
     // Rows: vote + "more" toggle on the row; secondary actions open on demand.
     const row = page.getByTestId('queue-item').first();
-    await expect(row.getByRole('button', { name: 'More actions' })).toBeVisible();
-    await expect(row.getByRole('button', { name: 'Remove' })).toBeHidden();
-    await row.getByRole('button', { name: 'More actions' }).click();
-    await expect(row.getByRole('button', { name: 'Remove' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Mais ações' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Remover' })).toBeHidden();
+    await row.getByRole('button', { name: 'Mais ações' }).click();
+    await expect(row.getByRole('button', { name: 'Remover' })).toBeVisible();
     expect(await undersizedTargets(page, '[data-testid="queue-item"]')).toEqual([]);
     expect(await noHorizontalOverflow(page)).toBe(true);
 
     // Chat is reachable with a single tab switch, no scrolling past the queue.
     await page.getByRole('tab', { name: 'Chat' }).click();
-    const input = page.getByLabel('Message', { exact: true });
+    const input = page.getByLabel('Mensagem', { exact: true });
     await expect(input).toBeVisible();
     expect(await undersizedTargets(page, '#video-panel-chat')).toEqual([]);
     await expect(page.getByTestId('queue-item').first()).toBeHidden();
@@ -225,14 +225,14 @@ test.describe('room at 390x844', () => {
 
     if (process.env.SHOT_DIR) {
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.getByRole('tab', { name: 'Queue' }).click();
+      await page.getByRole('tab', { name: 'Fila' }).click();
       await page.waitForTimeout(800); // rows fade in
       await page.screenshot({ path: `${process.env.SHOT_DIR}/after-queue.png` });
       await page.getByRole('tab', { name: 'Chat' }).click();
       await page.waitForTimeout(800);
       await page.screenshot({ path: `${process.env.SHOT_DIR}/after-chat.png` });
-      await page.getByRole('tab', { name: 'Playing' }).click();
-      await page.getByRole('tab', { name: 'Playing' }).click();
+      await page.getByRole('tab', { name: 'Tocando' }).click();
+      await page.getByRole('tab', { name: 'Tocando' }).click();
       await page.screenshot({ path: `${process.env.SHOT_DIR}/after-playing.png` });
     }
   });

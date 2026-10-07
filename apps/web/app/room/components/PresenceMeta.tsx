@@ -31,7 +31,7 @@ export function PresenceMeta() {
           </span>
         ))}
       </span>
-      <span>{members.length === 1 ? '1 listening' : `${members.length} listening`}</span>
+      <span>{members.length === 1 ? '1 ouvindo' : `${members.length} ouvindo`}</span>
       <span aria-hidden className="np-meta__dot">·</span>
     </>
   );

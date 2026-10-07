@@ -37,7 +37,7 @@ describe('LyricsPanel retry', () => {
 
     expect(await screen.findByText('boom')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
 
     expect(await screen.findByText('la la la')).toBeInTheDocument();
     expect(rpcMocks.fetchLyrics).toHaveBeenCalledTimes(2);
