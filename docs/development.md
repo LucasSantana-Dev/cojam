@@ -19,6 +19,13 @@ pnpm --filter web e2e                  # web e2e (two-browser room sync)
 > CI provides this via a Postgres service container, so these run on every PR.
 >
 > New Postgres tests should get their pool from `dbtest.Isolated(t)` (in `apps/server/internal/dbtest`). It migrates a private schema per test and drops it afterwards; migrating the shared `public` schema races the other test packages, which `go test` runs in parallel.
+>
+> `TestConcurrentMigrateStress` in that package reproduces that race on demand and checks that `dbtest` avoids it. It is skipped by default and needs a user that can create databases. From `apps/server`:
+>
+> ```bash
+> DBTEST_STRESS_ADMIN_URL=postgres://user@127.0.0.1:5432/postgres?sslmode=disable \
+>   go test -count=1 -run Stress -v ./internal/dbtest
+> ```
 
 <!-- Separate GitHub alert blocks; a bare blank line trips MD028. -->
 
