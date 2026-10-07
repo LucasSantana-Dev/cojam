@@ -31,7 +31,13 @@ export function PublicRoomToggle({ roomId }: { roomId: string }) {
     try {
       await setRoomPublic(roomId, next, name);
     } catch (err) {
-      setError(rpcErrorMessage(err, 'Could not update the public listing'));
+      const msg = rpcErrorMessage(err, 'Could not update the public listing');
+      // Server filter (#259): stable message, PT-BR copy.
+      setError(
+        /room name not allowed/i.test(msg)
+          ? 'Esse nome não é permitido em salas públicas. Escolha outro.'
+          : msg,
+      );
     } finally {
       setBusy(false);
     }

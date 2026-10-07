@@ -6,6 +6,7 @@ import type { PublicRoomSummary } from '@cojam/shared';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { subscribePublicRooms } from '@/lib/publicRooms';
 import { AGE_GATE_COPY_PT, useAgeGatedJoin } from '@/app/components/useAgeGatedJoin';
+import { useReportDialog } from '@/app/components/useReportDialog';
 import { LiveCounter } from '@/app/components/LiveCounter';
 
 type SortKey = 'people' | 'recent';
@@ -47,6 +48,7 @@ function activeLabel(lastActiveMs: number, now: number): string {
 export function RoomsDirectory() {
   const features = useRuntimeFeatures();
   const { onCardClick, gate } = useAgeGatedJoin(AGE_GATE_COPY_PT);
+  const report = useReportDialog();
   const [rooms, setRooms] = useState<PublicRoomSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState('');
@@ -119,8 +121,8 @@ export function RoomsDirectory() {
           ) : (
             <div className="live-rooms__grid">
               {visible.map((room) => (
+                <div key={room.roomId} className="live-room-wrap">
                 <Link
-                  key={room.roomId}
                   href={`/room/${room.roomId}`}
                   className="live-room-card"
                   onClick={(e) => onCardClick(e, room.roomId)}
@@ -149,6 +151,17 @@ export function RoomsDirectory() {
                     <span className="live-room-card__artist">{activeLabel(room.lastActiveMs, now)}</span>
                   </span>
                 </Link>
+                {/* A sibling of the link, not a child: a button inside an anchor is
+                    invalid and would also navigate. */}
+                <button
+                  type="button"
+                  className="live-room-report"
+                  aria-label={`Denunciar sala ${room.name || room.roomId}`}
+                  onClick={() => report.open({ roomId: room.roomId, kind: 'room' })}
+                >
+                  Denunciar
+                </button>
+                </div>
               ))}
             </div>
           )}
@@ -156,6 +169,7 @@ export function RoomsDirectory() {
       )}
 
       {gate}
+      {report.dialog}
     </main>
   );
 }

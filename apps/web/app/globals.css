@@ -2264,6 +2264,27 @@ input:focus, textarea:focus, select:focus {
   flex-wrap: wrap;
 }
 
+/* Report control under a directory card (#259). The card is a link, so the
+   button is a sibling, not a child (a button inside an anchor is invalid). */
+.live-room-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.live-room-report {
+  align-self: flex-end;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  background: transparent;
+  opacity: 0.75;
+}
+.live-room-report:hover,
+.live-room-report:focus-visible {
+  opacity: 1;
+  text-decoration: underline;
+}
+
 /* ---------- Stage + panels (video rooms, #258) ----------
    Only rendered when the now-playing track is video and FEATURE_VIDEO is on;
    audio rooms never touch these rules. Breakpoints match the room grid
@@ -2440,7 +2461,7 @@ input:focus, textarea:focus, select:focus {
     min-height: 44px;
     justify-content: center;
   }
-  .room-header .avatar-chip button {
+  .room-header .avatar-chip button:not(.report-user-btn) {
     background-color: transparent !important;
     isolation: isolate;
     position: absolute;
@@ -2450,7 +2471,7 @@ input:focus, textarea:focus, select:focus {
     height: 44px;
     opacity: 1;
   }
-  .room-header .avatar-chip button::before {
+  .room-header .avatar-chip button:not(.report-user-btn)::before {
     content: "";
     position: absolute;
     z-index: -1;
@@ -2460,6 +2481,36 @@ input:focus, textarea:focus, select:focus {
     height: 1.1rem;
     border-radius: 50%;
     background: var(--color-status-error);
+  }
+  /* Report-user flag (#259): same 44px hit area as kick, anchored top-left,
+     with a small visible disc so it does not collide with the kick control. */
+  .room-header .avatar-chip .report-user-btn {
+    isolation: isolate;
+    position: absolute;
+    top: -14px;
+    left: -14px;
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+    background: transparent !important;
+    border: 0 !important;
+    font-size: 0;
+  }
+  .room-header .avatar-chip .report-user-btn::before {
+    content: "⚑";
+    position: absolute;
+    z-index: -1;
+    top: 8px;
+    left: 8px;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    background: var(--color-surface-2);
+    color: var(--color-text-secondary);
   }
   .room-header input[type="text"] {
     min-height: 44px;

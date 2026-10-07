@@ -16,7 +16,7 @@ func reportSetup(t *testing.T) (http.HandlerFunc, *report.Memory) {
 	t.Helper()
 	store := report.NewMemory()
 	h := reportHandler(store, testRoomSecret, obs.New(), quietLogger(),
-		newCallerLimiter(reportBurst, reportRefill))
+		newCallerLimiter(reportBurst, reportRefill), nil)
 	return h, store
 }
 

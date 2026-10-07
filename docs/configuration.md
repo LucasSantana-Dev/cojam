@@ -73,4 +73,6 @@ Read in `apps/server/cmd/server/main.go`. Same truthy and falsy values as the we
 
 ## Observability
 
+Set `REPORT_WEBHOOK_URL` to push a minimal summary of each member report (id, kind, room id, category, time; no chat content) to a channel you monitor. Unset means reports are stored and logged only.
+
 The Go server emits structured JSON logs to stdout. Prometheus metrics are served at `/metrics` on a dedicated listener when `METRICS_ADDR` is set (never on the public port).

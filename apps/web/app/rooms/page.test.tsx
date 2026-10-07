@@ -89,4 +89,14 @@ describe('RoomsPage', () => {
     fireEvent.change(box, { target: { value: 'zzz' } });
     expect(screen.getByText(/Nenhuma sala encontrada/)).toBeInTheDocument();
   });
+
+  it('offers a report control per card that does not navigate (#259)', () => {
+    render(<RoomsPage />);
+    act(() => mocks.listener!(rooms));
+    const btn = screen.getByRole('button', { name: 'Denunciar sala Cinema Night' });
+    expect(btn.closest('a')).toBeNull();
+    fireEvent.click(btn);
+    expect(screen.getByRole('heading', { name: 'Denunciar sala' })).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
 });

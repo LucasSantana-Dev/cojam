@@ -2063,6 +2063,15 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			name = &trimmed
 		}
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			// Name filter (#259): a label shown to strangers in the directory
+			// must pass the blocklist. Checks the label being set, and for a
+			// room going public also the label it already carries.
+			if name != nil && roomNameBlocked(*name) {
+				return userErrorf(errRoomNameNotAllowed)
+			}
+			if req.Public && name == nil && roomNameBlocked(s.Name) {
+				return userErrorf(errRoomNameNotAllowed)
+			}
 			s.Public = req.Public
 			if name != nil {
 				s.Name = *name
