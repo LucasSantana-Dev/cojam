@@ -163,12 +163,15 @@ func TestCallerKey(t *testing.T) {
 		want   string
 	}{
 		{"cloudflare via proxy", "172.18.0.5:41234", map[string]string{"CF-Connecting-IP": "203.0.113.5"}, "203.0.113.5"},
-		{"cloudflare via loopback", "127.0.0.1:5000", map[string]string{"CF-Connecting-IP": "2001:db8::1"}, "2001:db8::1"},
+		{"cloudflare via loopback", "127.0.0.1:5000", map[string]string{"CF-Connecting-IP": "2001:db8::1"}, "2001:db8::/64"},
 		{"spoofed header from a public peer", "198.51.100.7:443", map[string]string{"CF-Connecting-IP": "203.0.113.5"}, "198.51.100.7"},
 		{"malformed header falls back", "10.0.0.2:80", map[string]string{"CF-Connecting-IP": "not-an-ip"}, "10.0.0.2"},
 		{"forwarded-for is ignored", "10.0.0.2:80", map[string]string{"X-Forwarded-For": "203.0.113.9, 10.0.0.1"}, "10.0.0.2"},
 		{"port is stripped", "198.51.100.7:51000", nil, "198.51.100.7"},
-		{"ipv6 peer", "[2001:db8::2]:443", nil, "2001:db8::2"},
+		{"ipv6 peer keyed by /64", "[2001:db8::2]:443", nil, "2001:db8::/64"},
+		{"same /64 shares a key", "[2001:db8::ffff:1234]:443", nil, "2001:db8::/64"},
+		{"other /64 differs", "[2001:db8:0:1::2]:443", nil, "2001:db8:0:1::/64"},
+		{"ipv4-mapped stays per address", "[::ffff:198.51.100.7]:443", nil, "198.51.100.7"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
