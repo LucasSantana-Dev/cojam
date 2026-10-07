@@ -5,14 +5,21 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { LogoMark } from '@/app/components/Logo';
 import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
-import { handleCallback } from '@/lib/spotifyAuth';
+import { handleCallback, retryAuth } from '@/lib/spotifyAuth';
+import {
+  canRetrySpotifyConnect,
+  kindFromAuthorizeError,
+  kindFromError,
+  spotifyConnectMessage,
+  type SpotifyConnectErrorKind,
+} from '@/lib/spotifyConnectError';
 
 type CallbackState = 'loading' | 'success' | 'error';
 
 export default function SpotifyCallback() {
   const router = useRouter();
   const [state, setState] = useState<CallbackState>('loading');
-  const [error, setError] = useState<string | null>(null);
+  const [kind, setKind] = useState<SpotifyConnectErrorKind>('unknown');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -22,8 +29,8 @@ export default function SpotifyCallback() {
     if (authErr || !code) {
       // Deferred so no setState runs synchronously inside the effect body.
       Promise.resolve().then(() => {
-        if (authErr) console.error('spotify_auth_error', authErr, params.get('error_description'));
-        setError('Não deu para autenticar. Tente de novo.');
+        if (authErr) console.error('spotify_auth_error', authErr);
+        setKind(kindFromAuthorizeError(authErr) ?? 'expired');
         setState('error');
       });
       return;
@@ -35,8 +42,8 @@ export default function SpotifyCallback() {
         setTimeout(() => router.replace(returnPath), 800);
       })
       .catch((e) => {
-        console.error('spotify_callback_error', e);
-        setError('Não deu para autenticar. Tente de novo.');
+        console.error('spotify_callback_error', e instanceof Error ? e.message : 'unknown');
+        setKind(kindFromError(e));
         setState('error');
       });
   }, [router]);
@@ -44,7 +51,7 @@ export default function SpotifyCallback() {
   return (
     <SintoniaScreen>
       <main id="main" className="sx-main">
-        <div className="sx-glass sx-card sx-card--narrow sx-center" aria-live="polite">
+        <div className="sx-glass sx-card sx-card--narrow sx-center" aria-live="polite" data-testid="spotify-callback">
           <div className="sx-brand">
             <LogoMark size={20} /> CoJam
           </div>
@@ -76,9 +83,25 @@ export default function SpotifyCallback() {
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </div>
-              <h1 className="sx-title sx-title--sm">{error || 'Não deu para autenticar'}</h1>
+              <h1 className="sx-title sx-title--sm" role="alert" data-testid="spotify-callback-error">
+                {spotifyConnectMessage(kind)}
+              </h1>
               <SineLine flat />
               <div className="sx-actions sx-actions--center">
+                {canRetrySpotifyConnect(kind) && (
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    data-testid="spotify-callback-retry"
+                    onClick={() => {
+                      retryAuth().catch(() => {
+                        setKind('unknown');
+                      });
+                    }}
+                  >
+                    Tentar de novo
+                  </button>
+                )}
                 <Link href="/" className="btn-ghost">
                   Voltar ao início
                 </Link>

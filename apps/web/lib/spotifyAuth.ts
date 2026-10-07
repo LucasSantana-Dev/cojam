@@ -10,6 +10,7 @@
 import { pickEnv, getRuntimeEnv } from './runtimeEnv';
 import { resolveConnectionToken } from './realtime';
 import { trackError } from './telemetry';
+import { SpotifyConnectError, kindFromExchangeStatus } from './spotifyConnectError';
 
 export type SpotifySession = {
   accessToken: string;
@@ -159,26 +160,31 @@ export async function beginAuth(returnPath: string): Promise<void> {
 export async function handleCallback(code: string, state: string | null): Promise<string> {
   const expectedState = sessionStorage.getItem(STATE_KEY);
   sessionStorage.removeItem(STATE_KEY);
-  if (!stateMatches(expectedState, state)) throw new Error('oauth state mismatch');
+  if (!stateMatches(expectedState, state)) throw new SpotifyConnectError('expired');
   const verifier = sessionStorage.getItem(VERIFIER_KEY);
-  if (!verifier) throw new Error('missing PKCE verifier');
+  if (!verifier) throw new SpotifyConnectError('expired');
 
   // The connection JWT identifies which record the refresh token is filed
   // under. Without it the server cannot key the grant to anyone.
   const connToken = await resolveConnectionToken();
-  if (!connToken) throw new Error('Could not get a session token from the server. Try again in a moment.');
+  if (!connToken) throw new SpotifyConnectError('session');
 
-  const res = await fetch(EXCHANGE_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      code,
-      codeVerifier: verifier,
-      redirectUri: redirectUri(),
-      connToken,
-    }),
-  });
-  if (!res.ok) throw new Error(`token exchange failed: ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(EXCHANGE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        codeVerifier: verifier,
+        redirectUri: redirectUri(),
+        connToken,
+      }),
+    });
+  } catch {
+    throw new SpotifyConnectError('network');
+  }
+  if (!res.ok) throw new SpotifyConnectError(kindFromExchangeStatus(res.status));
 
   const data = await res.json();
   store({
@@ -191,6 +197,11 @@ export async function handleCallback(code: string, state: string | null): Promis
   const returnTo = safeReturnPath(sessionStorage.getItem(RETURN_KEY));
   sessionStorage.removeItem(RETURN_KEY);
   return returnTo;
+}
+
+// Restart the flow after a failed callback, returning to where the person began.
+export async function retryAuth(): Promise<void> {
+  await beginAuth(safeReturnPath(sessionStorage.getItem(RETURN_KEY)));
 }
 
 // Asks the server to mint a fresh access token from the refresh token it holds.
