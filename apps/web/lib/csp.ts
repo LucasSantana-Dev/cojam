@@ -10,8 +10,9 @@
 //    the Spotify image CDNs.
 //  - Apple MusicKit JS v3: script on js-cdn.music.apple.com, API/playback
 //    endpoints below, artwork on is1-ssl.mzstatic.com.
-// Artwork img-src stays an allowlist on purpose (the server will later restrict
-// artwork hosts to the same set).
+// Artwork img-src stays an allowlist of vendor families on purpose (the server
+// will later restrict artwork hosts to the same set). Deezer search results
+// (cover_medium) arrive on *.dzcdn.net.
 
 export const CSP_DIRECTIVES: Record<string, readonly string[]> = {
   'default-src': ["'self'"],
@@ -29,13 +30,13 @@ export const CSP_DIRECTIVES: Record<string, readonly string[]> = {
   'img-src': [
     "'self'",
     'data:',
-    'https://is1-ssl.mzstatic.com',
-    'https://i.ytimg.com',
-    'https://i.scdn.co',
-    'https://mosaic.scdn.co',
-    'https://image-cdn-ak.spotifycdn.com',
-    'https://image-cdn-fa.spotifycdn.com',
-    'https://e-cdns-images.dzcdn.net',
+    // One subdomain wildcard per vendor family: the CDNs rotate edge hosts
+    // (cdn-images / e-cdns-images, is1..is5-ssl, i / i9, image-cdn-ak / -fa ...).
+    'https://*.mzstatic.com',
+    'https://*.ytimg.com',
+    'https://*.scdn.co',
+    'https://*.spotifycdn.com',
+    'https://*.dzcdn.net',
   ],
   'connect-src': [
     "'self'",
