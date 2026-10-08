@@ -1693,6 +1693,13 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 				// else: host is present, don't reassign
 			}
 			// When userID is empty (FEATURE_ROOM_AUTH off), HostUserID stays empty
+
+			// A transport restored from the store (or left by an absent host)
+			// may already be past the end of its track; nobody would advance
+			// it, so do it here, in the same mutation the joiner gets back.
+			if s.AdvanceIfEnded(time.Now().UnixMilli()) && h.logger != nil {
+				h.logger.Info("stale_transport_advanced", "room_id", req.RoomID, "now_playing_id", s.NowPlayingID)
+			}
 			return nil
 		})
 

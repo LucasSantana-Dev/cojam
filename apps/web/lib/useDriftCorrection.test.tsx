@@ -4,6 +4,12 @@ import { useDriftCorrection } from './useDriftCorrection';
 import { useStore } from './realtime';
 import type { RoomState, TransportState } from '@cojam/shared';
 
+const advanceMock = vi.hoisted(() => vi.fn<(roomId: string, afterId: string) => Promise<void>>(async () => {}));
+vi.mock('./realtime', async (importActual) => ({
+  ...(await importActual<typeof import('./realtime')>()),
+  nowPlayingAdvance: advanceMock,
+}));
+
 // The hook drives the real zustand store (seeded per case); only the player
 // adapter is mocked, so a room.state publication flows exactly like the live
 // room channel.
@@ -205,5 +211,79 @@ describe('useDriftCorrection (#177)', () => {
       expect(player.play).toHaveBeenCalledTimes(1);
       unmount();
     });
+  });
+});
+
+describe('useDriftCorrection past the end of the track', () => {
+  const NOW = 1_700_000_000_000;
+  // The prod shape: playing at 0, stamped an hour ago, a 3:43 track.
+  const STALE: TransportState = { state: 'playing', positionMs: 0, updatedAtServerMs: NOW - 62 * 60 * 1000 };
+  const seed = (version: number, transport: TransportState, durationMs: number | undefined = 223_000) =>
+    useStore.getState().setState({
+      ...roomState(version, transport),
+      queue: [{ id: 't1', title: 'One', artist: 'A', durationMs, sources: {}, addedBy: 'x' }],
+      nowPlayingId: 't1',
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    advanceMock.mockClear();
+    useStore.setState({ state: null });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('never seeks past the end and advances once when the user can control', () => {
+    const player = makePlayer();
+    seed(1, STALE);
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    act(() => {
+      vi.advanceTimersByTime(10_000); // several drift ticks
+    });
+    expect(player.seekToMs).not.toHaveBeenCalled();
+    expect(advanceMock).toHaveBeenCalledTimes(1);
+    expect(advanceMock).toHaveBeenCalledWith('r1', 't1');
+    unmount();
+  });
+
+  it('does not double-advance on a re-publication of the same stale transport', () => {
+    const player = makePlayer();
+    seed(1, STALE);
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    act(() => {
+      seed(2, { ...STALE, positionMs: 1 });
+    });
+    expect(advanceMock).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('a listener stops correcting and waits, without advancing', () => {
+    const player = makePlayer();
+    seed(1, STALE);
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, false));
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(player.seekToMs).not.toHaveBeenCalled();
+    expect(advanceMock).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('keeps syncing a live track and a track with unknown duration', () => {
+    const live = makePlayer();
+    seed(1, { state: 'playing', positionMs: 0, updatedAtServerMs: NOW - 30_000 });
+    const a = renderHook(() => useDriftCorrection(live, true, true));
+    expect(live.seekToMs).toHaveBeenCalledTimes(1);
+    a.unmount();
+
+    const unknown = makePlayer();
+    seed(2, STALE, 0);
+    const b = renderHook(() => useDriftCorrection(unknown, true, true));
+    expect(unknown.seekToMs).toHaveBeenCalledTimes(1);
+    expect(advanceMock).not.toHaveBeenCalled();
+    b.unmount();
   });
 });

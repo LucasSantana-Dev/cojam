@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useStore, requestClockRemeasure } from './realtime';
-import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, DRIFT_THRESHOLD_MS, SEEK_COOLDOWN_MS, serverNow } from './playbackSync';
+import { useStore, requestClockRemeasure, nowPlayingAdvance } from './realtime';
+import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, isPastEnd, DRIFT_THRESHOLD_MS, SEEK_COOLDOWN_MS, serverNow } from './playbackSync';
 import type { IPlayer } from './playerInterface';
 
 // U4: Drift correction loop (gated by the sync feature flag).
@@ -13,14 +13,45 @@ import type { IPlayer } from './playerInterface';
 // carries a fresh transport object, and depending on identity re-called
 // play()/seekToMs() and recreated the drift interval on every publication —
 // two Spotify REST calls per publication per Spotify listener (#177).
-export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: boolean) {
+//
+// Past the end: a playing transport whose expected position is beyond the
+// now-playing track's duration (host gone, or restored stale after a server
+// restart) must never be sought to: YouTube jumps to the end and the loop
+// corrects it again. Anyone who can control advances once through the existing
+// now_playing.advance RPC (guarded per track, the server also dedups on
+// afterId); everyone else stops correcting and waits for the room to move.
+const ADVANCE_RETRY_MS = 10_000;
+
+export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: boolean, canAdvance = false) {
   const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const canAdvanceRef = useRef(canAdvance);
+  useEffect(() => {
+    canAdvanceRef.current = canAdvance;
+  }, [canAdvance]);
+  const advancedRef = useRef<{ id: string; at: number } | null>(null);
   const transport = useStore(
     useShallow((s) => {
       const t = s.state?.transport;
       return t ? { state: t.state, positionMs: t.positionMs, updatedAtServerMs: t.updatedAtServerMs } : undefined;
     }),
   );
+
+  // Returns true when the transport is past the end of the now-playing track
+  // (the caller must not seek); advances once if this user can control.
+  const handlePastEnd = (current: { state: 'playing' | 'paused' | 'stopped'; positionMs: number; updatedAtServerMs: number }, now: number): boolean => {
+    const st = useStore.getState().state;
+    const id = st?.nowPlayingId;
+    const durationMs = id ? st?.queue.find((t) => t.id === id)?.durationMs : undefined;
+    if (!id || !isPastEnd(current, now, durationMs)) return false;
+    const last = advancedRef.current;
+    if (canAdvanceRef.current && (!last || last.id !== id || Date.now() - last.at > ADVANCE_RETRY_MS)) {
+      advancedRef.current = { id, at: Date.now() };
+      nowPlayingAdvance(st.roomId, id).catch((err) => {
+        console.warn('Failed to advance past a track that already ended:', err);
+      });
+    }
+    return true;
+  };
 
   useEffect(() => {
     if (!syncEnabled || !activePlayer || !transport) return;
@@ -34,7 +65,9 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
       });
       // Seek to expected position to sync with server
       const now = serverNow();
-      if (isExpectedPositionKnown(transport, now)) {
+      if (handlePastEnd(transport, now)) {
+        // Past the end: no seek (see the header comment).
+      } else if (isExpectedPositionKnown(transport, now)) {
         const expected = computeExpectedPosition(transport, now);
         lastSeekAt = Date.now();
         activePlayer.seekToMs(expected).catch((err) => {
@@ -81,6 +114,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         requestClockRemeasure();
         return;
       }
+      if (handlePastEnd(current, now)) return;
       // Cued/buffering/unstarted reads are unreliable (getCurrentTime() is 0).
       if (activePlayer.isPlaying && !activePlayer.isPlaying()) {
         // Paused while the room plays (e.g. autoplay blocked): try play() once

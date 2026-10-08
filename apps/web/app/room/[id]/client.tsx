@@ -265,7 +265,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   // U4: Drift correction loop (gated by the sync feature flag). The hook keys
   // off the meaningful transport fields, not publication object identity (#177).
-  useDriftCorrection(activePlayer, f.sync);
+  useDriftCorrection(activePlayer, f.sync, hostControl);
 
   // Auto-advance at track end for Spotify/Apple (YouTube also advances via its
   // native onStateChange; the server dedups through AdvanceAfter). onEnded has

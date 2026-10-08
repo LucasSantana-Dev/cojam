@@ -255,7 +255,8 @@ export function YouTubePlayer({
             // PLAYING: playback actually started, clear any prior failure.
             if (event.data === 1) onPlayErrorRef.current?.(null);
             if (event.data === 0 && nowPlayingIdRef.current) {
-              nowPlayingAdvance(roomId, nowPlayingIdRef.current);
+              // Advance is control-gated on the server: a listener's rejection is expected.
+              nowPlayingAdvance(roomId, nowPlayingIdRef.current).catch(() => {});
             }
           },
           onError: (event: { data: number }) => {

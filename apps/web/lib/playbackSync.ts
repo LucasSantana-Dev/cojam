@@ -70,3 +70,29 @@ export function isExpectedPositionKnown(
 
 /** Minimum gap between corrective seeks, so a seek can settle before re-measuring. */
 export const SEEK_COOLDOWN_MS = 3000;
+
+/**
+ * How far past a track's duration the expected position may run before the
+ * transport is treated as stale. A live room reaches the end and advances
+ * within about a second, so this only trips when nobody advanced (host gone,
+ * server restarted with a restored transport).
+ */
+export const PAST_END_GRACE_MS = 2000;
+
+/**
+ * True when a playing transport's expected position is at or past the end of
+ * the track (plus PAST_END_GRACE_MS). Seeking there makes the player jump to
+ * the end and get corrected again in a loop, so callers must not seek; a
+ * controller advances instead. Unknown duration (absent or 0) is never past
+ * the end, and neither is a position we cannot trust (clock skew).
+ */
+export function isPastEnd(
+  transport: { state: 'playing' | 'paused' | 'stopped'; positionMs: number; updatedAtServerMs: number } | undefined,
+  serverNowMs: number,
+  durationMs: number | undefined,
+): boolean {
+  if (!transport || transport.state !== 'playing') return false;
+  if (!durationMs || durationMs <= 0) return false;
+  if (!isExpectedPositionKnown(transport, serverNowMs)) return false;
+  return computeExpectedPosition(transport, serverNowMs) >= durationMs + PAST_END_GRACE_MS;
+}
