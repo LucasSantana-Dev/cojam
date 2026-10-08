@@ -16,6 +16,8 @@ export type Member = {
   userId?: string;
   name: string;
   platform?: 'spotify' | 'apple' | 'youtube';
+  // Order of the member.set_platform override behind `platform`, when it came from one.
+  platformSeq?: number;
 };
 
 // One person = one listener. Presence is per connection (new clientId on every
@@ -43,7 +45,10 @@ export function collapseMembers(connections: Member[]): Member[] {
     const rep = sorted[0];
     return {
       ...rep,
-      platform: sorted.find((m) => m.platform)?.platform,
+      // The latest override among the person's connections wins; else the
+      // smallest clientId that has a ConnInfo platform.
+      platform: sorted.filter((m) => m.platformSeq !== undefined).sort((x, y) => y.platformSeq! - x.platformSeq!)[0]?.platform
+        ?? sorted.find((m) => m.platform)?.platform,
       clientIds: sorted.flatMap((m) => m.clientIds ?? [m.clientId]),
     };
   });
@@ -81,9 +86,12 @@ function roomChatEnabled(): boolean {
 
 type Platform = 'spotify' | 'apple' | 'youtube';
 
-function derivePresence(connections: Member[], overrides: Record<string, Platform> = {}) {
+// Monotonic order of overrides: the latest wins when one person has several connections.
+let overrideSeq = 0;
+
+function derivePresence(connections: Member[], overrides: Record<string, Platform> = {}, seqs: Record<string, number> = {}) {
   // member.set_platform overrides win over the connect-time ConnInfo platform.
-  const withOverrides = connections.map((c) => (overrides[c.clientId] ? { ...c, platform: overrides[c.clientId] } : c));
+  const withOverrides = connections.map((c) => (overrides[c.clientId] ? { ...c, platform: overrides[c.clientId], platformSeq: seqs[c.clientId] ?? 0 } : c));
   const members = collapseMembers(withOverrides);
   return { members, nameSuffixes: computeNameSuffixes(members) };
 }
@@ -101,6 +109,7 @@ export interface AppStore {
   connections: Member[];
   // clientId -> platform set through member.set_platform (overlay on presence).
   platformOverrides: Record<string, Platform>;
+  platformSeqs: Record<string, number>;
   // Collision suffixes for duplicate display names (#170), recomputed on every
   // membership change so PresenceBar and the fused chip cannot disagree.
   nameSuffixes: Record<string, string>;
@@ -155,6 +164,7 @@ export const useStore = create<AppStore>((set) => ({
   members: [],
   connections: [],
   platformOverrides: {},
+  platformSeqs: {},
   nameSuffixes: {},
   connectedServices: [],
   kicked: false,
@@ -172,15 +182,17 @@ export const useStore = create<AppStore>((set) => ({
   setKicked: (kicked) => set({ kicked }),
   setMembers: (connections) => set((s) => ({
     connections,
-    ...derivePresence(connections, s.platformOverrides),
+    ...derivePresence(connections, s.platformOverrides, s.platformSeqs),
   })),
   setPlatformOverride: (clientId, platform) => set((s) => {
     const platformOverrides = { ...s.platformOverrides, [clientId]: platform };
-    return { platformOverrides, ...derivePresence(s.connections, platformOverrides) };
+    const platformSeqs = { ...s.platformSeqs, [clientId]: ++overrideSeq };
+    return { platformOverrides, platformSeqs, ...derivePresence(s.connections, platformOverrides, platformSeqs) };
   }),
   setPlatformOverrides: (overrides) => set((s) => {
-    const platformOverrides = { ...s.platformOverrides, ...overrides };
-    return { platformOverrides, ...derivePresence(s.connections, platformOverrides) };
+    // A seed may arrive after newer live events: live values win.
+    const platformOverrides = { ...overrides, ...s.platformOverrides };
+    return { platformOverrides, ...derivePresence(s.connections, platformOverrides, s.platformSeqs) };
   }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
   setSignedIn: (signedIn) => set({ signedIn }),
@@ -199,13 +211,15 @@ export const useStore = create<AppStore>((set) => ({
   addMember: (m) => set((s) => {
     if (s.connections.some((x) => x.clientId === m.clientId)) return s;
     const connections = [...s.connections, m];
-    return { connections, ...derivePresence(connections, s.platformOverrides) };
+    return { connections, ...derivePresence(connections, s.platformOverrides, s.platformSeqs) };
   }),
   removeMember: (clientId) => set((s) => {
     const connections = s.connections.filter((x) => x.clientId !== clientId);
     const platformOverrides = { ...s.platformOverrides };
     delete platformOverrides[clientId];
-    return { connections, platformOverrides, ...derivePresence(connections, platformOverrides) };
+    const platformSeqs = { ...s.platformSeqs };
+    delete platformSeqs[clientId];
+    return { connections, platformOverrides, platformSeqs, ...derivePresence(connections, platformOverrides, platformSeqs) };
   }),
   setChat: (messages) => set({ chat: messages }),
   // Chat has no version guard (it is not RoomState): dedupe by id so live
@@ -312,6 +326,9 @@ let desiredPlatform: { roomId: string; platform: 'spotify' | 'apple' | 'youtube'
 let sentPlatform: string | null = null;
 // False until the join and the guest-to-account rebind settled.
 let platformReady = false;
+// Debounce: toggling the service must not drain the member RPC budget.
+const PLATFORM_DEBOUNCE_MS = 500;
+let platformTimer: ReturnType<typeof setTimeout> | null = null;
 
 // joinRoom rejects if 'connected' never fires (unreachable server, rejected
 // token with retry loop): without this the join UI hung forever (B11).
@@ -357,7 +374,9 @@ export async function joinRoom(
   if (desiredPlatform && desiredPlatform.roomId !== roomId) desiredPlatform = null;
   sentPlatform = null;
   platformReady = false;
-  useStore.setState({ platformOverrides: {} });
+  useStore.setState({ platformOverrides: {}, platformSeqs: {} });
+  if (platformTimer) clearTimeout(platformTimer);
+  platformTimer = null;
 
   // A fresh joinRoom is a new room intent: clear the previous activeRoom so
   // the reconnect resync below cannot re-join (and adopt the state of) a
@@ -603,7 +622,11 @@ export async function joinRoom(
 // terminally disconnected client never sends, and a reconnect re-sends it.
 export function updatePlatform(roomId: string, platform: 'spotify' | 'apple' | 'youtube'): void {
   desiredPlatform = { roomId, platform };
-  applyDesiredPlatform(roomId);
+  if (platformTimer) clearTimeout(platformTimer);
+  platformTimer = setTimeout(() => {
+    platformTimer = null;
+    applyDesiredPlatform(roomId);
+  }, PLATFORM_DEBOUNCE_MS);
 }
 
 function applyDesiredPlatform(roomId: string): void {

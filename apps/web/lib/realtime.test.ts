@@ -955,12 +955,14 @@ describe('listening platform (member.set_platform)', () => {
     await new Promise((r) => setTimeout(r, 0));
     return instance;
   };
+  const flush = () => new Promise((r) => setTimeout(r, 560)); // past the 500 ms debounce
   const sets = (i: { rpcCalls: Array<{ method: string; payload: unknown }> }) =>
     i.rpcCalls.filter((c) => c.method === 'member.set_platform');
 
   it('sends the platform over the RPC and never reconnects (a reconnect would hand the host role away)', async () => {
     const instance = await joined();
     updatePlatform(room, 'spotify');
+    await flush();
     expect(sets(instance)).toEqual([{ method: 'member.set_platform', payload: { roomId: room, platform: 'spotify' } }]);
     expect(instance.disconnectCalls).toBe(0);
     expect(instance.connectCalls).toBe(1);
@@ -971,9 +973,12 @@ describe('listening platform (member.set_platform)', () => {
   it('does not resend an unchanged platform', async () => {
     const instance = await joined();
     updatePlatform(room, 'spotify');
+    await flush();
     updatePlatform(room, 'spotify');
+    await flush();
     expect(sets(instance)).toHaveLength(1);
     updatePlatform(room, 'youtube');
+    await flush();
     expect(sets(instance)).toHaveLength(2);
   });
 
@@ -981,6 +986,7 @@ describe('listening platform (member.set_platform)', () => {
     const instance = await joined();
     instance.emit('disconnected', { code: DISCONNECT_CODE_KICKED, reason: 'removed by host' });
     updatePlatform(room, 'spotify');
+    await flush();
     expect(sets(instance)).toHaveLength(0);
     expect(instance.connectCalls).toBe(1);
   });
@@ -988,12 +994,14 @@ describe('listening platform (member.set_platform)', () => {
   it('ignores a stale call for another room', async () => {
     const instance = await joined();
     updatePlatform('other-room', 'spotify');
+    await flush();
     expect(sets(instance)).toHaveLength(0);
   });
 
   it('re-sends after a reconnect (a new connection has no override)', async () => {
     const instance = await joined();
     updatePlatform(room, 'spotify');
+    await flush();
     instance.emit('connected', { client: 'c-me2' });
     await new Promise((r) => setTimeout(r, 0));
     expect(sets(instance)).toHaveLength(2);
@@ -1027,5 +1035,38 @@ describe('listening platform (member.set_platform)', () => {
     });
     (instance.subscriptions[0].handlers['subscribed'] ?? []).forEach((cb) => cb());
     await vi.waitFor(() => expect(useStore.getState().members[0]?.platform).toBe('apple'));
+  });
+
+  it('debounces: rapid toggles send only the latest value', async () => {
+    const instance = await joined();
+    updatePlatform(room, 'spotify');
+    updatePlatform(room, 'youtube');
+    updatePlatform(room, 'spotify');
+    updatePlatform(room, 'youtube');
+    expect(sets(instance)).toHaveLength(0);
+    await flush();
+    expect(sets(instance)).toEqual([{ method: 'member.set_platform', payload: { roomId: room, platform: 'youtube' } }]);
+  });
+
+  it('a live event that arrived before the seed response wins over the seed', async () => {
+    const instance = await joined();
+    useStore.getState().setMembers([{ clientId: 'c-a', name: 'Ana' }]);
+    (instance.subscriptions[0].handlers['publication'] ?? []).forEach((cb) => cb({ data: { type: 'member.platform', clientId: 'c-a', platform: 'youtube' } }));
+    useStore.getState().setPlatformOverrides({ 'c-a': 'apple', 'c-z': 'spotify' });
+    expect(useStore.getState().platformOverrides['c-a']).toBe('youtube');
+    expect(useStore.getState().platformOverrides['c-z']).toBe('spotify');
+  });
+
+  it('one person with several connections shows the latest override, not the ConnInfo one', async () => {
+    await joined();
+    useStore.getState().setMembers([
+      { clientId: 'a1', userId: 'u1', name: 'Ana', platform: 'spotify' },
+      { clientId: 'b9', userId: 'u1', name: 'Ana' },
+    ]);
+    expect(useStore.getState().members[0].platform).toBe('spotify');
+    useStore.getState().setPlatformOverride('b9', 'youtube');
+    expect(useStore.getState().members[0].platform).toBe('youtube');
+    useStore.getState().setPlatformOverride('a1', 'apple');
+    expect(useStore.getState().members[0].platform).toBe('apple');
   });
 });
