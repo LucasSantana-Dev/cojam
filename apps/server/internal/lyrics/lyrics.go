@@ -3,8 +3,8 @@ package lyrics
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"

@@ -46,10 +46,8 @@ const mbLookupFixture = `{
   "title": "Recorde",
   "first-release-date": "2024-03-15",
   "releases": [
-    {"id": "r3", "title": "Compilation", "date": "2025-01-01",
-     "label-info": [{"label": {"name": "Late Label"}}]},
-    {"id": "r2", "title": "Recorde (single)", "date": "2024-03-15",
-     "label-info": [{"label": {"name": "Sony Music"}}]}
+    {"id": "r3", "title": "Compilation", "date": "2025-01-01"},
+    {"id": "r2", "title": "Recorde (single)", "date": "2024-03-15"}
   ],
   "relations": [
     {"type": "producer", "artist": {"name": "Bizarrap"}},
@@ -71,6 +69,8 @@ type mbStub struct {
 	queries []string // raw search "query" param, in order
 	paths   []string
 	lookup  int // status override for the lookup: 0 = 200
+	uas     []string
+	incs    []string
 }
 
 // mbServer routes search, ISRC and lookup requests to fixtures, shrinks the
@@ -86,10 +86,25 @@ func mbServer(t *testing.T, search, isrc, lookup string) (*mbStub, func()) {
 			st.queries = append(st.queries, q)
 		}
 		lookupStatus := st.lookup
+		st.uas = append(st.uas, r.Header.Get("User-Agent"))
+		if inc := r.URL.Query().Get("inc"); inc != "" {
+			st.incs = append(st.incs, r.URL.Path+"?inc="+inc)
+		}
 		st.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case strings.HasPrefix(r.URL.Path, "/release/"):
+			if r.URL.Query().Get("inc") != "labels" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"r2","label-info":[{"label":{"name":"Sony Music"}}]}`))
 		case strings.HasPrefix(r.URL.Path, "/recording/"):
+			// Real MusicBrainz rejects "labels" on a recording with a 400.
+			if strings.Contains(r.URL.Query().Get("inc"), "labels") {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			if lookupStatus != 0 {
 				w.WriteHeader(lookupStatus)
 				return
@@ -151,8 +166,20 @@ func TestTrackDepth_SearchThenLookup(t *testing.T) {
 		t.Errorf("query = %v", st.queries)
 	}
 	// Search then lookup by MBID with the inc= set.
-	if len(st.paths) != 2 || st.paths[1] != "/recording/rec-milo" {
+	if len(st.paths) != 3 || st.paths[1] != "/recording/rec-milo" || st.paths[2] != "/release/r2" {
 		t.Errorf("paths = %v", st.paths)
+	}
+	wantInc := "/recording/rec-milo?inc=" + strings.ReplaceAll(mbRecordingInc, "+", " ") // "+" decodes to space
+	if st.incs[0] != wantInc || strings.Contains(mbRecordingInc, "labels") {
+		t.Errorf("recording inc = %v", st.incs)
+	}
+	if len(st.uas) != 3 {
+		t.Fatalf("uas = %v", st.uas)
+	}
+	for _, ua := range st.uas {
+		if ua != "CoJam/1.0 ( https://cojam.lucassantana.tech )" {
+			t.Errorf("User-Agent = %q", ua)
+		}
 	}
 }
 
@@ -198,7 +225,7 @@ func TestTrackDepth_CachedAndLookupFailureNotCached(t *testing.T) {
 	if _, err := FetchTrackDepth(context.Background(), "", "Recorde", "Milo J"); err != nil {
 		t.Fatal(err)
 	}
-	if len(st.paths) != 2 {
+	if len(st.paths) != 3 {
 		t.Errorf("second call should be served from cache, paths = %v", st.paths)
 	}
 
@@ -208,11 +235,11 @@ func TestTrackDepth_CachedAndLookupFailureNotCached(t *testing.T) {
 	st.mu.Unlock()
 	st.paths = nil
 	d, err := FetchTrackDepth(context.Background(), "", "Other Song", "Milo J")
-	if err != nil || d.ReleaseYear != 2024 || d.Label != "" {
+	if err != nil || d.ReleaseYear != 2024 || d.Label != "Sony Music" {
 		t.Errorf("partial result expected, got %+v, %v", d, err)
 	}
 	_, _ = FetchTrackDepth(context.Background(), "", "Other Song", "Milo J")
-	if len(st.paths) != 4 {
+	if len(st.paths) != 6 {
 		t.Errorf("partial result must not be cached, paths = %v", st.paths)
 	}
 }

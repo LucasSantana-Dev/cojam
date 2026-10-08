@@ -78,7 +78,7 @@ func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "cojam/0.1 (https://github.com/LucasSantana-Dev/cojam)")
+	req.Header.Set("User-Agent", mbUserAgent)
 
 	var mbResp MusicBrainzResponse
 	if err := httpx.DoJSON(req, &mbResp); err != nil {

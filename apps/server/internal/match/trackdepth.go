@@ -17,12 +17,15 @@ import (
 )
 
 const (
-	mbUserAgent = "cojam/0.1 (https://github.com/LucasSantana-Dev/cojam)"
+	mbUserAgent = "CoJam/1.0 ( https://cojam.lucassantana.tech )"
 	// mbMinScore is the lowest Lucene relevance score we trust for a search
 	// hit. MusicBrainz scores an exact title+artist match at 100.
-	mbMinScore      = 70
-	mbMaxCredits    = 12
-	mbMaxTags       = 5
+	mbMinScore   = 70
+	mbMaxCredits = 12
+	mbMaxTags    = 5
+	// mbRecordingInc is the valid inc set for /recording/<mbid>. "labels" is
+	// NOT valid on a recording (400); the label comes from a /release lookup.
+	mbRecordingInc  = "artist-credits+releases+artist-rels+work-rels+work-level-rels+tags"
 	mbDepthCacheMax = 1024
 )
 
@@ -81,6 +84,7 @@ type mbRecording struct {
 }
 
 type mbRelease struct {
+	ID        string `json:"id"`
 	Title     string `json:"title"`
 	Date      string `json:"date"`
 	LabelInfo []struct {
@@ -233,7 +237,7 @@ func FetchTrackDepth(ctx context.Context, isrc, title, artist string) (*TrackDep
 	complete := true
 	if base.ID != "" {
 		var full mbRecording
-		u := fmt.Sprintf("%s/recording/%s?fmt=json&inc=artist-credits+releases+labels+artist-rels+work-rels+work-level-rels+tags",
+		u := fmt.Sprintf("%s/recording/%s?fmt=json&inc="+mbRecordingInc+"",
 			musicbrainzURL, url.PathEscape(base.ID))
 		if err := mbGet(ctx, u, &full); err != nil {
 			complete = false
@@ -244,10 +248,47 @@ func FetchTrackDepth(ctx context.Context, isrc, title, artist string) (*TrackDep
 	}
 
 	res := extractTrackDepth(merged...)
+	if res.Label == "" {
+		if rid := earliestReleaseID(merged...); rid != "" {
+			var rel struct {
+				LabelInfo []struct {
+					Label struct {
+						Name string `json:"name"`
+					} `json:"label"`
+				} `json:"label-info"`
+			}
+			u := fmt.Sprintf("%s/release/%s?fmt=json&inc=labels", musicbrainzURL, url.PathEscape(rid))
+			if err := mbGet(ctx, u, &rel); err != nil {
+				complete = false
+				slog.Warn("trackdepth_label_failed", "title", title, "artist", artist, "err", err.Error())
+			} else {
+				for _, li := range rel.LabelInfo {
+					if li.Label.Name != "" {
+						res.Label = li.Label.Name
+						break
+					}
+				}
+			}
+		}
+	}
 	if complete {
 		storeDepth(key, res)
 	}
 	return res, nil
+}
+
+// earliestReleaseID returns the id of the earliest dated release, whose label
+// best describes the original issue.
+func earliestReleaseID(recs ...*mbRecording) string {
+	best, bestDate := "", ""
+	for _, rec := range recs {
+		for _, r := range rec.Releases {
+			if r.ID != "" && yearOf(r.Date) > 0 && (bestDate == "" || r.Date < bestDate) {
+				best, bestDate = r.ID, r.Date
+			}
+		}
+	}
+	return best
 }
 
 func storeDepth(key string, d *TrackDepth) {
