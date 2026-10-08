@@ -1352,7 +1352,11 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 		}
 	}
 	changed := room.State.Version != versionBefore
-	data, err := json.Marshal(room.State)
+	// Stamp server capabilities on a shallow copy so the shared state (and what
+	// gets persisted below) never carries them.
+	outbound := *room.State
+	outbound.RadioAvailable = h.similar != nil
+	data, err := json.Marshal(&outbound)
 	room.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -1367,6 +1371,7 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 				h.logger.Error("store_marshal_failed", "room_id", roomID, "err", err.Error())
 			}
 		} else {
+			stateCopy.RadioAvailable = false // capability, not persisted state
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := h.store.Save(ctx, &stateCopy); err != nil {
@@ -2314,7 +2319,12 @@ func (h *Hub) enrichQuery(logEvent, title, artist string, configured bool, empty
 	result, err := fetch(ctx)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Error(logEvent, "title", title, "artist", artist, "err", err.Error())
+			// A timeout or cancel is an upstream being slow, not a bug.
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				h.logger.Warn(logEvent, "title", title, "artist", artist, "err", err.Error())
+			} else {
+				h.logger.Error(logEvent, "title", title, "artist", artist, "err", err.Error())
+			}
 		}
 		return json.Marshal(empty)
 	}
@@ -2485,7 +2495,9 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 	}
 
 	// Append similar tracks, guarded by re-checking queue is still waiting (idempotency).
+	var appended []queue.TrackRef
 	_, err = h.mutate(roomID, func(s *queue.RoomState) error {
+		appended = appended[:0] // mutate may be re-entered; collect fresh each run
 		// Guard: only refill if queue still has no next track (NowPlayingID empty)
 		// and radio is still enabled. If another client queued a track or disabled
 		// radio in the interim, this is a no-op.
@@ -2502,11 +2514,28 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 				break
 			}
 			track.AddedBy = "radio"
-			s.Add(track)
+			appended = append(appended, *s.Add(track))
 		}
 
 		return nil
 	})
+
+	// Last.fm gives only title+artist, so a radio track has no playable source
+	// until a matcher resolves one. Enrich exactly like queue.add does, or the
+	// room shows the track as unavailable for everyone. (The first appended
+	// track becomes now-playing immediately, as for any sourceless queue.add;
+	// each match republishes state, so playback starts when the source lands.)
+	if err == nil {
+		for _, tr := range appended {
+			tr := tr
+			if h.matcher != nil && tr.Sources.YouTube == nil {
+				h.launchEnrich(func() { h.enrichYouTube(roomID, tr.ID, tr) })
+			}
+			if h.spotifyMatcher != nil && tr.Sources.Spotify == nil {
+				h.launchEnrich(func() { h.enrichSpotify(roomID, tr.ID, tr) })
+			}
+		}
+	}
 
 	if err != nil && h.logger != nil {
 		h.logger.Error("radio_append_failed", "room_id", roomID, "err", err.Error())
