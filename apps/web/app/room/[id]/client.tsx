@@ -192,6 +192,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
     roomAuth: f.roomAuth,
     myUserId: getStoredUserId(),
     hostUserId: store.state?.hostUserId,
+    ownerUserId: store.state?.ownerUserId,
+    admins: store.state?.admins,
+  });
+  // Moderation and role management are host or owner only (not admins).
+  const moderate = canControl({
+    roomAuth: f.roomAuth,
+    myUserId: getStoredUserId(),
+    hostUserId: store.state?.hostUserId,
+    ownerUserId: store.state?.ownerUserId,
   });
 
   // Listener presence is rendered by ListenersStage, which reads the store
@@ -471,7 +480,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
       isPlaying={isPlaying}
       transportState={transportState}
       hostControl={hostControl}
-      hostLabel={Boolean(f.roomAuth && store.state?.hostUserId && hostControl)}
+      hostLabel={Boolean(f.roomAuth && store.state?.hostUserId && store.state.hostUserId === getStoredUserId())}
+      onNext={nowPlaying ? () => nowPlayingAdvance(roomId, nowPlaying.id).catch(() => {}) : undefined}
       activeSource={activeSource}
       servicePicker={servicePicker}
       volumeControl={<VolumeControl />}
@@ -485,7 +495,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
   );
 
   const listenersStage = (
-    <ListenersStage roomId={roomId} canControl={hostControl} running={isPlaying} hostUserId={store.state?.hostUserId} />
+    <ListenersStage
+      roomId={roomId}
+      canModerate={moderate}
+      running={isPlaying}
+      hostUserId={store.state?.hostUserId}
+      admins={store.state?.admins}
+      ownerUserId={store.state?.ownerUserId}
+    />
   );
 
   const addTrackForm = (
@@ -511,7 +528,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       <ActivityRail />
     </>
   );
-  const chatPanel = f.roomChat ? <ChatPanel roomId={roomId} canControl={hostControl} /> : null;
+  const chatPanel = f.roomChat ? <ChatPanel roomId={roomId} canControl={moderate} /> : null;
 
   const roomName = cleanLabel(store.state?.name);
   const listeners = store.members.length;

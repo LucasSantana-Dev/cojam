@@ -849,6 +849,18 @@ export async function kickMember(roomId: string, clientId: string) {
   await centrifuge.rpc('room.kick', { roomId, clientId });
 }
 
+// Role management (host or owner only; the server is authoritative). Both
+// reply with the full RoomState, which also arrives on the room channel.
+export async function setRoomAdmin(roomId: string, userId: string, admin: boolean) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('room.set_admin', { roomId, userId, admin });
+}
+
+export async function transferHost(roomId: string, userId: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('room.transfer_host', { roomId, userId });
+}
+
 // setRoomPublic toggles the room's public directory listing (host only,
 // FEATURE_PUBLIC_ROOMS). name is the optional directory label: pass a string
 // to set/replace it, an empty string to clear it, or omit to leave it

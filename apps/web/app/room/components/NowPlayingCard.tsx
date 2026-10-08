@@ -60,6 +60,9 @@ interface NowPlayingCardProps {
   hostControl: boolean;
   // Show the "Anfitrião" chip (room auth on and this client is the host).
   hostLabel: boolean;
+  // Skip the current track. Given only to anyone with control (host, admin,
+  // owner); the unavailable card shows it so nobody is stuck on a dead track.
+  onNext?: () => void;
   activeSource: keyof typeof SOURCE_NAME | null;
   // The "Ouvir no" control; replaces the plain source label when given.
   servicePicker?: ReactNode;
@@ -84,6 +87,7 @@ export function NowPlayingCard({
   transportState,
   hostControl,
   hostLabel,
+  onNext,
   activeSource,
   servicePicker,
   volumeControl,
@@ -104,6 +108,11 @@ export function NowPlayingCard({
           <div className="r4-now__foot">
             {servicePicker}
             <span className="r4-now__tools">
+              {hostControl && onNext && (
+                <button type="button" onClick={onNext} className="btn-primary r4-next">
+                  Próxima
+                </button>
+              )}
               <RadioSwitch roomId={roomId} on={radioOn} />
             </span>
           </div>

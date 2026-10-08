@@ -29,6 +29,8 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `chat.history` | `{ roomId }` | `{ messages: ChatMessage[] }` |
 | `chat.delete` | `{ roomId, messageId: string }` | `{ messageId: string }` |
 | `room.kick` | `{ roomId, clientId: string }` | `{ clientId: string }` |
+| `room.set_admin` | `{ roomId, userId: string, admin: boolean }` | `RoomState` |
+| `room.transfer_host` | `{ roomId, userId: string }` | `RoomState` |
 | `room.rebind` | `{ roomId, proof: string }` | `RoomState` |
 | `member.set_platform` | `{ roomId, platform: 'spotify' \| 'apple' \| 'youtube' }` | `{ clientId: string, platform: string }` |
 | `member.platforms` | `{ roomId }` | `{ platforms: Record<clientId, platform> }` |
@@ -251,15 +253,17 @@ still enforced.
 | `queue.vote` | any member (guests included) |
 | `chat.send`, `chat.history` | any member |
 | `chat.delete` | host only (non-host gets a code-400 UserError) |
-| `room.kick` | host only (non-host gets a code-400 UserError) |
+| `room.kick` | host or owner (others get a code-400 UserError); the owner cannot be kicked |
+| `room.set_admin` | host or owner; cannot target the owner or yourself; max 20 admins |
+| `room.transfer_host` | host or owner; target must be a member present now |
 | `room.rebind` | any member; caller must be signed in (`sb:` identity) |
 | `room.join`, `sync.ping`, reads | any caller |
-| `now_playing.set` / `now_playing.advance` | host only |
-| `queue.reorder` | host only |
-| `queue.remove` | host, or the member who queued the track (`addedByUserId`) |
-| `radio.set`, `playlist.import` | host only |
-| `room.set_public` | host only |
-| `transport.play` / `transport.pause` / `transport.seek` | host only |
+| `now_playing.set` / `now_playing.advance` | host, owner or admin |
+| `queue.reorder` | host, owner or admin |
+| `queue.remove` | host, owner, admin, or the member who queued the track (`addedByUserId`) |
+| `radio.set`, `playlist.import` | host, owner or admin |
+| `room.set_public` | host or owner (not admins) |
+| `transport.play` / `transport.pause` / `transport.seek` | host, owner or admin |
 
 `queue.remove` ownership: the server stamps `TrackRef.addedByUserId` from the connection identity
 on `queue.add` and `playlist.import` (a client-supplied value is overwritten). Tracks queued before
@@ -447,6 +451,8 @@ type RoomState = {
   queue: TrackRef[];        // ordered; head = now playing
   nowPlayingId?: string;    // queue entry id
   hostUserId?: string;      // userID of the room host (RFC-0005; empty when room auth is off)
+  ownerUserId?: string;     // room creator: always reclaims host on join, cannot be kicked or demoted (absent on older rooms)
+  admins?: string[];        // userIDs with full queue and transport control, set by room.set_admin
   radioEnabled: boolean;    // refill the queue with similar tracks when it runs dry
   radioAvailable?: boolean; // server capability, stamped on every state, never persisted: false = radio cannot work here (no FEATURE_RADIO / LASTFM_API_KEY), hide or disable the toggle. Absent on older servers.
   version: number;          // monotonic, bumps per mutation; clients drop stale
@@ -484,7 +490,7 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 ### Room ids and room creation
 
@@ -492,7 +498,7 @@ A room id must match `^[0-9A-Z]{1,12}$`: the 12 uppercase base36 chars the web g
 
 `room.join` draws from a per-caller rate limit (10 burst, one token per 2s). Creating a room draws from a separate budget (10 burst, one token per minute; `ROOM_CREATE_RATE_BURST` overrides the burst), charged both per caller and per client IP (the IP of the websocket upgrade, resolved like the HTTP limiters: IPv4 per address, IPv6 per /64); a creation is denied when either bucket is empty, and a denial charges neither. It is charged only when the target room exists neither in memory nor in the store, so joining an existing room never spends it. Both reject with a code-400 UserError. The caller key is the same as the other per-caller limits (`user:<userID>`, else `client:<clientID>`).
 
-State-fanout mutations (`queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `radio.set`, `room.set_public`) share one per-caller bucket (20 burst, one token per second), since every accepted call republishes the full `RoomState`. `queue.vote`, `transport.*`, the chat and moderation RPCs, and `playlist.import` keep their own buckets.
+State-fanout mutations (`queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`) share one per-caller bucket (20 burst, one token per second), since every accepted call republishes the full `RoomState`. `queue.vote`, `transport.*`, the chat and moderation RPCs, and `playlist.import` keep their own buckets.
 
 ### Trust model (#180)
 
@@ -507,3 +513,15 @@ Consequences of that decision:
 As an adoption signal for link sharing, the server emits a structured log (`room_first_non_creator_member`) and the `music_jam_rooms_shared_total` counter the first time a room gains a second concurrent member — its first non-creator member. The flag lives on the in-memory room instance, so an evicted-and-reloaded room may emit again.
 
 Rules: state carries metadata only, never audio. Each client plays the head track through its own platform SDK on explicit user gesture.
+
+
+## Host grace, owner and admins
+
+- The room creator is stored as `ownerUserId` and takes the host role back on every `room.join`.
+- A disconnected host keeps the role for 60 s (`DefaultHostGrace`); if the same user rejoins the
+  promotion is cancelled. During a server shutdown no host is promoted. For the same period after a
+  restart, a persisted host that has not reconnected yet cannot be displaced by a first joiner.
+- Admins can run every queue and transport RPC, but not kick, delete chat, set_public, set_admin or
+  transfer_host.
+- With `FEATURE_*` matchers wired, a now-playing track with no source after every lookup missed is
+  skipped by the server (`auto_skip_sourceless`). A lookup that errored never triggers a skip.

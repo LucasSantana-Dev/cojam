@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canControl, isHost } from './roomRole';
+import { canControl, isHost, isHostOrOwner } from './roomRole';
 
 describe('roomRole', () => {
   describe('canControl', () => {
@@ -21,6 +21,21 @@ describe('roomRole', () => {
 
     it('returns false when roomAuth is on, a host is assigned, and I am not the host', () => {
       expect(canControl({ roomAuth: true, myUserId: 'user1', hostUserId: 'user2' })).toBe(false);
+    });
+
+    it('returns true for an admin or the owner when someone else is host', () => {
+      const base = { roomAuth: true, hostUserId: 'jack', ownerUserId: 'lucas', admins: ['ann'] };
+      expect(canControl({ ...base, myUserId: 'ann' })).toBe(true);
+      expect(canControl({ ...base, myUserId: 'lucas' })).toBe(true);
+      expect(canControl({ ...base, myUserId: 'bob' })).toBe(false);
+      expect(canControl({ ...base, myUserId: null })).toBe(false);
+    });
+
+    it('isHostOrOwner excludes admins', () => {
+      expect(isHostOrOwner('jack', 'jack', 'lucas')).toBe(true);
+      expect(isHostOrOwner('lucas', 'jack', 'lucas')).toBe(true);
+      expect(isHostOrOwner('ann', 'jack', 'lucas')).toBe(false);
+      expect(isHostOrOwner(null, 'jack', 'lucas')).toBe(false);
     });
 
     it('returns false when roomAuth is on, a host is assigned, and myUserId is null', () => {
