@@ -7,7 +7,7 @@ const POLL_MS = 30_000;
 
 // LiveCounter shows "N people in M rooms right now". Hidden when nobody is in
 // a room, and on any fetch failure: an honest zero is not worth advertising.
-export function LiveCounter() {
+export function LiveCounter({ pill = false, className = '' }: { pill?: boolean; className?: string }) {
   const [stats, setStats] = useState<LiveStats | null>(null);
 
   useEffect(() => {
@@ -28,8 +28,15 @@ export function LiveCounter() {
 
   if (!stats || stats.people <= 0) return null;
   return (
-    <p className="live-counter" role="status">
-      <span className="room-card__dot" aria-hidden />
+    <p className={`live-counter ${className}`.trim()} role="status">
+      {pill ? (
+        <span className="r4-live">
+          <span className="r4-live__dot" aria-hidden />
+          AO VIVO
+        </span>
+      ) : (
+        <span className="room-card__dot" aria-hidden />
+      )}
       {stats.people} {stats.people === 1 ? 'pessoa' : 'pessoas'} em{' '}
       {stats.rooms} {stats.rooms === 1 ? 'sala' : 'salas'} agora
     </p>
