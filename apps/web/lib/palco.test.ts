@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { RoomState, TrackRef } from '@cojam/shared';
 import {
-  WORLDS, pickWorld, frameStage, screenRect, intersects, toCss,
+  WORLDS, pickWorld, frameStage, screenRect, playerRect, boothTop, intersects, toCss,
   boothMembers, crowdMembers, crowdSlots, nextTrack, memberForTrack,
   newVoters, memberForVoter, memberForClient, placeBubble, placeTag,
   STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, type PalcoMember,
@@ -79,25 +79,49 @@ describe('frameStage', () => {
     expect(f.height).toBe(520);
   });
 
-  it('compact framing is the screen plus a thin strip, and short windows fall back to it', () => {
+  it('compact framing is the player plus a thin strip, and short windows fall back to it', () => {
     const f = frameStage(phone, 390, 900, true);
     expect(f.compact).toBe(true);
-    expect(f.camTop).toBe(phone.screen.y - COMPACT_PAD);
-    expect(f.height).toBe((phone.screen.h + 2 * COMPACT_PAD) * f.scale);
+    const p = playerRect(phone, f, 390);
+    expect(p.y).toBeGreaterThanOrEqual(0);
+    expect(p.y + p.h).toBeLessThanOrEqual(f.height);
+    expect(f.height).toBe((100 + 2 * COMPACT_PAD) * f.scale);
     expect(frameStage(wide, 1440, 120).compact).toBe(true);
   });
 
-  it('keeps the screen at least 200 CSS px wide and inside the view at 390 and 1440', () => {
-    for (const [world, cw, ch] of [[phone, 390, 620], [wide, 1440, 760], [wide, 1040, 760], [phone, 390, 600]] as const) {
+  it('keeps the player at least 200x200 CSS px and inside the view', () => {
+    for (const [world, cw, ch] of [[phone, 390, 620], [phone, 375, 560], [phone, 390, 400], [wide, 1440, 760], [wide, 1040, 760], [wide, 700, 500], [wide, 640, 300]] as const) {
       for (const compact of [false, true]) {
         const f = frameStage(world, cw, ch, compact);
-        const s = screenRect(world, f);
-        expect(s.w).toBeGreaterThanOrEqual(200);
-        expect(s.x).toBeGreaterThanOrEqual(0);
-        expect(s.x + s.w).toBeLessThanOrEqual(cw);
-        expect(s.y + s.h).toBeLessThanOrEqual(f.height);
+        const p = playerRect(world, f, cw);
+        expect(p.w).toBeGreaterThanOrEqual(200);
+        expect(p.h).toBeGreaterThanOrEqual(200);
+        expect(p.x).toBeGreaterThanOrEqual(0);
+        expect(p.x + p.w).toBeLessThanOrEqual(cw);
+        expect(p.y).toBeGreaterThanOrEqual(0);
+        expect(p.y + p.h).toBeLessThanOrEqual(f.height);
       }
     }
+  });
+
+  it('phones get a full-width 16:9 player over the stage screen (owner decision A)', () => {
+    const f = frameStage(phone, 390, 620);
+    const p = playerRect(phone, f, 390);
+    expect(p).toMatchObject({ x: 17, w: 356, h: 200 });
+    const s = screenRect(phone, f);
+    expect(Math.abs(p.y + p.h / 2 - (s.y + s.h / 2))).toBeLessThanOrEqual(1);
+    // The DJs move just below it.
+    const top = boothTop(phone, f, p);
+    expect(toCss(f, 0, top)[1]).toBeGreaterThanOrEqual(p.y + p.h);
+  });
+
+  it('the wide stage keeps the pixel screen when it is big enough, else enlarges it', () => {
+    const f = frameStage(wide, 1440, 760);
+    expect(playerRect(wide, f, 1440)).toEqual(screenRect(wide, f));
+    expect(boothTop(wide, f, screenRect(wide, f))).toBe(wide.booths[0].top);
+    const small = frameStage(wide, 700, 500);
+    expect(small.scale).toBe(2);
+    expect(playerRect(wide, small, 700).h).toBe(200);
   });
 
   it('maps world pixels to whole CSS pixels', () => {

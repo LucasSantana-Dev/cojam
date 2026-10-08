@@ -155,20 +155,24 @@ export function frameStage(world: WorldDef, cw: number, ch: number, compact = fa
   const ox = Math.floor((cw - w * scale) / 2);
   const camLeft = Math.round(world.W / 2 - w / 2);
   const avail = Math.floor(ch / scale);
-  const minRows = world.screen.h + 2 * COMPACT_PAD;
+  // The player can be taller than the pixel screen (phones): reserve its rows.
+  const player = playerSize(world, cw, scale);
+  const centre = world.screen.y + world.screen.h / 2;
+  const half = player.h / scale / 2;
+  const minRows = Math.max(world.screen.h, Math.ceil(player.h / scale)) + 2 * COMPACT_PAD;
   if (compact || avail < minRows) {
     const h = minRows;
-    return { scale, w, h, ox, camLeft, camTop: world.screen.y - COMPACT_PAD, crowdBottom: world.liveBottom, height: h * scale, compact: true };
+    return { scale, w, h, ox, camLeft, camTop: Math.round(centre - h / 2), crowdBottom: world.liveBottom, height: h * scale, compact: true };
   }
   let camTop: number;
   let crowdBottom: number;
   let height = ch;
   if (world.liveBottom - avail >= STAGE_TOP) {
     // Short window: crop the sky and the top of the truss, never the screen.
-    camTop = Math.min(MAX_TOP, world.liveBottom - avail, world.screen.y - 2);
+    camTop = Math.min(MAX_TOP, world.liveBottom - avail, world.screen.y - 2, Math.floor(centre - half) - 2);
     crowdBottom = world.liveBottom;
   } else {
-    camTop = STAGE_TOP;
+    camTop = Math.min(STAGE_TOP, Math.floor(centre - half) - 2);
     crowdBottom = Math.min(STAGE_TOP + avail, world.liveBottom + CROWD_EXTRA);
     height = Math.min(ch, (crowdBottom - STAGE_TOP) * scale);
   }
@@ -181,7 +185,43 @@ export function toCss(f: Framing, wx: number, wy: number): [number, number] {
   return [Math.round((wx - f.camLeft) * f.scale + f.ox), Math.round((wy - f.camTop) * f.scale)];
 }
 
-// The stage screen in stage-area CSS px: the rectangle the YouTube player fills.
+// The YouTube player is at least PLAYER_MIN x PLAYER_MIN CSS px, always (API
+// terms). On the vertical stage the owner chose (2026-10-08, "A") a full-width
+// 16:9 player over the stage screen, allowed to cover the scene art around it
+// (truss, booths): about 356x200 at 390 wide. On the wide stage it is the pixel
+// screen itself, enlarged the same way only when a small factor makes the
+// screen shorter than PLAYER_MIN.
+export const PLAYER_MIN = 200;
+export const PLAYER_GUTTER = 17;
+
+export function playerSize(world: WorldDef, cw: number, scale: number): { w: number; h: number } {
+  const sw = world.screen.w * scale, sh = world.screen.h * scale;
+  if (world.kind === 'wide' && sw >= PLAYER_MIN && sh >= PLAYER_MIN) return { w: sw, h: sh };
+  const room = Math.max(PLAYER_MIN, cw - 2 * PLAYER_GUTTER);
+  const w = world.kind === 'phone' ? room : Math.min(room, Math.max(sw, Math.ceil((PLAYER_MIN * 16) / 9)));
+  return { w, h: Math.max(PLAYER_MIN, Math.round((w * 9) / 16)) };
+}
+
+// The player rectangle in stage-area CSS px: centred on the pixel screen
+// (horizontally on the stage area for the vertical stage), inside the view.
+export function playerRect(world: WorldDef, f: Framing, cw: number): Rect {
+  const s = screenRect(world, f);
+  const { w, h } = playerSize(world, cw, f.scale);
+  if (w === s.w && h === s.h) return s;
+  const cx = world.kind === 'phone' ? cw / 2 : s.x + s.w / 2;
+  const x = Math.max(0, Math.min(cw - w, Math.round(cx - w / 2)));
+  const y = Math.max(0, Math.min(f.height - h, Math.round(s.y + s.h / 2 - h / 2)));
+  return { x, y, w, h };
+}
+
+// On the vertical stage the player covers the booths drawn in the art, so the
+// DJs stand just below it: their head row in world px.
+export function boothTop(world: WorldDef, f: Framing, player: Rect): number {
+  const below = f.camTop + Math.ceil((player.y + player.h) / f.scale) + 2;
+  return world.kind === 'phone' ? Math.max(world.booths[0].top, below) : world.booths[0].top;
+}
+
+// The stage screen in stage-area CSS px (the pixel art's screen).
 export function screenRect(world: WorldDef, f: Framing): Rect {
   const [x, y] = toCss(f, world.screen.x, world.screen.y);
   return { x, y, w: world.screen.w * f.scale, h: world.screen.h * f.scale };

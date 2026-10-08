@@ -97,6 +97,15 @@ Update 2026-10-08: Apple Music was removed from the product (#374). The decision
 - The ToS rules still apply to the muted player: at least 200x200 and never covered.
 - Cost: two players run per Spotify listener (their service plus the muted video). CPU and battery cost on phones; revisit if measured as heavy.
 
+### 9. Phones: a full-width player over the scene art (decided 2026-10-08)
+
+Question: on the vertical stage the pixel screen at an integer scale is 244x144 at 390 wide, under the 200x200 the YouTube terms ask for. Either (A) a full-width 16:9 player over the stage screen, allowed to cover the scene art around it, or keep the pixel screen size. Owner answer: "A".
+
+- On phones (the vertical stage) the player is full width less a 17 px gutter each side, 16:9, about 356x200 at 390 wide, and never under 200x200. It is centred on the stage screen and may cover the truss and the booths drawn in the art.
+- Nothing covers the player: the DJs and their booth tags stand just below it, name tags and chat bubbles are pushed clear of it, and the crowd stays visible below.
+- On the wide stage the player is the pixel screen (393x222 at 1440). If a small window drops the screen under 200 px tall, the player grows the same way.
+- The e2e asserts at least 200x200 at 390x844 and 1440x900 with each panel open.
+
 ## Consequences
 
 ### Protocol

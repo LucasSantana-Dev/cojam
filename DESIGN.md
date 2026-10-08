@@ -156,7 +156,7 @@ Hard rule from the YouTube API terms (see the record, section "YouTube ToS const
 
 ### Phone layout (390)
 
-Top to bottom: top bar, the stage (arch, screen, speakers) with the embed at least 200 px wide and tall, an audience band (sprites with tags, bubbles kept outside the screen), a compact now-playing card (title, artist, "X pediu", play, progress), tabs **Palco / Fila / Chat**.
+Top to bottom: top bar, the stage (arch, screen, speakers) with the embed full width (less a 17 px gutter), 16:9 and never under 200x200, over the stage screen and the art around it (owner decision 9 in the record: the DJs stand just below it), an audience band (sprites with tags, bubbles kept outside the screen), a compact now-playing card (title, artist, "X pediu", play, progress), tabs **Palco / Fila / Chat**.
 
 - The embed **stays mounted and visible on every tab**. Under Fila and Chat the stage shrinks to the screen plus a thin strip, never to nothing. This also removes the current phone behaviour where `.video-panel-keep` hides the player under those tabs.
 - 44px targets. The audience band scrolls horizontally if it overflows.

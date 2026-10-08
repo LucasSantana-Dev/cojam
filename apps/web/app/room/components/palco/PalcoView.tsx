@@ -17,7 +17,7 @@ import { useMotion } from '@/lib/motionFlags';
 import { usePalcoMotion, setPalcoMotion } from '@/lib/palcoView';
 import { computeExpectedPosition, serverNow } from '@/lib/playbackSync';
 import {
-  WORLDS, pickWorld, frameStage, screenRect, boothMembers, crowdMembers, crowdSlots, memberKey,
+  WORLDS, pickWorld, frameStage, playerRect, boothTop, boothMembers, crowdMembers, crowdSlots, memberKey,
   newVoters, memberForVoter, memberForClient, placeBubble, placeTag, type Framing, type WorldKind,
 } from '@/lib/palco';
 import { PalcoScene, loadSceneImages, type FrameOut } from './scene';
@@ -69,7 +69,9 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork 
   const compact = kind === 'phone' && activePanel !== 'stage';
   const [size, setSize] = useState<{ cw: number; ch: number } | null>(null);
   const framing: Framing | null = useMemo(() => (size && size.cw > 0 ? frameStage(world, size.cw, size.ch, compact) : null), [world, size, compact]);
-  const screen = framing ? screenRect(world, framing) : null;
+  // The player rectangle (owner decision A: full width on the vertical stage).
+  // Every overlay is laid out around it, never over it.
+  const screen = framing && size ? playerRect(world, framing, size.cw) : null;
 
   const motionPref = usePalcoMotion();
   const sys = useMotion();
@@ -178,8 +180,8 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork 
   }, [kind]);
 
   useEffect(() => {
-    if (scene && framing) scene.resize(framing);
-  }, [scene, framing]);
+    if (scene && framing && screen) scene.resize(framing, boothTop(world, framing, screen));
+  }, [scene, framing, world, screen?.y, screen?.h]); // eslint-disable-line react-hooks/exhaustive-deps -- the rectangle, not the object identity
   useEffect(() => {
     scene?.setMotion(motion);
   }, [scene, motion]);

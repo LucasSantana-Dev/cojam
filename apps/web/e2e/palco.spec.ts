@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 // Modo palco, part 2: the stage view of a live room. The room's own YouTube
-// player is lifted over the stage screen: at least 200 px wide, hit-testable,
+// player is lifted over the stage screen: at least 200x200 px, hit-testable,
 // and no name tag, chat bubble, HUD, panel or top bar touches its box, with
 // each panel (Palco / Fila / Chat) open, at 390x844 and 1440x900. Uses the dev
 // fixture (?fixture=room&yt=1: a stand-in with the real #youtube-player id and
@@ -38,7 +38,9 @@ async function overlayBoxes(page: Page): Promise<Array<{ what: string; box: Box 
 
 async function expectPlayerClear(page: Page) {
   const box = await playerBox(page);
+  // YouTube API terms: at least 200x200, always (on phones: full width, owner decision A).
   expect(box.width).toBeGreaterThanOrEqual(200);
+  expect(box.height).toBeGreaterThanOrEqual(200);
   // Fully on screen.
   const vp = page.viewportSize()!;
   expect(box.x).toBeGreaterThanOrEqual(0);

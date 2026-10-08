@@ -39,6 +39,7 @@ const SKY_H = 540;
 const UP_W = 28; // arms-up frame: 28x58, 4 px wider each side, 10 rows of arms on top
 const UP_EXTRA = 10;
 const INK = '#0d0a17';
+const DESK_W = 28;
 
 export interface SceneImages {
   stage: HTMLImageElement;
@@ -168,6 +169,9 @@ interface Booth {
   mode: 'idle' | 'sink' | 'rise';
   t0: number;
   from: number;
+  // Head row; on the vertical stage it moves below the player.
+  top: number;
+  desk?: Sized;
   waveC?: HTMLCanvasElement;
   waveTex?: Texture;
   wave?: Sized;
@@ -277,25 +281,18 @@ export class PalcoScene {
 
     // Booths: the DJ sprite sits behind a copy of the booth front (or a desk).
     for (const def of world.booths) {
-      const booth: Booth = { def, mesh: this.plane(null, SPRITE_W, SPRITE_H, 4), who: null, next: null, rise: 0, mode: 'idle', t0: 0, from: 0 };
+      const booth: Booth = { def, mesh: this.plane(null, SPRITE_W, SPRITE_H, 4), who: null, next: null, rise: 0, mode: 'idle', t0: 0, from: 0, top: def.top };
       booth.mesh.visible = false;
       if (def.desk) {
-        const DW = 28, DH = 16;
-        const x0 = def.x - 4, y0 = def.top + 28;
-        const c = crop(imgs.stage, x0, y0, DW, 70);
-        const dg = c.getContext('2d')!;
-        dg.fillStyle = '#120c24'; dg.fillRect(0, 0, DW, DH);
-        dg.fillStyle = '#2a1c50'; dg.fillRect(1, 1, DW - 2, DH - 2);
-        dg.fillStyle = '#9a82ea'; dg.fillRect(0, 0, DW, 1);
-        dg.fillStyle = '#4b3690'; dg.fillRect(3, 2, 6, 2); dg.fillRect(DW - 9, 2, 6, 2);
-        dg.fillStyle = '#d9cffb'; dg.fillRect(5, 2, 2, 1); dg.fillRect(DW - 7, 2, 2, 1);
-        this.put(this.plane(texFrom(c), DW, 70, 4.5), x0, y0);
         booth.waveC = document.createElement('canvas');
-        booth.waveC.width = DW - 6;
+        booth.waveC.width = DESK_W - 6;
         booth.waveC.height = 9;
         booth.waveTex = texFrom(booth.waveC);
-        booth.wave = this.plane(booth.waveTex, DW - 6, 9, 4.6);
-        this.put(booth.wave, x0 + 3, y0 + 5);
+        booth.wave = this.plane(booth.waveTex, DESK_W - 6, 9, 6.7);
+        // The floor DJs stand in front of the silhouette rows (z 5 to 6).
+        booth.mesh.position.z = 6.5;
+        booth.mesh.renderOrder = 65;
+        this.placeDesk(booth);
       } else if (def.cover) {
         const [cx, cy, cw, chh] = def.cover;
         this.put(this.plane(texFrom(crop(imgs.stage, cx, cy, cw, chh)), cw, chh, 4.5), cx, cy);
@@ -387,8 +384,16 @@ export class PalcoScene {
 
   // --- public API ---------------------------------------------------------------
 
-  resize(f: Framing): void {
+  // boothTop: head row of the DJs (the vertical stage moves them below the player).
+  resize(f: Framing, boothTop?: number): void {
     this.framing = f;
+    for (const b of this.booths) {
+      const top = b.def.desk && boothTop !== undefined ? boothTop : b.def.top;
+      if (top !== b.top) {
+        b.top = top;
+        this.placeDesk(b);
+      }
+    }
     this.renderer.setSize(f.w, f.h, false);
     const canvas = this.renderer.domElement;
     canvas.style.width = `${f.w * f.scale}px`;
@@ -573,11 +578,37 @@ export class PalcoScene {
     return t;
   }
 
+  // The small floor desk of the vertical stage. A sinking DJ is clipped at its
+  // bottom edge (see frame), so it needs no cover of art pixels.
+  private placeDesk(b: Booth): void {
+    if (!b.def.desk || !b.wave) return;
+    if (b.desk) this.drop(b.desk);
+    const DH = 16;
+    const x0 = b.def.x - 4, y0 = b.top + 28;
+    const c = document.createElement('canvas');
+    c.width = DESK_W;
+    c.height = DH;
+    const dg = c.getContext('2d')!;
+    dg.fillStyle = '#120c24'; dg.fillRect(0, 0, DESK_W, DH);
+    dg.fillStyle = '#2a1c50'; dg.fillRect(1, 1, DESK_W - 2, DH - 2);
+    dg.fillStyle = '#9a82ea'; dg.fillRect(0, 0, DESK_W, 1);
+    dg.fillStyle = '#4b3690'; dg.fillRect(3, 2, 6, 2); dg.fillRect(DESK_W - 9, 2, 6, 2);
+    dg.fillStyle = '#d9cffb'; dg.fillRect(5, 2, 2, 1); dg.fillRect(DESK_W - 7, 2, 2, 1);
+    b.desk = this.plane(texFrom(c), DESK_W, DH, 6.6);
+    this.put(b.desk, x0, y0);
+    this.put(b.wave, x0 + 3, y0 + 5);
+  }
+
   private assignBooth(b: Booth, who: BoothEntry | null): void {
     b.who = who;
     b.next = null;
-    const tex = who ? this.chars(who.characterId).front ?? this.chars(who.characterId).backUp : null;
-    (b.mesh.material as MeshBasicMaterial).map = tex;
+    const base = who ? this.chars(who.characterId).front ?? this.chars(who.characterId).backUp : null;
+    const mat = b.mesh.material as MeshBasicMaterial;
+    // Floor DJs crop their own copy of the texture (repeat/offset per booth).
+    if (b.def.desk && mat.map && mat.map !== base) mat.map.dispose();
+    const tex = base && b.def.desk ? base.clone() : base;
+    if (tex && b.def.desk) tex.needsUpdate = true;
+    mat.map = tex;
     b.mesh.material.needsUpdate = true;
     b.mesh.visible = Boolean(who);
   }
@@ -775,9 +806,20 @@ export class PalcoScene {
         if (b.rise >= 1) b.mode = 'idle';
       }
       const bob = motion && b.rise >= 1 ? ((beat % 1) < 0.5 ? 1 : 0) : 0;
-      const y = b.def.top + Math.round((1 - b.rise) * 40);
-      this.put(b.mesh, b.def.x, y + bob);
-      const [ax, ay] = this.css(b.def.x + SPRITE_W / 2, b.def.desk ? b.def.top + 28 + 16 : y);
+      const sink = Math.round((1 - b.rise) * 40);
+      const y = b.top + sink;
+      if (b.def.desk) {
+        // Show only the rows above the desk's bottom edge (top + 44): whole rows.
+        const vis = 44 - sink;
+        const map = (b.mesh.material as MeshBasicMaterial).map;
+        if (map) { map.repeat.y = vis / SPRITE_H; map.offset.y = 1 - vis / SPRITE_H; }
+        b.mesh.scale.y = vis / SPRITE_H;
+        b.mesh.position.x = Math.round(b.def.x) + SPRITE_W / 2;
+        b.mesh.position.y = -(y + bob + vis / 2);
+      } else {
+        this.put(b.mesh, b.def.x, y + bob);
+      }
+      const [ax, ay] = this.css(b.def.x + SPRITE_W / 2, b.def.desk ? b.top + 28 + 16 : y);
       out.booths.push({ key: b.who?.key ?? null, x: ax, y: ay, visible: Boolean(b.who) && b.rise >= 1 });
     });
 
