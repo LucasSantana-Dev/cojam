@@ -132,7 +132,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     let lastDrift = 0;
     let resumeTried = false;
     // Queue ended: the server leaves the transport "playing" at 0 with nothing
-    // now-playing, while the player still holds the finished track. Resuming
+    // now-playing, while an adapter may still hold the finished track. Resuming
     // and seeking it to 0 would replay that song instead of waiting for the
     // radio refill, so there is nothing to sync until a track is set.
     if (transport.state === 'playing' && !transport.hasTrack) return;

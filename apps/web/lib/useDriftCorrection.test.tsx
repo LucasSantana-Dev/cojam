@@ -566,7 +566,7 @@ describe('useDriftCorrection when the queue has ended', () => {
 
   // The server leaves the transport "playing" at 0 when the last track ends
   // and nothing follows (radio still fetching, or off). The player still holds
-  // the finished video: resuming and seeking it to 0 replays the same song.
+  // the finished track (Spotify or Apple; YouTube unmounts): resuming and seeking it to 0 replays the same song.
   it('does not replay the finished track while nothing is now-playing', async () => {
     const player = makePlayer();
     useStore.getState().setState({
@@ -575,6 +575,23 @@ describe('useDriftCorrection when the queue has ended', () => {
       nowPlayingId: undefined,
     });
     const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(player.play).not.toHaveBeenCalled();
+    expect(player.seekToMs).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('does not resume the old player when a now-playing track has no source yet', async () => {
+    const player = makePlayer();
+    useStore.getState().setState({
+      ...roomState(3, { state: 'playing', positionMs: 0, updatedAtServerMs: NOW }),
+      queue: [{ id: 'radio1', title: 'R', artist: 'A', sources: {}, addedBy: 'radio' }],
+      nowPlayingId: 'radio1',
+    });
+    // client.tsx hands the hook no active player while the source is unresolved.
+    const { unmount } = renderHook(() => useDriftCorrection(null, true, true));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
