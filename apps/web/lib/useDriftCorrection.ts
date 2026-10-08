@@ -39,7 +39,9 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
   const transport = useStore(
     useShallow((s) => {
       const t = s.state?.transport;
-      return t ? { state: t.state, positionMs: t.positionMs, updatedAtServerMs: t.updatedAtServerMs } : undefined;
+      return t
+        ? { state: t.state, positionMs: t.positionMs, updatedAtServerMs: t.updatedAtServerMs, hasTrack: !!s.state?.nowPlayingId }
+        : undefined;
     }),
   );
 
@@ -129,6 +131,11 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     // persistent large offset keeps backing off.
     let lastDrift = 0;
     let resumeTried = false;
+    // Queue ended: the server leaves the transport "playing" at 0 with nothing
+    // now-playing, while the player still holds the finished track. Resuming
+    // and seeking it to 0 would replay that song instead of waiting for the
+    // radio refill, so there is nothing to sync until a track is set.
+    if (transport.state === 'playing' && !transport.hasTrack) return;
     // Handle state transitions: play/pause/stop
     if (transport.state === 'playing') {
       // Same store snapshot for the transport and the now-playing id.
