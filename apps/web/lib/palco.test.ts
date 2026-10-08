@@ -307,7 +307,16 @@ describe('plainSideColours', () => {
     expect(plainSideColours(px, 10, 4, 0)).toEqual([SKY, SKY, SKY, GROUND]);
   });
 
-  it('never extends a bright beam colour', () => {
-    expect(plainSideColours(px, 10, 4, 2)).not.toContain(BEAM);
+  it('never extends a bright beam colour, even when it is the row majority', () => {
+    // Row 1 over columns 0..7 is 6 beam pixels of 8: only the brightness gate keeps it out.
+    const lum = (c: number) => (c >> 16) * 0.3 + ((c >> 8) & 255) * 0.59 + (c & 255) * 0.11;
+    expect(lum(BEAM)).toBeGreaterThan(50);
+    const out = plainSideColours(px, 10, 4, 0);
+    expect(out).not.toContain(BEAM);
+    expect(out[1]).toBe(SKY);
+  });
+
+  it('reads the right edge (x0 = W - EDGE_COLS) and stays within the plate', () => {
+    expect(plainSideColours(px, 10, 4, 10 - EDGE_COLS)).toEqual([SKY, SKY, SKY, GROUND]);
   });
 });

@@ -459,6 +459,8 @@ export class PalcoScene {
   setMotion(on: boolean): void {
     this.motion = on;
     if (!on) {
+      // Redraw the sky once with every star on: a twinkle state must not freeze.
+      this.lastSky = -1;
       for (const p of this.people.values()) p.here = 1;
       this.conf.forEach((c) => { c.y = -999; });
       this.hearts.splice(0).forEach((h) => this.drop(h.m));
@@ -576,6 +578,8 @@ export class PalcoScene {
     // Every texture once: the scene's maps (stage plate, edges, ground, covers,
     // desks, lamps, rows) plus the ones not always in the scene.
     const textures = new Set<Texture>([this.skyTex, this.heartTex]);
+    // Both frames of every crowd row: the inactive one is on no material.
+    this.rows.forEach((r) => { textures.add(r.texA); textures.add(r.texB); });
     this.scene.traverse((o) => {
       const m = o as Mesh;
       if (m.geometry) m.geometry.dispose();
@@ -592,7 +596,6 @@ export class PalcoScene {
     for (const t of this.charTex.values()) {
       [...t.halves.front, ...t.halves.back, ...(t.arms.front ?? []), ...(t.arms.back ?? []), ...(t.dance.front ?? []), ...(t.dance.back ?? []), t.front].forEach((x) => x?.dispose());
     }
-    this.rows.forEach((r) => { textures.add(r.texA); textures.add(r.texB); });
     this.renderer.dispose();
     // Free the GPU context now: a world switch or a remount makes a new canvas.
     this.renderer.forceContextLoss();
@@ -678,7 +681,10 @@ export class PalcoScene {
   // at its bottom edge (see frame), so it needs no cover of art pixels.
   private placeDesk(b: Booth): void {
     if (!b.def.desk || !this.imgs.desk) return;
-    if (b.desk) this.drop(b.desk);
+    if (b.desk) {
+      (b.desk.material as MeshBasicMaterial).map?.dispose();
+      this.drop(b.desk);
+    }
     const img = this.imgs.desk;
     b.desk = this.plane(texFrom(b.def.side === 'R' ? mirrored(img) : img), img.width, img.height, 6.6);
     this.put(b.desk, b.def.x - (img.width - SPRITE_W) / 2, b.top + DESK_TOP);
