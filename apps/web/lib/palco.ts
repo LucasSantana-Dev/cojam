@@ -32,11 +32,12 @@ export interface WorldDef {
   W: number;
   H: number;
   src: string;
+  // Image-model sky plate, as wide as the stage art and SKY_H (540) tall.
+  sky: string;
   // The stage screen: where the real YouTube player sits.
   screen: Rect;
   // Lowest world row of the live framing (front row feet sit around it).
   liveBottom: number;
-  moon: [number, number];
   booths: [BoothDef, BoothDef];
   // Sine-wave screens on the speaker stacks (wide only).
   waves: Array<[number, number]>;
@@ -60,9 +61,9 @@ export const WORLDS: Record<WorldKind, WorldDef> = {
     W: 360,
     H: 225,
     src: '/palco/stage-360-v10.png',
+    sky: '/palco/sky-360-v10.png',
     screen: { x: 115, y: 78, w: 131, h: 74 },
     liveBottom: 250,
-    moon: [292, -150],
     booths: [
       { side: 'L', x: 52, top: 104, cover: [30, 121, 60, 66] },
       { side: 'R', x: 289, top: 104, cover: [268, 121, 62, 66] },
@@ -83,9 +84,9 @@ export const WORLDS: Record<WorldKind, WorldDef> = {
     W: 202,
     H: 360,
     src: '/palco/stage-phone-202-v10.png',
+    sky: '/palco/sky-202-v10.png',
     screen: { x: 41, y: 75, w: 120, h: 70 },
     liveBottom: 268,
-    moon: [150, -170],
     // The vertical plate crops the side booths: each DJ gets a small desk on the floor.
     booths: [
       { side: 'L', x: 8, top: 116, desk: true },
