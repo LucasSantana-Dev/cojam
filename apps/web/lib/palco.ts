@@ -32,14 +32,13 @@ export interface WorldDef {
   W: number;
   H: number;
   src: string;
+  // Image-model sky plate, as wide as the stage art and SKY_H (540) tall.
+  sky: string;
   // The stage screen: where the real YouTube player sits.
   screen: Rect;
   // Lowest world row of the live framing (front row feet sit around it).
   liveBottom: number;
-  moon: [number, number];
   booths: [BoothDef, BoothDef];
-  // Sine-wave screens on the speaker stacks (wide only).
-  waves: Array<[number, number]>;
   // Beam origin x, y, angle, spread, length.
   beams: Array<[number, number, number, number, number]>;
   lamps: Array<[number, number]>;
@@ -59,17 +58,16 @@ export const WORLDS: Record<WorldKind, WorldDef> = {
     kind: 'wide',
     W: 360,
     H: 225,
-    src: '/palco/stage-360.png',
+    src: '/palco/stage-360-v11.png',
+    sky: '/palco/sky-360-v10.png',
     screen: { x: 115, y: 78, w: 131, h: 74 },
     liveBottom: 250,
-    moon: [292, -150],
     booths: [
-      { side: 'L', x: 51, top: 104, cover: [30, 121, 60, 66] },
-      { side: 'R', x: 292, top: 104, cover: [268, 121, 62, 66] },
+      { side: 'L', x: 52, top: 104, cover: [30, 121, 60, 66] },
+      { side: 'R', x: 289, top: 104, cover: [268, 121, 62, 66] },
     ],
-    waves: [[33, 133], [272, 133]],
     beams: [[96, 86, -0.55, 0.07, 150], [130, 60, -0.25, 0.06, 140], [230, 60, 0.25, 0.06, 140], [264, 86, 0.55, 0.07, 150], [47, 122, -0.75, 0.012, 260], [312, 122, 0.75, 0.012, 260]],
-    lamps: [[82, 95], [81, 108], [268, 96], [269, 109]],
+    lamps: [[83, 97], [82, 109], [269, 97], [271, 109]],
     confetti: [100, 260, 70],
     rowsFrom: 200,
     rowsToOff: 24,
@@ -81,18 +79,17 @@ export const WORLDS: Record<WorldKind, WorldDef> = {
     kind: 'phone',
     W: 202,
     H: 360,
-    src: '/palco/stage-phone-202.png',
-    screen: { x: 40, y: 74, w: 122, h: 72 },
+    src: '/palco/stage-phone-202-v11.png',
+    sky: '/palco/sky-202-v10.png',
+    screen: { x: 41, y: 75, w: 120, h: 70 },
     liveBottom: 268,
-    moon: [150, -170],
     // The vertical plate crops the side booths: each DJ gets a small desk on the floor.
     booths: [
       { side: 'L', x: 8, top: 116, desk: true },
       { side: 'R', x: 174, top: 116, desk: true },
     ],
-    waves: [],
     beams: [[51, 56, -0.45, 0.07, 150], [152, 56, 0.45, 0.07, 150], [10, 80, -0.85, 0.06, 130], [192, 76, 0.85, 0.06, 130], [30, 150, -0.35, 0.012, 220], [172, 150, 0.35, 0.012, 220]],
-    lamps: [[11, 92], [10, 105], [183, 92], [183, 105]],
+    lamps: [[11, 92], [10, 105], [183, 92], [185, 105]],
     confetti: [60, 142, 60],
     rowsFrom: 196,
     rowsToOff: 38,
@@ -101,6 +98,10 @@ export const WORLDS: Record<WorldKind, WorldDef> = {
     spacing: 26,
   },
 };
+
+// The floor desk (public/palco/desk.png, 28x17) relative to a DJ's head row.
+export const DESK_TOP = 28;
+export const DESK_BOTTOM = DESK_TOP + 17;
 
 // Sprite geometry (public/palco/characters): 20x48 front/back, 28x58 arms up.
 export const SPRITE_W = 20;
@@ -125,6 +126,31 @@ export const CROWD_EXTRA = 40;
 export const COMPACT_PAD = 6;
 // World pixels the scene draws past each side of the art (sky, ground, crowd).
 export const SIDE_EXT = 60;
+
+// Plain side extension of a plate: each row takes the most common dark colour
+// of the plate's EDGE_COLS outer columns (x0..x0+EDGE_COLS) when it covers most
+// of them, the sky or ground there. Rows where the edge is busy (towers, booths,
+// beams) carry the colour of the row above, so only flat bands reach the sides.
+export const EDGE_COLS = 8;
+const EDGE_DARK = 50;
+export function plainSideColours(px: Uint8ClampedArray, w: number, h: number, x0: number): number[] {
+  const out: number[] = [];
+  let prev = -1;
+  for (let y = 0; y < h; y++) {
+    const count = new Map<number, number>();
+    for (let x = x0; x < x0 + EDGE_COLS && x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11 >= EDGE_DARK) continue;
+      const c = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+      count.set(c, (count.get(c) ?? 0) + 1);
+    }
+    let best = -1, n = 0;
+    for (const [c, k] of count) if (k > n) { best = c; n = k; }
+    if (n * 2 > EDGE_COLS || prev < 0) prev = best;
+    out.push(prev < 0 ? 0 : prev);
+  }
+  return out;
+}
 
 export interface Framing {
   scale: number;
@@ -255,8 +281,8 @@ export function boardRect(world: WorldDef, f: Framing, player: Rect, count: numb
     const [r] = toCss(f, world.booths[1].x - 8, 0);
     x = l;
     w = r - l;
-    // The booth tags hang under the desks (desk bottom: head row + 44).
-    bottom = Math.min(bottom, toCss(f, 0, boothTop(world, f, player) + 44)[1] - 4);
+    // The booth tags hang under the desks.
+    bottom = Math.min(bottom, toCss(f, 0, boothTop(world, f, player) + DESK_BOTTOM)[1] - 4);
   }
   const rows = Math.min(count, BOARD_MAX, Math.floor((bottom - y - 2 * BOARD_PAD - BOARD_HEAD) / BOARD_ROW));
   if (rows < 1 || w < 120) return null;

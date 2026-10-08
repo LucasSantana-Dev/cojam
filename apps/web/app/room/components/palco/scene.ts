@@ -30,7 +30,7 @@ import {
   type Material,
   type MeshBasicMaterialParameters,
 } from 'three';
-import { SIDE_EXT, SPLIT, SPRITE_H, SPRITE_W, type Framing, type Slot, type WorldDef } from '@/lib/palco';
+import { DESK_BOTTOM, DESK_TOP, EDGE_COLS, plainSideColours, SIDE_EXT, SPLIT, SPRITE_H, SPRITE_W, type Framing, type Slot, type WorldDef } from '@/lib/palco';
 import { beatAt } from '@/lib/beatClock';
 import { serverNow } from '@/lib/playbackSync';
 import { CHARACTER_COUNT } from '@/lib/characters';
@@ -44,16 +44,24 @@ const UP_SIDE = (UP_W - SPRITE_W) / 2;
 // Name tags rise this many native px while the arms are up.
 const UP_TAG = 6;
 const INK = '#0d0a17';
-const DESK_W = 28;
 // The named audience faces the camera; nothing turns anyone round yet.
 const FACING: Facing = 'front';
 
 export interface SceneImages {
   stage: HTMLImageElement;
+  // Image-model sky (bands, stars, moon, far lights), as wide as the plate.
+  sky: HTMLImageElement | null;
+  // The floor DJ desk of the vertical stage (left facing; mirrored for R).
+  desk: HTMLImageElement | null;
+  // Background crowd tiles, two frames per layer.
+  crowd: Record<CrowdLayer, [HTMLImageElement, HTMLImageElement]>;
   front: Record<number, HTMLImageElement>;
   back: Record<number, HTMLImageElement>;
   upFront: Record<number, HTMLImageElement>;
   upBack: Record<number, HTMLImageElement>;
+  // Dance frames: 28x60 on the same canvas as the arms-up frames.
+  danceFront: Record<number, HTMLImageElement>;
+  danceBack: Record<number, HTMLImageElement>;
 }
 
 const pad = (id: number) => String(id).padStart(2, '0');
@@ -70,7 +78,14 @@ function load(src: string): Promise<HTMLImageElement | null> {
 export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
   const stage = await load(world.src);
   if (!stage) throw new Error('palco: stage art failed to load');
-  const out: SceneImages = { stage, front: {}, back: {}, upFront: {}, upBack: {} };
+  const [sky, desk, ...tiles] = await Promise.all([
+    load(world.sky),
+    world.booths.some((b) => b.desk) ? load('/palco/desk.png') : Promise.resolve(null),
+    ...CROWD_LAYERS.flatMap((l) => [load(`/palco/crowd-${l}-a.png`), load(`/palco/crowd-${l}-b.png`)]),
+  ]);
+  if (tiles.some((t) => !t)) throw new Error('palco: crowd art failed to load');
+  const crowd = Object.fromEntries(CROWD_LAYERS.map((l, i) => [l, [tiles[i * 2]!, tiles[i * 2 + 1]!]])) as SceneImages['crowd'];
+  const out: SceneImages = { stage, sky, desk, crowd, front: {}, back: {}, upFront: {}, upBack: {}, danceFront: {}, danceBack: {} };
   const ids = Array.from({ length: CHARACTER_COUNT }, (_, i) => i + 1);
   await Promise.all(
     ids.flatMap((id) => [
@@ -78,6 +93,8 @@ export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
       load(`/palco/characters/${pad(id)}-back.png`).then((i) => { if (i) out.back[id] = i; }),
       load(`/palco/characters/${pad(id)}-up-front.png`).then((i) => { if (i) out.upFront[id] = i; }),
       load(`/palco/characters/${pad(id)}-up-back.png`).then((i) => { if (i) out.upBack[id] = i; }),
+      load(`/palco/characters/${pad(id)}-dance-front.png`).then((i) => { if (i) out.danceFront[id] = i; }),
+      load(`/palco/characters/${pad(id)}-dance-back.png`).then((i) => { if (i) out.danceBack[id] = i; }),
     ]),
   );
   return out;
@@ -126,9 +143,35 @@ function crop(img: CanvasImageSource, x: number, y: number, w: number, h: number
   return c;
 }
 
+function plainSide(img: HTMLImageElement | HTMLCanvasElement, x0: number): HTMLCanvasElement {
+  const src = crop(img, 0, 0, img.width, img.height);
+  const px = src.getContext('2d')!.getImageData(0, 0, img.width, img.height).data;
+  const rows = plainSideColours(px, img.width, img.height, x0);
+  const c = document.createElement('canvas');
+  c.width = SIDE_EXT;
+  c.height = img.height;
+  const g = c.getContext('2d')!;
+  rows.forEach((col, y) => {
+    g.fillStyle = '#' + col.toString(16).padStart(6, '0');
+    g.fillRect(0, y, SIDE_EXT, 1);
+  });
+  return c;
+}
+
+// A horizontally flipped copy.
+function mirrored(src: HTMLCanvasElement | HTMLImageElement): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  const g = c.getContext('2d')!;
+  g.translate(src.width, 0);
+  g.scale(-1, 1);
+  g.drawImage(src, 0, 0);
+  return c;
+}
+
 type Sized = Mesh<PlaneGeometry, Material> & { userData: { size: [number, number] } };
 
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 const BAYER_GLSL = `float bayer(vec2 p){ int x=int(mod(p.x,4.)); int y=int(mod(p.y,4.)); int i=x+y*4;
   float m[16]; m[0]=0.;m[1]=8.;m[2]=2.;m[3]=10.;m[4]=12.;m[5]=4.;m[6]=14.;m[7]=6.;m[8]=3.;m[9]=11.;m[10]=1.;m[11]=9.;m[12]=15.;m[13]=7.;m[14]=13.;m[15]=5.;
   for(int k=0;k<16;k++){ if(k==i) return (m[k]+0.5)/16.; } return 0.; }`;
@@ -136,16 +179,13 @@ const BEAM_LOOK: Array<[[number, number, number], number, number]> = [
   [[0.55, 0.38, 1.0], 0.7, 0], [[0.85, 0.8, 1.0], 0.9, 1.7], [[0.85, 0.8, 1.0], 0.9, 3.1],
   [[0.55, 0.38, 1.0], 0.7, 4.4], [[0.95, 0.45, 0.85], 1.4, 0.4], [[0.95, 0.45, 0.85], 1.4, 2.2],
 ];
-const FAR = [[0x2b, 0x20, 0x50], [0x9a, 0x82, 0xea]];
-const NEAR = [[0x15, 0x0f, 0x29], [0x56, 0x42, 0x9a]];
-const HAIR = ['round', 'afro', 'bun', 'cap', 'long', 'short'] as const;
-const mix = (a: number[], b: number[], t: number) => '#' + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('');
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 interface CharTex {
   // Upper body (rows 0..SPLIT) and legs of each facing, plus the arms-up pairs.
   halves: Record<Facing, [Texture, Texture]>;
   arms: Record<Facing, [Texture, Texture] | null>;
+  dance: Record<Facing, [Texture, Texture] | null>;
   front: Texture | null;
 }
 
@@ -157,8 +197,12 @@ interface Person {
   slot: Slot;
   legs: Sized;
   up: Sized;
+  // The 28x60 planes: arms up (woot) or the dance frame, by texture swap.
   legsA: Sized | null;
   upA: Sized | null;
+  arms: [Texture, Texture] | null;
+  dance: [Texture, Texture] | null;
+  pose: 'idle' | 'dance' | 'arms';
   here: number;
   hereFrom: number;
   side: number;
@@ -182,34 +226,22 @@ interface Booth {
   // Head row; on the vertical stage it moves below the player.
   top: number;
   desk?: Sized;
-  waveC?: HTMLCanvasElement;
-  waveTex?: Texture;
-  wave?: Sized;
 }
 
-interface RowPerson {
-  x: number;
-  hr: number;
-  hair: (typeof HAIR)[number];
-  sw: number;
-  style: number;
-  phase: number;
-  arms: number;
-  phone: boolean;
-  lift: number;
-}
-
+// A background crowd row: an image-model tile layer (far, mid or near) tiled
+// across the view, with two frames that alternate on the half beat.
 interface Row {
   feet: number;
   h: number;
-  body: string;
-  rim: string;
-  c: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
-  tex: Texture;
+  texA: Texture;
+  texB: Texture;
   mesh: Sized;
-  people: RowPerson[];
+  phase: number;
+  frame: number;
 }
+
+type CrowdLayer = 'far' | 'mid' | 'near';
+const CROWD_LAYERS: CrowdLayer[] = ['far', 'mid', 'near'];
 
 // --- the scene ------------------------------------------------------------------
 
@@ -234,7 +266,6 @@ export class PalcoScene {
   private readonly people = new Map<string, Person>();
   private readonly booths: Booth[] = [];
   private rows: Row[] = [];
-  private lastHalf = -1;
   private lastSky = -1;
   private energy = 0;
   private lastBurst = -100;
@@ -244,12 +275,9 @@ export class PalcoScene {
   private readonly confGeo = new BufferGeometry();
   private readonly skyC: HTMLCanvasElement;
   private readonly skyTex: Texture;
-  private readonly topRow: Uint8ClampedArray;
-  private readonly bands: number[][] = [[6, 5, 14], [9, 7, 20], [13, 9, 28], [17, 11, 36], [21, 13, 44]];
-  private readonly stars: Array<{ x: number; y: number; b: number; big: boolean; p: number }>;
-  private readonly waveC: HTMLCanvasElement;
-  private readonly waveTex: Texture;
-  private readonly wavePanels: Sized[] = [];
+  private readonly skyBase: ImageData;
+  // Twinkle: isolated bright pixels of the sky art blink to the sky beside them.
+  private readonly stars: Array<{ i: number; on: [number, number, number]; off: [number, number, number]; p: number; s: number }> = [];
   private readonly beamMat: ShaderMaterial;
   private readonly beams: Array<{ a: number; s: number; sp: number; ph: number }>;
   private readonly lamps: Sized[] = [];
@@ -267,24 +295,44 @@ export class PalcoScene {
     this.scene.background = new Color(INK);
     const W = world.W;
 
-    // Sky: dithered bands into the stage's own top row, stars and a moon.
+    // Sky: the image-model plate, its sides mirrored past the art; its last
+    // rows meet the stage's top row.
     const SW = W + 2 * SIDE_EXT;
     this.skyC = document.createElement('canvas');
     this.skyC.width = SW;
     this.skyC.height = SKY_H;
-    this.topRow = crop(imgs.stage, 0, 0, W, 1).getContext('2d')!.getImageData(0, 0, W, 1).data;
-    let r = 0, g = 0, b = 0;
-    for (let x = 0; x < W; x++) { r += this.topRow[x * 4]; g += this.topRow[x * 4 + 1]; b += this.topRow[x * 4 + 2]; }
-    this.bands[this.bands.length - 1] = [Math.round(r / W), Math.round(g / W), Math.round(b / W)];
-    this.stars = Array.from({ length: 120 }, () => ({ x: Math.floor(this.rnd() * SW), y: Math.floor(this.rnd() * (SKY_H - 30)), b: this.rnd(), big: this.rnd() < 0.08, p: this.rnd() * 6 }));
+    const sg = this.skyC.getContext('2d')!;
+    sg.fillStyle = INK;
+    sg.fillRect(0, 0, SW, SKY_H);
+    if (imgs.sky) {
+      const sh = Math.min(SKY_H, imgs.sky.height);
+      sg.drawImage(imgs.sky, 0, 0, W, sh, SIDE_EXT, SKY_H - sh, W, sh);
+      sg.drawImage(mirrored(crop(imgs.sky, 0, 0, SIDE_EXT, sh)), 0, SKY_H - sh);
+      sg.drawImage(mirrored(crop(imgs.sky, W - SIDE_EXT, 0, SIDE_EXT, sh)), SIDE_EXT + W, SKY_H - sh);
+    }
+    this.skyBase = sg.getImageData(0, 0, SW, SKY_H);
+    {
+      const d = this.skyBase.data;
+      const lum = (x: number, y: number) => { const i = (y * SW + x) * 4; return d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; };
+      for (let y = 1; y < SKY_H - 60; y++) for (let x = 1; x < SW - 1; x++) {
+        const L = lum(x, y);
+        if (L < 120) continue;
+        // Part of the moon or a beam, not a star.
+        if (Math.max(lum(x - 1, y - 1), lum(x + 1, y - 1), lum(x - 1, y + 1), lum(x + 1, y + 1)) > L - 50) continue;
+        const j = (y * SW + x) * 4, k = ((y - 1) * SW + x) * 4;
+        this.stars.push({ i: j, on: [d[j], d[j + 1], d[j + 2]], off: [d[k], d[k + 1], d[k + 2]], p: this.rnd() * 6, s: 1.6 + this.rnd() * 1.8 });
+      }
+    }
     this.drawSky(0);
     this.skyTex = texFrom(this.skyC);
     this.put(this.plane(this.skyTex, SW, SKY_H, 0), -SIDE_EXT, -SKY_H);
 
     // Stage plate, its edge columns carried past the sides, and the ground under it.
     this.put(this.plane(texFrom(imgs.stage), W, world.H, 1), 0, 0);
-    this.put(this.plane(texFrom(crop(imgs.stage, 0, 0, 1, world.H)), SIDE_EXT, world.H, 1), -SIDE_EXT, 0);
-    this.put(this.plane(texFrom(crop(imgs.stage, W - 1, 0, 1, world.H)), SIDE_EXT, world.H, 1), W, 0);
+    // Past the sides: plain sky and ground only, sampled row by row from the
+    // plate's outer columns (a mirror repeated the booths and screens).
+    this.put(this.plane(texFrom(plainSide(imgs.stage, 0)), SIDE_EXT, world.H, 1), -SIDE_EXT, 0);
+    this.put(this.plane(texFrom(plainSide(imgs.stage, W - EDGE_COLS)), SIDE_EXT, world.H, 1), W, 0);
     const groundH = 700;
     const gC = document.createElement('canvas');
     gC.width = 4;
@@ -299,11 +347,6 @@ export class PalcoScene {
       const booth: Booth = { def, mesh: this.plane(null, SPRITE_W, SPRITE_H, 4), who: null, next: null, rise: 0, mode: 'idle', t0: 0, from: 0, top: def.top };
       booth.mesh.visible = false;
       if (def.desk) {
-        booth.waveC = document.createElement('canvas');
-        booth.waveC.width = DESK_W - 6;
-        booth.waveC.height = 9;
-        booth.waveTex = texFrom(booth.waveC);
-        booth.wave = this.plane(booth.waveTex, DESK_W - 6, 9, 6.7);
         // The floor DJs stand in front of the silhouette rows (z 5 to 6).
         booth.mesh.position.z = 6.5;
         booth.mesh.renderOrder = 65;
@@ -313,17 +356,6 @@ export class PalcoScene {
         this.put(this.plane(texFrom(crop(imgs.stage, cx, cy, cw, chh)), cw, chh, 4.5), cx, cy);
       }
       this.booths.push(booth);
-    }
-
-    // Sine-wave screens on the speaker stacks.
-    this.waveC = document.createElement('canvas');
-    this.waveC.width = 54;
-    this.waveC.height = 21;
-    this.waveTex = texFrom(this.waveC);
-    for (const [x, y] of world.waves) {
-      const m = this.plane(this.waveTex, 54, 21, 4.6);
-      this.put(m, x, y);
-      this.wavePanels.push(m);
     }
 
     // Light beams: Bayer-dithered cones in additive blending.
@@ -421,18 +453,18 @@ export class PalcoScene {
     this.camera.updateProjectionMatrix();
     this.camera.position.set(f.camLeft, -f.camTop, 10);
     this.buildRows(f.crowdBottom);
-    this.lastHalf = -1;
     this.kick();
   }
 
   setMotion(on: boolean): void {
     this.motion = on;
     if (!on) {
+      // Redraw the sky once with every star on: a twinkle state must not freeze.
+      this.lastSky = -1;
       for (const p of this.people.values()) p.here = 1;
       this.conf.forEach((c) => { c.y = -999; });
       this.hearts.splice(0).forEach((h) => this.drop(h.m));
     }
-    this.lastHalf = -1;
     this.kick();
   }
 
@@ -458,6 +490,7 @@ export class PalcoScene {
         const tex = this.chars(e.characterId);
         const z = (dim ? 8 : 9) + i * 0.01;
         const tint = dim ? 0x6a6194 : 0xffffff;
+        const wide = tex.arms[FACING] ?? tex.dance[FACING];
         const fresh: Person = {
           key: e.key,
           characterId: e.characterId,
@@ -465,8 +498,11 @@ export class PalcoScene {
           // Faces the camera (plug.dj style) so you can see who is who.
           legs: this.plane(tex.halves[FACING][1], SPRITE_W, SPRITE_H - SPLIT, z, { color: tint }),
           up: this.plane(tex.halves[FACING][0], SPRITE_W, SPLIT, z + 0.005, { color: tint }),
-          legsA: tex.arms[FACING] ? this.plane(tex.arms[FACING]![1], UP_W, SPRITE_H - SPLIT, z, { color: tint }) : null,
-          upA: tex.arms[FACING] ? this.plane(tex.arms[FACING]![0], UP_W, SPLIT + UP_EXTRA, z + 0.005, { color: tint }) : null,
+          legsA: wide ? this.plane(wide[1], UP_W, SPRITE_H - SPLIT, z, { color: tint }) : null,
+          upA: wide ? this.plane(wide[0], UP_W, SPLIT + UP_EXTRA, z + 0.005, { color: tint }) : null,
+          arms: tex.arms[FACING],
+          dance: tex.dance[FACING],
+          pose: 'idle',
           here: this.motion ? 0 : 1,
           hereFrom: now,
           side: e.slot.x + SPRITE_W / 2 < this.world.W / 2 ? -1 : 1,
@@ -541,8 +577,9 @@ export class PalcoScene {
     document.removeEventListener('visibilitychange', this.onVisibility);
     // Every texture once: the scene's maps (stage plate, edges, ground, covers,
     // desks, lamps, rows) plus the ones not always in the scene.
-    const textures = new Set<Texture>([this.skyTex, this.waveTex, this.heartTex]);
-    this.booths.forEach((b) => { if (b.waveTex) textures.add(b.waveTex); });
+    const textures = new Set<Texture>([this.skyTex, this.heartTex]);
+    // Both frames of every crowd row: the inactive one is on no material.
+    this.rows.forEach((r) => { textures.add(r.texA); textures.add(r.texB); });
     this.scene.traverse((o) => {
       const m = o as Mesh;
       if (m.geometry) m.geometry.dispose();
@@ -557,9 +594,8 @@ export class PalcoScene {
     this.confGeo.dispose();
     textures.forEach((t) => t.dispose());
     for (const t of this.charTex.values()) {
-      [...t.halves.front, ...t.halves.back, ...(t.arms.front ?? []), ...(t.arms.back ?? []), t.front].forEach((x) => x?.dispose());
+      [...t.halves.front, ...t.halves.back, ...(t.arms.front ?? []), ...(t.arms.back ?? []), ...(t.dance.front ?? []), ...(t.dance.back ?? []), t.front].forEach((x) => x?.dispose());
     }
-    this.rows.forEach((r) => r.tex.dispose());
     this.renderer.dispose();
     // Free the GPU context now: a world switch or a remount makes a new canvas.
     this.renderer.forceContextLoss();
@@ -634,31 +670,24 @@ export class PalcoScene {
     const t: CharTex = {
       halves: { front: halves(front ?? back), back: halves(back) },
       arms: { front: arms(this.imgs.upFront[id]), back: arms(this.imgs.upBack[id]) },
+      dance: { front: arms(this.imgs.danceFront[id]), back: arms(this.imgs.danceBack[id]) },
       front: front ? texFrom(crop(front, 0, 0, SPRITE_W, SPRITE_H)) : null,
     };
     this.charTex.set(id, t);
     return t;
   }
 
-  // The small floor desk of the vertical stage. A sinking DJ is clipped at its
-  // bottom edge (see frame), so it needs no cover of art pixels.
+  // The image-model floor desk of the vertical stage. A sinking DJ is clipped
+  // at its bottom edge (see frame), so it needs no cover of art pixels.
   private placeDesk(b: Booth): void {
-    if (!b.def.desk || !b.wave) return;
-    if (b.desk) this.drop(b.desk);
-    const DH = 16;
-    const x0 = b.def.x - 4, y0 = b.top + 28;
-    const c = document.createElement('canvas');
-    c.width = DESK_W;
-    c.height = DH;
-    const dg = c.getContext('2d')!;
-    dg.fillStyle = '#120c24'; dg.fillRect(0, 0, DESK_W, DH);
-    dg.fillStyle = '#2a1c50'; dg.fillRect(1, 1, DESK_W - 2, DH - 2);
-    dg.fillStyle = '#9a82ea'; dg.fillRect(0, 0, DESK_W, 1);
-    dg.fillStyle = '#4b3690'; dg.fillRect(3, 2, 6, 2); dg.fillRect(DESK_W - 9, 2, 6, 2);
-    dg.fillStyle = '#d9cffb'; dg.fillRect(5, 2, 2, 1); dg.fillRect(DESK_W - 7, 2, 2, 1);
-    b.desk = this.plane(texFrom(c), DESK_W, DH, 6.6);
-    this.put(b.desk, x0, y0);
-    this.put(b.wave, x0 + 3, y0 + 5);
+    if (!b.def.desk || !this.imgs.desk) return;
+    if (b.desk) {
+      (b.desk.material as MeshBasicMaterial).map?.dispose();
+      this.drop(b.desk);
+    }
+    const img = this.imgs.desk;
+    b.desk = this.plane(texFrom(b.def.side === 'R' ? mirrored(img) : img), img.width, img.height, 6.6);
+    this.put(b.desk, b.def.x - (img.width - SPRITE_W) / 2, b.top + DESK_TOP);
   }
 
   private assignBooth(b: Booth, who: BoothEntry | null): void {
@@ -676,144 +705,47 @@ export class PalcoScene {
   }
 
   private drawSky(t: number): void {
-    const W = this.skyC.width;
-    const AW = this.world.W;
-    const sctx = this.skyC.getContext('2d')!;
-    const img = sctx.createImageData(W, SKY_H);
-    const d = img.data;
-    const bands = this.bands;
-    for (let y = 0; y < SKY_H; y++) {
-      const f = (y / (SKY_H - 1)) * (bands.length - 1);
-      for (let x = 0; x < W; x++) {
-        const i = (y * W + x) * 4;
-        let c: ArrayLike<number>;
-        if (y >= SKY_H - 6) { const k = Math.max(0, Math.min(AW - 1, x - SIDE_EXT)) * 4; c = [this.topRow[k], this.topRow[k + 1], this.topRow[k + 2]]; }
-        else { const lo = Math.floor(f), fr = f - lo; c = bands[fr * 16 > BAYER[(y % 4) * 4 + (x % 4)] ? Math.min(lo + 1, bands.length - 1) : lo]; }
-        d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
-      }
+    const d = this.skyBase.data;
+    for (const st of this.stars) {
+      const c = !this.motion || Math.sin(t * st.s + st.p) > -0.55 ? st.on : st.off;
+      d[st.i] = c[0]; d[st.i + 1] = c[1]; d[st.i + 2] = c[2];
     }
-    sctx.putImageData(img, 0, 0);
-    for (const s of this.stars) {
-      const on = !this.motion || Math.sin(t * 2.2 + s.p) > -0.6;
-      sctx.fillStyle = on ? (s.b > 0.6 ? '#f4f1ff' : '#b9aee0') : '#5b4f86';
-      sctx.fillRect(s.x, s.y, 1, 1);
-      if (s.big && on) {
-        sctx.fillStyle = '#8f7fd0';
-        sctx.fillRect(s.x - 1, s.y, 1, 1); sctx.fillRect(s.x + 1, s.y, 1, 1); sctx.fillRect(s.x, s.y - 1, 1, 1); sctx.fillRect(s.x, s.y + 1, 1, 1);
-      }
-    }
-    const mx = this.world.moon[0] + SIDE_EXT, my = SKY_H + this.world.moon[1], r = 11;
-    for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
-      if (x * x + y * y > r * r + r) continue;
-      sctx.fillStyle = x + y > 6 ? '#b8afd6' : '#e9e4fb';
-      sctx.fillRect(mx + x, my + y, 1, 1);
-    }
-    sctx.fillStyle = '#c9c1e6';
-    ([[-4, -3, 3], [3, 2, 2], [-2, 5, 2]] as const).forEach(([x, y, s]) => sctx.fillRect(mx + x, my + y, s, s - 1));
+    this.skyC.getContext('2d')!.putImageData(this.skyBase, 0, 0);
   }
 
-  private drawWave(beat: number, cnv: HTMLCanvasElement): void {
-    const wctx = cnv.getContext('2d')!;
-    const W = cnv.width, H = cnv.height, mid = Math.floor(H / 2), amp = Math.max(2, mid - 2);
-    wctx.fillStyle = '#28154a';
-    wctx.fillRect(0, 0, W, H);
-    const env = this.motion ? 0.45 + 0.55 * Math.exp(-((beat % 1) * 3.2)) : 0.7;
-    let prev: number | null = null;
-    for (let x = 0; x < W; x++) {
-      const a = Math.sin(x * 0.42 + beat * Math.PI * 0.5) * 0.65 + Math.sin(x * 0.17 - beat * 1.3) * 0.35;
-      const y = Math.round(mid + a * amp * env);
-      const y0 = prev ?? y;
-      const lo = Math.min(y, y0), hi = Math.max(y, y0);
-      wctx.fillStyle = '#5a3a9a'; wctx.fillRect(x, lo - 1, 1, hi - lo + 3);
-      wctx.fillStyle = '#d9cffb'; wctx.fillRect(x, lo, 1, Math.max(1, hi - lo));
-      prev = y;
-    }
-  }
-
-  // Background crowd: procedural silhouettes in rows behind the named audience.
+  // Background crowd: image-model tile rows behind the named audience, far
+  // to near. Every other tile is mirrored, so the joins stay seamless and the
+  // repeat period doubles; each row starts at its own offset.
   private buildRows(crowdBottom: number): void {
-    this.rows.forEach((r) => { this.drop(r.mesh); r.tex.dispose(); });
+    this.rows.forEach((r) => { this.drop(r.mesh); r.texA.dispose(); r.texB.dispose(); });
     this.rows = [];
     const W = this.world.W + 2 * SIDE_EXT;
     this.seed = 11;
+    const tiled = (img: HTMLImageElement, off: number) => {
+      const c = document.createElement('canvas');
+      c.width = W;
+      c.height = img.height;
+      const g = c.getContext('2d')!;
+      for (let x = -off, i = 0; x < W; x += img.width, i++) {
+        if (i % 2) g.drawImage(mirrored(img), x, 0);
+        else g.drawImage(img, x, 0);
+      }
+      return texFrom(c);
+    };
     const first = this.world.rowsFrom;
     const last = crowdBottom - this.world.rowsToOff;
     let feet = first;
     while (feet <= last) {
       const t = clamp01((feet - first) / Math.max(26, last - first));
-      const h = Math.round(24 + 14 * t), spacing = 8 + 6 * t;
-      const c = document.createElement('canvas');
-      c.width = W;
-      c.height = h + 14;
-      const tex = texFrom(c);
-      const mesh = this.plane(tex, c.width, c.height, 5 + this.rows.length * 0.08);
-      const n = Math.ceil(W / spacing) + 1;
-      const people: RowPerson[] = Array.from({ length: n }, (_, i) => {
-        const hr = Math.max(2, Math.round(h / 11 + this.rnd() * 1.2));
-        return {
-          x: Math.round(2 + i * spacing + (this.rnd() - 0.5) * spacing * 0.8),
-          hr,
-          hair: HAIR[Math.floor(this.rnd() * HAIR.length)],
-          sw: hr + 2 + Math.floor(this.rnd() * 2),
-          style: this.rnd() < 0.5 ? 0 : 1,
-          phase: this.rnd() < 0.5 ? 0 : 0.5,
-          arms: this.rnd() < 0.1 ? 1 : 0,
-          phone: this.rnd() < 0.2,
-          lift: Math.floor(this.rnd() * 5),
-        };
-      });
-      const row: Row = { feet, h, body: mix(FAR[0], NEAR[0], t), rim: mix(FAR[1], NEAR[1], t), c, ctx: c.getContext('2d')!, tex, mesh, people };
-      this.put(mesh, -SIDE_EXT, feet - c.height + 2);
-      this.rows.push(row);
-      feet += Math.max(11, Math.round(h * 0.42));
+      const [a, b] = this.imgs.crowd[t < 0.34 ? 'far' : t < 0.67 ? 'mid' : 'near'];
+      const off = Math.floor(this.rnd() * a.width * 2);
+      const texA = tiled(a, off), texB = tiled(b, off);
+      const mesh = this.plane(texA, W, a.height, 5 + this.rows.length * 0.08);
+      this.put(mesh, -SIDE_EXT, feet + 2 - a.height);
+      // Neighbouring rows are out of phase.
+      this.rows.push({ feet, h: a.height, texA, texB, mesh, phase: this.rows.length % 2 ? 0.5 : 0, frame: 0 });
+      feet += Math.max(11, Math.round((24 + 14 * t) * 0.42));
     }
-  }
-
-  private drawPerson(ctx: CanvasRenderingContext2D, p: RowPerson, base: number, row: Row, bob: number): void {
-    const cx = p.x + 10, top = base - row.h + p.lift + bob;
-    const r = p.hr, headCy = top + r + (p.hair === 'afro' ? 2 : 0);
-    ctx.fillStyle = row.body;
-    const disc = (cx0: number, cy0: number, rr: number) => {
-      for (let y = -rr; y <= rr; y++) for (let x = -rr; x <= rr; x++) if (x * x + y * y <= rr * rr + rr) ctx.fillRect(cx0 + x, cy0 + y, 1, 1);
-    };
-    if (p.hair === 'afro') disc(cx, headCy - 1, r + 2);
-    disc(cx, headCy, r);
-    if (p.hair === 'bun') disc(cx, headCy - r - 1, Math.max(1, r - 2));
-    if (p.hair === 'cap') { ctx.fillRect(cx - r, headCy - r, r * 2 + 1, 2); ctx.fillRect(cx + r, headCy - r + 1, 2, 1); }
-    if (p.hair === 'long') ctx.fillRect(cx - r, headCy, r * 2 + 1, r + 3);
-    const neckY = headCy + r;
-    ctx.fillRect(cx - 1, neckY, 3, 2);
-    const sy = neckY + 2, sw = p.sw;
-    ctx.fillRect(cx - sw + 2, sy, sw * 2 - 3, 1);
-    ctx.fillRect(cx - sw + 1, sy + 1, sw * 2 - 1, 1);
-    ctx.fillRect(cx - sw, sy + 2, sw * 2 + 1, base + 20 - sy);
-    if (p.hair !== 'cap' && p.hair !== 'bun') {
-      // Rim light on the head from the lit stage.
-      ctx.fillStyle = row.rim;
-      const rr = p.hair === 'afro' ? r + 2 : r, cy = p.hair === 'afro' ? headCy - 1 : headCy;
-      for (let x = -rr + 1; x <= rr - 1; x++) ctx.fillRect(cx + x, cy - Math.floor(Math.sqrt(Math.max(0, rr * rr + rr - x * x))), 1, 1);
-      ctx.fillStyle = row.body;
-    }
-    if (p.arms) {
-      const reach = Math.round(r * 2 + 4);
-      const ax = cx + (sw - 1);
-      for (let k = 0; k < reach; k++) ctx.fillRect(ax + Math.floor(k / 5), sy - k, 2, 1);
-      const hx = ax + Math.floor(reach / 5), hy = sy - reach - 1;
-      ctx.fillRect(hx, hy, 2, 2);
-      ctx.fillStyle = row.rim; ctx.fillRect(hx, hy, 2, 1); ctx.fillStyle = row.body;
-      if (p.phone) { ctx.fillStyle = '#cfe6ff'; ctx.fillRect(hx, hy - 3, 2, 3); ctx.fillStyle = row.body; }
-    }
-  }
-
-  private drawRow(row: Row, beat: number): void {
-    const ctx = row.ctx, H = row.c.height, base = H - 2;
-    ctx.clearRect(0, 0, row.c.width, H);
-    for (const p of row.people) {
-      const f = (beat + p.phase) % 1;
-      const bob = this.motion ? (p.style === 0 ? (f < 0.5 ? 1 : 0) : (f < 0.25 ? -1 : 0)) : 0;
-      this.drawPerson(ctx, p, base, row, bob);
-    }
-    row.tex.needsUpdate = true;
   }
 
   private spawnHeart(p: Person): void {
@@ -851,8 +783,6 @@ export class PalcoScene {
     });
     this.lamps.forEach((m, i) => { (m.material as MeshBasicMaterial).opacity = 0.35 + 0.65 * (Math.floor(beat + i * 0.5) % 2 ? pulse : 0.3); });
     if (motion ? t - this.lastSky > 0.25 : this.lastSky < 0) { this.drawSky(t); this.skyTex.needsUpdate = true; this.lastSky = t; }
-    if (this.wavePanels.length) { this.drawWave(beat, this.waveC); this.waveTex.needsUpdate = true; }
-    for (const b of this.booths) if (b.waveC && b.waveTex) { this.drawWave(beat, b.waveC); b.waveTex.needsUpdate = true; }
 
     this.energy = Math.max(0, this.energy - dt * 0.05);
     if (motion && this.energy > 0.8 && t - this.lastBurst > 10) { this.burst(); this.lastBurst = t; }
@@ -871,8 +801,8 @@ export class PalcoScene {
       const sink = Math.round((1 - b.rise) * 40);
       const y = b.top + sink;
       if (b.def.desk) {
-        // Show only the rows above the desk's bottom edge (top + 44): whole rows.
-        const vis = 44 - sink;
+        // Show only the rows above the desk's bottom edge: whole rows.
+        const vis = DESK_BOTTOM - sink;
         const map = (b.mesh.material as MeshBasicMaterial).map;
         if (map) { map.repeat.y = vis / SPRITE_H; map.offset.y = 1 - vis / SPRITE_H; }
         b.mesh.scale.y = vis / SPRITE_H;
@@ -881,15 +811,18 @@ export class PalcoScene {
       } else {
         this.put(b.mesh, b.def.x, y + bob);
       }
-      const [ax, ay] = this.css(b.def.x + SPRITE_W / 2, b.def.desk ? b.top + 28 + 16 : y);
+      const [ax, ay] = this.css(b.def.x + SPRITE_W / 2, b.def.desk ? b.top + DESK_BOTTOM : y);
       out.booths.push({ key: b.who?.key ?? null, x: ax, y: ay, visible: Boolean(b.who) && b.rise >= 1 });
     });
 
-    // Background rows dance on half beats.
-    const half = Math.floor(beat * 4);
-    if (half !== this.lastHalf) {
-      this.rows.forEach((row) => this.drawRow(row, beat));
-      this.lastHalf = half;
+    // Background rows: two frames, half a beat each, neighbours out of phase.
+    for (const row of this.rows) {
+      const fr = motion ? Math.floor(beat * 2 + row.phase * 2) % 2 : 0;
+      if (fr !== row.frame) {
+        row.frame = fr;
+        (row.mesh.material as MeshBasicMaterial).map = fr ? row.texB : row.texA;
+        row.mesh.material.needsUpdate = true;
+      }
     }
 
     // Named audience: walk in from the side, groove, woot.
@@ -897,28 +830,41 @@ export class PalcoScene {
       if (p.here < 1) p.here = motion ? clamp01((t - p.hereFrom) / 1.2) : 1;
       const k = p.here;
       const off = Math.round((1 - k) * (p.side < 0 ? -(p.slot.x + 30) : this.world.W - p.slot.x + 30));
-      let bob = 0, sway = 0, hop = 0;
+      let sway = 0, hop = 0, dance = false;
       const since = t - p.wootAt;
       const wooting = since >= 0 && since < 0.5;
       const armsUp = since >= 0 && since < 0.5 + 60 / 100 + (motion ? 0 : 0.6);
       if (k < 1) hop = Math.floor(off / 3) % 2 ? -1 : 0;
-      else if (motion && !wooting) {
+      else if (motion && !armsUp) {
+        // Groove: the dance frame alternates with idle, half a beat each, per-person phase.
         const fb = (beat + p.phase) % 1;
-        if (p.style === 0) bob = fb < 0.5 ? 1 : 0;
-        else if (p.style === 1) { hop = fb < 0.22 ? -1 : 0; bob = fb > 0.5 && fb < 0.7 ? 1 : 0; }
-        else { bob = fb < 0.5 ? 1 : 0; sway = Math.floor((beat + p.phase) / 2) % 2; }
+        dance = fb < 0.5;
+        if (p.style === 1) hop = fb > 0.5 && fb < 0.62 ? -1 : 0;
+        else if (p.style === 2) sway = Math.floor((beat + p.phase) / 2) % 2;
       }
       const jump = motion && wooting ? -Math.round(p.wootH * Math.sin((since / 0.5) * Math.PI)) : 0;
       const x = p.slot.x + off + sway, jy = jump + hop;
-      const up = armsUp && k >= 1 && p.upA !== null && p.legsA !== null;
-      p.up.visible = p.legs.visible = !up;
-      if (p.upA) p.upA.visible = up;
-      if (p.legsA) p.legsA.visible = up;
+      const up = armsUp && k >= 1 && p.arms !== null;
+      const pose = up ? 'arms' : dance && p.dance ? 'dance' : 'idle';
+      if (pose !== p.pose && p.upA && p.legsA) {
+        const pair = pose === 'arms' ? p.arms : pose === 'dance' ? p.dance : null;
+        if (pair) {
+          (p.upA.material as MeshBasicMaterial).map = pair[0];
+          (p.legsA.material as MeshBasicMaterial).map = pair[1];
+          p.upA.material.needsUpdate = true;
+          p.legsA.material.needsUpdate = true;
+        }
+      }
+      p.pose = pose;
+      const wide = pose !== 'idle';
+      p.up.visible = p.legs.visible = !wide;
+      if (p.upA) p.upA.visible = wide;
+      if (p.legsA) p.legsA.visible = wide;
       this.put(p.legs, x, p.slot.feet - (SPRITE_H - SPLIT) + jy);
-      this.put(p.up, x, p.slot.feet - SPRITE_H + jy + bob);
+      this.put(p.up, x, p.slot.feet - SPRITE_H + jy);
       if (p.legsA) this.put(p.legsA, x - UP_SIDE, p.slot.feet - (SPRITE_H - SPLIT) + jy);
-      if (p.upA) this.put(p.upA, x - UP_SIDE, p.slot.feet - SPRITE_H - UP_EXTRA + jy + bob);
-      const [ax, ay] = this.css(x + SPRITE_W / 2, p.slot.feet - SPRITE_H + jy + bob - (up ? UP_TAG : 0));
+      if (p.upA) this.put(p.upA, x - UP_SIDE, p.slot.feet - SPRITE_H - UP_EXTRA + jy);
+      const [ax, ay] = this.css(x + SPRITE_W / 2, p.slot.feet - SPRITE_H + jy - (up ? UP_TAG : 0));
       out.people.set(p.key, { x: ax, y: ay, visible: k >= 1 && ay > 0 && ay < f.height });
     }
 

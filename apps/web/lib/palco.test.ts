@@ -4,7 +4,7 @@ import {
   WORLDS, pickWorld, frameStage, screenRect, playerRect, boothTop, intersects, toCss,
   boothMembers, crowdMembers, crowdSlots, nextTrack, memberForTrack,
   newVoters, memberForVoter, memberForClient, placeBubble, placeTag,
-  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, upNext, boardRect, BOARD_MAX, SPRITE_H, type PalcoMember,
+  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, upNext, boardRect, BOARD_MAX, SPRITE_H, EDGE_COLS, plainSideColours, type PalcoMember,
 } from './palco';
 
 const t = (id: string, addedBy: string, addedByUserId?: string): TrackRef => ({ id, title: id, artist: 'A', addedBy, addedByUserId, sources: {} });
@@ -285,3 +285,38 @@ describe('"A seguir" board', () => {
   });
 });
 
+
+describe('plainSideColours', () => {
+  // A 10 x 4 plate: row 0 dark sky, row 1 a bright beam and a tower at the
+  // edge, row 2 a busy edge, row 3 dark ground.
+  const SKY = 0x0d0b1c, GROUND = 0x131026, TOWER = 0x2a1e46, BEAM = 0xa76ef8;
+  const rows = [
+    Array(10).fill(SKY),
+    [BEAM, BEAM, BEAM, BEAM, BEAM, BEAM, TOWER, TOWER, SKY, SKY],
+    [TOWER, SKY, TOWER, GROUND, TOWER, SKY, GROUND, SKY, SKY, SKY],
+    Array(10).fill(GROUND),
+  ];
+  const px = new Uint8ClampedArray(10 * 4 * 4);
+  rows.forEach((r, y) => r.forEach((c, x) => {
+    const i = (y * 10 + x) * 4;
+    px[i] = c >> 16; px[i + 1] = (c >> 8) & 255; px[i + 2] = c & 255; px[i + 3] = 255;
+  }));
+
+  it('takes the dominant dark colour of the outer columns and carries it over busy rows', () => {
+    expect(EDGE_COLS).toBe(8);
+    expect(plainSideColours(px, 10, 4, 0)).toEqual([SKY, SKY, SKY, GROUND]);
+  });
+
+  it('never extends a bright beam colour, even when it is the row majority', () => {
+    // Row 1 over columns 0..7 is 6 beam pixels of 8: only the brightness gate keeps it out.
+    const lum = (c: number) => (c >> 16) * 0.3 + ((c >> 8) & 255) * 0.59 + (c & 255) * 0.11;
+    expect(lum(BEAM)).toBeGreaterThan(50);
+    const out = plainSideColours(px, 10, 4, 0);
+    expect(out).not.toContain(BEAM);
+    expect(out[1]).toBe(SKY);
+  });
+
+  it('reads the right edge (x0 = W - EDGE_COLS) and stays within the plate', () => {
+    expect(plainSideColours(px, 10, 4, 10 - EDGE_COLS)).toEqual([SKY, SKY, SKY, GROUND]);
+  });
+});
