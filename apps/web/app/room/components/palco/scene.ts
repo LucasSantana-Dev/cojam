@@ -126,6 +126,18 @@ function crop(img: CanvasImageSource, x: number, y: number, w: number, h: number
   return c;
 }
 
+// A horizontally flipped copy.
+function mirrored(src: HTMLCanvasElement | HTMLImageElement): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  const g = c.getContext('2d')!;
+  g.translate(src.width, 0);
+  g.scale(-1, 1);
+  g.drawImage(src, 0, 0);
+  return c;
+}
+
 type Sized = Mesh<PlaneGeometry, Material> & { userData: { size: [number, number] } };
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
@@ -283,8 +295,9 @@ export class PalcoScene {
 
     // Stage plate, its edge columns carried past the sides, and the ground under it.
     this.put(this.plane(texFrom(imgs.stage), W, world.H, 1), 0, 0);
-    this.put(this.plane(texFrom(crop(imgs.stage, 0, 0, 1, world.H)), SIDE_EXT, world.H, 1), -SIDE_EXT, 0);
-    this.put(this.plane(texFrom(crop(imgs.stage, W - 1, 0, 1, world.H)), SIDE_EXT, world.H, 1), W, 0);
+    // Past the sides: the plate's own edge, mirrored (a stretched edge column streaks).
+    this.put(this.plane(texFrom(mirrored(crop(imgs.stage, 0, 0, SIDE_EXT, world.H))), SIDE_EXT, world.H, 1), -SIDE_EXT, 0);
+    this.put(this.plane(texFrom(mirrored(crop(imgs.stage, W - SIDE_EXT, 0, SIDE_EXT, world.H))), SIDE_EXT, world.H, 1), W, 0);
     const groundH = 700;
     const gC = document.createElement('canvas');
     gC.width = 4;
