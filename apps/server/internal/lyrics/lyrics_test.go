@@ -2,8 +2,10 @@ package lyrics
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -274,5 +276,115 @@ func TestNewCachedLyricsFetcher_DifferentParams(t *testing.T) {
 
 	if callCount != 2 {
 		t.Errorf("expected 2 calls (different keys), got %d", callCount)
+	}
+}
+
+// Regression: LRCLIB returns "duration" as a float. An int field made every
+// response fail to decode, so lyrics were empty for every track.
+func TestFetchLyrics_FloatDurationDecodes(t *testing.T) {
+	cleanup := lrclibStub(t, `{"id":1,"duration":179.0,"instrumental":false,"plainLyrics":"hello","syncedLyrics":"[00:01.00] hello"}`)
+	defer cleanup()
+
+	got, err := FetchLyrics(context.Background(), "Artist", "Title", "", 179000)
+	if err != nil {
+		t.Fatalf("FetchLyrics: %v", err)
+	}
+	if len(got.Synced) != 1 || got.Synced[0].Text != "hello" || got.Plain != "hello" {
+		t.Fatalf("expected decoded lyrics, got %+v", got)
+	}
+}
+
+func TestFetchLyrics_SearchFailureReturnsError(t *testing.T) {
+	oldGet, oldSearch := lrclibURL, lrclibSearchURL
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/search" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	lrclibURL, lrclibSearchURL = srv.URL+"/api/get", srv.URL+"/api/search"
+	defer func() { lrclibURL, lrclibSearchURL = oldGet, oldSearch }()
+
+	if _, err := FetchLyrics(context.Background(), "A", "T", "", 0); err == nil {
+		t.Fatal("expected an error when /api/search fails with 500")
+	}
+}
+
+func TestFetchLyrics_GenuineMissIsNotAnError(t *testing.T) {
+	defer lrclibStubGetSearch(t, `{"syncedLyrics":"","plainLyrics":""}`, `[]`)()
+	got, err := FetchLyrics(context.Background(), "A", "T", "", 0)
+	if err != nil || got == nil || len(got.Synced) != 0 || got.Plain != "" {
+		t.Fatalf("want empty result and nil error, got %+v, %v", got, err)
+	}
+}
+
+func TestCachedLyricsFetcher_DoesNotCacheErrors(t *testing.T) {
+	calls := 0
+	inner := func(ctx context.Context, artist, title, album string, durationMs int) (*Lyrics, error) {
+		calls++
+		if calls == 1 {
+			return &Lyrics{Source: "lrclib"}, errors.New("upstream down")
+		}
+		return &Lyrics{Plain: "ok", Source: "lrclib"}, nil
+	}
+	f := NewCachedLyricsFetcher(inner)
+	if _, err := f(context.Background(), "A", "T", "", 0); err == nil {
+		t.Fatal("first call should error")
+	}
+	got, err := f(context.Background(), "A", "T", "", 0)
+	if err != nil || got.Plain != "ok" {
+		t.Fatalf("second call should retry and succeed, got %+v, %v", got, err)
+	}
+	f(context.Background(), "A", "T", "", 0) // cached hit
+	if calls != 2 {
+		t.Fatalf("expected 2 inner calls (error not cached, success cached), got %d", calls)
+	}
+}
+
+// /get 5xx followed by /search 404 (or empty) is inconclusive, not a miss: it
+// must error so the cache does not pin it.
+func TestFetchLyrics_GetServerErrorThenEmptySearchIsError(t *testing.T) {
+	oldGet, oldSearch := lrclibURL, lrclibSearchURL
+	defer func() { lrclibURL, lrclibSearchURL = oldGet, oldSearch }()
+
+	for name, searchHandler := range map[string]func(http.ResponseWriter){
+		"404":   func(w http.ResponseWriter) { w.WriteHeader(http.StatusNotFound) },
+		"empty": func(w http.ResponseWriter) { _, _ = w.Write([]byte(`[]`)) },
+	} {
+		h := searchHandler
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/search" {
+				h(w)
+				return
+			}
+			w.WriteHeader(http.StatusBadGateway)
+		}))
+		lrclibURL, lrclibSearchURL = srv.URL+"/api/get", srv.URL+"/api/search"
+		if _, err := FetchLyrics(context.Background(), "A", "T", "", 0); err == nil {
+			t.Errorf("get 502 + search %s must return an error", name)
+		}
+		srv.Close()
+	}
+}
+
+func TestCachedLyricsFetcher_Bounded(t *testing.T) {
+	calls := 0
+	f := NewCachedLyricsFetcher(func(ctx context.Context, artist, title, album string, d int) (*Lyrics, error) {
+		calls++
+		return &Lyrics{Source: "lrclib"}, nil
+	})
+	for i := 0; i <= lyricsCacheMax; i++ {
+		_, _ = f(context.Background(), "A", "T"+strconv.Itoa(i), "", 0)
+	}
+	before := calls
+	_, _ = f(context.Background(), "A", "T1", "", 0) // still cached
+	if calls != before {
+		t.Error("recent entry should still be cached")
+	}
+	_, _ = f(context.Background(), "A", "T0", "", 0) // evicted
+	if calls != before+1 {
+		t.Error("oldest entry should have been evicted")
 	}
 }

@@ -88,7 +88,8 @@ type LastfmEnrich = {        // source: "lastfm" (FEATURE_LASTFM_ENRICH + LASTFM
 };
 ```
 
-`radio.set` toggles `radioEnabled` (host only). When the queue runs dry on
+`radio.set` toggles `radioEnabled` (host only). `radioAvailable` tells clients
+whether the server can refill at all; the toggle only stores intent. When the queue runs dry on
 `now_playing.advance` with radio on, the server refills the queue asynchronously
 from a similar-tracks provider (Last.fm, `FEATURE_RADIO` + `LASTFM_API_KEY`)
 seeded by the last queued track. The refill fanout is deliberately not
@@ -447,6 +448,7 @@ type RoomState = {
   nowPlayingId?: string;    // queue entry id
   hostUserId?: string;      // userID of the room host (RFC-0005; empty when room auth is off)
   radioEnabled: boolean;    // refill the queue with similar tracks when it runs dry
+  radioAvailable?: boolean; // server capability, stamped on every state, never persisted: false = radio cannot work here (no FEATURE_RADIO / LASTFM_API_KEY), hide or disable the toggle. Absent on older servers.
   version: number;          // monotonic, bumps per mutation; clients drop stale
   transport?: TransportState; // shared play/pause/seek position (FEATURE_SYNC)
   createdAt?: number;       // unix ms at room creation, server-stamped (absent on older rooms)
