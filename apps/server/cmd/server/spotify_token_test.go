@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -226,5 +227,37 @@ func TestSpotifyEndpoints_RateLimited(t *testing.T) {
 	}
 	if !limited {
 		t.Fatal("expected the limiter to reject a sustained flood")
+	}
+}
+
+// Playlist import mints an access token from the stored grant, and rotates
+// the refresh token when Spotify hands back a new one.
+func TestMintSpotifyAccess_RefreshesAndRotates(t *testing.T) {
+	spotifyStub(t, 200, `{"access_token":"AT-NEW","refresh_token":"RT-2","expires_in":3600}`)
+	store := spotifyTestStore(t)
+	if err := store.Put(context.Background(), "u1", "RT-1", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := mintSpotifyAccess(context.Background(), store, "u1", quietLogger())
+	if err != nil || reply.AccessToken != "AT-NEW" {
+		t.Fatalf("got %v, %v", reply, err)
+	}
+	if got, _ := store.Get(context.Background(), "u1"); got != "RT-2" {
+		t.Fatalf("rotated refresh token not persisted, got %q", got)
+	}
+}
+
+func TestMintSpotifyAccess_NotConnectedAndRevoked(t *testing.T) {
+	store := spotifyTestStore(t)
+	spotifyStub(t, 400, `{"error":"invalid_grant"}`)
+	if _, err := mintSpotifyAccess(context.Background(), store, "nobody", quietLogger()); !errors.Is(err, errSpotifyReconnect) {
+		t.Fatalf("not connected: want errSpotifyReconnect, got %v", err)
+	}
+	_ = store.Put(context.Background(), "u2", "RT", time.Now().Add(time.Hour))
+	if _, err := mintSpotifyAccess(context.Background(), store, "u2", quietLogger()); !errors.Is(err, errSpotifyReconnect) {
+		t.Fatalf("revoked: want errSpotifyReconnect, got %v", err)
+	}
+	if _, err := store.Get(context.Background(), "u2"); err == nil {
+		t.Fatal("revoked grant should have been dropped")
 	}
 }

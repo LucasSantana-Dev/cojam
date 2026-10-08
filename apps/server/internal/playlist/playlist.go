@@ -132,73 +132,177 @@ func FetchDeezerPlaylist(ctx context.Context, playlistID string) ([]queue.TrackR
 	return tracks, nil
 }
 
-// FetchSpotifyPlaylist fetches tracks from a Spotify playlist.
-// Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET.
+// MaxTracks bounds one playlist import (mirrors the hub's maxImportTracks so a
+// huge playlist neither blows the websocket frame nor pages forever).
+const MaxTracks = 200
+
+var (
+	// ErrSpotifyConnectRequired: Spotify refused the app-level (client
+	// credentials) read and the caller has no connected Spotify account.
+	ErrSpotifyConnectRequired = errors.New("spotify playlist needs a connected account")
+	// ErrSpotifyNotOwner: the caller's own token was refused, which Spotify
+	// does for playlists the user neither owns nor collaborates on.
+	ErrSpotifyNotOwner = errors.New("spotify playlist is not owned by the connected account")
+	// ErrSpotifyEditorial: Spotify-made playlists (37i9... ids) are never
+	// readable by development-mode apps; a 404 on an existing id means the same.
+	ErrSpotifyEditorial = errors.New("spotify editorial playlist cannot be read")
+)
+
+// UserTokenFunc returns a Spotify user-authorized access token for the
+// importing caller, or an error when there is none (not connected, grant
+// revoked). Any error makes the fetch fall back to client credentials.
+type UserTokenFunc func(ctx context.Context) (string, error)
+
+type userTokenKey struct{}
+
+// WithUserToken attaches the caller's token source to ctx, so the single-URL
+// FetchPlaylist signature stays unchanged.
+func WithUserToken(ctx context.Context, fn UserTokenFunc) context.Context {
+	return context.WithValue(ctx, userTokenKey{}, fn)
+}
+
+// UserTokenFrom returns the caller's token source attached by WithUserToken.
+func UserTokenFrom(ctx context.Context) (UserTokenFunc, bool) {
+	fn, ok := ctx.Value(userTokenKey{}).(UserTokenFunc)
+	return fn, ok && fn != nil
+}
+
+func isEditorialSpotifyID(id string) bool {
+	return strings.HasPrefix(id, "37i9")
+}
+
+// spotifyPlaylistItem accepts both response shapes: the Feb 2026 API renamed
+// items[].track to items[].item.
+type spotifyPlaylistItem struct {
+	Item  *spotifyTrack `json:"item"`
+	Track *spotifyTrack `json:"track"`
+}
+
+type spotifyTrack struct {
+	Name       string `json:"name"`
+	URI        string `json:"uri"`
+	DurationMs int    `json:"duration_ms"`
+	Artists    []struct {
+		Name string `json:"name"`
+	} `json:"artists"`
+	ExternalIDs struct {
+		ISRC string `json:"isrc"`
+	} `json:"external_ids"`
+	Album struct {
+		Images []struct {
+			URL string `json:"url"`
+		} `json:"images"`
+	} `json:"album"`
+}
+
+// FetchSpotifyPlaylist fetches tracks from a Spotify playlist. When ctx carries
+// a user token source (WithUserToken) and it yields a token, the playlist is
+// read with the caller's own authorization, the only kind Spotify still allows
+// for development-mode apps. Otherwise it falls back to client credentials
+// (SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET), which Spotify mostly refuses.
 func FetchSpotifyPlaylist(ctx context.Context, playlistID string) ([]queue.TrackRef, error) {
 	if playlistID == "" {
 		return nil, errors.New("empty playlist ID")
 	}
-
-	token, err := spotifyauth.Token(ctx)
-	if errors.Is(err, spotifyauth.ErrNotConfigured) {
-		return nil, ErrNotConfigured
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get spotify token: %w", err)
+	if isEditorialSpotifyID(playlistID) {
+		return nil, ErrSpotifyEditorial
 	}
 
-	url := fmt.Sprintf("%s/%s/tracks?limit=100", spotifyPlaylistURL, playlistID)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-
-	var result struct {
-		Items []struct {
-			Track struct {
-				Name       string `json:"name"`
-				URI        string `json:"uri"`
-				DurationMs int    `json:"duration_ms"`
-				Artists    []struct {
-					Name string `json:"name"`
-				} `json:"artists"`
-				ExternalIDs struct {
-					ISRC string `json:"isrc"`
-				} `json:"external_ids"`
-			} `json:"track"`
-		} `json:"items"`
-	}
-	if err := httpx.DoJSON(req, &result); err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	tracks := make([]queue.TrackRef, 0, len(result.Items))
-	for _, item := range result.Items {
-		artist := ""
-		if len(item.Track.Artists) > 0 {
-			artist = item.Track.Artists[0].Name
+	var token string
+	asUser := false
+	if fn, ok := UserTokenFrom(ctx); ok {
+		if t, err := fn(ctx); err == nil && t != "" {
+			token, asUser = t, true
 		}
-		tracks = append(tracks, queue.TrackRef{
-			Title:      item.Track.Name,
-			Artist:     artist,
-			DurationMs: int64(item.Track.DurationMs),
-			ISRC:       item.Track.ExternalIDs.ISRC,
-			Sources: queue.Sources{
-				Spotify: &queue.SourceRef{
-					TrackURI:   item.Track.URI,
-					Confidence: 1.0,
+	}
+	if !asUser {
+		t, err := spotifyauth.Token(ctx)
+		if errors.Is(err, spotifyauth.ErrNotConfigured) {
+			return nil, ErrNotConfigured
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to get spotify token: %w", err)
+		}
+		token = t
+	}
+
+	// /tracks was removed in the Feb 2026 API; /items is the replacement.
+	next := fmt.Sprintf("%s/%s/items?limit=100", spotifyPlaylistURL, url.PathEscape(playlistID))
+	if asUser {
+		next += "&market=from_token"
+	}
+	tracks := make([]queue.TrackRef, 0, 100)
+	for page := 0; next != "" && len(tracks) < MaxTracks && page < 10; page++ {
+		req, err := http.NewRequestWithContext(ctx, "GET", next, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		var result struct {
+			Items []spotifyPlaylistItem `json:"items"`
+			Next  string                `json:"next"`
+		}
+		if err := httpx.DoJSON(req, &result); err != nil {
+			var se *httpx.StatusError
+			if errors.As(err, &se) {
+				switch {
+				case se.Code == http.StatusNotFound:
+					if asUser {
+						return nil, ErrSpotifyEditorial
+					}
+					return nil, ErrSpotifyConnectRequired
+				case se.Code == http.StatusForbidden || se.Code == http.StatusUnauthorized:
+					if asUser {
+						return nil, ErrSpotifyNotOwner
+					}
+					return nil, ErrSpotifyConnectRequired
+				}
+			}
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
+
+		for _, it := range result.Items {
+			t := it.Item
+			if t == nil {
+				t = it.Track
+			}
+			if t == nil || t.Name == "" || t.URI == "" {
+				continue // local files and removed tracks never resolve
+			}
+			artist := ""
+			if len(t.Artists) > 0 {
+				artist = t.Artists[0].Name
+			}
+			ref := queue.TrackRef{
+				Title:      t.Name,
+				Artist:     artist,
+				DurationMs: int64(t.DurationMs),
+				ISRC:       t.ExternalIDs.ISRC,
+				Sources: queue.Sources{
+					Spotify: &queue.SourceRef{TrackURI: t.URI, Confidence: 1.0},
 				},
-			},
-		})
+			}
+			if len(t.Album.Images) > 0 {
+				ref.ArtworkURL = t.Album.Images[0].URL
+			}
+			tracks = append(tracks, ref)
+			if len(tracks) >= MaxTracks {
+				break
+			}
+		}
+		// The credential only ever goes to the Spotify API.
+		if !strings.HasPrefix(result.Next, spotifyPlaylistURL+"/") {
+			break
+		}
+		next = result.Next
 	}
 
 	return tracks, nil
 }
 
-// FetchYouTubePlaylist fetches tracks from a YouTube playlist.
-// Requires YOUTUBE_API_KEY environment variable.
+// FetchYouTubePlaylist fetches tracks from a YouTube playlist, 50 per page,
+// bounded by MaxTracks. Requires YOUTUBE_API_KEY.
 func FetchYouTubePlaylist(ctx context.Context, playlistID string) ([]queue.TrackRef, error) {
 	if playlistID == "" {
 		return nil, errors.New("empty playlist ID")
@@ -209,45 +313,55 @@ func FetchYouTubePlaylist(ctx context.Context, playlistID string) ([]queue.Track
 		return nil, ErrNotConfigured
 	}
 
-	q := url.Values{}
-	q.Set("part", "snippet,contentDetails")
-	q.Set("maxResults", "50")
-	q.Set("playlistId", playlistID)
-	q.Set("key", apiKey)
+	tracks := make([]queue.TrackRef, 0, 50)
+	pageToken := ""
+	for page := 0; page < 10 && len(tracks) < MaxTracks; page++ {
+		q := url.Values{}
+		q.Set("part", "snippet,contentDetails")
+		q.Set("maxResults", "50")
+		q.Set("playlistId", playlistID)
+		q.Set("key", apiKey)
+		if pageToken != "" {
+			q.Set("pageToken", pageToken)
+		}
 
-	url := fmt.Sprintf("%s?%s", youtubePlaylistURL, q.Encode())
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
+		req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s?%s", youtubePlaylistURL, q.Encode()), nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
 
-	var result struct {
-		Items []struct {
-			Snippet struct {
-				Title                  string `json:"title"`
-				VideoOwnerChannelTitle string `json:"videoOwnerChannelTitle"`
-			} `json:"snippet"`
-			ContentDetails struct {
-				VideoID string `json:"videoId"`
-			} `json:"contentDetails"`
-		} `json:"items"`
-	}
-	if err := httpx.DoJSON(req, &result); err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
+		var result struct {
+			Items []struct {
+				Snippet struct {
+					Title                  string `json:"title"`
+					VideoOwnerChannelTitle string `json:"videoOwnerChannelTitle"`
+				} `json:"snippet"`
+				ContentDetails struct {
+					VideoID string `json:"videoId"`
+				} `json:"contentDetails"`
+			} `json:"items"`
+			NextPageToken string `json:"nextPageToken"`
+		}
+		if err := httpx.DoJSON(req, &result); err != nil {
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
 
-	tracks := make([]queue.TrackRef, 0, len(result.Items))
-	for _, item := range result.Items {
-		tracks = append(tracks, queue.TrackRef{
-			Title:  item.Snippet.Title,
-			Artist: item.Snippet.VideoOwnerChannelTitle,
-			Sources: queue.Sources{
-				YouTube: &queue.SourceRef{
-					VideoID:    item.ContentDetails.VideoID,
-					Confidence: 1.0,
+		for _, item := range result.Items {
+			tracks = append(tracks, queue.TrackRef{
+				Title:  item.Snippet.Title,
+				Artist: item.Snippet.VideoOwnerChannelTitle,
+				Sources: queue.Sources{
+					YouTube: &queue.SourceRef{VideoID: item.ContentDetails.VideoID, Confidence: 1.0},
 				},
-			},
-		})
+			})
+			if len(tracks) >= MaxTracks {
+				break
+			}
+		}
+		if result.NextPageToken == "" {
+			break
+		}
+		pageToken = result.NextPageToken
 	}
 
 	return tracks, nil
