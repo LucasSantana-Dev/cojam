@@ -36,9 +36,9 @@ const MESSAGES: Record<SpotifyConnectErrorKind, string> = {
   session: 'Não conseguimos validar sua sessão na sala. Tente de novo em instantes.',
   network: 'Sem conexão com o servidor. Confira sua internet e tente de novo.',
   expired: 'A autorização expirou ou foi aberta em outra aba. Comece de novo.',
-  sdk: 'O player do Spotify não iniciou. No Brave, ative o Widevine em brave://settings/extensions e recarregue a página.',
+  sdk: 'O player do Spotify não iniciou neste navegador. Recarregue a página; no Brave, confira se o Widevine está ativo em brave://settings/extensions.',
   autoplay: 'O navegador bloqueou o som do Spotify até você clicar.',
-  premium: 'O player do Spotify precisa de uma conta Premium. A sala continua tocando pelo YouTube.',
+  premium: 'O player do Spotify precisa de uma conta Premium. Você pode ouvir pelo YouTube.',
   reconnect: 'Sua conexão com o Spotify expirou. Conecte de novo.',
   unknown: 'Não deu para conectar o Spotify. Tente de novo.',
 };

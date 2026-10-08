@@ -35,6 +35,7 @@ export interface SpotifySDKPlayer {
   addListener(event: 'player_state_changed', cb: (state: SpotifyPlaybackState | null) => void): boolean;
   addListener(event: string, cb: () => void): boolean;
   activateElement?(): Promise<void>;
+  disconnect?(): void;
 }
 
 interface SpotifySDKGlobal {
@@ -72,7 +73,7 @@ class SpotifyPlayHttpError extends Error {
   }
 }
 
-async function playUri(deviceId: string, uri: string, retries = 1): Promise<void> {
+async function playUri(deviceId: string, uri: string, retries = 1, stillWanted: () => boolean = () => true): Promise<void> {
   const token = await getAccessToken();
   if (!token) return;
   const res = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
@@ -84,7 +85,9 @@ async function playUri(deviceId: string, uri: string, retries = 1): Promise<void
   // device yet. One short retry before calling it a failure.
   if (res.status === 404 && retries > 0) {
     await new Promise((r) => setTimeout(r, 500));
-    return playUri(deviceId, uri, retries - 1);
+    // A skip inside the window must not replay the old track.
+    if (!stillWanted()) return;
+    return playUri(deviceId, uri, retries - 1, stillWanted);
   }
   if (!res.ok) throw new SpotifyPlayHttpError(res.status);
 }
@@ -350,7 +353,10 @@ export function SpotifyPlayer({
           const canSeek = await detectSpotifyCanSeek(player);
           const adapter = new SpotifyPlayerAdapter(player, device_id, canSeek);
           playerRef.current = adapter;
-          player.addListener('player_state_changed', (st) => adapter.handleStateChange(st));
+          player.addListener('player_state_changed', (st) => {
+            adapter.handleStateChange(st);
+            if (st && !st.paused) setProblem(null);
+          });
           onPlayerReadyRef.current?.(adapter);
           setProblem(null);
           setStatus('ready');
@@ -368,7 +374,11 @@ export function SpotifyPlayer({
           setStatus('error');
         });
         player.addListener('autoplay_failed', () => setProblem('autoplay'));
-        player.addListener('playback_error', () => setProblem('sdk'));
+        // Per track (restricted or unplayable), not an init failure.
+        player.addListener('playback_error', () => {
+          const st = useStore.getState().state;
+          if (st?.nowPlayingId) onPlayErrorRef.current?.(st.nowPlayingId);
+        });
         sdkPlayerRef.current = player;
         await player.connect();
       } catch (e) {
@@ -386,6 +396,13 @@ export function SpotifyPlayer({
       // load effect below would never re-fire for the new device.
       deviceId.current = null;
       loadedUriRef.current = null;
+      // Stale listeners of the old player must stop calling setProblem.
+      try {
+        sdkPlayerRef.current?.disconnect?.();
+      } catch {
+        // best effort
+      }
+      sdkPlayerRef.current = null;
       setStatus('idle');
       if (playerRef.current) {
         playerRef.current.dispose();
@@ -420,8 +437,11 @@ export function SpotifyPlayer({
     if (loadedUriRef.current === spotifyUri) return;
     loadedUriRef.current = spotifyUri;
     playerRef.current?.setExpected(spotifyUri);
-    playUri(deviceId.current, spotifyUri)
-      .then(() => onPlayErrorRef.current?.(null))
+    playUri(deviceId.current, spotifyUri, 1, () => loadedUriRef.current === spotifyUri)
+      .then(() => {
+        setProblem(null);
+        onPlayErrorRef.current?.(null);
+      })
       .catch((e) => {
         loadedUriRef.current = null;
         console.error('Spotify play failed:', e);
@@ -442,18 +462,24 @@ export function SpotifyPlayer({
       void sdkPlayerRef.current?.activateElement?.()?.catch?.(() => {});
       if (!uri || !dev) return;
       loadedUriRef.current = uri;
-      playUri(dev, uri)
+      playUri(dev, uri, 1, () => loadedUriRef.current === uri)
         .then(() => {
           setProblem(null);
           onPlayErrorRef.current?.(null);
         })
         .catch((e) => {
+          loadedUriRef.current = null;
           console.error('Spotify play failed:', e);
-          if (e instanceof SpotifyPlayHttpError && e.status === 403) setProblem('premium');
+          if (e instanceof SpotifyPlayHttpError) {
+            if (e.status === 403) setProblem('premium');
+            else if (e.status === 404) setProblem('sdk');
+          }
         });
     };
     onProblemRef.current?.(problem, problem === 'autoplay' ? retry : undefined);
   }, [problem, spotifyUri]);
+
+  useEffect(() => () => onProblemRef.current?.(null), []);
 
   // Switched to another service mid-track: stop the SDK. The new player takes
   // the synced position through the existing drift correction.

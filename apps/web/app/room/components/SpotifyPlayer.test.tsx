@@ -322,4 +322,13 @@ describe('SpotifyPlayer problem surface (card, not the closed menu)', () => {
     render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} onProblem={onProblem} />);
     await waitFor(() => expect(onProblem).toHaveBeenCalledWith('premium', undefined));
   });
+
+  it('routes playback_error to the failed-track path, not the sdk problem', async () => {
+    fireEvent = 'playback_error';
+    const onProblem = vi.fn();
+    const onPlayError = vi.fn();
+    render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} onProblem={onProblem} onPlayError={onPlayError} />);
+    await waitFor(() => expect(onPlayError).toHaveBeenCalledWith('t1'));
+    expect(onProblem).not.toHaveBeenCalledWith('sdk', undefined);
+  });
 });
