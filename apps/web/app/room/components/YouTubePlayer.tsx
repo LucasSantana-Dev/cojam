@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore, nowPlayingAdvance } from '@/lib/realtime';
 import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
+import { computeExpectedPosition, isExpectedPositionKnown, serverNow } from '@/lib/playbackSync';
 import { secondsToMs, msToSeconds, createEndedDetector } from '@/lib/playerUtils';
 
 // Minimal structural types for the YouTube IFrame API surface this adapter uses.
@@ -13,7 +14,8 @@ interface YTPlayerInstance {
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   getCurrentTime(): number;
   getDuration(): number;
-  loadVideoById(videoId: string): void;
+  getPlayerState?(): number;
+  loadVideoById(videoId: string | { videoId: string; startSeconds?: number }): void;
   setVolume?(volume: number): void;
 }
 
@@ -45,6 +47,17 @@ const apiReadyCallbacks: Array<() => void> = [];
 // removed/private, 101 and 150 = embedding disabled by the owner.
 export function isUnplayableYtError(code: number): boolean {
   return code === 100 || code === 101 || code === 150;
+}
+
+// Start a freshly loaded video at the synced position instead of 0: a seek
+// issued before the video is PLAYING can be dropped, restarting it at 0.
+function loadArg(videoId: string): string | { videoId: string; startSeconds: number } {
+  const t = useStore.getState().state?.transport;
+  if (!t || t.state === 'stopped') return videoId;
+  const now = serverNow();
+  if (!isExpectedPositionKnown(t, now)) return videoId;
+  const startSeconds = msToSeconds(computeExpectedPosition(t, now));
+  return startSeconds > 0 ? { videoId, startSeconds } : videoId;
 }
 
 // Stable empty-queue fallback: `?? []` inline would create a new array identity
@@ -122,6 +135,24 @@ class YouTubePlayerAdapter implements IPlayer {
 
   canSeek(): boolean {
     return true;
+  }
+
+  // YT.PlayerState.PAUSED === 2
+  isPaused(): boolean {
+    try {
+      return this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() === 2 : false;
+    } catch {
+      return false;
+    }
+  }
+
+  // YT.PlayerState.PLAYING === 1. Without getPlayerState assume playing.
+  isPlaying(): boolean {
+    try {
+      return this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() === 1 : true;
+    } catch {
+      return false;
+    }
   }
 
   onEnded(cb: () => void): void {
@@ -216,7 +247,7 @@ export function YouTubePlayer({
             adapterRef.current = adapter;
             onPlayerReadyRef.current?.(adapter);
             if (pendingVideoId.current) {
-              player.loadVideoById(pendingVideoId.current);
+              player.loadVideoById(loadArg(pendingVideoId.current));
               pendingVideoId.current = null;
             }
           },
@@ -248,7 +279,7 @@ export function YouTubePlayer({
     const player = playerRef.current;
     if (!player) return;
     if (playerUsable.current) {
-      player.loadVideoById(videoId);
+      player.loadVideoById(loadArg(videoId));
     } else {
       pendingVideoId.current = videoId;
     }

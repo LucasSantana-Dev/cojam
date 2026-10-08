@@ -36,6 +36,15 @@ export interface IPlayer {
   canSeek(): boolean;
 
   /**
+   * Optional: false while the provider is cued/buffering/unstarted, when
+   * position reads and seeks are unreliable. Drift correction skips those ticks.
+   */
+  isPlaying?(): boolean;
+
+  /** Optional: true when the provider is paused (e.g. autoplay was blocked). */
+  isPaused?(): boolean;
+
+  /**
    * Register a callback fired when the current track ends.
    */
   onEnded(cb: () => void): void;

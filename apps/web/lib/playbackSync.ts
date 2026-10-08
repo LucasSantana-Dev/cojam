@@ -47,3 +47,26 @@ export function computeExpectedPosition(
 export function shouldCorrect(driftMs: number, thresholdMs: number): boolean {
   return Math.abs(driftMs) > thresholdMs;
 }
+
+/**
+ * Tolerance for a "future" updatedAtServerMs. Real jitter is a few hundred ms;
+ * anything beyond this means our clock offset is wrong (never measured, or the
+ * client clock is far behind), so the expected position is unknown, not 0.
+ */
+export const CLOCK_SKEW_TOLERANCE_MS = 2000;
+
+/**
+ * True when the expected position can be trusted. A playing transport stamped
+ * well in the future of our corrected clock yields a negative elapsed time that
+ * computeExpectedPosition clamps to 0; seeking there restarts the track.
+ */
+export function isExpectedPositionKnown(
+  transport: { state: 'playing' | 'paused' | 'stopped'; positionMs: number; updatedAtServerMs: number } | undefined,
+  serverNowMs: number,
+): boolean {
+  if (!transport || transport.state !== 'playing') return true;
+  return serverNowMs - transport.updatedAtServerMs >= -CLOCK_SKEW_TOLERANCE_MS;
+}
+
+/** Minimum gap between corrective seeks, so a seek can settle before re-measuring. */
+export const SEEK_COOLDOWN_MS = 3000;
