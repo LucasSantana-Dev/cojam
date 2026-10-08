@@ -396,6 +396,7 @@ var mutatingMethods = map[string]bool{
 	"queue.reorder":       true,
 	"queue.vote":          true,
 	"history.readd":       true,
+	"queue.clear":         true,
 	"now_playing.set":     true,
 	"now_playing.advance": true,
 	"playlist.import":     true,
@@ -428,6 +429,7 @@ var knownMethods = map[string]bool{
 	"queue.reorder":       true,
 	"queue.vote":          true,
 	"history.readd":       true,
+	"queue.clear":         true,
 	"track.search":        true,
 	"track.depth":         true,
 	"track.lyrics":        true,
@@ -469,6 +471,7 @@ func metricMethod(method string) string {
 // (TrackRef.AddedByUserID) may remove it (B16), enforced in Authorize.
 var controlMethods = map[string]bool{
 	"history.readd":       true,
+	"queue.clear":         true,
 	"now_playing.set":     true,
 	"now_playing.advance": true,
 	"queue.reorder":       true,
@@ -1800,6 +1803,25 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			h.relaunchEnrich(req.RoomID, added)
 		}
 		return res, err
+
+	case "queue.clear":
+		var req struct {
+			RoomID string `json:"roomId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("queue.clear: roomId required")
+		}
+		removed := 0
+		if _, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			removed = s.ClearUpcoming()
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]int{"removed": removed})
 
 	case "queue.remove":
 		var req struct {

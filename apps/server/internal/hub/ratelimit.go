@@ -136,6 +136,7 @@ func (l *rateLimiter) allow(key string) bool {
 // room.kick/chat.*: chatMethods; playlist.import: fanoutMethods).
 var mutationMethods = map[string]bool{
 	"history.readd":       true,
+	"queue.clear":         true,
 	"queue.add":           true,
 	"queue.remove":        true,
 	"queue.reorder":       true,

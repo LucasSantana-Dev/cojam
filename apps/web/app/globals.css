@@ -3022,6 +3022,10 @@ input:focus, textarea:focus, select:focus {
   white-space: nowrap;
 }
 .r4-link:hover { color: oklch(0.9 0.1 300); }
+/* Quiet text action in the queue header (Limpar fila): muted until hovered. */
+.r4-link--quiet { color: var(--color-text-secondary); font-weight: 500; margin-left: auto; }
+.r4-link--quiet:hover { color: var(--color-text-primary); }
+.r4-link--quiet:disabled { opacity: 0.5; cursor: not-allowed; }
 .r4-stack { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 
 /* ---- header ---------------------------------------------------------------- */
