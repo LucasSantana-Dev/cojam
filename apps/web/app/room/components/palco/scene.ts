@@ -30,7 +30,7 @@ import {
   type Material,
   type MeshBasicMaterialParameters,
 } from 'three';
-import { SIDE_EXT, SPLIT, SPRITE_H, SPRITE_W, type Framing, type Slot, type WorldDef } from '@/lib/palco';
+import { DESK_BOTTOM, DESK_TOP, SIDE_EXT, SPLIT, SPRITE_H, SPRITE_W, type Framing, type Slot, type WorldDef } from '@/lib/palco';
 import { beatAt } from '@/lib/beatClock';
 import { serverNow } from '@/lib/playbackSync';
 import { CHARACTER_COUNT } from '@/lib/characters';
@@ -44,7 +44,6 @@ const UP_SIDE = (UP_W - SPRITE_W) / 2;
 // Name tags rise this many native px while the arms are up.
 const UP_TAG = 6;
 const INK = '#0d0a17';
-const DESK_W = 28;
 // The named audience faces the camera; nothing turns anyone round yet.
 const FACING: Facing = 'front';
 
@@ -52,6 +51,8 @@ export interface SceneImages {
   stage: HTMLImageElement;
   // Image-model sky (bands, stars, moon, far lights), as wide as the plate.
   sky: HTMLImageElement | null;
+  // The floor DJ desk of the vertical stage (left facing; mirrored for R).
+  desk: HTMLImageElement | null;
   // Background crowd tiles, two frames per layer.
   crowd: Record<CrowdLayer, [HTMLImageElement, HTMLImageElement]>;
   front: Record<number, HTMLImageElement>;
@@ -74,13 +75,14 @@ function load(src: string): Promise<HTMLImageElement | null> {
 export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
   const stage = await load(world.src);
   if (!stage) throw new Error('palco: stage art failed to load');
-  const [sky, ...tiles] = await Promise.all([
+  const [sky, desk, ...tiles] = await Promise.all([
     load(world.sky),
+    world.booths.some((b) => b.desk) ? load('/palco/desk.png') : Promise.resolve(null),
     ...CROWD_LAYERS.flatMap((l) => [load(`/palco/crowd-${l}-a.png`), load(`/palco/crowd-${l}-b.png`)]),
   ]);
   if (tiles.some((t) => !t)) throw new Error('palco: crowd art failed to load');
   const crowd = Object.fromEntries(CROWD_LAYERS.map((l, i) => [l, [tiles[i * 2]!, tiles[i * 2 + 1]!]])) as SceneImages['crowd'];
-  const out: SceneImages = { stage, sky, crowd, front: {}, back: {}, upFront: {}, upBack: {} };
+  const out: SceneImages = { stage, sky, desk, crowd, front: {}, back: {}, upFront: {}, upBack: {} };
   const ids = Array.from({ length: CHARACTER_COUNT }, (_, i) => i + 1);
   await Promise.all(
     ids.flatMap((id) => [
@@ -199,9 +201,6 @@ interface Booth {
   // Head row; on the vertical stage it moves below the player.
   top: number;
   desk?: Sized;
-  waveC?: HTMLCanvasElement;
-  waveTex?: Texture;
-  wave?: Sized;
 }
 
 // A background crowd row: an image-model tile layer (far, mid or near) tiled
@@ -254,9 +253,6 @@ export class PalcoScene {
   private readonly skyBase: ImageData;
   // Twinkle: isolated bright pixels of the sky art blink to the sky beside them.
   private readonly stars: Array<{ i: number; on: [number, number, number]; off: [number, number, number]; p: number; s: number }> = [];
-  private readonly waveC: HTMLCanvasElement;
-  private readonly waveTex: Texture;
-  private readonly wavePanels: Sized[] = [];
   private readonly beamMat: ShaderMaterial;
   private readonly beams: Array<{ a: number; s: number; sp: number; ph: number }>;
   private readonly lamps: Sized[] = [];
@@ -325,11 +321,6 @@ export class PalcoScene {
       const booth: Booth = { def, mesh: this.plane(null, SPRITE_W, SPRITE_H, 4), who: null, next: null, rise: 0, mode: 'idle', t0: 0, from: 0, top: def.top };
       booth.mesh.visible = false;
       if (def.desk) {
-        booth.waveC = document.createElement('canvas');
-        booth.waveC.width = DESK_W - 6;
-        booth.waveC.height = 9;
-        booth.waveTex = texFrom(booth.waveC);
-        booth.wave = this.plane(booth.waveTex, DESK_W - 6, 9, 6.7);
         // The floor DJs stand in front of the silhouette rows (z 5 to 6).
         booth.mesh.position.z = 6.5;
         booth.mesh.renderOrder = 65;
@@ -339,17 +330,6 @@ export class PalcoScene {
         this.put(this.plane(texFrom(crop(imgs.stage, cx, cy, cw, chh)), cw, chh, 4.5), cx, cy);
       }
       this.booths.push(booth);
-    }
-
-    // Sine-wave screens on the speaker stacks.
-    this.waveC = document.createElement('canvas');
-    this.waveC.width = 54;
-    this.waveC.height = 21;
-    this.waveTex = texFrom(this.waveC);
-    for (const [x, y] of world.waves) {
-      const m = this.plane(this.waveTex, 54, 21, 4.6);
-      this.put(m, x, y);
-      this.wavePanels.push(m);
     }
 
     // Light beams: Bayer-dithered cones in additive blending.
@@ -565,8 +545,7 @@ export class PalcoScene {
     document.removeEventListener('visibilitychange', this.onVisibility);
     // Every texture once: the scene's maps (stage plate, edges, ground, covers,
     // desks, lamps, rows) plus the ones not always in the scene.
-    const textures = new Set<Texture>([this.skyTex, this.waveTex, this.heartTex]);
-    this.booths.forEach((b) => { if (b.waveTex) textures.add(b.waveTex); });
+    const textures = new Set<Texture>([this.skyTex, this.heartTex]);
     this.scene.traverse((o) => {
       const m = o as Mesh;
       if (m.geometry) m.geometry.dispose();
@@ -664,25 +643,14 @@ export class PalcoScene {
     return t;
   }
 
-  // The small floor desk of the vertical stage. A sinking DJ is clipped at its
-  // bottom edge (see frame), so it needs no cover of art pixels.
+  // The image-model floor desk of the vertical stage. A sinking DJ is clipped
+  // at its bottom edge (see frame), so it needs no cover of art pixels.
   private placeDesk(b: Booth): void {
-    if (!b.def.desk || !b.wave) return;
+    if (!b.def.desk || !this.imgs.desk) return;
     if (b.desk) this.drop(b.desk);
-    const DH = 16;
-    const x0 = b.def.x - 4, y0 = b.top + 28;
-    const c = document.createElement('canvas');
-    c.width = DESK_W;
-    c.height = DH;
-    const dg = c.getContext('2d')!;
-    dg.fillStyle = '#120c24'; dg.fillRect(0, 0, DESK_W, DH);
-    dg.fillStyle = '#2a1c50'; dg.fillRect(1, 1, DESK_W - 2, DH - 2);
-    dg.fillStyle = '#9a82ea'; dg.fillRect(0, 0, DESK_W, 1);
-    dg.fillStyle = '#4b3690'; dg.fillRect(3, 2, 6, 2); dg.fillRect(DESK_W - 9, 2, 6, 2);
-    dg.fillStyle = '#d9cffb'; dg.fillRect(5, 2, 2, 1); dg.fillRect(DESK_W - 7, 2, 2, 1);
-    b.desk = this.plane(texFrom(c), DESK_W, DH, 6.6);
-    this.put(b.desk, x0, y0);
-    this.put(b.wave, x0 + 3, y0 + 5);
+    const img = this.imgs.desk;
+    b.desk = this.plane(texFrom(b.def.side === 'R' ? mirrored(img) : img), img.width, img.height, 6.6);
+    this.put(b.desk, b.def.x - (img.width - SPRITE_W) / 2, b.top + DESK_TOP);
   }
 
   private assignBooth(b: Booth, who: BoothEntry | null): void {
@@ -706,24 +674,6 @@ export class PalcoScene {
       d[st.i] = c[0]; d[st.i + 1] = c[1]; d[st.i + 2] = c[2];
     }
     this.skyC.getContext('2d')!.putImageData(this.skyBase, 0, 0);
-  }
-
-  private drawWave(beat: number, cnv: HTMLCanvasElement): void {
-    const wctx = cnv.getContext('2d')!;
-    const W = cnv.width, H = cnv.height, mid = Math.floor(H / 2), amp = Math.max(2, mid - 2);
-    wctx.fillStyle = '#28154a';
-    wctx.fillRect(0, 0, W, H);
-    const env = this.motion ? 0.45 + 0.55 * Math.exp(-((beat % 1) * 3.2)) : 0.7;
-    let prev: number | null = null;
-    for (let x = 0; x < W; x++) {
-      const a = Math.sin(x * 0.42 + beat * Math.PI * 0.5) * 0.65 + Math.sin(x * 0.17 - beat * 1.3) * 0.35;
-      const y = Math.round(mid + a * amp * env);
-      const y0 = prev ?? y;
-      const lo = Math.min(y, y0), hi = Math.max(y, y0);
-      wctx.fillStyle = '#5a3a9a'; wctx.fillRect(x, lo - 1, 1, hi - lo + 3);
-      wctx.fillStyle = '#d9cffb'; wctx.fillRect(x, lo, 1, Math.max(1, hi - lo));
-      prev = y;
-    }
   }
 
   // Background crowd: image-model tile rows behind the named audience, far
@@ -796,8 +746,6 @@ export class PalcoScene {
     });
     this.lamps.forEach((m, i) => { (m.material as MeshBasicMaterial).opacity = 0.35 + 0.65 * (Math.floor(beat + i * 0.5) % 2 ? pulse : 0.3); });
     if (motion ? t - this.lastSky > 0.25 : this.lastSky < 0) { this.drawSky(t); this.skyTex.needsUpdate = true; this.lastSky = t; }
-    if (this.wavePanels.length) { this.drawWave(beat, this.waveC); this.waveTex.needsUpdate = true; }
-    for (const b of this.booths) if (b.waveC && b.waveTex) { this.drawWave(beat, b.waveC); b.waveTex.needsUpdate = true; }
 
     this.energy = Math.max(0, this.energy - dt * 0.05);
     if (motion && this.energy > 0.8 && t - this.lastBurst > 10) { this.burst(); this.lastBurst = t; }
@@ -816,8 +764,8 @@ export class PalcoScene {
       const sink = Math.round((1 - b.rise) * 40);
       const y = b.top + sink;
       if (b.def.desk) {
-        // Show only the rows above the desk's bottom edge (top + 44): whole rows.
-        const vis = 44 - sink;
+        // Show only the rows above the desk's bottom edge: whole rows.
+        const vis = DESK_BOTTOM - sink;
         const map = (b.mesh.material as MeshBasicMaterial).map;
         if (map) { map.repeat.y = vis / SPRITE_H; map.offset.y = 1 - vis / SPRITE_H; }
         b.mesh.scale.y = vis / SPRITE_H;
@@ -826,7 +774,7 @@ export class PalcoScene {
       } else {
         this.put(b.mesh, b.def.x, y + bob);
       }
-      const [ax, ay] = this.css(b.def.x + SPRITE_W / 2, b.def.desk ? b.top + 28 + 16 : y);
+      const [ax, ay] = this.css(b.def.x + SPRITE_W / 2, b.def.desk ? b.top + DESK_BOTTOM : y);
       out.booths.push({ key: b.who?.key ?? null, x: ax, y: ay, visible: Boolean(b.who) && b.rise >= 1 });
     });
 

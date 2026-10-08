@@ -39,8 +39,6 @@ export interface WorldDef {
   // Lowest world row of the live framing (front row feet sit around it).
   liveBottom: number;
   booths: [BoothDef, BoothDef];
-  // Sine-wave screens on the speaker stacks (wide only).
-  waves: Array<[number, number]>;
   // Beam origin x, y, angle, spread, length.
   beams: Array<[number, number, number, number, number]>;
   lamps: Array<[number, number]>;
@@ -68,8 +66,6 @@ export const WORLDS: Record<WorldKind, WorldDef> = {
       { side: 'L', x: 52, top: 104, cover: [30, 121, 60, 66] },
       { side: 'R', x: 289, top: 104, cover: [268, 121, 62, 66] },
     ],
-    // Round 10 plate: its own booth screens carry the sine wave (no panel on top).
-    waves: [],
     beams: [[96, 86, -0.55, 0.07, 150], [130, 60, -0.25, 0.06, 140], [230, 60, 0.25, 0.06, 140], [264, 86, 0.55, 0.07, 150], [47, 122, -0.75, 0.012, 260], [312, 122, 0.75, 0.012, 260]],
     lamps: [[83, 97], [82, 109], [269, 97], [271, 109]],
     confetti: [100, 260, 70],
@@ -92,7 +88,6 @@ export const WORLDS: Record<WorldKind, WorldDef> = {
       { side: 'L', x: 8, top: 116, desk: true },
       { side: 'R', x: 174, top: 116, desk: true },
     ],
-    waves: [],
     beams: [[51, 56, -0.45, 0.07, 150], [152, 56, 0.45, 0.07, 150], [10, 80, -0.85, 0.06, 130], [192, 76, 0.85, 0.06, 130], [30, 150, -0.35, 0.012, 220], [172, 150, 0.35, 0.012, 220]],
     lamps: [[11, 92], [10, 105], [183, 92], [185, 105]],
     confetti: [60, 142, 60],
@@ -103,6 +98,10 @@ export const WORLDS: Record<WorldKind, WorldDef> = {
     spacing: 26,
   },
 };
+
+// The floor desk (public/palco/desk.png, 28x17) relative to a DJ's head row.
+export const DESK_TOP = 28;
+export const DESK_BOTTOM = DESK_TOP + 17;
 
 // Sprite geometry (public/palco/characters): 20x48 front/back, 28x58 arms up.
 export const SPRITE_W = 20;
@@ -257,8 +256,8 @@ export function boardRect(world: WorldDef, f: Framing, player: Rect, count: numb
     const [r] = toCss(f, world.booths[1].x - 8, 0);
     x = l;
     w = r - l;
-    // The booth tags hang under the desks (desk bottom: head row + 44).
-    bottom = Math.min(bottom, toCss(f, 0, boothTop(world, f, player) + 44)[1] - 4);
+    // The booth tags hang under the desks.
+    bottom = Math.min(bottom, toCss(f, 0, boothTop(world, f, player) + DESK_BOTTOM)[1] - 4);
   }
   const rows = Math.min(count, BOARD_MAX, Math.floor((bottom - y - 2 * BOARD_PAD - BOARD_HEAD) / BOARD_ROW));
   if (rows < 1 || w < 120) return null;
