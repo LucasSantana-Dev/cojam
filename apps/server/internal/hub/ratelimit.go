@@ -142,6 +142,8 @@ var mutationMethods = map[string]bool{
 	"now_playing.advance": true,
 	"radio.set":           true,
 	"room.set_public":     true,
+	"room.set_admin":      true,
+	"room.transfer_host":  true,
 }
 
 // Defaults for the mutation limiter: a host curating a queue clicks in
