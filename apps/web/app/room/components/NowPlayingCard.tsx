@@ -92,9 +92,23 @@ export function NowPlayingCard({
   return (
     <section className={`r4-card r4-now${track && isPlaying ? ' is-live' : ''}`} aria-label="Tocando agora">
       {track && state === 'unavailable' ? (
-        <UnavailableTrack />
+        <>
+          <UnavailableTrack />
+          <div className="r4-now__foot">
+            <span className="r4-now__tools">
+              <RadioSwitch roomId={roomId} on={radioOn} />
+            </span>
+          </div>
+        </>
       ) : track && state === 'failed' ? (
-        <PlayFailedTrack />
+        <>
+          <PlayFailedTrack />
+          <div className="r4-now__foot">
+            <span className="r4-now__tools">
+              <RadioSwitch roomId={roomId} on={radioOn} />
+            </span>
+          </div>
+        </>
       ) : track ? (
         <>
           <div className="r4-now__grid">
@@ -109,9 +123,8 @@ export function NowPlayingCard({
                     key={`${artwork}|${coverLevel}`}
                     src={artwork}
                     alt=""
-                    crossOrigin={coverLevel === 0 ? 'anonymous' : undefined}
                     className="r4-cover__img"
-                    // CORS load failed: show the plain (non-CORS) image; if that fails too, the placeholder
+                    // load failed: fall back to the placeholder
                     onError={onCoverError}
                   />
                 </>

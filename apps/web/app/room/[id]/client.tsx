@@ -130,11 +130,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const trackUnavailable = Boolean(nowPlaying) && activeSource === null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
 
-  // "Cor da faixa" (#325): the room takes its ground colour from the cover that
-  // is playing. The CSS crossfades --tint-l/c/h, so a track change is a colour
-  // glide, not a swap. Idle violet when nothing plays.
+  // The cover of the playing track. Its colours only tint the pre-join ground
+  // (idle violet while no room state exists); once joined nothing reads them, so
+  // the extraction is skipped.
   const artwork = nowPlaying ? queueArtwork(nowPlaying) : null;
-  const { tint, palette } = useTrackColors(artwork);
+  const { tint, palette } = useTrackColors(joined ? null : artwork);
   const [coverFail, setCoverFail] = useState<{ url: string | null; level: number }>({ url: null, level: 0 });
   const coverLevel = coverFail.url === artwork ? coverFail.level : 0;
   const motion = useMotion();
@@ -162,8 +162,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     hostUserId: store.state?.hostUserId,
   });
 
-  // Presence snapshot for the fused now-playing chip lives in PresenceMeta,
-  // which reads the store directly (per-connection members, no name dedupe).
+  // Listener presence is rendered by ListenersStage, which reads the store
+  // directly (per-connection members, name suffix on duplicates).
   const transportState = store.state?.transport?.state;
   const isPlaying = transportState === 'playing';
 
@@ -222,11 +222,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }, [activePlayer, roomId]);
 
   if (!joined) {
-    // Same ground component and surface as the room (sintonia, #325). Before
+    // Pre-join screen on the same ground component as the room (#325). Before
     // joining the client holds no room state (the room channel is only
     // subscribed by joinRoom), so this is the idle ground: no cover, no member
-    // list. The ground sits at the same tree position as in the joined room, so
-    // it is not remounted when the visitor enters: the colour carries over.
+    // list.
     const initial = (nameInput.trim() || 'G').charAt(0).toUpperCase();
     return (
       <div

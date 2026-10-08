@@ -125,8 +125,8 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
     };
   }, [running, motion.ground]);
 
-  // Don't render if presence is disabled
-  if (!f.presence) return null;
+  // Nothing to show when presence is disabled or nobody is connected
+  if (!f.presence || members.length === 0) return null;
 
   const handleKick = (member: { clientId: string; name: string }) => {
     kickMember(roomId, member.clientId).catch((err) => {
@@ -180,7 +180,7 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
                       <Crown />
                     </span>
                   )}
-                  <span className="r4-ls__name-text">{member.name}</span>
+                  <span className="r4-ls__name-text">{label}</span>
                 </div>
                 {member.platform && <div className="r4-ls__svc">({PLATFORM_LABEL[member.platform]})</div>}
                 <span className="r4-ls__tools">
@@ -188,9 +188,9 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
                     <button
                       type="button"
                       onClick={() =>
-                        report.open({ roomId, kind: 'member', subjectId: member.clientId, subjectLabel: member.name })
+                        report.open({ roomId, kind: 'member', subjectId: member.clientId, subjectLabel: label })
                       }
-                      aria-label={`Denunciar ${member.name}`}
+                      aria-label={`Denunciar ${label}`}
                       className="report-user-btn"
                     >
                       <span aria-hidden="true">⚑</span>
@@ -200,8 +200,8 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
                     <button
                       type="button"
                       onClick={() => handleKick(member)}
-                      title={`Remover ${member.name} da sala`}
-                      aria-label={`Remover ${member.name} da sala`}
+                      title={`Remover ${label} da sala`}
+                      aria-label={`Remover ${label} da sala`}
                       className="r4-ls__kick"
                     >
                       <span aria-hidden="true">×</span>

@@ -22,6 +22,19 @@ describe('ListenersStage', () => {
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();
   });
 
+  it('shows the suffixed label as visible text and in the report aria-label', () => {
+    useStore.getState().setMembers([m('b', 'Alice'), m('a', 'Alice')]);
+    render(<ListenersStage roomId="r" running={false} />);
+
+    expect(screen.getByText('Alice (2)', { selector: '.r4-ls__name-text' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Denunciar Alice (2)')).toBeInTheDocument();
+  });
+
+  it('renders nothing when nobody is connected', () => {
+    const { container } = render(<ListenersStage roomId="r" running={false} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('renders a unique name with no suffix', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
     render(<ListenersStage roomId="r" running={false} />);

@@ -3402,7 +3402,7 @@ input:focus, textarea:focus, select:focus {
 .r4-ls__member:hover .r4-ls__tools, .r4-ls__member:focus-within .r4-ls__tools { opacity: 1; }
 .r4-ls__tools button { pointer-events: auto; display: grid; place-items: center; width: 1.5rem; height: 1.5rem; padding: 0; border-radius: 50%; background: var(--r4-panel-2); border: 1px solid oklch(1 0 0 / 0.18); color: var(--color-text-primary); font-size: 0.75rem; line-height: 1; }
 .r4-ls__tools .r4-ls__kick { margin-left: auto; background: var(--color-status-error); border-color: transparent; color: oklch(0.12 0.01 25); font-size: 1rem; }
-@media (hover: none), (max-width: 47.999rem) {
+@media (hover: none), (any-pointer: coarse), (max-width: 47.999rem) {
   .r4-ls__tools { position: static; translate: none; width: auto; opacity: 1; gap: 0.25rem; justify-content: center; pointer-events: auto; }
   .r4-ls__tools button { width: 2.75rem; height: 2.75rem; font-size: 0.95rem; }
   .r4-ls__tools .r4-ls__kick { margin-left: 0; }
