@@ -21,24 +21,33 @@ export type Member = {
 // One person = one listener. Presence is per connection (new clientId on every
 // reconnect or tab), so a person who left for the Spotify OAuth round trip is
 // briefly listed twice while the old connection lingers. Collapse entries that
-// share a userId into one member at the first entry's position; the latest
-// entry wins for name and platform (a returning Spotify user now has one).
+// share a userId into one member. Deterministic regardless of arrival order
+// (every viewer must compute identical labels, see nameSuffix.ts): the
+// representative is the smallest clientId, name comes from it, platform from
+// the smallest clientId that has one. Output is ordered by representative id.
 // Entries without a userId stay one per connection.
 export function collapseMembers(connections: Member[]): Member[] {
-  const out: Member[] = [];
-  const byUser = new Map<string, number>();
+  const groups = new Map<string, Member[]>();
+  const solo: Member[] = [];
   for (const c of connections) {
-    const ids = c.clientIds ?? [c.clientId];
-    const at = c.userId ? byUser.get(c.userId) : undefined;
-    if (at === undefined) {
-      if (c.userId) byUser.set(c.userId, out.length);
-      out.push({ ...c, clientIds: [...ids] });
-    } else {
-      const prev = out[at];
-      out[at] = { ...prev, name: c.name, platform: c.platform ?? prev.platform, clientIds: [...prev.clientIds!, ...ids] };
+    if (!c.userId) {
+      solo.push({ ...c, clientIds: c.clientIds ?? [c.clientId] });
+      continue;
     }
+    const g = groups.get(c.userId);
+    if (g) g.push(c);
+    else groups.set(c.userId, [c]);
   }
-  return out;
+  const merged = [...groups.values()].map((g) => {
+    const sorted = [...g].sort((x, y) => (x.clientId < y.clientId ? -1 : x.clientId > y.clientId ? 1 : 0));
+    const rep = sorted[0];
+    return {
+      ...rep,
+      platform: sorted.find((m) => m.platform)?.platform,
+      clientIds: sorted.flatMap((m) => m.clientIds ?? [m.clientId]),
+    };
+  });
+  return [...merged, ...solo].sort((x, y) => (x.clientId < y.clientId ? -1 : x.clientId > y.clientId ? 1 : 0));
 }
 
 // Client-side chat scrollback cap (F8). The server ring holds the last 50;

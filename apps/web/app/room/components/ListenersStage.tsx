@@ -130,8 +130,12 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
 
   const handleKick = (member: { clientId: string; clientIds?: string[]; name: string }) => {
     // One person can hold several connections; room.kick takes one clientId.
-    Promise.all((member.clientIds ?? [member.clientId]).map((id) => kickMember(roomId, id))).catch((err) => {
-      console.warn('[moderation] kick failed:', rpcErrorMessage(err, 'unknown error'));
+    // A ghost connection answers "not in this room": warn only if every call failed.
+    Promise.allSettled((member.clientIds ?? [member.clientId]).map((id) => kickMember(roomId, id))).then((results) => {
+      const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failed.length === results.length) {
+        console.warn('[moderation] kick failed:', rpcErrorMessage(failed[0].reason, 'unknown error'));
+      }
     });
   };
 
@@ -153,7 +157,7 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
           const isHost = Boolean(hostUserId && member.userId && member.userId === hostUserId);
           const mine = (member.clientIds ?? [member.clientId]).includes(myClientId);
           return (
-            <div key={member.clientId} className="r4-ls__item">
+            <div key={member.userId ?? member.clientId} className="r4-ls__item">
               {i > 0 && (
                 <span className="r4-ls__between" aria-hidden="true">
                   <WaveGlyph />
@@ -166,7 +170,7 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
                       <path key={r} className={`r4-arcs__a r4-arcs__a${k}`} d={arcPath(r)} fill="none" strokeWidth="2.6" strokeLinecap="round" />
                     ))}
                   </svg>
-                  <div className="r4-ls__av" style={{ background: avatarGradient(member.clientId || member.name) }} title={label}>
+                  <div className="r4-ls__av" style={{ background: avatarGradient(member.userId ?? member.clientId ?? member.name) }} title={label}>
                     <span aria-hidden="true">{member.name.charAt(0).toUpperCase()}</span>
                     {Icon && (
                       <span className="r4-ls__badge" title={member.platform}>

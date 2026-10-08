@@ -14,6 +14,20 @@ describe('one person = one listener', () => {
     expect(out[0]).toMatchObject({ clientId: 'c1', clientIds: ['c1', 'c3'], platform: 'spotify' });
   });
 
+  it('is identical for any arrival order', () => {
+    const a = [
+      { clientId: 'c1', userId: 'u1', name: 'Luk' },
+      { clientId: 'c3', userId: 'u1', name: 'Luk', platform: 'spotify' as const },
+      { clientId: 'c2', userId: 'u2', name: 'Luk' },
+    ];
+    const b = [a[2], a[1], a[0]];
+    expect(collapseMembers(b)).toEqual(collapseMembers(a));
+    useStore.getState().setMembers(a);
+    const s1 = useStore.getState().nameSuffixes;
+    useStore.getState().setMembers(b);
+    expect(useStore.getState().nameSuffixes).toEqual(s1);
+  });
+
   it('keeps connections without a userId separate', () => {
     expect(collapseMembers([
       { clientId: 'a', name: 'X' },
