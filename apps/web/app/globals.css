@@ -3190,15 +3190,16 @@ input:focus, textarea:focus, select:focus {
   scrollbar-width: thin;
   scrollbar-color: oklch(1 0 0 / 0.28) transparent;
 }
+.fq-items { display: contents; }
 .fq-sub { order: -1; margin: 0.75rem 0.5rem 0.25rem; font-family: var(--font-display), system-ui, sans-serif; font-size: 0.8125rem; font-weight: 600; color: var(--color-text-muted); }
 
 .fq-row { position: relative; flex: none; border-radius: 0.5rem; transition: background-color 120ms ease; }
 .fq-row:hover, .fq-row:focus-within { background: oklch(1 0 0 / 0.07); }
 .fq-row.is-now { background: oklch(1 0 0 / 0.1); }
 .fq-row.removing { opacity: 0.55; }
-.fq-main { position: relative; display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem; }
+.fq-main { position: relative; display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem; }
 
-.fq-art { position: relative; flex: none; width: 44px; height: 44px; border-radius: 0.375rem; overflow: hidden; background: oklch(1 0 0 / 0.1); }
+.fq-art { position: relative; flex: none; width: 40px; height: 40px; border-radius: 0.375rem; overflow: hidden; background: oklch(1 0 0 / 0.1); }
 .fq-art img, .fq-art__fallback { width: 100%; height: 100%; object-fit: cover; display: grid; place-items: center; color: var(--color-text-muted); }
 .fq-art .queue-thumb-eq { border-radius: 0; }
 
@@ -3217,9 +3218,10 @@ input:focus, textarea:focus, select:focus {
   overflow-wrap: anywhere;
 }
 .fq-artist { font-size: 0.8125rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fq-pick, .fq-missing { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fq-pick { font-size: 0.75rem; font-weight: 600; color: var(--tint-pale, var(--color-text-primary)); }
 
-.fq-av { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 0.6875rem; font-weight: 700; color: oklch(0.99 0.004 280); }
+.fq-av { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 0.8125rem; font-weight: 700; color: var(--on-tint, oklch(0.99 0.004 280)); }
 
 .fq-vote {
   flex: none;
@@ -3246,16 +3248,20 @@ input:focus, textarea:focus, select:focus {
 /* reorder / play / remove: only on hover or focus, over the end of the row */
 .fq-controls {
   position: absolute;
-  right: 3.5rem;
-  top: 50%;
-  transform: translateY(-50%);
+  right: 7.5rem; /* clear of the vote pill (stack + chevron + count) */
+  bottom: 0.25rem;
   display: flex;
   gap: 0.125rem;
   opacity: 0;
   transition: opacity 120ms ease;
 }
 .fq-row:hover .fq-controls, .fq-row:focus-within .fq-controls { opacity: 1; }
-.fq-controls button { width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: 50%; background: none; color: var(--color-text-secondary); }
+/* controls sit on the bottom line of the text column: keep that line (artist,
+   pick, missing-version note) clear of them while they show. Title, "pediu" line
+   and the pill are never covered. */
+.fq-row:hover :is(.fq-artist, .fq-pick, .fq-missing), .fq-row:focus-within :is(.fq-artist, .fq-pick, .fq-missing) { padding-right: 7.75rem; }
+.fq-missing { font-size: 0.75rem; color: var(--color-text-muted); }
+.fq-controls button { width: 1.75rem; height: 1.75rem; display: grid; place-items: center; border-radius: 50%; background: none; color: var(--color-text-secondary); }
 .fq-controls button:hover:not(:disabled) { background: oklch(1 0 0 / 0.14); color: var(--color-text-primary); }
 .fq-controls button:first-child:not(:disabled) { background: var(--color-accent); color: oklch(0.99 0.004 280); }
 .fq-controls button:disabled { opacity: 0.35; cursor: not-allowed; }
@@ -3265,16 +3271,10 @@ input:focus, textarea:focus, select:focus {
 .fq-undo button { color: var(--color-accent); font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 0.375rem; }
 
 /* social (Stationhead): who asked leads the row; votes are stacked avatars */
-.fq-main { gap: 0.625rem; }
-.fq-row .fq-av { width: 32px; height: 32px; font-size: 0.8125rem; }
-.fq-row .fq-art { width: 40px; height: 40px; }
-.fq-controls { top: 0.125rem; right: 0.375rem; transform: none; }
-.fq-row.is-pinned .fq-controls { top: auto; bottom: 0.125rem; }
-.fq-controls button { width: 1.75rem; height: 1.75rem; }
 .fq-stack { display: inline-flex; align-items: center; padding-left: 0.375rem; }
-.fq-stack i { width: 20px; height: 20px; border-radius: 50%; margin-left: -0.375rem; border: 1.5px solid oklch(0.2 0.02 280); display: grid; place-items: center; font-style: normal; font-size: 0.625rem; font-weight: 700; color: oklch(0.99 0.004 280); }
-.fq-stack__anon { background: oklch(0.45 0.01 280); }
-.fq-stack__more { background: oklch(0.3 0.01 280); }
+.fq-stack i { width: 20px; height: 20px; border-radius: 50%; margin-left: -0.375rem; border: 1.5px solid oklch(0.2 0.02 280); display: grid; place-items: center; font-style: normal; font-size: 0.625rem; font-weight: 700; color: var(--on-tint, oklch(0.99 0.004 280)); }
+.fq-stack__anon { background: oklch(1 0 0 / 0.28); }
+.fq-stack__more { background: oklch(0 0 0 / 0.35); }
 .fq-stack__empty { background: none !important; border: 1.5px dashed oklch(1 0 0 / 0.45) !important; }
 .fq-row.is-pinned { order: -2; margin-bottom: 0.25rem; border-radius: 0.7rem; background: color-mix(in oklab, var(--tint-hi, oklch(0.45 0.1 300)) 72%, oklch(0 0 0 / 0.1)); }
 .fq-row.is-pinned:hover, .fq-row.is-pinned:focus-within { background: color-mix(in oklab, var(--tint-hi, oklch(0.45 0.1 300)) 80%, oklch(0 0 0 / 0.1)); }
@@ -3284,18 +3284,18 @@ input:focus, textarea:focus, select:focus {
 
 @media (max-width: 47.999rem) {
   .fq-list { max-height: none; overflow: visible; }
-  .fq-main { flex-wrap: wrap; gap: 0.625rem; }
-  .fq-main { gap: 0.5rem; }
-  .fq-row .fq-av { width: 28px; height: 28px; }
+  .fq-main { flex-wrap: wrap; gap: 0.5rem; }
+  .fq-av { width: 28px; height: 28px; font-size: 0.75rem; }
   .fq-text { flex-basis: 0; }
 }
 /* phones and touch screens at any width: no hover, so the secondary actions
    sit behind a 44px "more" toggle and open on their own line */
-@media (max-width: 47.999rem), (hover: none) {
+@media (max-width: 47.999rem), (hover: none), (any-pointer: coarse) {
   .fq-main { flex-wrap: wrap; }
   .fq-row :is(button, a) { min-width: 44px; min-height: 44px; }
   .fq-more { display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 50%; background: none; color: var(--color-text-secondary); font-size: 1.1rem; }
-  .fq-controls { display: none; position: static; transform: none; flex-basis: 100%; justify-content: flex-end; gap: 0.5rem; opacity: 1; padding: 0; }
+  .fq-row:hover :is(.fq-artist, .fq-pick, .fq-missing), .fq-row:focus-within :is(.fq-artist, .fq-pick, .fq-missing) { padding-right: 0; }
+  .fq-controls { display: none; position: static; flex-basis: 100%; justify-content: flex-end; gap: 0.5rem; opacity: 1; padding: 0; }
   .fq-row[data-more="true"] .fq-controls { display: flex; }
   .fq-controls button { width: 44px; height: 44px; }
 }

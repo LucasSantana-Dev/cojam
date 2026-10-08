@@ -45,6 +45,8 @@ Source of truth: the block comment "Cor da faixa: sintonia" in `apps/web/app/glo
 | LIVE | Green `--color-accent-2` and `--logo-core-*` | Only the LIVE pill, eq bars and live dots. `scripts/check_web_drift.sh` fails green outside its `LIVE_SELECTORS` allowlist and in components. |
 | Success | `--color-status-ok`, violet hue | Not green: success is not LIVE. |
 
+**Exception (owner approved, #325):** the pinned now-playing queue row (`.fq-row.is-pinned`) may use the cover tint as a surface, and `.fq-pick` ("Escolha dos ouvintes") uses `--tint-pale` as text. Nothing else.
+
 Off-palette Tailwind colour utilities (orange, amber, teal, and so on) in `apps/web/app/**/*.tsx` also fail the drift guard.
 
 ## Tokens
@@ -111,7 +113,7 @@ PT-BR everywhere a user can see it: room, join errors, relative times, /account,
 1. Render inside `SintoniaScreen` (non-room screens) or under `.landing` / `.room` with `data-bg="sintonia"`. Do not paint your own page background.
 2. Use the glass tokens for panels. No blur, no extra shadows beyond what exists.
 3. Text is white. Actions are `--color-accent`. Do not use green unless it is a LIVE indicator, and then add its selector to `LIVE_SELECTORS` in `scripts/check_web_drift.sh`.
-4. Do not use the cover palette anywhere except the ground.
+4. Do not use the cover palette anywhere except the ground (one exception: see Colour roles).
 5. Add no new loop at rest. If you add motion, gate it on `useMotion()` and give it a reduced-motion state.
 6. Effects keyed on props from a re-rendering parent: stable deps only (see the pitfall above).
 7. Copy in PT-BR.

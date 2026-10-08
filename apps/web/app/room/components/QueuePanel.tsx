@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage, isTrackNotFoundError } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import type { TrackRef } from '@cojam/shared';
+import type { Member } from '@/lib/realtime';
 import {
   PlayIcon,
   ArrowUpIcon,
@@ -13,6 +14,7 @@ import {
   MusicNoteIcon,
 } from '@/app/components/icons';
 import { avatarGradient } from '@/lib/avatar';
+import { memberLabel } from '@/lib/nameSuffix';
 
 // Deezer-style total duration: "1 hr 23 min" / "42 min" / "< 1 min".
 function formatTotal(ms: number): string {
@@ -69,6 +71,8 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   const { queueVoting: queueVotingEnabled } = useRuntimeFeatures();
   const listRef = useRef<HTMLDivElement>(null);
   const members = useStore((s) => s.members);
+  const nameSuffixes = useStore((s) => s.nameSuffixes);
+  const myClientId = useStore((s) => s.clientId);
 
   // Keep the now-playing row in view when it advances (Vibrdrome steal: the
   // queue auto-scrolls to now playing). Guarded for jsdom (no scrollIntoView /
@@ -265,13 +269,38 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   // Who a vote belongs to. Vote keys are the server's rate-limit key:
   // "user:<userId>" (room auth) or "client:<clientId>" (no auth). Presence
   // entries carry both ids, so a voter resolves to a member while connected.
-  // A voter who left the room stays anonymous ("alguém").
-  const voterName = (key: string): string | null => {
-    const m = members.find((x) => (key.startsWith('user:') ? x.userId === key.slice(5) : `client:${x.clientId}` === key));
-    return m ? m.name : null;
+  // A voter who left the room stays anonymous ("alguém"). Built once per
+  // render of the member list, not scanned per voter.
+  const memberByVoteKey = useMemo(() => {
+    const map = new Map<string, Member>();
+    for (const m of members) {
+      map.set(`client:${m.clientId}`, m);
+      if (m.userId) map.set(`user:${m.userId}`, m);
+    }
+    return map;
+  }, [members]);
+
+  // The requester is stored by display name only; match it to a member so the
+  // "pediu" avatar uses the same colour as that person in the presence bar.
+  const memberByName = useMemo(() => {
+    const map = new Map<string, Member>();
+    for (const m of members) if (!map.has(m.name)) map.set(m.name, m);
+    return map;
+  }, [members]);
+
+  // Mixed-service rooms: only flag a track the viewer's own service cannot play.
+  const myPlatform = members.find((m) => m.clientId === myClientId)?.platform;
+  const missingOnMyService = (track: TrackRef): string | null => {
+    if (myPlatform === 'spotify' && !track.sources.spotify?.trackUri) return 'Spotify';
+    if (myPlatform === 'apple' && !track.sources.apple?.songId) return 'Apple Music';
+    if (myPlatform === 'youtube' && !track.sources.youtube?.videoId) return 'YouTube';
+    return null;
   };
 
   const renderRow = (track: TrackRef, index: number, pinned: boolean) => {
+    const requester = memberByName.get(track.addedBy);
+    const requesterName = requester ? memberLabel(requester, nameSuffixes) : track.addedBy;
+    const missing = missingOnMyService(track);
     const art = queueArtwork(track);
     const isNow = track.id === nowPlayingId;
     const isRemoving = removingIds.has(track.id);
@@ -279,7 +308,10 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     const voters = state?.votes?.[track.id] ?? [];
     const voted = Boolean(myVotes[track.id]);
     const count = voters.length;
-    const names = voters.map((k) => voterName(k) ?? 'alguém');
+    const names = voters.map((k) => {
+      const m = memberByVoteKey.get(k);
+      return m ? memberLabel(m, nameSuffixes) : 'alguém';
+    });
     const votersLabel = count > 0 ? `Votaram: ${names.join(', ')}` : '';
     const nameId = `fq-voters-${track.id}`;
     return (
@@ -295,13 +327,13 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
           <span
             className="fq-av"
             role="img"
-            aria-label={`Adicionada por ${track.addedBy}`}
-            title={`Adicionada por ${track.addedBy}`}
-            style={{ background: avatarGradient(track.addedBy) }}
+            aria-label={`Adicionada por ${requesterName}`}
+            title={`Adicionada por ${requesterName}`}
+            style={{ background: avatarGradient(requester ? requester.clientId || requester.name : track.addedBy) }}
           >
             {getInitial(track.addedBy)}
           </span>
-          <div className="fq-art queue-thumb-wrap">
+          <div className="fq-art">
             {art ? (
               <Image src={art} alt="" width={pinned ? 56 : 44} height={pinned ? 56 : 44} unoptimized />
             ) : (
@@ -314,10 +346,15 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
           <div className="fq-text">
             <span className="fq-kicker">
               {isNow ? 'Tocando agora · ' : ''}
-              {track.addedBy} pediu
+              {requesterName} pediu
             </span>
             <div data-testid="queue-title" className="fq-title">{track.title}</div>
             <div className="fq-artist">{track.artist}</div>
+            {missing && (
+              <span className="fq-missing" role="img" aria-label={`Sem versão no ${missing}`} title={`Sem versão no ${missing}: toca pelo YouTube`}>
+                Sem versão no {missing}
+              </span>
+            )}
             {track.id === listenersPickId && (
               <span data-testid="listeners-pick" className="fq-pick" title="Mais votada pelos ouvintes">
                 Escolha dos ouvintes
@@ -338,10 +375,10 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
             >
               <span className="fq-stack" aria-hidden="true">
                 {voters.slice(0, VOTER_STACK_MAX).map((key) => {
-                  const name = voterName(key);
+                  const m = memberByVoteKey.get(key);
                   return (
-                    <i key={key} className={name ? undefined : 'fq-stack__anon'} style={name ? { background: avatarGradient(key) } : undefined}>
-                      {name ? getInitial(name) : '?'}
+                    <i key={key} className={m ? undefined : 'fq-stack__anon'} style={m ? { background: avatarGradient(m.clientId || m.name) } : undefined}>
+                      {m ? getInitial(m.name) : '?'}
                     </i>
                   );
                 })}
@@ -443,9 +480,13 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
           </p>
         </div>
       ) : (
-        <div ref={listRef} role="list" aria-label="Faixas na fila" className="fq-list">
+        <div className="fq-list">
+          {/* Outside role="list" so the list holds only listitems; display:contents
+              on the list keeps the sub-heading in the same flex order as the rows. */}
           {hasNow && queue.length > 1 && <p className="fq-sub">A seguir</p>}
-          {queue.map((t, i) => renderRow(t, i, hasNow && t.id === nowPlayingId))}
+          <div ref={listRef} role="list" aria-label="Faixas na fila" className="fq-items">
+            {queue.map((t, i) => renderRow(t, i, hasNow && t.id === nowPlayingId))}
+          </div>
         </div>
       )}
     </div>
