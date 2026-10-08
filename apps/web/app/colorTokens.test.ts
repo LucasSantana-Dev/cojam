@@ -21,6 +21,7 @@ const EXEMPT_FILES = new Set([
   'app/opengraph-image.tsx', //   Satori renders at the edge: no cascade, no vars
   'app/global-error.tsx', //      runs after a crash, possibly before CSS loads
   'app/colorTokens.test.ts', //   this file names the colours it forbids
+  'app/room/components/palco/scene.ts', // pixel art painted into canvas/WebGL: no cascade
 ]);
 
 /** Literals that are not colours, or are neutral with no hue to manipulate. */

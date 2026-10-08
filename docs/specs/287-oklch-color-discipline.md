@@ -86,6 +86,8 @@ and changing them would break the surface they serve:
 - `opengraph-image.tsx` — rendered by Satori at the edge, no cascade, no vars.
 - `global-error.tsx` — renders when the app has crashed, possibly before the
   stylesheet loads. A literal is the point.
+- `palco/scene.ts` (modo palco): pixel art painted into canvases and WebGL
+  shaders. Canvas fills and texture pixels never see the cascade.
 - `Logo.tsx` `var(--logo-x, #hex)` — these are fallbacks, not escapes. They are
   updated to match the converted tokens so the two forms cannot drift.
 
