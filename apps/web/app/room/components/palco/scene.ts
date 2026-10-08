@@ -50,6 +50,8 @@ const FACING: Facing = 'front';
 
 export interface SceneImages {
   stage: HTMLImageElement;
+  // Image-model sky (bands, stars, moon, far lights), as wide as the plate.
+  sky: HTMLImageElement | null;
   front: Record<number, HTMLImageElement>;
   back: Record<number, HTMLImageElement>;
   upFront: Record<number, HTMLImageElement>;
@@ -70,7 +72,8 @@ function load(src: string): Promise<HTMLImageElement | null> {
 export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
   const stage = await load(world.src);
   if (!stage) throw new Error('palco: stage art failed to load');
-  const out: SceneImages = { stage, front: {}, back: {}, upFront: {}, upBack: {} };
+  const sky = await load(world.sky);
+  const out: SceneImages = { stage, sky, front: {}, back: {}, upFront: {}, upBack: {} };
   const ids = Array.from({ length: CHARACTER_COUNT }, (_, i) => i + 1);
   await Promise.all(
     ids.flatMap((id) => [
@@ -140,7 +143,6 @@ function mirrored(src: HTMLCanvasElement | HTMLImageElement): HTMLCanvasElement 
 
 type Sized = Mesh<PlaneGeometry, Material> & { userData: { size: [number, number] } };
 
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 const BAYER_GLSL = `float bayer(vec2 p){ int x=int(mod(p.x,4.)); int y=int(mod(p.y,4.)); int i=x+y*4;
   float m[16]; m[0]=0.;m[1]=8.;m[2]=2.;m[3]=10.;m[4]=12.;m[5]=4.;m[6]=14.;m[7]=6.;m[8]=3.;m[9]=11.;m[10]=1.;m[11]=9.;m[12]=15.;m[13]=7.;m[14]=13.;m[15]=5.;
   for(int k=0;k<16;k++){ if(k==i) return (m[k]+0.5)/16.; } return 0.; }`;
@@ -256,9 +258,9 @@ export class PalcoScene {
   private readonly confGeo = new BufferGeometry();
   private readonly skyC: HTMLCanvasElement;
   private readonly skyTex: Texture;
-  private readonly topRow: Uint8ClampedArray;
-  private readonly bands: number[][] = [[6, 5, 14], [9, 7, 20], [13, 9, 28], [17, 11, 36], [21, 13, 44]];
-  private readonly stars: Array<{ x: number; y: number; b: number; big: boolean; p: number }>;
+  private readonly skyBase: ImageData;
+  // Twinkle: isolated bright pixels of the sky art blink to the sky beside them.
+  private readonly stars: Array<{ i: number; on: [number, number, number]; off: [number, number, number]; p: number; s: number }> = [];
   private readonly waveC: HTMLCanvasElement;
   private readonly waveTex: Texture;
   private readonly wavePanels: Sized[] = [];
@@ -279,16 +281,34 @@ export class PalcoScene {
     this.scene.background = new Color(INK);
     const W = world.W;
 
-    // Sky: dithered bands into the stage's own top row, stars and a moon.
+    // Sky: the image-model plate, its sides mirrored past the art; its last
+    // rows meet the stage's top row.
     const SW = W + 2 * SIDE_EXT;
     this.skyC = document.createElement('canvas');
     this.skyC.width = SW;
     this.skyC.height = SKY_H;
-    this.topRow = crop(imgs.stage, 0, 0, W, 1).getContext('2d')!.getImageData(0, 0, W, 1).data;
-    let r = 0, g = 0, b = 0;
-    for (let x = 0; x < W; x++) { r += this.topRow[x * 4]; g += this.topRow[x * 4 + 1]; b += this.topRow[x * 4 + 2]; }
-    this.bands[this.bands.length - 1] = [Math.round(r / W), Math.round(g / W), Math.round(b / W)];
-    this.stars = Array.from({ length: 120 }, () => ({ x: Math.floor(this.rnd() * SW), y: Math.floor(this.rnd() * (SKY_H - 30)), b: this.rnd(), big: this.rnd() < 0.08, p: this.rnd() * 6 }));
+    const sg = this.skyC.getContext('2d')!;
+    sg.fillStyle = INK;
+    sg.fillRect(0, 0, SW, SKY_H);
+    if (imgs.sky) {
+      const sh = Math.min(SKY_H, imgs.sky.height);
+      sg.drawImage(imgs.sky, 0, 0, W, sh, SIDE_EXT, SKY_H - sh, W, sh);
+      sg.drawImage(mirrored(crop(imgs.sky, 0, 0, SIDE_EXT, sh)), 0, SKY_H - sh);
+      sg.drawImage(mirrored(crop(imgs.sky, W - SIDE_EXT, 0, SIDE_EXT, sh)), SIDE_EXT + W, SKY_H - sh);
+    }
+    this.skyBase = sg.getImageData(0, 0, SW, SKY_H);
+    {
+      const d = this.skyBase.data;
+      const lum = (x: number, y: number) => { const i = (y * SW + x) * 4; return d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; };
+      for (let y = 1; y < SKY_H - 60; y++) for (let x = 1; x < SW - 1; x++) {
+        const L = lum(x, y);
+        if (L < 120) continue;
+        // Part of the moon or a beam, not a star.
+        if (Math.max(lum(x - 1, y - 1), lum(x + 1, y - 1), lum(x - 1, y + 1), lum(x + 1, y + 1)) > L - 50) continue;
+        const j = (y * SW + x) * 4, k = ((y - 1) * SW + x) * 4;
+        this.stars.push({ i: j, on: [d[j], d[j + 1], d[j + 2]], off: [d[k], d[k + 1], d[k + 2]], p: this.rnd() * 6, s: 1.6 + this.rnd() * 1.8 });
+      }
+    }
     this.drawSky(0);
     this.skyTex = texFrom(this.skyC);
     this.put(this.plane(this.skyTex, SW, SKY_H, 0), -SIDE_EXT, -SKY_H);
@@ -689,40 +709,12 @@ export class PalcoScene {
   }
 
   private drawSky(t: number): void {
-    const W = this.skyC.width;
-    const AW = this.world.W;
-    const sctx = this.skyC.getContext('2d')!;
-    const img = sctx.createImageData(W, SKY_H);
-    const d = img.data;
-    const bands = this.bands;
-    for (let y = 0; y < SKY_H; y++) {
-      const f = (y / (SKY_H - 1)) * (bands.length - 1);
-      for (let x = 0; x < W; x++) {
-        const i = (y * W + x) * 4;
-        let c: ArrayLike<number>;
-        if (y >= SKY_H - 6) { const k = Math.max(0, Math.min(AW - 1, x - SIDE_EXT)) * 4; c = [this.topRow[k], this.topRow[k + 1], this.topRow[k + 2]]; }
-        else { const lo = Math.floor(f), fr = f - lo; c = bands[fr * 16 > BAYER[(y % 4) * 4 + (x % 4)] ? Math.min(lo + 1, bands.length - 1) : lo]; }
-        d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
-      }
+    const d = this.skyBase.data;
+    for (const st of this.stars) {
+      const c = !this.motion || Math.sin(t * st.s + st.p) > -0.55 ? st.on : st.off;
+      d[st.i] = c[0]; d[st.i + 1] = c[1]; d[st.i + 2] = c[2];
     }
-    sctx.putImageData(img, 0, 0);
-    for (const s of this.stars) {
-      const on = !this.motion || Math.sin(t * 2.2 + s.p) > -0.6;
-      sctx.fillStyle = on ? (s.b > 0.6 ? '#f4f1ff' : '#b9aee0') : '#5b4f86';
-      sctx.fillRect(s.x, s.y, 1, 1);
-      if (s.big && on) {
-        sctx.fillStyle = '#8f7fd0';
-        sctx.fillRect(s.x - 1, s.y, 1, 1); sctx.fillRect(s.x + 1, s.y, 1, 1); sctx.fillRect(s.x, s.y - 1, 1, 1); sctx.fillRect(s.x, s.y + 1, 1, 1);
-      }
-    }
-    const mx = this.world.moon[0] + SIDE_EXT, my = SKY_H + this.world.moon[1], r = 11;
-    for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
-      if (x * x + y * y > r * r + r) continue;
-      sctx.fillStyle = x + y > 6 ? '#b8afd6' : '#e9e4fb';
-      sctx.fillRect(mx + x, my + y, 1, 1);
-    }
-    sctx.fillStyle = '#c9c1e6';
-    ([[-4, -3, 3], [3, 2, 2], [-2, 5, 2]] as const).forEach(([x, y, s]) => sctx.fillRect(mx + x, my + y, s, s - 1));
+    this.skyC.getContext('2d')!.putImageData(this.skyBase, 0, 0);
   }
 
   private drawWave(beat: number, cnv: HTMLCanvasElement): void {
