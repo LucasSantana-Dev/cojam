@@ -25,7 +25,7 @@ async function playerBox(page: Page): Promise<Box> {
 async function overlayBoxes(page: Page): Promise<Array<{ what: string; box: Box }>> {
   return page.evaluate(() => {
     const out: Array<{ what: string; box: { x: number; y: number; width: number; height: number } }> = [];
-    const sel = '.palco-tag, .palco-bubble, .palco__more, [data-testid="palco-hud"], .palco__panel, .room-header';
+    const sel = '.palco-tag, .palco-bubble, .palco__more, .palco-board, [data-testid="palco-hud"], .palco__panel, .room-header';
     document.querySelectorAll<HTMLElement>(sel).forEach((el) => {
       const cs = getComputedStyle(el);
       if (cs.visibility === 'hidden' || cs.display === 'none') return;
@@ -133,6 +133,24 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
         expect(overlaps(r, player), `${name} off the player`).toBe(false);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      await expectPlayerClear(page);
+    });
+
+    test('the "A seguir" board lists the next tracks under the player, clear of every tag', async ({ page }) => {
+      await openPalco(page);
+      const board = page.getByRole('region', { name: 'A seguir' });
+      await expect(board).toBeVisible();
+      const rows = await board.getByRole('listitem').count();
+      expect(rows).toBeGreaterThanOrEqual(1);
+      expect(rows).toBeLessThanOrEqual(3);
+      const b = (await board.boundingBox())!;
+      const player = await playerBox(page);
+      expect(overlaps(b, player)).toBe(false);
+      expect(b.y).toBeGreaterThanOrEqual(player.y + player.height);
+      for (const t of await overlayBoxes(page)) {
+        if (!t.what.startsWith('palco-tag')) continue;
+        expect(overlaps(t.box, b), t.what).toBe(false);
+      }
       await expectPlayerClear(page);
     });
 

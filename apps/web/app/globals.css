@@ -4585,6 +4585,49 @@ input:focus, textarea:focus, select:focus {
   border-bottom: 0;
   border-top-color: var(--palco-text);
 }
+/* "A seguir": an LED setlist board under the player (lib/palco boardRect sets
+   the box; BOARD_PAD, BOARD_HEAD and BOARD_ROW there match these sizes). */
+.palco-board {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 3px 8px;
+  overflow: hidden;
+  border: 2px solid oklch(0.32 0.09 296);
+  border-radius: 2px;
+  background-color: oklch(0.11 0.025 292);
+  background-image: radial-gradient(oklch(1 0 0 / 0.06) 0.6px, transparent 0.8px);
+  background-size: 3px 3px;
+  box-shadow: 0 2px 0 0 oklch(0 0 0 / 0.55), inset 0 0 0 1px oklch(0 0 0 / 0.6);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+.palco-board__head {
+  margin: 0;
+  height: 16px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  color: oklch(0.76 0.15 298);
+  text-shadow: 0 0 4px oklch(0.6 0.2 298 / 0.8);
+}
+.palco-board__list { margin: 0; padding: 0; list-style: none; }
+.palco-board__row {
+  display: flex;
+  gap: 0.4em;
+  height: 15px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 15px;
+  white-space: nowrap;
+  color: oklch(0.93 0.05 300);
+  text-shadow: 0 0 3px oklch(0.62 0.2 298 / 0.75);
+}
+.palco-board__n { flex: none; color: oklch(0.76 0.15 298); }
+.palco-board__t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.palco-board__a { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: oklch(0.78 0.04 300); }
 .palco__more {
   position: absolute;
   right: 0.5rem;

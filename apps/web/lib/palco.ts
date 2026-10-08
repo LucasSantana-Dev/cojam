@@ -221,6 +221,48 @@ export function boothTop(world: WorldDef, f: Framing, player: Rect): number {
   return world.kind === 'phone' ? Math.max(world.booths[0].top, below) : world.booths[0].top;
 }
 
+// --- "A seguir": the LED setlist board ----------------------------------------
+
+// Up to BOARD_MAX upcoming tracks, one row each under a header, in CSS px.
+export const BOARD_MAX = 3;
+export const BOARD_HEAD = 16;
+export const BOARD_ROW = 15;
+export const BOARD_PAD = 5;
+// Rows a name tag takes above a head (tag height plus its gap).
+const TAG_ROOM = 24;
+
+// The tracks after the playing one, in queue order (the same order nextTrack reads).
+export function upNext(state: Pick<RoomState, 'queue' | 'nowPlayingId'> | null | undefined, n = BOARD_MAX): TrackRef[] {
+  if (!state) return [];
+  return state.queue.filter((t) => t.id !== state.nowPlayingId).slice(0, n);
+}
+
+// Where the board goes, in stage-area CSS px, and how many rows fit; null when
+// there is nothing to show or no room. Always under the player, never over it:
+// on the wide stage on the apron under the screen, as wide as the screen; on
+// the vertical stage between the two floor desks, above the booth tags. It
+// stops above the named crowd's tags and drops rows rather than touch them.
+export function boardRect(world: WorldDef, f: Framing, player: Rect, count: number): (Rect & { rows: number }) | null {
+  if (f.compact || count <= 0) return null;
+  const y = player.y + player.h + 2 * f.scale;
+  const heads = f.crowdBottom + Math.min(world.frontOff, world.backOff) - SPRITE_H;
+  let bottom = toCss(f, 0, heads)[1] - TAG_ROOM;
+  let x = player.x;
+  let w = player.w;
+  if (world.kind === 'phone') {
+    // Desks span the DJ's x - 4 to x + 24; leave 4 world px of air.
+    const [l] = toCss(f, world.booths[0].x + SPRITE_W + 8, 0);
+    const [r] = toCss(f, world.booths[1].x - 8, 0);
+    x = l;
+    w = r - l;
+    // The booth tags hang under the desks (desk bottom: head row + 44).
+    bottom = Math.min(bottom, toCss(f, 0, boothTop(world, f, player) + 44)[1] - 4);
+  }
+  const rows = Math.min(count, BOARD_MAX, Math.floor((bottom - y - 2 * BOARD_PAD - BOARD_HEAD) / BOARD_ROW));
+  if (rows < 1 || w < 120) return null;
+  return { x, y, w, h: 2 * BOARD_PAD + BOARD_HEAD + rows * BOARD_ROW, rows };
+}
+
 // The stage screen in stage-area CSS px (the pixel art's screen).
 export function screenRect(world: WorldDef, f: Framing): Rect {
   const [x, y] = toCss(f, world.screen.x, world.screen.y);
