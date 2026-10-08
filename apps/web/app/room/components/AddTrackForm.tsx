@@ -216,11 +216,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
   };
 
   return (
-    <div className="panel p-6 space-y-4">
-      <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-        Adicionar música
-      </h3>
-
+    <div className="r4-add space-y-3">
       <div className="space-y-2">
         <div className="relative">
           <input
@@ -354,7 +350,15 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
         )}
       </div>
 
-      <div className="pt-3 border-t" style={{ borderColor: 'var(--color-border)' }}>
+      {/* Shared add-track error lives OUTSIDE the disclosure: a failed
+          search-result add must stay visible while "Mais opções" is closed. */}
+      <p role="alert" aria-live="polite" className="text-sm" style={{ color: 'var(--color-status-error-soft)', minHeight: error ? undefined : 0 }}>
+        {error}
+      </p>
+
+      <details className="r4-add__more">
+        <summary>Mais opções</summary>
+      <div className="pt-3">
         <form onSubmit={handlePlaylistImport} className="space-y-2">
           <label className="block text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
             Importar uma playlist
@@ -398,12 +402,6 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
           )}
         </form>
       </div>
-
-      {/* Shared add-track error lives OUTSIDE the manual form: a failed
-          search-result add must stay visible when the details are closed. */}
-      <p role="alert" aria-live="polite" className="text-sm" style={{ color: 'var(--color-status-error-soft)', minHeight: error ? undefined : 0 }}>
-        {error}
-      </p>
 
       <details className="cursor-pointer">
         <summary className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
@@ -472,6 +470,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
             {loading ? 'Adicionando...' : 'Adicionar à fila'}
           </button>
         </form>
+      </details>
       </details>
     </div>
   );

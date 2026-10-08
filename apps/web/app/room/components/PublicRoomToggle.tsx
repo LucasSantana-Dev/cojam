@@ -57,11 +57,8 @@ export function PublicRoomToggle({ roomId }: { roomId: string }) {
   };
 
   return (
-    <span className="inline-flex items-center gap-2">
-      <label
-        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer"
-        style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)' }}
-      >
+    <span className="r4-public">
+      <label className="r4-public__row">
         <input type="checkbox" checked={isPublic} disabled={busy} onChange={onToggle} />
         Pública
       </label>
@@ -78,13 +75,7 @@ export function PublicRoomToggle({ roomId }: { roomId: string }) {
           onKeyDown={(e) => {
             if (e.key === 'Enter') commitLabel();
           }}
-          className="px-3 py-2 rounded-lg text-sm"
-          style={{
-            background: 'var(--color-surface-2)',
-            border: '1px solid var(--color-border)',
-            color: 'var(--color-text-primary)',
-            width: '11rem',
-          }}
+          className="r4-menu__input r4-public__label"
         />
       )}
       {error && (

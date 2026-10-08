@@ -124,10 +124,12 @@ async function noHorizontalOverflow(page: Page) {
 }
 
 async function addTrack(page: Page, title: string, artist: string) {
-  await page.getByRole('tab', { name: 'Adicionar', exact: true }).click();
+  if (await page.getByRole('tab', { name: 'Fila', exact: true }).isVisible()) {
+    await page.getByRole('tab', { name: 'Fila', exact: true }).click();
+  }
+  await page.getByRole('button', { name: /Adicionar música/ }).click();
   await page.evaluate(() => {
-    const details = document.querySelector('details');
-    if (details) details.open = true;
+    document.querySelectorAll('#r4-add-inline details').forEach((d) => ((d as HTMLDetailsElement).open = true));
   });
   await page.getByPlaceholder('Título').fill(title);
   await page.getByPlaceholder('Artista').fill(artist);
@@ -231,8 +233,8 @@ test.describe('room at 390x844', () => {
       await page.getByRole('tab', { name: 'Chat', exact: true }).click();
       await page.waitForTimeout(800);
       await page.screenshot({ path: `${process.env.SHOT_DIR}/after-chat.png` });
-      await page.getByRole('tab', { name: 'Tocando', exact: true }).click();
-      await page.getByRole('tab', { name: 'Tocando', exact: true }).click();
+      await page.getByRole('tab', { name: 'Agora', exact: true }).click();
+      await page.getByRole('tab', { name: 'Agora', exact: true }).click();
       await page.screenshot({ path: `${process.env.SHOT_DIR}/after-playing.png` });
     }
   });

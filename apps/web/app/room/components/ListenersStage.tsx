@@ -1,8 +1,8 @@
 'use client';
 
 // "Ouvindo agora": the listener row of the room (#325, round 4). Big initials
-// avatars (guests have no photos), each with its service badge (a monochrome
-// white glyph, never the brand colour), the name and the service under it.
+// avatars (guests have no photos), each with its coloured service badge (the one
+// place a brand colour is allowed), the name and the service under it.
 // Violet sound-wave arcs above every avatar and a small wave glyph between
 // neighbours breathe on the shared beat clock (lib/beatClock, the same clock as
 // ListenersWave) while the room plays. Paused, alone or under reduced motion
@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore, kickMember, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { memberLabel } from '@/lib/nameSuffix';
-import { platformIcon } from '@/app/components/icons';
+import { ServiceBadge } from '@/app/components/ServiceBadge';
 import { avatarGradient } from '@/lib/avatar';
 import { useReportDialog } from '@/app/components/useReportDialog';
 import { beatAt } from '@/lib/beatClock';
@@ -36,6 +36,8 @@ interface ListenersStageProps {
   running: boolean;
   // Server-stamped host id (room auth); the host gets a crown by the name.
   hostUserId?: string;
+  // Pre-join preview: the row only, no report or remove controls.
+  readOnly?: boolean;
 }
 
 // One arc of a radio wave above an avatar, in a 160x70 box whose centre
@@ -64,7 +66,7 @@ function WaveGlyph() {
   );
 }
 
-export function ListenersStage({ roomId, canControl = false, running, hostUserId }: ListenersStageProps) {
+export function ListenersStage({ roomId, canControl = false, running, hostUserId, readOnly = false }: ListenersStageProps) {
   const f = useRuntimeFeatures();
   const report = useReportDialog();
   const members = useStore((s) => s.members);
@@ -84,9 +86,13 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
   // The beat: one rAF loop that writes --b0..--b2 on the row, only while
   // playing, on screen and with the tab visible. Not started under reduced
   // motion: the CSS fallback is a still frame.
+  // `rendered` is a dependency: the row only exists once presence is on and the
+  // first member is in, which can be after the first run. Without it the effect
+  // found no box on mount and never started the beat (the arcs stayed still).
+  const rendered = f.presence && members.length > 0;
   useEffect(() => {
     const box = boxRef.current;
-    if (!box || !running || !motion.ground || typeof IntersectionObserver === 'undefined') return;
+    if (!box || !rendered || !running || !motion.ground || typeof IntersectionObserver === 'undefined') return;
     let raf = 0;
     let on = false;
     let seen = true;
@@ -123,7 +129,7 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
       for (let i = 0; i < ARCS; i++) box.style.removeProperty(`--b${i}`);
       box.style.removeProperty('--beat');
     };
-  }, [running, motion.ground]);
+  }, [running, motion.ground, rendered]);
 
   // Nothing to show when presence is disabled or nobody is connected
   if (!f.presence || members.length === 0) return null;
@@ -140,20 +146,23 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
   };
 
   const tuned = running && !alone;
+  // "em sintonia" sits over this client's own avatar: drift correction is what
+  // keeps this client in step with the room (no per-member sync data exists).
+  const meIdx = visible.findIndex((v) => (v.clientIds ?? [v.clientId]).includes(myClientId));
+  const tunedIdx = meIdx >= 0 ? meIdx : 0;
 
   return (
     <section className="r4-card r4-listeners" aria-labelledby="r4-listeners-h">
       <header className="r4-listeners__head">
         <h2 id="r4-listeners-h" className="r4-h2">Ouvindo agora</h2>
-        <span className="r4-listeners__count">
-          {members.length === 1 ? '1 ouvindo' : `${members.length} ouvindo`}
+        <span className="r4-listeners__count" aria-label={members.length === 1 ? '1 ouvindo' : `${members.length} ouvindo`}>
+          / palco
         </span>
       </header>
 
       <div ref={boxRef} className={`r4-ls${running ? ' is-running' : ''}${tuned ? ' is-tuned' : ''}`} role="group" aria-label="Quem está ouvindo">
         {visible.map((member, i) => {
           const label = memberLabel(member, nameSuffixes);
-          const Icon = member.platform ? platformIcon[member.platform] : null;
           const isHost = Boolean(hostUserId && member.userId && member.userId === hostUserId);
           const mine = (member.clientIds ?? [member.clientId]).includes(myClientId);
           return (
@@ -165,6 +174,11 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
               )}
               <div className="r4-ls__member">
                 <div className="r4-ls__av-wrap">
+                  {tuned && i === tunedIdx && (
+                    <span className="r4-ls__tuned" aria-hidden="true">
+                      em sintonia
+                    </span>
+                  )}
                   <svg className="r4-arcs" viewBox="0 0 160 70" aria-hidden="true" focusable="false">
                     {ARC_RADII.map((r, k) => (
                       <path key={r} className={`r4-arcs__a r4-arcs__a${k}`} d={arcPath(r)} fill="none" strokeWidth="2.6" strokeLinecap="round" />
@@ -172,9 +186,9 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
                   </svg>
                   <div className="r4-ls__av" style={{ background: avatarGradient(member.userId ?? member.clientId ?? member.name) }} title={label}>
                     <span aria-hidden="true">{member.name.charAt(0).toUpperCase()}</span>
-                    {Icon && (
-                      <span className="r4-ls__badge" title={member.platform}>
-                        <Icon size={13} />
+                    {member.platform && (
+                      <span className="r4-ls__badge">
+                        <ServiceBadge source={member.platform} size="md" />
                       </span>
                     )}
                   </div>
@@ -189,7 +203,7 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
                 </div>
                 {member.platform && <div className="r4-ls__svc">({PLATFORM_LABEL[member.platform]})</div>}
                 <span className="r4-ls__tools">
-                  {!mine && (
+                  {!readOnly && !mine && (
                     <button
                       type="button"
                       onClick={() =>
@@ -201,7 +215,7 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
                       <span aria-hidden="true">⚑</span>
                     </button>
                   )}
-                  {canControl && !mine && (
+                  {!readOnly && canControl && !mine && (
                     <button
                       type="button"
                       onClick={() => handleKick(member)}
@@ -233,11 +247,6 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
               <div className="r4-ls__more">+{hiddenCount}</div>
             )}
           </div>
-        )}
-        {tuned && (
-          <span className="r4-ls__tuned" aria-hidden="true">
-            em sintonia
-          </span>
         )}
       </div>
       {report.dialog}

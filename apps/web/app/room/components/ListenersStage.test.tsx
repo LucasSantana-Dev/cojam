@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { ListenersStage } from './ListenersStage';
 import { useStore, type Member } from '@/lib/realtime';
 
@@ -69,7 +69,7 @@ describe('ListenersStage', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
     render(<ListenersStage roomId="r" running={false} />);
 
-    expect(screen.getByText('2 ouvindo')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 ouvindo')).toBeInTheDocument();
   });
 
   it('"+N" overflow counts connections, not unique names', () => {
@@ -81,7 +81,7 @@ describe('ListenersStage', () => {
     render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByText('+2')).toBeInTheDocument();
-    expect(screen.getByText('8 ouvindo')).toBeInTheDocument();
+    expect(screen.getByLabelText('8 ouvindo')).toBeInTheDocument();
     // Both Alices are inside the visible 6 — no dedupe collapsed them.
     expect(screen.getByTitle('Alice')).toBeInTheDocument();
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();
@@ -91,9 +91,9 @@ describe('ListenersStage', () => {
     useStore.getState().setMembers([m('a', 'Alice', 'spotify'), m('b', 'Bob')]);
     render(<ListenersStage roomId="r" running={false} />);
 
-    expect(screen.getByTitle('spotify')).toBeInTheDocument();
-    expect(screen.queryByTitle('apple')).not.toBeInTheDocument();
-    expect(screen.queryByTitle('youtube')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Spotify')).toHaveAttribute('data-svc', 'spotify');
+    expect(screen.queryByTitle('Apple Music')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('YouTube')).not.toBeInTheDocument();
   });
 
   it('lets any member report another member, but not themselves (#259)', () => {
@@ -138,5 +138,49 @@ describe('ListenersStage', () => {
     rerender(<ListenersStage roomId="r" running={false} canControl />);
     expect(screen.getByLabelText('Remover Bob da sala')).toBeInTheDocument();
     expect(screen.queryByLabelText('Remover Alice da sala')).not.toBeInTheDocument();
+  });
+
+  it('puts "em sintonia" over this client\'s own avatar', () => {
+    useStore.setState({ clientId: 'b' });
+    useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
+    render(<ListenersStage roomId="r" running />);
+    const label = screen.getByText('em sintonia');
+    expect(label.closest('.r4-ls__member')).toHaveTextContent('Bob');
+  });
+
+  it('hides report and remove controls in the read-only preview', () => {
+    useStore.setState({ clientId: 'a' });
+    useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
+    render(<ListenersStage roomId="r" running={false} canControl readOnly />);
+    expect(screen.queryByLabelText('Denunciar Bob')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Remover Bob da sala')).not.toBeInTheDocument();
+  });
+
+  describe('the arcs beat', () => {
+    beforeEach(() => {
+      vi.stubGlobal(
+        'IntersectionObserver',
+        class {
+          constructor(private cb: (e: Array<{ isIntersecting: boolean }>) => void) {}
+          observe() {
+            this.cb([{ isIntersecting: true }]);
+          }
+          disconnect() {}
+        },
+      );
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    // Regression: the beat effect ran once on mount, found no row (no members
+    // yet) and never started, so the arcs stayed still after joining a room.
+    it('starts once members arrive after the stage mounted, while playing', async () => {
+      useStore.getState().setMembers([]);
+      const { container } = render(<ListenersStage roomId="r" running />);
+      expect(container).toBeEmptyDOMElement();
+
+      act(() => useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]));
+      const row = container.querySelector<HTMLElement>('.r4-ls')!;
+      await waitFor(() => expect(row.style.getPropertyValue('--b0')).not.toBe(''));
+    });
   });
 });

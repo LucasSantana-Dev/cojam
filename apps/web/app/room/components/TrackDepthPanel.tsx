@@ -65,7 +65,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
     <>
       {/* Backdrop (mobile + close on click) */}
       <div
-        className="track-depth-backdrop lg:hidden"
+        className="track-depth-backdrop"
         onClick={onClose}
         aria-hidden="true"
       />

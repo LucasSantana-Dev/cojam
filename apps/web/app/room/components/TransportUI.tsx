@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { useStore, transportPlay, transportPause, transportSeek } from '@/lib/realtime';
+import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
+import { useStore, transportPlay, transportPause, transportSeek, nowPlayingAdvance } from '@/lib/realtime';
+import { SkipPrevIcon, SkipNextIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
 
 export function formatTime(ms: number): string {
@@ -28,9 +29,11 @@ interface TransportUIProps {
   roomId: string;
   activePlayer: IPlayer | null;
   canControl: boolean;
+  // Rendered at the right end of the control row (the local volume).
+  trailing?: ReactNode;
 }
 
-export function TransportUI({ roomId, activePlayer, canControl }: TransportUIProps) {
+export function TransportUI({ roomId, activePlayer, canControl, trailing }: TransportUIProps) {
   const store = useStore();
   const [isDragging, setIsDragging] = useState(false);
   // Seed from any already-known transport position: a client joining
@@ -112,6 +115,17 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
     }
   }, [isPlaying, roomId, activePlayer]);
 
+  // "Previous" restarts the track: the room keeps no play history to go back to.
+  const handleRestart = useCallback(() => {
+    transportSeek(roomId, 0).catch((err) => console.error('Restart error:', err));
+  }, [roomId]);
+
+  // Skip to the next queued track; the server picks it and dedups with auto-advance.
+  const handleNext = useCallback(() => {
+    if (!nowPlayingId) return;
+    nowPlayingAdvance(roomId, nowPlayingId).catch((err) => console.error('Skip error:', err));
+  }, [roomId, nowPlayingId]);
+
   const handleSeekStart = useCallback(() => {
     setIsDragging(true);
     dragRef.current = true;
@@ -189,23 +203,47 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
       </div>
 
       <div className="tp__row">
-        <button
-          onClick={handlePlayPause}
-          disabled={!activePlayer || !canControl}
-          className="transport-play tp__play"
-          aria-label={isPlaying ? 'Pausar' : 'Tocar'}
-          title={canControl ? (isPlaying ? 'Pausar' : 'Tocar') : 'Só o anfitrião controla a reprodução'}
-        >
-          {isPlaying ? (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-            </svg>
-          ) : (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          )}
-        </button>
+        <span className="tp__side" aria-hidden="true" />
+        <div className="tp__ctrls">
+          <button
+            type="button"
+            onClick={handleRestart}
+            disabled={!activePlayer || !canControl || !canSeek}
+            className="tp__skip"
+            aria-label="Voltar ao início da faixa"
+            title={canControl ? 'Voltar ao início da faixa' : 'Só o anfitrião controla a reprodução'}
+          >
+            <SkipPrevIcon size={24} />
+          </button>
+          <button
+            onClick={handlePlayPause}
+            disabled={!activePlayer || !canControl}
+            className="transport-play tp__play"
+            aria-label={isPlaying ? 'Pausar' : 'Tocar'}
+            title={canControl ? (isPlaying ? 'Pausar' : 'Tocar') : 'Só o anfitrião controla a reprodução'}
+          >
+            {isPlaying ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+              </svg>
+            ) : (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handleNext}
+            disabled={!canControl || !nowPlayingId}
+            className="tp__skip"
+            aria-label="Próxima faixa"
+            title={canControl ? 'Próxima faixa' : 'Só o anfitrião controla a reprodução'}
+          >
+            <SkipNextIcon size={24} />
+          </button>
+        </div>
+        <span className="tp__side tp__side--end">{trailing}</span>
       </div>
 
       {seekDisabledReason && <p className="tp__note">{seekDisabledReason}</p>}

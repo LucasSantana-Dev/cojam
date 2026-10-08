@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useSyncExternalStore } from 'react';
+import Link from 'next/link';
 import { getStoredUserId } from '@/lib/auth';
 
 // Shows the guest id kept in this browser so a person can ask for their data
@@ -11,7 +12,9 @@ import { getStoredUserId } from '@/lib/auth';
 // on the server render, so SSR and hydration agree.
 const noopSubscribe = () => () => {};
 
-export function YourDataId({ inline = false }: { inline?: boolean } = {}) {
+// `menu`: the compact form inside the room's avatar menu (code, Copiar and the
+// link to the deletion steps).
+export function YourDataId({ inline = false, menu = false }: { inline?: boolean; menu?: boolean } = {}) {
   const id = useSyncExternalStore(noopSubscribe, getStoredUserId, () => null);
   const [copied, setCopied] = useState(false);
   // False on the server and during hydration: the inline variant must not flash
@@ -36,6 +39,23 @@ export function YourDataId({ inline = false }: { inline?: boolean } = {}) {
       // Clipboard unavailable or denied: the id is on screen and selectable.
     }
   };
+
+  if (menu) {
+    return (
+      <details className="your-data r4-menu__data">
+        <summary>Seus dados</summary>
+        <p className="your-data-row">
+          <code>{id}</code>
+          <button type="button" onClick={copy} aria-label={copied ? 'Código copiado' : 'Copiar código'}>
+            {copied ? 'Copiado' : 'Copiar'}
+          </button>
+        </p>
+        <Link href="/privacidade#excluir-seus-dados" className="r4-menu__datalink">
+          Como pedir a exclusão
+        </Link>
+      </details>
+    );
+  }
 
   const body = (
     <>

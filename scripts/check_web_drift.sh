@@ -4,6 +4,7 @@
 #   (docs/failures/css-keyframe-rename-orphans.md — hero subcopy/CTA went invisible).
 # Rule 3 protects against: green leaking onto actions (docs: green = LIVE only; violet
 #   --color-accent is every action and focus; #325 found three green links).
+# Rule 4: brand logo colours live on .svc-badge only (owner anchor: coloured service badges).
 # Rule 2 protects against: off-palette Tailwind color utilities on a violet-only brand
 #   (docs/failures/subagent-offbrand-color-drift.md — orange-300 shipped by a builder agent).
 set -euo pipefail
@@ -48,6 +49,25 @@ fi
 if grep -rnE 'color-accent-2|logo-core' apps/web/app --include='*.tsx' \
   | grep -vE 'Logo\.tsx|\.test\.tsx|opengraph-image\.tsx'; then
   echo "DRIFT: green token referenced from a component above; green is LIVE-only (add a CSS class under a LIVE selector)"
+  fail=1
+fi
+
+# 4. Brand logo colours (Spotify green, YouTube red, Apple Music pink) are allowed on the
+#    small service badges only: `--svc-*` may be read only inside a `.svc-badge` rule, and
+#    no component may name a brand colour outside it. Declarations are skipped.
+svc=$(awk '
+  /\/\*/ { incomment = 1 }
+  incomment { if ($0 ~ /\*\//) incomment = 0; next }
+  /\{[[:space:]]*$/ { sel = $0; sub(/^[[:space:]]+/, "", sel) }
+  /var\(--svc-/ { if (sel !~ /^\.svc-badge/) printf "%d: [%s] %s\n", NR, sel, $0 }
+' "$css")
+if [ -n "$svc" ]; then
+  echo "$svc"
+  echo "DRIFT: brand service colour (--svc-*) used outside .svc-badge in $css"
+  fail=1
+fi
+if grep -rnE 'var\(--svc-|data-svc=' apps/web/app --include='*.tsx' | grep -vE 'ServiceBadge\.tsx|\.test\.tsx'; then
+  echo "DRIFT: brand service colour referenced from a component above; use <ServiceBadge>"
   fail=1
 fi
 

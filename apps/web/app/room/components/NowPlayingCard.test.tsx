@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { TrackRef } from '@cojam/shared';
 import { NowPlayingCard } from './NowPlayingCard';
 
@@ -10,7 +10,7 @@ vi.mock('@/lib/realtime', () => ({ setRadio: vi.fn() }));
 
 const track = { id: 't1', title: 'Song', artist: 'Band', addedBy: 'Ana' } as unknown as TrackRef;
 
-function renderCard(state: 'ok' | 'unavailable' | 'failed') {
+function renderCard(state: 'ok' | 'unavailable' | 'failed', radioAvailable = true) {
   return render(
     <NowPlayingCard
       roomId="r"
@@ -23,10 +23,9 @@ function renderCard(state: 'ok' | 'unavailable' | 'failed') {
       transportState="paused"
       hostControl={false}
       hostLabel={false}
-      activeSource={null}
       activePlayer={null}
-      roomAgeS={null}
       radioOn={false}
+      radioAvailable={radioAvailable}
       onOpenDepth={() => {}}
       onOpenLyrics={() => {}}
       onOpenEnrichment={() => {}}
@@ -34,10 +33,22 @@ function renderCard(state: 'ok' | 'unavailable' | 'failed') {
   );
 }
 
-describe('NowPlayingCard radio switch', () => {
-  it.each(['ok', 'unavailable', 'failed'] as const)('keeps the Rádio switch in the %s branch', (state) => {
+describe('NowPlayingCard overflow menu', () => {
+  it.each(['ok', 'unavailable', 'failed'] as const)('keeps the Rádio switch in the %s state', (state) => {
     renderCard(state);
+    fireEvent.click(screen.getByRole('button', { name: 'Mais opções da faixa' }));
     expect(screen.getByRole('checkbox')).toBeInTheDocument();
     expect(screen.getByText('Rádio')).toBeInTheDocument();
+  });
+
+  it('hides the Rádio switch (and the empty menu) when the server cannot refill a radio', () => {
+    renderCard('ok', false);
+    expect(screen.queryByRole('button', { name: 'Mais opções da faixa' })).toBeNull();
+  });
+
+  it('keeps one card geometry: cover placeholder and message in the text column', () => {
+    const { container } = renderCard('unavailable');
+    expect(container.querySelector('.r4-cover')).not.toBeNull();
+    expect(container.querySelector('.r4-now__info')).toHaveTextContent('Indisponível nos serviços conectados');
   });
 });

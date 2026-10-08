@@ -16,6 +16,7 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 async function makePublic(page: Page, label: string) {
+  await page.getByRole('button', { name: /^Menu de/ }).click();
   await page.getByRole('checkbox', { name: 'Pública' }).click();
   await expect(page.getByRole('checkbox', { name: 'Pública' })).toBeChecked();
   await page.getByLabel('Nome da sala pública').fill(label);
