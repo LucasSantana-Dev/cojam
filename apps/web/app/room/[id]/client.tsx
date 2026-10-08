@@ -401,6 +401,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
               <h2 className="r4-join__title">Entrar na sala</h2>
               <p className="r4-join__sub">Ouçam juntos, entre serviços</p>
 
+              <CharacterPicker
+                idPrefix="join-char"
+                value={storedCharacter ?? defaultCharacterId(preJoinUserId)}
+                onChange={setStoredCharacter}
+              />
+
               <label htmlFor="join-name" className="r4-join__label">Seu nome</label>
               <input
                 id="join-name"
@@ -412,12 +418,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 className="r4-join__input"
                 autoComplete="nickname"
                 autoFocus
-              />
-
-              <CharacterPicker
-                idPrefix="join-char"
-                value={storedCharacter ?? defaultCharacterId(preJoinUserId)}
-                onChange={setStoredCharacter}
               />
 
               {joinOptions.length > 1 && (
