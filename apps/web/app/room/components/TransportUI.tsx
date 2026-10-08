@@ -160,67 +160,55 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
       ? 'Mudar o ponto da faixa requer Spotify Premium'
       : '';
 
+  const pct = duration > 0 ? Math.min(100, Math.max(0, (displayPosition / duration) * 100)) : 0;
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-3">
+    <div className="tp">
+      <div className="tp__bar">
+        <input
+          type="range"
+          min="0"
+          max={duration || 0}
+          value={displayPosition}
+          onChange={handleSeekChange}
+          onMouseDown={handleSeekStart}
+          onTouchStart={handleSeekStart}
+          onMouseUp={commitSeek}
+          onTouchEnd={commitSeek}
+          onKeyUp={handleSeekKeyUp}
+          disabled={!canSeek || !activePlayer || !canControl}
+          className="tp__range"
+          style={{ ['--pct' as string]: `${pct}%` }}
+          aria-label="Posição da faixa"
+          title={seekDisabledReason || 'Ir para este ponto'}
+        />
+        <div className="tp__times">
+          <span>{formatTime(displayPosition)}</span>
+          <span>{formatTime(duration)}</span>
+        </div>
+      </div>
+
+      <div className="tp__row">
         <button
           onClick={handlePlayPause}
           disabled={!activePlayer || !canControl}
-          className="transport-play flex-shrink-0 w-12 h-12 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 flex items-center justify-center"
-          style={{
-            backgroundColor: 'var(--color-accent)',
-            color: 'var(--color-surface-0)',
-          }}
+          className="transport-play tp__play"
           aria-label={isPlaying ? 'Pausar' : 'Tocar'}
           title={canControl ? (isPlaying ? 'Pausar' : 'Tocar') : 'Só o anfitrião controla a reprodução'}
         >
           {isPlaying ? (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
             </svg>
           ) : (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M8 5v14l11-7z" />
             </svg>
           )}
         </button>
-
-        <div className="flex-1 min-w-0 space-y-1">
-          <div className="relative">
-            <input
-              type="range"
-              min="0"
-              max={duration || 0}
-              value={displayPosition}
-              onChange={handleSeekChange}
-              onMouseDown={handleSeekStart}
-              onTouchStart={handleSeekStart}
-              onMouseUp={commitSeek}
-              onTouchEnd={commitSeek}
-              onKeyUp={handleSeekKeyUp}
-              disabled={!canSeek || !activePlayer || !canControl}
-              className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-color disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: 'var(--color-surface-3)',
-                accentColor: 'var(--color-accent)',
-              }}
-              aria-label="Posição da faixa"
-              title={seekDisabledReason || 'Ir para este ponto'}
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            <span>{formatTime(displayPosition)}</span>
-            <span>{formatTime(duration)}</span>
-          </div>
-        </div>
       </div>
 
-      {seekDisabledReason && (
-        <div className="text-xs px-3 py-1 rounded" style={{ color: 'var(--color-status-warn)', backgroundColor: 'var(--color-surface-2)' }}>
-          {seekDisabledReason}
-        </div>
-      )}
+      {seekDisabledReason && <p className="tp__note">{seekDisabledReason}</p>}
     </div>
   );
 }

@@ -31,7 +31,7 @@ fi
 # 3. Green (--color-accent-2, the --logo-core-* gradient) is LIVE-only. A use outside the
 #    allowlist of LIVE selectors below fails. Declarations (`--x: ...`) and comments are
 #    skipped. To add a new LIVE surface, add its selector to LIVE_SELECTORS.
-LIVE_SELECTORS='^\.eyebrow\.is-live|^\.room-card__live|^\.room-card__dot|^\.eq span|^\.queue-thumb-eq'
+LIVE_SELECTORS='^\.r4-live|^\.eyebrow\.is-live|^\.room-card__live|^\.room-card__dot|^\.eq span|^\.queue-thumb-eq'
 green=$(awk -v live="$LIVE_SELECTORS" '
   /\/\*/ { incomment = 1 }
   incomment { if ($0 ~ /\*\//) incomment = 0; next }

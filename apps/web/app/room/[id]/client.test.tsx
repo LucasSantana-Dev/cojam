@@ -149,7 +149,7 @@ describe('RoomClient shared room-age clock (#206)', () => {
     await joinAs('Alice');
 
     await waitFor(() => {
-      expect(screen.getByText('adicionada por Bob')).toBeInTheDocument();
+      expect(document.querySelector('.r4-now .r4-chip')).toHaveTextContent('Bob pediu');
     });
     expect(document.querySelector('.np-timer')).toBeNull();
   });

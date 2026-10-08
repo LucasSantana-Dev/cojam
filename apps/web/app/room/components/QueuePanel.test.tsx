@@ -335,6 +335,27 @@ describe('QueuePanel voting (F4)', () => {
     expect(within(rows[1]).queryByTestId('listeners-pick')).not.toBeInTheDocument();
   });
 
+  it('counts only the upcoming tracks in the "A seguir" header and links to the add form', () => {
+    useStore.setState({ state: votingState(undefined, 't1') });
+    const onAdd = vi.fn();
+    render(<QueuePanel roomId="r1" canControl onAdd={onAdd} />);
+
+    // two tracks, one of them playing: one is "a seguir"
+    expect(screen.getByRole('heading', { name: /A seguir \(1\)/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Adicionar música/ }));
+    expect(onAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes the vote pill in the singular for one vote', () => {
+    useStore.setState({ state: votingState({ t1: ['user:a'], t2: ['user:a', 'user:b'] }) });
+    render(<QueuePanel roomId="r1" canControl />);
+
+    const rows = screen.getAllByTestId('queue-item');
+    expect(rows[0]).toHaveTextContent('1 voto');
+    expect(rows[0]).not.toHaveTextContent('1 votos');
+    expect(rows[1]).toHaveTextContent('2 votos');
+  });
+
   it('shows no listeners pick when every count is zero', () => {
     useStore.setState({ state: votingState(undefined) });
     render(<QueuePanel roomId="r1" canControl />);
@@ -356,6 +377,6 @@ describe('QueuePanel voting (F4)', () => {
     const vote = within(row).getByRole('button', { name: 'Votar' });
     expect(vote).toHaveAttribute('title', 'Votaram: Bia, Caio, alguém');
     expect(vote).toHaveAccessibleDescription('Votaram: Bia, Caio, alguém');
-    expect(vote.querySelector('.fq-stack')).toHaveTextContent('BC?');
+    expect(row.querySelector('.fq-stack')).toHaveTextContent('BC?');
   });
 });

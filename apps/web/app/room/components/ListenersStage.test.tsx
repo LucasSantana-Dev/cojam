@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import { PresenceBar } from './PresenceBar';
+import { ListenersStage } from './ListenersStage';
 import { useStore, type Member } from '@/lib/realtime';
 
 const m = (clientId: string, name: string, platform?: Member['platform']): Member => ({
@@ -9,14 +9,14 @@ const m = (clientId: string, name: string, platform?: Member['platform']): Membe
   ...(platform ? { platform } : {}),
 });
 
-describe('PresenceBar', () => {
+describe('ListenersStage', () => {
   beforeEach(() => {
     useStore.getState().setMembers([]);
   });
 
   it('disambiguates two members sharing a name by sorted clientId', () => {
     useStore.getState().setMembers([m('b', 'Alice'), m('a', 'Alice')]);
-    render(<PresenceBar roomId="r" />);
+    render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByTitle('Alice')).toBeInTheDocument();
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();
@@ -24,7 +24,7 @@ describe('PresenceBar', () => {
 
   it('renders a unique name with no suffix', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
-    render(<PresenceBar roomId="r" />);
+    render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByTitle('Alice')).toBeInTheDocument();
     expect(screen.getByTitle('Bob')).toBeInTheDocument();
@@ -33,7 +33,7 @@ describe('PresenceBar', () => {
 
   it('keeps suffixes stable when an unrelated member joins', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
-    render(<PresenceBar roomId="r" />);
+    render(<ListenersStage roomId="r" running={false} />);
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();
 
     act(() => useStore.getState().addMember(m('c', 'Carol')));
@@ -44,7 +44,7 @@ describe('PresenceBar', () => {
 
   it('reverts to a bare name after the collision resolves', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
-    render(<PresenceBar roomId="r" />);
+    render(<ListenersStage roomId="r" running={false} />);
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();
 
     act(() => useStore.getState().removeMember('b'));
@@ -54,7 +54,7 @@ describe('PresenceBar', () => {
 
   it('does not dedupe by name: two same-named members render two chips and count twice', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
-    render(<PresenceBar roomId="r" />);
+    render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByText('2 ouvindo')).toBeInTheDocument();
   });
@@ -65,7 +65,7 @@ describe('PresenceBar', () => {
       m('1', 'Alice'), m('2', 'Alice'), m('3', 'Bo'), m('4', 'Cy'),
       m('5', 'Di'), m('6', 'Ed'), m('7', 'Fi'), m('8', 'Gus'),
     ]);
-    render(<PresenceBar roomId="r" />);
+    render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByText('+2')).toBeInTheDocument();
     expect(screen.getByText('8 ouvindo')).toBeInTheDocument();
@@ -76,7 +76,7 @@ describe('PresenceBar', () => {
 
   it('renders the platform indicator from presence data, and none when unreported', () => {
     useStore.getState().setMembers([m('a', 'Alice', 'spotify'), m('b', 'Bob')]);
-    render(<PresenceBar roomId="r" />);
+    render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByTitle('spotify')).toBeInTheDocument();
     expect(screen.queryByTitle('apple')).not.toBeInTheDocument();
@@ -86,9 +86,44 @@ describe('PresenceBar', () => {
   it('lets any member report another member, but not themselves (#259)', () => {
     useStore.setState({ clientId: 'a' });
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
-    render(<PresenceBar roomId="r" />);
+    render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByLabelText('Denunciar Bob')).toBeInTheDocument();
     expect(screen.queryByLabelText('Denunciar Alice')).not.toBeInTheDocument();
+  });
+
+  it('labels each listener with the service and crowns the host', () => {
+    useStore.getState().setMembers([
+      { clientId: 'a', userId: 'u1', name: 'Bia', platform: 'spotify' },
+      { clientId: 'b', userId: 'u2', name: 'Dani', platform: 'apple' },
+    ]);
+    render(<ListenersStage roomId="r" running={false} hostUserId="u1" />);
+
+    expect(screen.getByText('(Spotify)')).toBeInTheDocument();
+    expect(screen.getByText('(Apple Music)')).toBeInTheDocument();
+    expect(screen.getAllByRole('img', { name: 'Anfitrião' })).toHaveLength(1);
+  });
+
+  it('says "em sintonia" only while playing with at least two listeners', () => {
+    useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
+    const { rerender } = render(<ListenersStage roomId="r" running={false} />);
+    expect(screen.queryByText('em sintonia')).not.toBeInTheDocument();
+
+    rerender(<ListenersStage roomId="r" running />);
+    expect(screen.getByText('em sintonia')).toBeInTheDocument();
+
+    act(() => useStore.getState().removeMember('b'));
+    expect(screen.queryByText('em sintonia')).not.toBeInTheDocument();
+  });
+
+  it('only the host can remove a member, never themselves', () => {
+    useStore.setState({ clientId: 'a' });
+    useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
+    const { rerender } = render(<ListenersStage roomId="r" running={false} />);
+    expect(screen.queryByLabelText('Remover Bob da sala')).not.toBeInTheDocument();
+
+    rerender(<ListenersStage roomId="r" running={false} canControl />);
+    expect(screen.getByLabelText('Remover Bob da sala')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Remover Alice da sala')).not.toBeInTheDocument();
   });
 });
