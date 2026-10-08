@@ -84,11 +84,11 @@ describe('QueuePanel thumbs', () => {
   it('renders album art when present and a fallback tile otherwise', () => {
     const { container } = render(<QueuePanel roomId="r1" canControl />);
     const rows = screen.getAllByTestId('queue-item');
-    const img = rows[0].querySelector('img.queue-thumb');
+    const img = rows[0].querySelector('.fq-art img');
     expect(img).not.toBeNull();
     expect(img).toHaveAttribute('src', expect.stringContaining('https://img/art.jpg'));
-    expect(rows[1].querySelector('img.queue-thumb')).toBeNull();
-    expect(container.querySelectorAll('.queue-thumb-fallback')).toHaveLength(1);
+    expect(rows[1].querySelector('.fq-art img')).toBeNull();
+    expect(container.querySelectorAll('.fq-art__fallback')).toHaveLength(1);
   });
 });
 
@@ -340,5 +340,22 @@ describe('QueuePanel voting (F4)', () => {
     render(<QueuePanel roomId="r1" canControl />);
 
     expect(screen.queryByTestId('listeners-pick')).not.toBeInTheDocument();
+  });
+
+  it('names the voters from presence and shows "alguém" for one who left', () => {
+    useStore.setState({
+      members: [
+        { clientId: 'c1', userId: 'a', name: 'Bia' },
+        { clientId: 'c2', name: 'Caio' },
+      ],
+      state: votingState({ t2: ['user:a', 'client:c2', 'user:gone'] }),
+    });
+    render(<QueuePanel roomId="r1" canControl />);
+
+    const row = screen.getAllByTestId('queue-item')[1];
+    const vote = within(row).getByRole('button', { name: 'Votar' });
+    expect(vote).toHaveAttribute('title', 'Votaram: Bia, Caio, alguém');
+    expect(vote).toHaveAccessibleDescription('Votaram: Bia, Caio, alguém');
+    expect(vote.querySelector('.fq-stack')).toHaveTextContent('BC?');
   });
 });

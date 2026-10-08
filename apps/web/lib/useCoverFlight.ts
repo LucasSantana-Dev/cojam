@@ -18,7 +18,7 @@ export function useCoverFlight(trackId: string | undefined, enabled: boolean) {
     let flying: HTMLElement | undefined;
     const raf = requestAnimationFrame(async () => {
       const cover = document.querySelector<HTMLElement>('.np-cover');
-      const row = document.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(trackId)}"] .queue-thumb-wrap`);
+      const row = document.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(trackId)}"] .fq-art`);
       if (!cover || !row) return;
       const first = row.getBoundingClientRect();
       const last = cover.getBoundingClientRect();
