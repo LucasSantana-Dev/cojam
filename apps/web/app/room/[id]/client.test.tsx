@@ -252,6 +252,8 @@ describe('RoomClient video stage layout (#258)', () => {
     expect(screen.getByTestId('video-room')).toBeInTheDocument();
     expect(screen.getByTestId('stage')).toBeInTheDocument();
     expect(screen.queryByTestId('room-main-column')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Privacidade' })).toHaveAttribute('href', '/privacidade');
+    expect(screen.getByRole('link', { name: 'Termos' })).toHaveAttribute('href', '/termos');
   });
 
   it('tabs switch which panel is active on phones', async () => {
@@ -272,6 +274,8 @@ describe('RoomClient video stage layout (#258)', () => {
     await joinAs('Alice');
     expect(screen.queryByTestId('video-room')).toBeNull();
     expect(screen.getByTestId('room-main-column')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Privacidade' })).toHaveAttribute('href', '/privacidade');
+    expect(screen.getByRole('link', { name: 'Termos' })).toHaveAttribute('href', '/termos');
   });
 
   it('keeps the audio layout for an audio track even with the flag on', async () => {

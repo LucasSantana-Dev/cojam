@@ -1522,6 +1522,9 @@ input:focus, textarea:focus, select:focus {
   filter: blur(30px);
 }
 .room > * { position: relative; z-index: 1; }
+/* Legal footer (#253) stacks under <main>, so the phone tab bar (fixed, inside
+   main) is never covered by it. */
+.room > .room-footer { z-index: 0; }
 
 /* Frosted glass card — thin gradient-lit border, layered depth. */
 .panel {
@@ -2120,6 +2123,35 @@ input:focus, textarea:focus, select:focus {
   flex-wrap: wrap;
 }
 
+/* Legal pages (#253): readable prose column, tokens only. ------------------ */
+.legal {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+  color: var(--color-text-primary);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.legal h1 { font-family: var(--font-display), sans-serif; font-size: clamp(1.75rem, 6vw, 2.5rem); line-height: 1.15; margin: 1.5rem 0 0.5rem; }
+.legal h2 { font-size: 1.25rem; font-weight: 600; margin: 2.25rem 0 0.5rem; }
+.legal p, .legal ul { margin: 0.75rem 0; }
+.legal ul { padding-left: 1.25rem; list-style: disc; }
+.legal li { margin: 0.35rem 0; }
+.legal a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 2px; }
+.legal code { font-size: 0.875em; background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: 0.25rem; padding: 0.05rem 0.3rem; }
+.legal-meta { color: var(--color-text-secondary); font-size: 0.875rem; }
+.legal-banner {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-status-warn);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+}
+.legal-nav { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; font-size: 0.9rem; }
+.legal-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; display: block; overflow-x: auto; }
+.legal-table th, .legal-table td { text-align: left; vertical-align: top; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--color-border); }
+.legal-table th { color: var(--color-text-secondary); font-weight: 600; }
+
 /* Report control under a directory card (#259). The card is a link, so the
    button is a sibling, not a child (a button inside an anchor is invalid). */
 .live-room-wrap {
@@ -2287,6 +2319,9 @@ input:focus, textarea:focus, select:focus {
   }
   .room-main {
     padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+  .room-footer {
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
   }
   .audio-tabs {
     position: fixed;
