@@ -285,6 +285,12 @@ let centrifuge: Centrifuge | null = null;
 // instead of serving the stale pre-disconnect snapshot (B10).
 let activeRoom: { roomId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' | null } | null = null;
 
+// The connInfo this connection was opened with. Centrifugo fixes ConnInfo at
+// connect time, so changing the presence badge means reconnecting with new data.
+let currentConnInfo: ConnInfo | null = null;
+// A platform change that arrived before the initial room.join finished.
+let pendingPlatform: 'spotify' | 'apple' | 'youtube' | null | undefined;
+
 // joinRoom rejects if 'connected' never fires (unreachable server, rejected
 // token with retry loop): without this the join UI hung forever (B11).
 const JOIN_TIMEOUT_MS = 10_000;
@@ -325,6 +331,7 @@ export async function joinRoom(
 
   const connInfo: ConnInfo = { name };
   if (platform) connInfo.platform = platform;
+  currentConnInfo = connInfo;
 
   // A fresh joinRoom is a new room intent: clear the previous activeRoom so
   // the reconnect resync below cannot re-join (and adopt the state of) a
@@ -522,6 +529,11 @@ export async function joinRoom(
   // Mark the room active only after the initial join succeeded: the
   // 'connected' handler keys the reconnect resync off this.
   activeRoom = { roomId, name, platform };
+  if (pendingPlatform !== undefined) {
+    const wanted = pendingPlatform;
+    pendingPlatform = undefined;
+    updatePlatform(wanted);
+  }
 
   // Guest-to-account upgrade (#172): a signed-in member holding an unconsumed
   // guest proof token attempts the rebind on every room join. Fire-and-forget:
@@ -544,6 +556,28 @@ export async function joinRoom(
   });
 
   return sub;
+}
+
+// updatePlatform keeps the presence badge equal to the service this person
+// listens through ("Ouvir no"). ConnInfo is set per connection, so a change
+// needs a fresh connect: setData() applies on the next connect, then a
+// disconnect/connect cycle. The existing 'connected' handler re-joins the room
+// (idempotent) to adopt the authoritative state, exactly like any reconnect, and
+// the subscription resumes on its own. No-op when not in a room or unchanged.
+export function updatePlatform(platform: 'spotify' | 'apple' | 'youtube' | null): void {
+  if (!centrifuge || !activeRoom || !currentConnInfo) {
+    // Join still in flight (or no room): apply once the join succeeds.
+    pendingPlatform = platform;
+    return;
+  }
+  if ((currentConnInfo.platform ?? null) === platform) return;
+  const next: ConnInfo = { name: currentConnInfo.name };
+  if (platform) next.platform = platform;
+  currentConnInfo = next;
+  activeRoom.platform = platform;
+  centrifuge.setData(next);
+  centrifuge.disconnect();
+  centrifuge.connect();
 }
 
 // retryConnection (#187): recovery path after a terminal disconnect (e.g. a

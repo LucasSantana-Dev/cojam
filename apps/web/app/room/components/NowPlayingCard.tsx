@@ -4,6 +4,7 @@
 // soft halo, kicker, big title, artist, who asked, progress and the transport,
 // and under it the service this client plays through plus the host and
 // enrichment tools. The card carries the one violet glow of the room.
+import type { ReactNode } from 'react';
 import type { TrackRef } from '@cojam/shared';
 import { setRadio } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
@@ -60,6 +61,8 @@ interface NowPlayingCardProps {
   // Show the "Anfitrião" chip (room auth on and this client is the host).
   hostLabel: boolean;
   activeSource: keyof typeof SOURCE_NAME | null;
+  // The "Ouvir no" control; replaces the plain source label when given.
+  servicePicker?: ReactNode;
   activePlayer: IPlayer | null;
   roomAgeS: number | null;
   radioOn: boolean;
@@ -80,6 +83,7 @@ export function NowPlayingCard({
   hostControl,
   hostLabel,
   activeSource,
+  servicePicker,
   activePlayer,
   roomAgeS,
   radioOn,
@@ -95,6 +99,7 @@ export function NowPlayingCard({
         <>
           <UnavailableTrack />
           <div className="r4-now__foot">
+            {servicePicker}
             <span className="r4-now__tools">
               <RadioSwitch roomId={roomId} on={radioOn} />
             </span>
@@ -104,6 +109,7 @@ export function NowPlayingCard({
         <>
           <PlayFailedTrack />
           <div className="r4-now__foot">
+            {servicePicker}
             <span className="r4-now__tools">
               <RadioSwitch roomId={roomId} on={radioOn} />
             </span>
@@ -153,7 +159,8 @@ export function NowPlayingCard({
             </div>
           </div>
           <div className="r4-now__foot">
-            {activeSource && <SourceLabel source={activeSource} />}
+            {servicePicker ?? (activeSource && <SourceLabel source={activeSource} />)}
+            {servicePicker && activeSource && <SourceLabel source={activeSource} />}
             <span className="r4-now__tools">
               {f.trackDepth && (
                 <button type="button" onClick={onOpenDepth} className="r4-ghost" title="Ver detalhes da faixa no MusicBrainz">

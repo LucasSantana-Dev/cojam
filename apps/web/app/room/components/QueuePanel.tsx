@@ -40,12 +40,14 @@ function ThumbUp() {
 interface QueuePanelProps {
   roomId: string;
   canControl: boolean;
+  // The service this person listens through ("Ouvir no"); drives the "missing on your service" flag.
+  listeningOn?: 'spotify' | 'apple' | 'youtube' | null;
   // "+ Adicionar música" in the header: the room takes the viewer to the add
   // form (the phone switches to its tab). Omitted, the link is not rendered.
   onAdd?: () => void;
 }
 
-export function QueuePanel({ roomId, canControl, onAdd }: QueuePanelProps) {
+export function QueuePanel({ roomId, canControl, onAdd, listeningOn }: QueuePanelProps) {
   const state = useStore((s) => s.state);
   const queue = state?.queue ?? [];
   const nowPlayingId = state?.nowPlayingId;
@@ -272,7 +274,8 @@ export function QueuePanel({ roomId, canControl, onAdd }: QueuePanelProps) {
   }, [members]);
 
   // Mixed-service rooms: only flag a track the viewer's own service cannot play.
-  const myPlatform = members.find((m) => (m.clientIds ?? [m.clientId]).includes(myClientId))?.platform;
+  // The room passes the service this person chose ("Ouvir no"); presence is the fallback.
+  const myPlatform = listeningOn ?? members.find((m) => (m.clientIds ?? [m.clientId]).includes(myClientId))?.platform;
   const missingOnMyService = (track: TrackRef): string | null => {
     if (myPlatform === 'spotify' && !track.sources.spotify?.trackUri) return 'Spotify';
     if (myPlatform === 'apple' && !track.sources.apple?.songId) return 'Apple Music';

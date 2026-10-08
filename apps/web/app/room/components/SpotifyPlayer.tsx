@@ -224,8 +224,14 @@ export function SpotifyPlayer({
   onPlayerReady,
   onPlayerGone,
   onPlayError,
+  active,
 }: {
   authorized: boolean;
+  // Whether Spotify is the service that plays the now-playing track for this
+  // client (the "Ouvir no" choice resolved by pickSource). Omitted: derived
+  // from authorization alone, the auto behaviour. When it turns false the SDK
+  // is paused so it never plays under another service.
+  active?: boolean;
   onAuthorized: (v: boolean) => void;
   onPlayerReady?: (player: IPlayer) => void;
   onPlayerGone?: () => void;
@@ -361,7 +367,8 @@ export function SpotifyPlayer({
     const track = current?.nowPlayingId
       ? current.queue.find((t) => t.id === current.nowPlayingId)
       : undefined;
-    if (!track || pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) !== 'spotify') return;
+    const wanted = active ?? (track ? pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) === 'spotify' : false);
+    if (!track || !wanted) return;
     playerRef.current?.setExpected(spotifyUri);
     playUri(deviceId.current, spotifyUri)
       .then(() => onPlayErrorRef.current?.(null))
@@ -369,7 +376,15 @@ export function SpotifyPlayer({
         console.error('Spotify play failed:', e);
         onPlayErrorRef.current?.(track.id);
       });
-  }, [authorized, status, spotifyUri]);
+  }, [authorized, status, spotifyUri, active]);
+
+  // Switched to another service mid-track: stop the SDK. The new player takes
+  // the synced position through the existing drift correction.
+  useEffect(() => {
+    if (active !== false || status !== 'ready') return;
+    playerRef.current?.setExpected(null);
+    playerRef.current?.pause().catch(() => {});
+  }, [active, status]);
 
   if (!clientId) return null;
   const connect = () => {
@@ -420,7 +435,7 @@ export function SpotifyPlayer({
   }
 
   const playingHere =
-    nowPlaying && pickSource(nowPlaying, { appleAuthorized: false, spotifyAuthorized: true }) === 'spotify';
+    nowPlaying && (active ?? pickSource(nowPlaying, { appleAuthorized: false, spotifyAuthorized: true }) === 'spotify');
   return (
     <div className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-accent)' }} />

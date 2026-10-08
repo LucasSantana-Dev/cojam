@@ -132,8 +132,13 @@ export function ApplePlayer({
   onPlayerReady,
   onPlayerGone,
   onPlayError,
+  active,
 }: {
   authorized: boolean;
+  // Whether Apple Music is the service that plays the now-playing track for
+  // this client ("Ouvir no" choice resolved by pickSource). Omitted: derived
+  // from authorization alone. Turning false pauses MusicKit.
+  active?: boolean;
   onAuthorized: (v: boolean) => void;
   onPlayerReady?: (player: IPlayer) => void;
   onPlayerGone?: () => void;
@@ -199,7 +204,8 @@ export function ApplePlayer({
   useEffect(() => {
     const music = musicRef.current;
     if (!music || !authorized || !nowPlaying) return;
-    if (pickSource(nowPlaying, { appleAuthorized: authorized, spotifyAuthorized: false }) !== 'apple') return;
+    const wanted = active ?? pickSource(nowPlaying, { appleAuthorized: authorized, spotifyAuthorized: false }) === 'apple';
+    if (!wanted) return;
     const songId = nowPlaying.sources.apple!.songId!;
     (async () => {
       try {
@@ -211,7 +217,13 @@ export function ApplePlayer({
         onPlayErrorRef.current?.(nowPlaying.id);
       }
     })();
-  }, [authorized, nowPlaying]);
+  }, [authorized, nowPlaying, active]);
+
+  // Switched to another service mid-track: stop MusicKit.
+  useEffect(() => {
+    if (active !== false) return;
+    adapterRef.current?.pause().catch(() => {});
+  }, [active]);
 
   if (status === 'unconfigured' || status === 'idle') return null;
   if (status === 'error') {
@@ -250,7 +262,7 @@ export function ApplePlayer({
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-info)' }} />
       <span>
         Apple Music conectado
-        {nowPlaying && pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple' && (
+        {nowPlaying && (active ?? pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple') && (
           <span style={{ color: 'var(--color-info)' }}> playing &quot;{nowPlaying.title}&quot;</span>
         )}
       </span>
