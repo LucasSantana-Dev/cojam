@@ -75,7 +75,7 @@ func TestJoinKeepsLiveTransport(t *testing.T) {
 	}
 }
 
-func TestStaleAdvanceDoesNotRefillRadio(t *testing.T) {
+func TestStaleAdvanceRefillsRadio(t *testing.T) {
 	mem := store.NewMemory()
 	st := staleRoom(62 * time.Minute)
 	st.NowPlayingID = "t2" // last track: the advance empties the queue
@@ -92,9 +92,11 @@ func TestStaleAdvanceDoesNotRefillRadio(t *testing.T) {
 	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"stale","name":"ana"}`), ""); err != nil {
 		t.Fatal(err)
 	}
+	// The join-time advance emptied the queue like a real advance would: the
+	// radio room refills (gated by refillAllowed) instead of going silent.
 	select {
 	case <-calls:
-		t.Fatal("a stale-transport advance must not trigger a radio refill")
-	case <-time.After(150 * time.Millisecond):
+	case <-time.After(2 * time.Second):
+		t.Fatal("a stale-transport advance that empties a radio queue must refill")
 	}
 }

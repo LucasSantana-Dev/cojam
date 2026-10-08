@@ -361,7 +361,13 @@ func (rs *RoomState) AdvanceAfter(afterID string) error {
 // EndedGraceMs is how far past a track's duration a playing transport may run
 // before the server treats the track as ended. It keeps a joiner from racing
 // the host's own end-of-track advance, which lands within about a second.
-const EndedGraceMs = 5000
+//
+// It is also deliberately wide: the catalogue duration of a YouTube-matched
+// track is not the video's (the match can be a longer music video), so a
+// joiner reconnecting 5 s past a 3:48 catalogue entry must not skip a 4:30
+// video that is still playing. Only a transport that ran this far past the
+// catalogue end is treated as abandoned.
+const EndedGraceMs = 30_000
 
 // AdvanceIfEnded moves playback past the now-playing track when a playing
 // transport has run beyond that track's duration (plus EndedGraceMs). Advance

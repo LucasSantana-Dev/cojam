@@ -64,3 +64,16 @@ func TestAdvanceIfEndedLastTrackClears(t *testing.T) {
 		t.Fatalf("now playing = %q, want cleared", rs.NowPlayingID)
 	}
 }
+
+// The catalogue duration of a YouTube-matched track is not the video's: a
+// joiner reconnecting a little past the catalogue end must not skip a longer
+// video that is still playing.
+func TestAdvanceIfEndedWideGrace(t *testing.T) {
+	rs := playingAt(0, 1_000)
+	if rs.AdvanceIfEnded(1_000 + 223_000 + 25_000) { // reconnect 25 s past the catalogue end
+		t.Fatal("25 s past the catalogue end must not advance")
+	}
+	if !rs.AdvanceIfEnded(1_000 + 223_000 + EndedGraceMs) {
+		t.Fatal("past the wide grace must advance")
+	}
+}

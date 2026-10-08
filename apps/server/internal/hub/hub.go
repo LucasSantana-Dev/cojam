@@ -1663,7 +1663,9 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		// resets seniority by design.
 		h.recordJoinTime(req.RoomID, userID)
 		h.cancelHostGrace(req.RoomID, userID) // the host came back inside the grace window
-		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+		// Seed for a radio refill when the join-time advance empties the queue.
+		var joinRefillSeed *queue.TrackRef
+		joinRes, joinErr := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			// Set host if authenticated and room has no host yet.
 			// If host left the room, reclaim for the new joiner.
 			if userID != "" {
@@ -1697,11 +1699,22 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			// A transport restored from the store (or left by an absent host)
 			// may already be past the end of its track; nobody would advance
 			// it, so do it here, in the same mutation the joiner gets back.
-			if s.AdvanceIfEnded(time.Now().UnixMilli()) && h.logger != nil {
-				h.logger.Info("stale_transport_advanced", "room_id", req.RoomID, "now_playing_id", s.NowPlayingID)
+			if s.AdvanceIfEnded(time.Now().UnixMilli()) {
+				if h.logger != nil {
+					h.logger.Info("stale_transport_advanced", "room_id", req.RoomID, "now_playing_id", s.NowPlayingID)
+				}
+				// Same as advanceAfter: a radio room whose queue ran dry refills.
+				if s.NowPlayingID == "" && s.RadioEnabled && len(s.Queue) > 0 {
+					seed := s.Queue[len(s.Queue)-1]
+					joinRefillSeed = &seed
+				}
 			}
 			return nil
 		})
+		if joinErr == nil && joinRefillSeed != nil && h.similar != nil && h.refillAllowed(req.RoomID) {
+			go h.refillRadio(req.RoomID, joinRefillSeed)
+		}
+		return joinRes, joinErr
 
 	case "queue.add":
 		var req struct {
