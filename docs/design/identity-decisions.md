@@ -70,6 +70,18 @@ Owner: "ok, transforma a prévia em PR". The approved sintonia: one page-wide gr
 
 "a fila está com um visual muito genérico de IA", then "espera o autoplay, e social na fila". The owner chose the `social` variant out of lista, social and capas: who asked, voter avatars, current track pinned on the cover tint. Needs the member user id on presence so voters resolve. Branch `feat/fila-social`; no PR open when this was written. #338 earlier fixed the queue and activity overlap.
 
+### 12. Room: round 4, "1 definitivamente" (2026-10-08)
+
+Every quote below is from 2026-10-08. After the sintonia room (decisions 8 and 11) the owner asked for a different room and rejected three hand-coded rounds in a row.
+
+- On the sintonia room, "Ainda muito genérico, pareia o identity-studio com o debate".
+- On debate directions A and B: "Nenhum dos dois".
+- On a recognition board of App Store screenshots: "perto 1, 8 e 9, longe 7, 9". The owner then clarified 9 with "Só perto". So near: 1 Airbuds, 8 Stationhead, 9 Spotify. Far: 7 Gartic Phone.
+- On the solid-block round: "Ficou esquisito, muito mobile, muito chapado".
+- On 6 image-model mockups: "1 definitivamente". That image is the anchor, kept at `.claude/design/refs/r4-mockup-1-approved.png` (local only).
+
+Decision: the room is a polished desktop app, near-black ground with soft violet ambient light (not the cover colour), three columns (now playing and listeners, queue, chat), solid dark panels with a hairline and a violet glow only on the now-playing card. The cover-colour ground stays on the landing and other screens until the owner decides on them; that is a follow-up.
+
 ## Consequences
 
 - The mark, violet actions, green LIVE, the two fonts and PT-BR are fixed base. Future rounds recombine execution inside sintonia, not the base.
