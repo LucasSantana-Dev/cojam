@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
@@ -180,6 +181,13 @@ func spotifyExchangeHandler(
 // or revoked in Spotify): the remedy is a fresh connect, not a retry.
 var errSpotifyReconnect = errors.New("spotify reconnect required")
 
+var spotifySubLocks sync.Map // sub -> *sync.Mutex
+
+func spotifySubLock(sub string) *sync.Mutex {
+	m, _ := spotifySubLocks.LoadOrStore(sub, &sync.Mutex{})
+	return m.(*sync.Mutex)
+}
+
 type spotifyLoadError struct{ err error }
 
 func (e *spotifyLoadError) Error() string { return "could not load the stored spotify token" }
@@ -192,6 +200,12 @@ func (e *spotifyLoadError) Unwrap() error { return e.err }
 func mintSpotifyAccess(
 	ctx context.Context, store spotifytoken.Store, sub string, logger *slog.Logger,
 ) (*spotifyTokenReply, error) {
+	// One refresh at a time per sub, shared by the import path and the refresh
+	// endpoint: with rotation, two refreshes on the same token make the loser
+	// see invalid_grant.
+	mu := spotifySubLock(sub)
+	mu.Lock()
+	defer mu.Unlock()
 	refreshToken, err := store.Get(ctx, sub)
 	if errors.Is(err, spotifytoken.ErrNotFound) {
 		return nil, errSpotifyReconnect
@@ -209,6 +223,12 @@ func mintSpotifyAccess(
 		// invalid_grant means the user revoked the grant in Spotify. Retrying
 		// can never succeed, so drop the record and ask for a reconnect.
 		if reply != nil && reply.Error == "invalid_grant" {
+			// Only drop the record if it still holds the token we just used; a
+			// newer one means another refresh rotated it and the grant is live.
+			if cur, getErr := store.Get(ctx, sub); getErr == nil && cur != refreshToken {
+				logger.Info("spotify_refresh_lost_race")
+				return nil, errors.New("spotify refresh raced with a rotation; retry")
+			}
 			if delErr := store.Delete(ctx, sub); delErr != nil {
 				logger.Error("spotify_token_delete_failed", "err", delErr.Error())
 			}

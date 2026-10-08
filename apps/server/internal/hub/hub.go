@@ -1965,7 +1965,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			var err error
 			tracks, err = h.playlistFetcher(ctx, req.URL)
 			if err != nil {
-				return nil, playlistImportError(err)
+				return nil, h.playlistImportError(err)
 			}
 		}
 
@@ -2451,7 +2451,7 @@ func (h *Hub) WithSpotifyUserToken(f func(ctx context.Context, userID string) (s
 
 // playlistImportError turns fetcher errors into pt-BR messages the host can
 // act on. Fetcher errors never carry upstream bodies, so wrapping is safe.
-func playlistImportError(err error) error {
+func (h *Hub) playlistImportError(err error) error {
 	switch {
 	case errors.Is(err, playlist.ErrSpotifyConnectRequired):
 		return userErrorf("O Spotify só deixa importar playlists de quem conectou a conta. Conecte o Spotify e tente de novo, ou cole uma playlist do Deezer ou do YouTube.")
@@ -2462,7 +2462,11 @@ func playlistImportError(err error) error {
 	case errors.Is(err, playlist.ErrNotConfigured):
 		return userErrorf("Esse serviço de playlists não está configurado no servidor.")
 	}
-	return userErrorf("Não foi possível carregar a playlist: %v", err)
+	// Anything else stays server-side: transport errors can embed URLs.
+	if h.logger != nil {
+		h.logger.Warn("playlist_import_failed", "err", err.Error())
+	}
+	return userErrorf("Não foi possível carregar a playlist. Tente de novo em instantes.")
 }
 
 // WithPlaylistFetcher enables playlist import via playlist.import RPC.

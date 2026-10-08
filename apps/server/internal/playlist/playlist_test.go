@@ -762,3 +762,22 @@ func TestFetchYouTubePlaylist_PagesAndBounds(t *testing.T) {
 		t.Fatalf("got %d tracks in %d calls, want %d in 4", len(tracks), calls, MaxTracks)
 	}
 }
+
+// Transport errors embed the request URL, which carries the YouTube API key.
+func TestFetchYouTubePlaylist_NetworkErrorDoesNotLeakKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close() // connection refused
+	old := youtubePlaylistURL
+	youtubePlaylistURL = url
+	defer func() { youtubePlaylistURL = old }()
+	t.Setenv("YOUTUBE_API_KEY", "SECRETKEY123")
+
+	_, err := FetchYouTubePlaylist(context.Background(), "PL1")
+	if err == nil {
+		t.Fatal("expected a network error")
+	}
+	if strings.Contains(err.Error(), "key=") || strings.Contains(err.Error(), "SECRETKEY123") {
+		t.Fatalf("error leaks the API key: %v", err)
+	}
+}

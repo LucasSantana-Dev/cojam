@@ -116,7 +116,7 @@ func FetchDeezerPlaylist(ctx context.Context, playlistID string) ([]queue.TrackR
 		} `json:"tracks"`
 	}
 	if err := httpx.DoJSON(req, &result); err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, requestError(err)
 	}
 
 	tracks := make([]queue.TrackRef, 0, len(result.Tracks.Data))
@@ -130,6 +130,17 @@ func FetchDeezerPlaylist(ctx context.Context, playlistID string) ([]queue.TrackR
 	}
 
 	return tracks, nil
+}
+
+// requestError strips the request URL from transport errors: *url.Error embeds
+// it, and the YouTube URL carries key=<YOUTUBE_API_KEY>. Callers may show or
+// log the result.
+func requestError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("request failed: %w", ue.Err)
+	}
+	return fmt.Errorf("request failed: %w", err)
 }
 
 // MaxTracks bounds one playlist import (mirrors the hub's maxImportTracks so a
@@ -259,7 +270,7 @@ func FetchSpotifyPlaylist(ctx context.Context, playlistID string) ([]queue.Track
 					return nil, ErrSpotifyConnectRequired
 				}
 			}
-			return nil, fmt.Errorf("request failed: %w", err)
+			return nil, requestError(err)
 		}
 
 		for _, it := range result.Items {
@@ -343,7 +354,7 @@ func FetchYouTubePlaylist(ctx context.Context, playlistID string) ([]queue.Track
 			NextPageToken string `json:"nextPageToken"`
 		}
 		if err := httpx.DoJSON(req, &result); err != nil {
-			return nil, fmt.Errorf("request failed: %w", err)
+			return nil, requestError(err)
 		}
 
 		for _, item := range result.Items {

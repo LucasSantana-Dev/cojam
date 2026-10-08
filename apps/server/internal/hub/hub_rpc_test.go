@@ -851,3 +851,17 @@ func TestPlaylistImport_FetcherGetsCallersSpotifyToken(t *testing.T) {
 		t.Fatalf("minted for %q, fetcher saw %q", minted, got)
 	}
 }
+
+// Unknown fetch failures reach the client as a generic message, never the raw
+// error (which can embed a URL with an API key).
+func TestPlaylistImport_UnknownErrorIsGeneric(t *testing.T) {
+	h := NewHub(nil)
+	h.WithPlaylistFetcher(func(context.Context, string) ([]queue.TrackRef, error) {
+		return nil, errors.New(`Get "https://x/y?key=SECRETKEY123": dial tcp: refused`)
+	})
+	_, err := h.HandleRPC("playlist.import", []byte(`{"roomId":"demo","url":"https://youtube.com/playlist?list=PL1"}`), "")
+	var ue *UserError
+	if !errors.As(err, &ue) || strings.Contains(err.Error(), "key=") || !strings.Contains(err.Error(), "Não foi possível") {
+		t.Fatalf("got %v", err)
+	}
+}
