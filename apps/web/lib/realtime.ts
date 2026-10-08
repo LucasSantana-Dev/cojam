@@ -653,7 +653,7 @@ function applyDesiredPlatform(roomId: string): void {
 // return to; the caller (StatusBanner) keeps the banner up on failure.
 export async function retryConnection() {
   const room = activeRoom;
-  if (!room) throw new Error('Nothing to reconnect to');
+  if (!room) throw new Error('Não há sala para reconectar');
   await joinRoom(room.roomId, room.name, room.platform);
 }
 
@@ -691,7 +691,7 @@ function stateShowsIdentity(state: RoomState, userId: string): boolean {
 // in the room to its account identity (#172). The payload is exactly the room
 // and the proof token: never a raw identity field.
 export async function rebindRoom(roomId: string, proof: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('room.rebind', { roomId, proof });
 }
 
@@ -743,7 +743,7 @@ async function attemptRebind(roomId: string) {
 }
 
 export async function queueAdd(roomId: string, track: Omit<TrackRef, 'id'>) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('queue.add', { roomId, track });
 }
 
@@ -772,34 +772,34 @@ export function isTrackNotFoundError(err: unknown): boolean {
 }
 
 export async function queueRemove(roomId: string, trackId: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('queue.remove', { roomId, trackId });
 }
 
 // queue.vote (F4): toggles this caller's upvote on a queued track. The result
 // is ignored like queue.add: the room.state publication delivers the state.
 export async function voteTrack(roomId: string, trackId: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('queue.vote', { roomId, trackId });
 }
 
 export async function nowPlayingSet(roomId: string, trackId: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('now_playing.set', { roomId, trackId });
 }
 
 export async function nowPlayingAdvance(roomId: string, afterId: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('now_playing.advance', { roomId, afterId });
 }
 
 export async function queueReorder(roomId: string, trackId: string, toIndex: number) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('queue.reorder', { roomId, trackId, toIndex });
 }
 
 export async function importPlaylist(roomId: string, url: string, addedBy: string, tracks?: Omit<TrackRef, 'id' | 'addedBy'>[]) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   try {
     // tracks is set for RFC-0007 client-side Spotify imports: the browser
     // already resolved the playlist with the user's OAuth token.
@@ -808,12 +808,12 @@ export async function importPlaylist(roomId: string, url: string, addedBy: strin
     // centrifuge-js rejects with a plain {code, message} object, not an Error;
     // normalize so callers can show the server's message via err.message.
     const msg = (err as { message?: string })?.message;
-    throw new Error(msg || 'Failed to import playlist');
+    throw new Error(msg || 'Não deu para importar a playlist');
   }
 }
 
 export async function setRadio(roomId: string, enabled: boolean) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('radio.set', { roomId, enabled });
 }
 
@@ -822,13 +822,13 @@ export async function setRadio(roomId: string, enabled: boolean) {
 // is no duplicate/rollback handling. The RPC result is the stamped message
 // (not RoomState); chat never touches RoomState.Version.
 export async function sendChat(roomId: string, text: string, name: string): Promise<ChatMessage> {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   const result = await centrifuge.rpc('chat.send', { roomId, text, name });
   return (result.data as { message: ChatMessage }).message;
 }
 
 export async function fetchChatHistory(roomId: string): Promise<ChatMessage[]> {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   const result = await centrifuge.rpc('chat.history', { roomId });
   const messages = (result.data as { messages: ChatMessage[] }).messages ?? [];
   // The ring keeps tombstoned slots (history is never rewritten, #181);
@@ -840,25 +840,25 @@ export async function fetchChatHistory(roomId: string): Promise<ChatMessage[]> {
 // non-hosts) and draw from the chat rate limit. The UI gates the affordances
 // on host status, but the server stays authoritative.
 export async function deleteChatMessage(roomId: string, messageId: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('chat.delete', { roomId, messageId });
 }
 
 export async function kickMember(roomId: string, clientId: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('room.kick', { roomId, clientId });
 }
 
 // Role management (host or owner only; the server is authoritative). Both
 // reply with the full RoomState, which also arrives on the room channel.
 export async function setRoomAdmin(roomId: string, userId: string, admin: boolean) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('room.set_admin', { roomId, userId, admin });
 }
 
 // The owner takes the host role back on purpose (room.claim_host). Owner only.
 export async function claimHost(roomId: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('room.claim_host', { roomId });
 }
 
@@ -870,7 +870,7 @@ export function useMyUserId(): string | null {
 }
 
 export async function transferHost(roomId: string, userId: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('room.transfer_host', { roomId, userId });
 }
 
@@ -880,7 +880,7 @@ export async function transferHost(roomId: string, userId: string) {
 // untouched. The server replies with the full RoomState, which arrives via
 // the room channel publication.
 export async function setRoomPublic(roomId: string, isPublic: boolean, name?: string) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('room.set_public', { roomId, public: isPublic, ...(name !== undefined ? { name } : {}) });
 }
 
@@ -919,13 +919,13 @@ export function buildProviderPrefs({ spotify, apple }: { spotify?: boolean; appl
 }
 
 export async function searchTracks(query: string, prefer?: string[]): Promise<SearchCandidate[]> {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   const result = await centrifuge.rpc('track.search', { query, ...(prefer && prefer.length > 0 ? { prefer } : {}) });
   return (result.data as SearchCandidate[]) ?? [];
 }
 
 export async function fetchTrackDepth(roomId: string, isrc: string, title: string, artist: string): Promise<TrackDepth> {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   const result = await centrifuge.rpc('track.depth', { roomId, isrc, title, artist });
   return (result.data as TrackDepth) ?? { credits: [], tags: [], source: 'musicbrainz' };
 }
@@ -942,7 +942,7 @@ export type Lyrics = {
 };
 
 export async function fetchLyrics(roomId: string, artist: string, title: string, album?: string, durationMs?: number): Promise<Lyrics> {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   const result = await centrifuge.rpc('track.lyrics', { roomId, artist, title, album, durationMs });
   return (result.data as Lyrics) ?? { synced: [], plain: '', source: 'lrclib' };
 }
@@ -955,7 +955,7 @@ export type ListenBrainzEnrichment = {
 };
 
 export async function fetchListenBrainz(roomId: string, isrc: string, title: string, artist: string): Promise<ListenBrainzEnrichment> {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   const result = await centrifuge.rpc('track.listenbrainz', { roomId, isrc, title, artist });
   return (result.data as ListenBrainzEnrichment) ?? { mbid: '', tags: [], source: 'listenbrainz' };
 }
@@ -968,7 +968,7 @@ export type LastfmEnrich = {
 };
 
 export async function fetchLastfmEnrich(roomId: string, artist: string, title: string): Promise<LastfmEnrich> {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   const result = await centrifuge.rpc('track.lastfm', { roomId, artist, title });
   return (result.data as LastfmEnrich) ?? { playcount: 0, listeners: 0, tags: [], source: 'lastfm' };
 }
@@ -978,7 +978,7 @@ export async function fetchLastfmEnrich(roomId: string, artist: string, title: s
 let clockOffsetMs = 0;
 
 export async function syncPing(): Promise<number> {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   const result = await centrifuge.rpc('sync.ping', {});
   return (result.data as { serverNowMs: number }).serverNowMs;
 }
@@ -1064,16 +1064,16 @@ export function getClockOffsetMs(): number {
 
 // Transport controls (U5)
 export async function transportPlay(roomId: string, opts?: { trackId?: string; positionMs?: number }) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('transport.play', { roomId, ...opts });
 }
 
 export async function transportPause(roomId: string, positionMs: number) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('transport.pause', { roomId, positionMs });
 }
 
 export async function transportSeek(roomId: string, positionMs: number) {
-  if (!centrifuge) throw new Error('Not connected');
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('transport.seek', { roomId, positionMs });
 }

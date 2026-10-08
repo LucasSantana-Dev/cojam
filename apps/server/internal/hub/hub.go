@@ -673,7 +673,7 @@ func (h *Hub) Join(clientID, roomID string) {
 		h.observeFirstShared(roomID)
 	}
 	if !alreadyMember {
-		h.announceMembership(roomID, h.displayName(clientID), "joined")
+		h.announceMembership(roomID, h.displayName(clientID), "entrou")
 	}
 	// A room reloaded from the store may already be playing video.
 	h.reconcileHeartbeat(roomID)
@@ -722,7 +722,7 @@ func (h *Hub) Leave(clientID string) {
 	if len(rooms) > 0 {
 		name := h.displayName(clientID)
 		for _, roomID := range rooms {
-			h.announceMembership(roomID, name, "left")
+			h.announceMembership(roomID, name, "saiu")
 		}
 	}
 }
@@ -2537,7 +2537,7 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 	// The system message rides chat, not RoomState: no Version bump, no
 	// store.Save beyond the advance's own write-through (#205).
 	if err == nil && announced != nil {
-		h.publishSystemChat(roomID, fmt.Sprintf("Now playing: %s — %s", announced.Title, announced.Artist))
+		h.publishSystemChat(roomID, fmt.Sprintf("Tocando agora: %s, de %s", announced.Title, announced.Artist))
 	}
 
 	return res, err
