@@ -41,6 +41,15 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   const [sending, setSending] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Esc closes the emoji picker.
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setEmojiOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [emojiOpen]);
   const [actionError, setActionError] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
@@ -247,7 +256,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
           disabled={!connected}
           className="chat-form__input"
         />
-        <div className="chat-emoji" onKeyDown={(e) => { if (e.key === 'Escape') setEmojiOpen(false); }}>
+        <div className="chat-emoji">
           <button
             type="button"
             className="chat-form__emoji"
@@ -267,7 +276,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                   type="button"
                   aria-label={`Inserir ${e}`}
                   onClick={() => {
-                    setDraft((d) => (d + e).slice(0, MAX_CHAT_TEXT_LEN));
+                    setDraft((d) => Array.from(d + e).slice(0, MAX_CHAT_TEXT_LEN).join(''));
                     setEmojiOpen(false);
                     inputRef.current?.focus();
                   }}

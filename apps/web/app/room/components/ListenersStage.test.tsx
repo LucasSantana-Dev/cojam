@@ -76,7 +76,7 @@ describe('ListenersStage', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
     render(<ListenersStage roomId="r" running={false} />);
 
-    expect(screen.getByLabelText('2 ouvindo')).toBeInTheDocument();
+    expect(screen.getByText('2 ouvindo')).toBeInTheDocument();
   });
 
   it('"+N" overflow counts connections, not unique names', () => {
@@ -88,7 +88,7 @@ describe('ListenersStage', () => {
     render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByText('+2')).toBeInTheDocument();
-    expect(screen.getByLabelText('8 ouvindo')).toBeInTheDocument();
+    expect(screen.getByText('8 ouvindo')).toBeInTheDocument();
     // Both Alices are inside the visible 6 — no dedupe collapsed them.
     expect(screen.getByTitle('Alice')).toBeInTheDocument();
     expect(screen.getByTitle('Alice (2)')).toBeInTheDocument();

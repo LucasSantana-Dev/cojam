@@ -69,6 +69,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [appleAuthorized, setAppleAuthorized] = useState(false);
   // Dev fixture only (lib/devFixture): no SDK or iframe is mounted, the room is seeded.
   const [fixture, setFixture] = useState(false);
+  // ?yt=1 with the fixture: a stand-in for the YouTube player in the cover slot.
+  const [fixtureYt, setFixtureYt] = useState(false);
   const [spotifyAuthorized, setSpotifyAuthorized] = useState(false);
   const [drawer, setDrawer] = useState<Drawer>(null);
   // "+ Adicionar música" opens the search inline at the top of the queue.
@@ -227,6 +229,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     applyRoomFixture(kind);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot dev fixture seed on mount
     setFixture(true);
+    setFixtureYt(new URLSearchParams(window.location.search).get('yt') === '1');
     setSpotifyAuthorized(true);
     setAppleAuthorized(true);
     spotifyAdapterRef.current = fixturePlayer;
@@ -556,7 +559,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       onOpenDepth={() => setDrawer('depth')}
       onOpenLyrics={() => setDrawer('lyrics')}
       onOpenEnrichment={() => setDrawer('enrichment')}
-      media={youtubeAudio}
+      media={fixtureYt ? <div className="r4-fixture-yt" /> : youtubeAudio}
     />
   );
 

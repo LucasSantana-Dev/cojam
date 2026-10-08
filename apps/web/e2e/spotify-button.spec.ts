@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { proxyConnectionToken } from './connectionTokenProxy';
+import { openAdd, openAvatarMenu } from './helpers';
 
 // With NEXT_PUBLIC_FEATURE_SPOTIFY on + a client id, a room shows the
 // "Conectar Spotify" button. We never click it (that redirects to Spotify OAuth),
@@ -12,14 +13,17 @@ async function join(page: Page, roomId: string, name: string) {
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
   await page.getByPlaceholder('Seu nome').fill(name);
   await page.getByRole('button', { name: 'Entrar na sala' }).click();
-  // Joined header shows the room-code chip + "você é <name>" (see RoomClient header).
+  // The avatar menu holds the name (room-me).
   await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
 test('Connect Spotify button renders when the feature flag is on', async ({ page }) => {
   await join(page, `SP${Date.now().toString(36).toUpperCase()}`, 'Lucas');
-  await expect(page.getByRole('button', { name: 'Conectar Spotify' })).toBeVisible();
-  // gated add-track field also appears (manual fields live behind the "Adicionar manualmente" toggle)
-  await page.locator('details').first().evaluate((d) => ((d as HTMLDetailsElement).open = true));
+  // The connect button lives in the avatar menu, under "Trocar serviço".
+  await openAvatarMenu(page);
+  await page.getByRole('button', { name: 'Trocar serviço' }).click();
+  await expect(page.getByRole('button', { name: 'Conectar Spotify' }).first()).toBeVisible();
+  // gated add-track field also appears (manual fields live behind "Mais opções" in the inline add)
+  await openAdd(page);
   await expect(page.getByPlaceholder('Link do Spotify ou URI da faixa (opcional)')).toBeVisible();
 });

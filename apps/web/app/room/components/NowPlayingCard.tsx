@@ -32,7 +32,7 @@ function RadioSwitch({ roomId, on }: { roomId: string; on: boolean }) {
 
 // The "⋮" under the cover: Detalhes, Letra, Mais and the radio switch. Stays
 // mounted while closed (hidden), so the radio checkbox keeps its state.
-function OverflowMenu({ children }: { children: ReactNode }) {
+function OverflowMenu({ children }: { children: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -62,8 +62,8 @@ function OverflowMenu({ children }: { children: ReactNode }) {
       >
         <MoreVertIcon size={22} />
       </button>
-      <div className="r4-menu r4-menu--up" hidden={!open} onClick={() => setOpen(false)}>
-        {children}
+      <div className="r4-menu r4-menu--up" hidden={!open}>
+        {children(() => setOpen(false))}
       </div>
     </div>
   );
@@ -133,26 +133,29 @@ export function NowPlayingCard({
   const ok = Boolean(track) && state === 'ok';
   const showTransport = ok && f.sync;
 
-  const tools = preview
-    ? []
-    : [
+  const tools = (close: () => void) =>
+    preview
+      ? []
+      : [
         ok && f.trackDepth && (
-          <button key="depth" type="button" onClick={onOpenDepth} className="r4-menu__item" title="Ver detalhes da faixa no MusicBrainz">
+          <button key="depth" type="button" onClick={() => { close(); onOpenDepth(); }} className="r4-menu__item" title="Ver detalhes da faixa no MusicBrainz">
             Detalhes
           </button>
         ),
         ok && f.lyrics && (
-          <button key="lyrics" type="button" onClick={onOpenLyrics} className="r4-menu__item" title="Ver a letra desta faixa">
+          <button key="lyrics" type="button" onClick={() => { close(); onOpenLyrics(); }} className="r4-menu__item" title="Ver a letra desta faixa">
             Letra
           </button>
         ),
         ok && (f.listenBrainz || f.lastfmEnrich) && (
-          <button key="more" type="button" onClick={onOpenEnrichment} className="r4-menu__item" title="Ver dados extras do ListenBrainz e do Last.fm">
+          <button key="more" type="button" onClick={() => { close(); onOpenEnrichment(); }} className="r4-menu__item" title="Ver dados extras do ListenBrainz e do Last.fm">
             Mais
           </button>
         ),
         radioAvailable && <RadioSwitch key="radio" roomId={roomId} on={radioOn} />,
       ].filter(Boolean);
+
+  const hasTools = tools(() => {}).length > 0;
 
   // Same row as the transport, for the states that have none: next (controllers
   // only) and the volume.
@@ -179,8 +182,8 @@ export function NowPlayingCard({
   return (
     <section className={`r4-card r4-now${track && isPlaying ? ' is-live' : ''}`} aria-label="Tocando agora" data-state={track ? state : 'empty'}>
       <div className="r4-now__grid">
-        <div className={`r4-cover${media && ok ? ' r4-cover--media' : ''}`} aria-hidden={media && ok ? undefined : true}>
-          {media && ok ? (
+        <div className={`r4-cover${media && track ? ' r4-cover--media' : ''}`} aria-hidden={media && track ? undefined : true}>
+          {media && track ? (
             <div className="r4-cover__media">{media}</div>
           ) : track && artwork && coverLevel < 2 && state === 'ok' ? (
             <>
@@ -244,7 +247,7 @@ export function NowPlayingCard({
 
         <div className="r4-now__svc">
           {servicePicker}
-          {tools.length > 0 && <OverflowMenu>{tools}</OverflowMenu>}
+          {hasTools && <OverflowMenu>{(close) => tools(close)}</OverflowMenu>}
         </div>
         {serviceNote && <div className="r4-now__note">{serviceNote}</div>}
       </div>

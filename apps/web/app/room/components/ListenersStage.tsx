@@ -216,9 +216,10 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
             Retomar anfitrião
           </button>
         )}
-        <span className="r4-listeners__count" aria-label={members.length === 1 ? '1 ouvindo' : `${members.length} ouvindo`}>
+        <span className="r4-listeners__count" aria-hidden="true">
           / palco
         </span>
+        <span className="sr-only">{members.length === 1 ? '1 ouvindo' : `${members.length} ouvindo`}</span>
       </header>
 
       <div ref={boxRef} className={`r4-ls${running ? ' is-running' : ''}${tuned ? ' is-tuned' : ''}`} role="group" aria-label="Quem está ouvindo">

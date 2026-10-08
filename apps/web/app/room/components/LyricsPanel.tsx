@@ -122,7 +122,7 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
     <>
       {/* Backdrop (mobile + close on click) */}
       <div
-        className="lyrics-backdrop"
+        className="lyrics-backdrop lg:hidden"
         onClick={onClose}
         aria-hidden="true"
       />

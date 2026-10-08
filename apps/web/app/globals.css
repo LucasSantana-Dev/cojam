@@ -3556,9 +3556,9 @@ input:focus, textarea:focus, select:focus {
 
 .r4-ls__chip { margin-left: 0.35rem; padding: 0 0.45rem; font-size: 0.75rem; }
 /* the role button sits under the member, shown on hover or focus so the row stays as in the mockup */
-.r4-ls__roles { position: absolute; top: 100%; left: 50%; translate: -50% 0; z-index: 5; display: flex; flex-direction: column; align-items: center; opacity: 0; transition: opacity var(--dur-micro) ease; }
-.r4-ls__member:hover .r4-ls__roles, .r4-ls__member:focus-within .r4-ls__roles { opacity: 1; }
-@media (hover: none), (any-pointer: coarse) { .r4-ls__roles { position: static; translate: none; opacity: 1; } }
+.r4-ls__roles { pointer-events: none; position: absolute; top: 100%; left: 50%; translate: -50% 0; z-index: 5; display: flex; flex-direction: column; align-items: center; opacity: 0; transition: opacity var(--dur-micro) ease; }
+.r4-ls__member:hover .r4-ls__roles, .r4-ls__member:focus-within .r4-ls__roles { opacity: 1; pointer-events: auto; }
+@media (hover: none), (any-pointer: coarse) { .r4-ls__roles { position: static; translate: none; opacity: 1; pointer-events: auto; } }
 .r4-ls__roles-btn, .r4-ls__menu-btn { min-height: 2.75rem; min-width: 2.75rem; }
 .r4-ls__menu { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.35rem; margin-top: 0.25rem; border-radius: 0.7rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); }
 .r4-ls__menu-err { margin: 0; font-size: 0.8125rem; color: var(--color-status-error); max-width: 14rem; }
@@ -3779,6 +3779,7 @@ input:focus, textarea:focus, select:focus {
   .r4-joingrid:not(.has-preview) { flex: none; margin-top: 8vh; }
 }
 @media (max-width: 47.999rem) {
+  .chat-form__emoji { width: 2.75rem; height: 2.75rem; }
   .r4-join__svc { grid-template-columns: 1fr; }
   .r4-joingrid.has-preview > .r4-stage { display: none; }
   .r4-joinroom .r4-header__inner { padding: 0.5rem 0.75rem; }
@@ -3810,7 +3811,7 @@ input:focus, textarea:focus, select:focus {
   .r4-conn__text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .room[data-room="r4"] .r4-now { padding: 1rem; }
   .r4-now__grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "cover" "info" "bar" "ctrl" "svc" "note"; row-gap: 0.75rem; }
-  .r4-cover { width: min(58vw, 13rem); justify-self: center; }
+  .r4-cover { width: clamp(12.5rem, 58vw, 13rem); justify-self: center; }
   .r4-now__title { font-size: 1.75rem; }
   .r4-now__artist { font-size: 1.1rem; }
   .r4-now__svc { margin-left: 0; justify-content: center; }
@@ -3819,6 +3820,25 @@ input:focus, textarea:focus, select:focus {
   .r4-menu--user { max-height: calc(100dvh - 5rem); }
   .room[data-room="r4"] .audio-tabs { background: oklch(0.145 0.016 292 / 0.97); border: 1px solid var(--r4-line); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: 0 8px 30px oklch(0 0 0 / 0.6); }
   .room[data-room="r4"] .video-tab[aria-selected="true"] { background: var(--r4-violet-fill); color: oklch(0.99 0.004 292); }
+}
+/* YouTube is the active source on a phone: the player (the cover slot) stays visible
+   and pinned above the Fila and Chat tabs, a compact card of its own, like the video
+   stage. The rest of the Agora panel collapses as before. */
+@media (max-width: 47.999rem) {
+  .audio-room:not([data-tab="playing"]) .r4-main-col:has(.r4-cover--media) { position: sticky; top: 0; z-index: 30; align-self: start; }
+  .audio-room:not([data-tab="playing"]) .video-panel-keep:has(.r4-cover--media) { visibility: visible; height: auto; overflow: visible; margin: 0; }
+  .audio-room:not([data-tab="playing"]) .video-panel-keep:has(.r4-cover--media) .r4-listeners { display: none; }
+  .audio-room:not([data-tab="playing"]) .r4-now:has(.r4-cover--media) { padding: 0.5rem; background: var(--r4-panel); }
+  .audio-room:not([data-tab="playing"]) .r4-now__grid:has(.r4-cover--media) { grid-template-columns: 12.5rem minmax(0, 1fr); grid-template-areas: "cover info"; column-gap: 0.75rem; row-gap: 0; }
+  .audio-room:not([data-tab="playing"]) .r4-now__grid:has(.r4-cover--media) :is(.tp__bar, .tp__row, .r4-now__svc, .r4-now__note, .r4-now__meta) { display: none; }
+  .audio-room:not([data-tab="playing"]) .r4-now__grid:has(.r4-cover--media) .r4-now__title { font-size: 1.25rem; }
+  .audio-room:not([data-tab="playing"]) .r4-now__grid:has(.r4-cover--media) .r4-now__artist { font-size: 1rem; }
+}
+/* Bottom-sheet drawers (below 1024px) never cover the player: no scrim, and the
+   sheet leaves the top 14rem free. */
+@media (max-width: 63.999rem) {
+  .room:has(.r4-cover--media) :is(.track-depth-backdrop, .lyrics-backdrop, .enrichment-backdrop) { display: none; }
+  .room:has(.r4-cover--media) :is(.track-depth-panel, .lyrics-panel, .enrichment-panel) { max-height: calc(100dvh - 14rem); }
 }
 @media (hover: none), (any-pointer: coarse) {
   .r4-menu__item, .r4-svclist__btn, .r4-menu__save, .r4-menu__input { min-height: 44px; }
@@ -4314,3 +4334,6 @@ input:focus, textarea:focus, select:focus {
 @media (prefers-reduced-motion: reduce) {
   .r4s-btn, .r4s-room { transition: none; }
 }
+
+/* dev fixture stand-in for the YouTube player (?fixture=room&yt=1) */
+.r4-fixture-yt { width: 100%; height: 100%; background: linear-gradient(135deg, oklch(0.3 0.02 292), oklch(0.12 0.01 292)); }

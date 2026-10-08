@@ -113,7 +113,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
     <>
       {/* Backdrop (mobile + close on click) */}
       <div
-        className="enrichment-backdrop"
+        className="enrichment-backdrop lg:hidden"
         onClick={onClose}
         aria-hidden="true"
       />

@@ -20,6 +20,8 @@ export function useCoverFlight(trackId: string | undefined, enabled: boolean) {
       const cover = document.querySelector<HTMLElement>('.r4-cover');
       const row = document.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(trackId)}"] .fq-art`);
       if (!cover || !row) return;
+      // The YouTube player sits in the cover slot: never animate it.
+      if (cover.classList.contains('r4-cover--media')) return;
       const first = row.getBoundingClientRect();
       const last = cover.getBoundingClientRect();
       if (first.width === 0 || last.width === 0) return;
