@@ -4425,3 +4425,245 @@ input:focus, textarea:focus, select:focus {
   .fq-hrow__add span { display: none; }
   .fq-hrow__add { padding: 0; width: 44px; }
 }
+
+/* ---- Modo palco (docs/design/modo-palco.md) -----------------------------------
+   An opt-in view of the live room: the pixel festival stage with the room's
+   people as the audience. The round 4 tree stays mounted but out of sight, so
+   the room's own YouTube player is never reloaded: CSS lifts it over the stage
+   screen (fixed, at the --palco-s* rectangle PalcoView measures). Nothing in the
+   view is laid out over that rectangle. The interface (tags, HUD, panels) keeps
+   the round 4 type; only the scene is pixel art. */
+.r4-palco-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--r4-line);
+  background: var(--r4-panel-2);
+  color: var(--color-text-primary);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.r4-palco-toggle:hover { background: oklch(0.24 0.03 292); }
+.r4-palco-toggle[aria-pressed="true"] { background: var(--r4-violet-fill); border-color: transparent; color: oklch(0.99 0.004 292); }
+.r4-palco-toggle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.r4-palco-toggle__short { display: none; }
+@media (max-width: 47.999rem) {
+  .r4-palco-toggle { padding: 0 0.75rem; font-size: 0.875rem; }
+  .r4-palco-toggle__long { display: none; }
+  .r4-palco-toggle__short { display: inline; }
+}
+
+.room[data-view="palco"] { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.room[data-view="palco"] > .room-header { flex: none; }
+.room[data-view="palco"] .r4-main { flex: 1; min-height: 0; max-width: none; padding: 0; display: flex; flex-direction: column; }
+/* The hidden round 4 tree. Nothing in it may become the containing block or the
+   stacking context of the fixed player, so every transform, filter, containment
+   and stacking property is reset (it is invisible anyway). */
+.room[data-view="palco"] .r4-main > :not(.palco) {
+  position: absolute !important;
+  inset: 0 auto auto 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  animation: none !important;
+  transform: none !important;
+  filter: none !important;
+  contain: none !important;
+  will-change: auto !important;
+  z-index: auto !important;
+}
+.room[data-view="palco"] .r4-main > :not(.palco) * {
+  position: static !important;
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  perspective: none !important;
+  will-change: auto !important;
+  contain: none !important;
+  container-type: normal !important;
+  z-index: auto !important;
+  opacity: 1 !important;
+  isolation: auto !important;
+  mix-blend-mode: normal !important;
+}
+/* Kept out of the block above: the CSS minifier folds translate, scale and
+   rotate into one identity `transform`, which would itself trap the player. */
+.room[data-view="palco"] .r4-main > :not(.palco) :where(*) { translate: none !important; }
+.room[data-view="palco"] .r4-main > :not(.palco) :where(*) { scale: none !important; }
+.room[data-view="palco"] .r4-main > :not(.palco) :where(*) { rotate: none !important; }
+/* The room's YouTube player (or the dev fixture stand-in) on the stage screen. */
+.room[data-view="palco"] #youtube-player {
+  position: fixed !important;
+  left: var(--palco-sx, -10000px) !important;
+  top: var(--palco-sy, 0px) !important;
+  width: var(--palco-sw, 320px) !important;
+  height: var(--palco-sh, 180px) !important;
+  max-width: none !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  display: block !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  z-index: 5 !important;
+}
+
+.palco {
+  --palco-ink: oklch(0.14 0.03 292);
+  --palco-plate: oklch(0.16 0.035 292 / 0.94);
+  --palco-line: oklch(0.86 0.06 292 / 0.28);
+  --palco-text: oklch(0.96 0.015 292);
+  /* Lime is "you" and progress only. */
+  --palco-you: oklch(0.89 0.2 128);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--palco-ink);
+  color: var(--palco-text);
+}
+.palco__main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.palco__stage { position: relative; flex: none; overflow: hidden; background: var(--palco-ink); }
+.palco__gl { position: absolute; inset: 0; }
+.palco__canvas { position: absolute; top: 0; left: 0; image-rendering: pixelated; }
+.palco__still { position: absolute; max-width: none; image-rendering: pixelated; }
+.palco__screen { position: absolute; display: grid; place-items: center; overflow: hidden; background: oklch(0.08 0.01 292); }
+.palco__screen img { width: 100%; height: 100%; object-fit: cover; }
+.palco__screen-empty { padding: 0.5rem; font-weight: 700; text-align: center; color: var(--palco-text); }
+.palco__tags, .palco__bubbles { position: absolute; inset: 0; pointer-events: none; }
+.palco-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 0.25rem;
+  background: var(--palco-plate);
+  border: 1px solid var(--palco-line);
+  color: var(--palco-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.palco-tag--back { opacity: 0.85; }
+.palco-tag--dj { background: oklch(0.25 0.07 292); }
+.palco-tag--you { background: var(--palco-you); border-color: var(--palco-you); color: oklch(0.16 0.03 292); }
+.palco-bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  max-width: 14rem;
+  margin: 0;
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
+  background: var(--palco-text);
+  color: oklch(0.16 0.03 292);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 2px 0 0 oklch(0 0 0 / 0.55);
+}
+.palco-bubble::after {
+  content: "";
+  position: absolute;
+  left: var(--tail, 50%);
+  bottom: -6px;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-bottom: 0;
+  border-top-color: var(--palco-text);
+}
+.palco__more {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--palco-plate);
+  border: 1px solid var(--palco-line);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.palco__hud {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem 1rem;
+  background: var(--r4-panel);
+  border-top: 1px solid var(--r4-line);
+}
+.palco__now { flex: 1 1 18rem; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; }
+.palco__title { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.palco__song { font-weight: 800; font-size: 1.0625rem; }
+.palco__artist { color: var(--color-text-secondary); font-weight: 600; }
+.palco__chip { flex: none; padding: 0.125rem 0.5rem; border-radius: 999px; background: var(--r4-panel-2); border: 1px solid var(--r4-line); font-size: 0.8125rem; font-weight: 700; }
+.palco__bar { flex: 1 1 100%; display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
+.palco__track { position: relative; flex: 1; height: 0.375rem; border-radius: 0.125rem; background: oklch(1 0 0 / 0.14); overflow: hidden; }
+.palco__fill { position: absolute; inset: 0 auto 0 0; background: var(--palco-you); border-radius: inherit; }
+.palco__acts { display: flex; align-items: center; gap: 0.5rem; }
+.palco__like, .palco__toggle, .palco__tab {
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border-radius: 0.6rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.palco__like { display: inline-flex; align-items: center; gap: 0.45rem; background: var(--r4-violet-fill); color: oklch(0.99 0.004 292); border: 0; }
+.palco__like:hover:not(:disabled) { background: oklch(0.58 0.215 298); }
+.palco__like:disabled { opacity: 0.5; cursor: not-allowed; }
+.palco__like svg { image-rendering: pixelated; }
+.palco__likes { padding: 0 0.375rem; border-radius: 999px; background: oklch(0 0 0 / 0.25); font-size: 0.8125rem; }
+.palco__toggle { background: none; border: 1px solid var(--r4-line); color: var(--color-text-primary); }
+.palco__toggle[aria-pressed="false"] { color: var(--color-text-secondary); text-decoration: line-through; }
+.palco__toggle:disabled { opacity: 0.6; cursor: not-allowed; }
+.palco__tabs { display: flex; gap: 0.25rem; padding: 0.25rem; border-radius: 0.8rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); }
+.palco__tab { background: transparent; border: 0; color: var(--color-text-secondary); white-space: nowrap; }
+.palco__tab[aria-selected="true"] { background: var(--color-accent); color: var(--color-surface-0); }
+.palco__like:focus-visible, .palco__toggle:focus-visible, .palco__tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.palco__panel {
+  flex: none;
+  width: min(28rem, 38vw);
+  min-width: 20rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--r4-bg);
+  border-left: 1px solid var(--r4-line);
+}
+.palco__panel > * { flex: 1; min-height: 0; }
+/* The vertical stage (phones, tall windows): panels open under the stage, which
+   shrinks to the screen plus a thin strip; the player never leaves the screen. */
+.palco[data-world="phone"] { flex-direction: column; }
+.palco[data-world="phone"] .palco__main { flex: none; }
+.palco[data-world="phone"][data-panel="stage"] .palco__main { flex: 1; }
+.palco[data-world="phone"] .palco__hud { padding: 0.5rem 0.75rem; gap: 0.5rem; }
+.palco[data-world="phone"] .palco__acts { flex: 1 1 auto; }
+.palco[data-world="phone"] .palco__tabs { flex: 1 1 100%; }
+.palco[data-world="phone"] .palco__tab { flex: 1; padding: 0 0.5rem; }
+.palco[data-world="phone"] .palco__panel { flex: 1; width: auto; min-width: 0; padding: 0.5rem; border-left: 0; border-top: 1px solid var(--r4-line); }
+.palco[data-world="phone"][data-panel="queue"] .palco__acts,
+.palco[data-world="phone"][data-panel="chat"] .palco__acts,
+.palco[data-world="phone"][data-panel="queue"] .palco__bar,
+.palco[data-world="phone"][data-panel="chat"] .palco__bar { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .palco__like, .palco__toggle, .palco__tab { transition: none; }
+}
