@@ -5,7 +5,7 @@
 // the selected one shows a violet ring plus a check (never colour alone).
 // Repeats are allowed, so nothing is ever disabled.
 import { useRef, useState } from 'react';
-import { CHARACTER_COUNT, CHARACTER_LABELS, portraitSrc } from '@/lib/characters';
+import { CHARACTER_COUNT, CHARACTER_LABELS, CHARACTER_NAMES, portraitSrc } from '@/lib/characters';
 import { CheckIcon } from '@/app/components/icons';
 
 interface CharacterPickerProps {
@@ -72,7 +72,7 @@ export function CharacterPicker({ value, onChange, idPrefix, as: Title = 'p' }: 
               type="button"
               role="radio"
               aria-checked={selected}
-              aria-label={`Personagem ${id}: ${CHARACTER_LABELS[id - 1]}`}
+              aria-label={`${CHARACTER_NAMES[id - 1]}, ${CHARACTER_LABELS[id - 1]}`}
               tabIndex={selected ? 0 : -1}
               className="r4-chars__btn"
               onClick={() => onChange(id)}
@@ -92,6 +92,7 @@ export function CharacterPicker({ value, onChange, idPrefix, as: Title = 'p' }: 
                   onError={() => setFailed((f) => ({ ...f, [id]: true }))}
                 />
               )}
+              <span className="r4-chars__name" aria-hidden="true">{CHARACTER_NAMES[id - 1]}</span>
               {selected && (
                 <span className="r4-chars__check" aria-hidden="true">
                   <CheckIcon size={14} />

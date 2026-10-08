@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { defaultCharacterId, memberCharacter, isCharacterId, CHARACTER_COUNT, CHARACTER_LABELS, portraitSrc } from './characters';
+import { defaultCharacterId, memberCharacter, isCharacterId, CHARACTER_COUNT, CHARACTER_DEFAULT_POOL, CHARACTER_NAMES, CHARACTER_LABELS, portraitSrc } from './characters';
 
 async function load() {
   vi.resetModules();
@@ -27,7 +27,8 @@ describe('defaultCharacterId', () => {
       expect(isCharacterId(c)).toBe(true);
       seen.add(c);
     }
-    expect(seen.size).toBe(CHARACTER_COUNT);
+    expect(seen.size).toBe(CHARACTER_DEFAULT_POOL);
+    expect(seen.has(13)).toBe(false);
   });
 
   it('hashes UTF-8 bytes, not UTF-16 units', () => {
@@ -38,10 +39,17 @@ describe('defaultCharacterId', () => {
 describe('roster', () => {
   it('has a label and a portrait path per character', () => {
     expect(CHARACTER_LABELS).toHaveLength(CHARACTER_COUNT);
+    expect(CHARACTER_NAMES).toHaveLength(CHARACTER_COUNT);
+    expect(CHARACTER_NAMES[12]).toBe('Mel');
+    expect(CHARACTER_LABELS[12]).toBe('Cachos pretos volumosos e blusa vinho');
     expect(portraitSrc(3)).toBe('/palco/characters/03-portrait.png');
     expect(portraitSrc(12)).toBe('/palco/characters/12-portrait.png');
   });
-  it.each([0, 13, 1.5, -1, NaN, '3'])('rejects %j', (v) => expect(isCharacterId(v)).toBe(false));
+  it.each([0, 14, 1.5, -1, NaN, '3'])('rejects %j', (v) => expect(isCharacterId(v)).toBe(false));
+  it('accepts 13 as a pick but it is never a default', () => {
+    expect(isCharacterId(13)).toBe(true);
+    expect(portraitSrc(13)).toBe('/palco/characters/13-portrait.png');
+  });
 });
 
 describe('memberCharacter', () => {

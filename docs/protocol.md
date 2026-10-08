@@ -38,7 +38,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `room.rebind` | `{ roomId, proof: string }` | `RoomState` |
 | `member.set_platform` | `{ roomId, platform: 'spotify' \| 'youtube' }` | `{ clientId: string, platform: string }` |
 | `member.platforms` | `{ roomId }` | `{ platforms: Record<clientId, platform> }` |
-| `member.set_character` | `{ roomId, characterId: integer 1..12 }` | `{ clientId: string, characterId: number }` |
+| `member.set_character` | `{ roomId, characterId: integer 1..13 }` | `{ clientId: string, characterId: number }` |
 | `member.characters` | `{ roomId }` | `{ characters: Record<clientId, characterId> }` |
 | `reaction.woot` | `{ roomId }` | `{ clientId: string }` |
 | `reaction.emote` | `{ roomId, emote }` | `{ clientId: string, emote: string }` |
@@ -338,13 +338,13 @@ Listening service ("Ouvir no"): ConnInfo is fixed per connection and a reconnect
 
 Clients overlay it on the presence entry with that `clientId` (it wins over the ConnInfo platform). A late joiner seeds the overlay with `member.platforms` (membership-gated read, the current overrides of the room's members).
 
-Audience character ("Modo palco"): each member is drawn as one of a fixed roster of 12 characters, `characterId` 1 to 12, repeats allowed (two people may pick the same one). It is member data shown to the whole room, like the display name, and is only ever an id: never an image or a free string. `member.set_character` is membership-gated, rejects anything that is not an integer from 1 to 12, shares the chat rate limit, and never reconnects (a reconnect would run the host handoff). The server keeps it per connection, drops it on disconnect, and publishes on the room channel (no version guard, not `RoomState`):
+Audience character ("Modo palco"): each member is drawn as one of a fixed roster of 13 characters, `characterId` 1 to 13, repeats allowed (two people may pick the same one). It is member data shown to the whole room, like the display name, and is only ever an id: never an image or a free string. `member.set_character` is membership-gated, rejects anything that is not an integer from 1 to 12, shares the chat rate limit, and never reconnects (a reconnect would run the host handoff). The server keeps it per connection, drops it on disconnect, and publishes on the room channel (no version guard, not `RoomState`):
 
 ```json
 { "type": "member.character", "clientId": "...", "characterId": 7 }
 ```
 
-Clients overlay it on the presence entry with that `clientId` (the latest choice among one person's connections wins). A late joiner seeds the overlay with `member.characters` (membership-gated read, the current overrides of the room's members). A member who never chose gets a default derived from the userId (the clientId for guests without one): the FNV-1a 32 bit hash of the UTF-8 bytes, mod 12, plus 1. The server (`DefaultCharacter`) and the web client (`lib/characters.ts`) implement the same function and share one table of test vectors. The web client sends its stored choice right after the join settles (and after the rebind) and again on every change.
+Clients overlay it on the presence entry with that `clientId` (the latest choice among one person's connections wins). A late joiner seeds the overlay with `member.characters` (membership-gated read, the current overrides of the room's members). A member who never chose gets a default derived from the userId (the clientId for guests without one): the FNV-1a 32 bit hash of the UTF-8 bytes, mod 12, plus 1 (the default pool stays 12: character 13, Mel, can be picked but is never a default, so adding her changed nobody's default; web `CHARACTER_DEFAULT_POOL`, server `DefaultCharacterPool`). The server (`DefaultCharacter`) and the web client (`lib/characters.ts`) implement the same function and share one table of test vectors. The web client sends its stored choice right after the join settles (and after the rebind) and again on every change.
 
 Reactions ("Modo palco"): `reaction.woot` is the Curtir button on the playing track. It is ephemeral: nothing is stored, it is not `RoomState` (no version bump, no persistence) and a late joiner never sees past reactions. It is membership-gated and has its own per-caller rate limit (burst 4, one more per second), separate from chat, so pressing Curtir never rate limits chat.send. The server publishes on the room channel, naming the connection only (clients resolve it to a member through presence):
 

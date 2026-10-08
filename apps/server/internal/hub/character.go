@@ -15,7 +15,12 @@ import (
 // Metadata only: an id, never an image or a free string.
 
 // CharacterCount is the size of the roster; valid ids are 1..CharacterCount.
-const CharacterCount = 12
+const CharacterCount = 13
+
+// DefaultCharacterPool is the modulus of the default hash. It stays 12 so no
+// existing default changed when character 13 joined: 13 is pickable, never a
+// default. Web twin: CHARACTER_DEFAULT_POOL in packages/shared.
+const DefaultCharacterPool = 12
 
 // validCharacter reports whether id is a roster id.
 func validCharacter(id int) bool {
@@ -23,13 +28,13 @@ func validCharacter(id int) bool {
 }
 
 // DefaultCharacter is the character a member who never chose is shown with:
-// FNV-1a (32 bit) of the userID bytes, mod CharacterCount, plus 1. The web
+// FNV-1a (32 bit) of the userID bytes, mod DefaultCharacterPool, plus 1. The web
 // client implements the same function (lib/characters.ts); both are pinned by
 // the same test vectors so every viewer draws the same person.
 func DefaultCharacter(userID string) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(userID))
-	return int(h.Sum32()%CharacterCount) + 1
+	return int(h.Sum32()%DefaultCharacterPool) + 1
 }
 
 // characterStore holds clientID -> character overrides. Zero value is ready.

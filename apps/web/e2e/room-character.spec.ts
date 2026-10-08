@@ -23,12 +23,12 @@ test('a picked character shows on the join screen, in the stage for everyone, an
 
   await openRoom(lucas, roomId);
   const picker = lucas.getByRole('radiogroup', { name: 'Escolha quem vai pra plateia' });
-  await expect(picker.getByRole('radio')).toHaveCount(12);
-  await picker.getByRole('radio', { name: /^Personagem 5:/ }).click();
-  await expect(picker.getByRole('radio', { name: /^Personagem 5:/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(picker.getByRole('radio')).toHaveCount(13);
+  await picker.getByRole('radio', { name: /^Luana, / }).click();
+  await expect(picker.getByRole('radio', { name: /^Luana, / })).toHaveAttribute('aria-checked', 'true');
   // The choice survives a reload (localStorage).
   await lucas.reload();
-  await expect(lucas.getByRole('radio', { name: /^Personagem 5:/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(lucas.getByRole('radio', { name: /^Luana, / })).toHaveAttribute('aria-checked', 'true');
   await lucas.getByPlaceholder('Seu nome').fill('Lucas');
   await lucas.getByRole('button', { name: 'Entrar na sala' }).click();
   await expect(lucas.getByTestId('room-me')).toContainText('Lucas');
@@ -46,7 +46,7 @@ test('a picked character shows on the join screen, in the stage for everyone, an
   // Change from the avatar menu, no reconnect: Ana sees it live.
   await openAvatarMenu(lucas);
   await lucas.getByRole('button', { name: 'Trocar personagem' }).click();
-  await lucas.locator('.r4-menu__chars').getByRole('radio', { name: /^Personagem 9:/ }).click();
+  await lucas.locator('.r4-menu__chars').getByRole('radio', { name: /^Davi, / }).click();
   await expect(stageFace(lucas, 'Lucas')).toHaveAttribute('src', '/palco/characters/09-portrait.png');
   await expect(stageFace(ana, 'Lucas')).toHaveAttribute('src', '/palco/characters/09-portrait.png');
 });
