@@ -128,6 +128,11 @@ func ScrubRoom(s *queue.RoomState, req Request) RoomChanges {
 			present = true
 		}
 	}
+	for _, h := range s.History {
+		if h.AddedByUserID == req.Sub {
+			present = true
+		}
+	}
 	for _, voters := range s.Votes {
 		for _, v := range voters {
 			if voterKeys[v] {
@@ -161,6 +166,18 @@ func ScrubRoom(s *queue.RoomState, req Request) RoomChanges {
 			ch.QueueEntries++
 		case present && req.Name != "" && t.AddedByUserID == "" && t.AddedBy == req.Name:
 			t.AddedBy = RemovedName
+			ch.QueueEntries++
+		}
+	}
+	for i := range s.History {
+		h := &s.History[i]
+		switch {
+		case h.AddedByUserID == req.Sub:
+			h.AddedByUserID = ""
+			h.AddedBy = RemovedName
+			ch.QueueEntries++
+		case present && req.Name != "" && h.AddedByUserID == "" && h.AddedBy == req.Name:
+			h.AddedBy = RemovedName
 			ch.QueueEntries++
 		}
 	}

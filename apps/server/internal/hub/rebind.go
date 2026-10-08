@@ -65,6 +65,11 @@ func (h *Hub) roomRebind(roomID, proof, clientID, userID string) (json.RawMessag
 				s.Queue[i].AddedByUserID = userID
 			}
 		}
+		for i := range s.History {
+			if s.History[i].AddedByUserID == oldSub {
+				s.History[i].AddedByUserID = userID
+			}
+		}
 		if s.HostUserID == oldSub {
 			s.HostUserID = userID
 		}

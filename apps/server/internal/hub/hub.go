@@ -395,6 +395,7 @@ var mutatingMethods = map[string]bool{
 	"queue.remove":        true,
 	"queue.reorder":       true,
 	"queue.vote":          true,
+	"history.readd":       true,
 	"now_playing.set":     true,
 	"now_playing.advance": true,
 	"playlist.import":     true,
@@ -426,6 +427,7 @@ var knownMethods = map[string]bool{
 	"now_playing.advance": true,
 	"queue.reorder":       true,
 	"queue.vote":          true,
+	"history.readd":       true,
 	"track.search":        true,
 	"track.depth":         true,
 	"track.lyrics":        true,
@@ -466,6 +468,7 @@ func metricMethod(method string) string {
 // allowed for members. queue.remove has one exception: the track's adder
 // (TrackRef.AddedByUserID) may remove it (B16), enforced in Authorize.
 var controlMethods = map[string]bool{
+	"history.readd":       true,
 	"now_playing.set":     true,
 	"now_playing.advance": true,
 	"queue.reorder":       true,
@@ -1210,6 +1213,12 @@ func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 		return nil, userErrorf("could not load the room, please retry")
 	}
 
+	// Rooms persisted before History existed kept played tracks in Queue;
+	// move them out so a vote or a reorder can never bring them back.
+	if state != nil && state.MigrateLegacy() && h.logger != nil {
+		h.logger.Info("room_history_migrated", "room_id", roomID, "history", len(state.History), "queue", len(state.Queue))
+	}
+
 	// If not found, create fresh
 	if state == nil {
 		if !create {
@@ -1738,6 +1747,35 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		}
 		if err == nil && h.spotifyMatcher != nil && req.Track.Sources.Spotify == nil {
 			h.launchTrackEnrich(req.RoomID, addedID, func() bool { return h.enrichSpotify(req.RoomID, addedID, req.Track) })
+		}
+		return res, err
+
+	case "history.readd":
+		var req struct {
+			RoomID  string `json:"roomId"`
+			TrackID string `json:"trackId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("history.readd: roomId required")
+		}
+		var added queue.TrackRef
+		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			if len(s.Queue) >= queue.MaxQueueSize {
+				return userErrorf("queue is full (max %d)", queue.MaxQueueSize)
+			}
+			tr, err := s.ReAddFromHistory(req.TrackID, h.displayName(clientID), userID)
+			if err != nil {
+				return mapQueueErr(err)
+			}
+			added = *tr
+			h.enrichBookkeeping(tr)
+			return nil
+		})
+		if err == nil && added.ID != "" {
+			h.relaunchEnrich(req.RoomID, added)
 		}
 		return res, err
 
@@ -2504,12 +2542,11 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 		}
 
 		// Detect if advance actually changed state and queue is now empty
-		if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" && len(s.Queue) > 0 {
-			// Queue ran dry; capture the last track as seed for refill.
-			// Copy the value: a pointer into s.Queue would race with
-			// concurrent queue mutations (Move rewrites elements, Add can
-			// reallocate) once refillRadio reads it after unlock.
-			seed := s.Queue[len(s.Queue)-1]
+		if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" && len(s.History) > 0 {
+			// Queue ran dry; seed from the track that just finished
+			// (History[0]). Copy the values: refillRadio reads the seed after
+			// unlock, when the state may have moved on.
+			seed := queue.TrackRef{Title: s.History[0].Title, Artist: s.History[0].Artist}
 			refillSeed = &seed
 		}
 

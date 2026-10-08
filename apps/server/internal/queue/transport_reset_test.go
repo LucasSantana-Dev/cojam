@@ -34,7 +34,7 @@ func TestTransportResetOnAdvance(t *testing.T) {
 	_ = rs.AdvanceAfter(rs.Queue[0].ID)
 	assertReset(t, rs, "playing")
 	rs.Transport = stale()
-	_ = rs.AdvanceAfter(rs.Queue[1].ID) // last: clears
+	_ = rs.AdvanceAfter(rs.Queue[0].ID) // last: clears
 	assertReset(t, rs, "playing")
 }
 
@@ -47,7 +47,7 @@ func TestTransportResetOnAddToEmpty(t *testing.T) {
 func TestTransportResetOnRadioRefillToEmpty(t *testing.T) {
 	rs := twoTracks()
 	_ = rs.AdvanceAfter(rs.Queue[0].ID)
-	_ = rs.AdvanceAfter(rs.Queue[1].ID) // empty
+	_ = rs.AdvanceAfter(rs.Queue[0].ID) // empty
 	rs.Transport = stale()
 	rs.Add(TrackRef{Title: "radio"}) // what the refill does
 	assertReset(t, rs, "playing")
