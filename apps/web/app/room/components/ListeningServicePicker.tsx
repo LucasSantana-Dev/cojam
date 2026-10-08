@@ -20,7 +20,8 @@ export interface ListeningServicePickerProps {
   onConnectSpotify: () => void;
   // Set when the chosen service cannot play the current track and another one is
   // playing instead.
-  fallback?: { wanted: Source; playing: Source | null } | null;
+  // reason: the account is not connected, or the track has no version there.
+  fallback?: { wanted: Source; playing: Source | null; reason: 'not-connected' | 'no-version' } | null;
 }
 
 export function ListeningServicePicker({
@@ -57,7 +58,8 @@ export function ListeningServicePicker({
                 key={o.id}
                 type="button"
                 className="r4-seg__btn"
-                aria-pressed={pressed}
+                // The connect action is not a toggle, so it carries no pressed state.
+                aria-pressed={o.connect ? undefined : pressed}
                 onClick={() => (o.connect ? onConnectSpotify() : onChange(o.id))}
               >
                 {Icon && <Icon size={16} />}
@@ -69,9 +71,9 @@ export function ListeningServicePicker({
       </div>
       {fallback && (
         <p className="r4-service__note" role="status">
-          {fallback.playing
-            ? `Esta faixa não tem versão no ${NAME[fallback.wanted]}, tocando no ${NAME[fallback.playing]}.`
-            : `Esta faixa não tem versão no ${NAME[fallback.wanted]}.`}
+          {fallback.reason === 'not-connected'
+            ? `${NAME[fallback.wanted]} não conectado${fallback.playing ? `, tocando no ${NAME[fallback.playing]}` : ''}.`
+            : `Esta faixa não tem versão no ${NAME[fallback.wanted]}${fallback.playing ? `, tocando no ${NAME[fallback.playing]}` : ''}.`}
         </p>
       )}
     </div>

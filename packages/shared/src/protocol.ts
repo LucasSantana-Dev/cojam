@@ -106,3 +106,12 @@ export type ChatDeletePub = {
   type: 'chat.delete';
   messageId: string;
 };
+
+// MemberPlatformPub: a member changed the service they listen through
+// (member.set_platform). Clients overlay it on the presence entry with this
+// clientId; not RoomState, no version guard.
+export type MemberPlatformPub = {
+  type: 'member.platform';
+  clientId: string;
+  platform: 'spotify' | 'apple' | 'youtube';
+};

@@ -6,7 +6,7 @@ import { computeNameSuffixes } from './nameSuffix';
 import { fetchConnectionToken, getLastTokenFetchError, getStoredProofToken, clearStoredIdentity } from './auth';
 import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
-import type { ChatDeletePub, ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
+import type { ChatDeletePub, ChatMessage, ChatMessagePub, MemberPlatformPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = {
   clientId: string;
@@ -79,8 +79,12 @@ function roomChatEnabled(): boolean {
   return resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomChat;
 }
 
-function derivePresence(connections: Member[]) {
-  const members = collapseMembers(connections);
+type Platform = 'spotify' | 'apple' | 'youtube';
+
+function derivePresence(connections: Member[], overrides: Record<string, Platform> = {}) {
+  // member.set_platform overrides win over the connect-time ConnInfo platform.
+  const withOverrides = connections.map((c) => (overrides[c.clientId] ? { ...c, platform: overrides[c.clientId] } : c));
+  const members = collapseMembers(withOverrides);
   return { members, nameSuffixes: computeNameSuffixes(members) };
 }
 
@@ -95,6 +99,8 @@ export interface AppStore {
   // Deduped by person (collapseMembers); `connections` is the raw per-client list.
   members: Member[];
   connections: Member[];
+  // clientId -> platform set through member.set_platform (overlay on presence).
+  platformOverrides: Record<string, Platform>;
   // Collision suffixes for duplicate display names (#170), recomputed on every
   // membership change so PresenceBar and the fused chip cannot disagree.
   nameSuffixes: Record<string, string>;
@@ -126,6 +132,8 @@ export interface AppStore {
   setClientId: (clientId: string) => void;
   setKicked: (kicked: boolean) => void;
   setMembers: (members: Member[]) => void;
+  setPlatformOverride: (clientId: string, platform: Platform) => void;
+  setPlatformOverrides: (overrides: Record<string, Platform>) => void;
   setConnectedServices: (services: string[]) => void;
   setSignedIn: (signedIn: boolean) => void;
   setRebindNotice: (notice: string | null) => void;
@@ -146,6 +154,7 @@ export const useStore = create<AppStore>((set) => ({
   clientId: '',
   members: [],
   connections: [],
+  platformOverrides: {},
   nameSuffixes: {},
   connectedServices: [],
   kicked: false,
@@ -161,9 +170,17 @@ export const useStore = create<AppStore>((set) => ({
   setReconnecting: (reconnecting) => set({ reconnecting }),
   setClientId: (clientId) => set({ clientId }),
   setKicked: (kicked) => set({ kicked }),
-  setMembers: (connections) => set({
+  setMembers: (connections) => set((s) => ({
     connections,
-    ...derivePresence(connections),
+    ...derivePresence(connections, s.platformOverrides),
+  })),
+  setPlatformOverride: (clientId, platform) => set((s) => {
+    const platformOverrides = { ...s.platformOverrides, [clientId]: platform };
+    return { platformOverrides, ...derivePresence(s.connections, platformOverrides) };
+  }),
+  setPlatformOverrides: (overrides) => set((s) => {
+    const platformOverrides = { ...s.platformOverrides, ...overrides };
+    return { platformOverrides, ...derivePresence(s.connections, platformOverrides) };
   }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
   setSignedIn: (signedIn) => set({ signedIn }),
@@ -182,11 +199,13 @@ export const useStore = create<AppStore>((set) => ({
   addMember: (m) => set((s) => {
     if (s.connections.some((x) => x.clientId === m.clientId)) return s;
     const connections = [...s.connections, m];
-    return { connections, ...derivePresence(connections) };
+    return { connections, ...derivePresence(connections, s.platformOverrides) };
   }),
   removeMember: (clientId) => set((s) => {
     const connections = s.connections.filter((x) => x.clientId !== clientId);
-    return { connections, ...derivePresence(connections) };
+    const platformOverrides = { ...s.platformOverrides };
+    delete platformOverrides[clientId];
+    return { connections, platformOverrides, ...derivePresence(connections, platformOverrides) };
   }),
   setChat: (messages) => set({ chat: messages }),
   // Chat has no version guard (it is not RoomState): dedupe by id so live
@@ -285,11 +304,14 @@ let centrifuge: Centrifuge | null = null;
 // instead of serving the stale pre-disconnect snapshot (B10).
 let activeRoom: { roomId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' | null } | null = null;
 
-// The connInfo this connection was opened with. Centrifugo fixes ConnInfo at
-// connect time, so changing the presence badge means reconnecting with new data.
-let currentConnInfo: ConnInfo | null = null;
-// A platform change that arrived before the initial room.join finished.
-let pendingPlatform: 'spotify' | 'apple' | 'youtube' | null | undefined;
+// The listening service this person wants shown ("Ouvir no"), per room, and the
+// one last sent on the current connection. ConnInfo is fixed per connection and
+// a reconnect would run the server's host handoff, so a change is sent with the
+// member.set_platform RPC instead. Held here until the join (and rebind) settle.
+let desiredPlatform: { roomId: string; platform: 'spotify' | 'apple' | 'youtube' } | null = null;
+let sentPlatform: string | null = null;
+// False until the join and the guest-to-account rebind settled.
+let platformReady = false;
 
 // joinRoom rejects if 'connected' never fires (unreachable server, rejected
 // token with retry loop): without this the join UI hung forever (B11).
@@ -331,7 +353,11 @@ export async function joinRoom(
 
   const connInfo: ConnInfo = { name };
   if (platform) connInfo.platform = platform;
-  currentConnInfo = connInfo;
+  // A fresh join is a new intent: nothing from a previous room carries over.
+  if (desiredPlatform && desiredPlatform.roomId !== roomId) desiredPlatform = null;
+  sentPlatform = null;
+  platformReady = false;
+  useStore.setState({ platformOverrides: {} });
 
   // A fresh joinRoom is a new room intent: clear the previous activeRoom so
   // the reconnect resync below cannot re-join (and adopt the state of) a
@@ -388,10 +414,13 @@ export async function joinRoom(
     // missed while disconnected. room.join is idempotent server-side.
     if (activeRoom) {
       const rejoin = activeRoom;
+      // A new connection is a new clientId with no platform override.
+      sentPlatform = null;
       centrifuge!.rpc('room.join', rejoin).then((res) => {
         if (res.data) {
           useStore.getState().setState(res.data as RoomState);
         }
+        applyDesiredPlatform(rejoin.roomId);
       }).catch(() => {
         /* stay on stale state; the next publication heals */
       });
@@ -432,7 +461,7 @@ export async function joinRoom(
   const sub = centrifuge.newSubscription(`room:${roomId}`);
 
   sub.on('publication', (ctx) => {
-    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub;
+    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub | MemberPlatformPub;
     if (pub.type === 'room.state') {
       store.setState(pub.state);
       // Rebind completion rule (#172): the proof token is discarded only when
@@ -448,6 +477,8 @@ export async function joinRoom(
     } else if (pub.type === 'chat.delete') {
       // Host tombstone (#181): every client drops the line by id.
       store.removeChatMessage(pub.messageId);
+    } else if (pub.type === 'member.platform') {
+      store.setPlatformOverride(pub.clientId, pub.platform);
     }
   });
 
@@ -464,6 +495,11 @@ export async function joinRoom(
         };
       });
       store.setMembers(members);
+      // Seed the platform overlay for people who changed it before we joined.
+      centrifuge?.rpc('member.platforms', { roomId }).then((r) => {
+        const map = (r.data as { platforms?: Record<string, Platform> } | null)?.platforms;
+        if (map) useStore.getState().setPlatformOverrides(map);
+      }).catch(() => { /* the overlay is cosmetic; presence ConnInfo still shows */ });
     }).catch(() => { /* presence unavailable — leave list empty */ });
   });
   sub.on('join', (ctx) => {
@@ -529,16 +565,18 @@ export async function joinRoom(
   // Mark the room active only after the initial join succeeded: the
   // 'connected' handler keys the reconnect resync off this.
   activeRoom = { roomId, name, platform };
-  if (pendingPlatform !== undefined) {
-    const wanted = pendingPlatform;
-    pendingPlatform = undefined;
-    updatePlatform(wanted);
-  }
 
   // Guest-to-account upgrade (#172): a signed-in member holding an unconsumed
   // guest proof token attempts the rebind on every room join. Fire-and-forget:
   // join succeeds and the room works whether or not the rebind lands.
-  attemptRebind(roomId).catch(() => { /* rebind is best-effort */ });
+  // The platform goes out only once the rebind settled: it acts on this
+  // connection's identity, which the rebind may have just changed.
+  attemptRebind(roomId)
+    .catch(() => { /* rebind is best-effort */ })
+    .finally(() => {
+      platformReady = true;
+      applyDesiredPlatform(roomId);
+    });
 
   // Seed chat history for late joiners (F8): the server ring holds the last
   // 50 messages, older ones are gone by design.
@@ -558,26 +596,31 @@ export async function joinRoom(
   return sub;
 }
 
-// updatePlatform keeps the presence badge equal to the service this person
-// listens through ("Ouvir no"). ConnInfo is set per connection, so a change
-// needs a fresh connect: setData() applies on the next connect, then a
-// disconnect/connect cycle. The existing 'connected' handler re-joins the room
-// (idempotent) to adopt the authoritative state, exactly like any reconnect, and
-// the subscription resumes on its own. No-op when not in a room or unchanged.
-export function updatePlatform(platform: 'spotify' | 'apple' | 'youtube' | null): void {
-  if (!centrifuge || !activeRoom || !currentConnInfo) {
-    // Join still in flight (or no room): apply once the join succeeds.
-    pendingPlatform = platform;
-    return;
-  }
-  if ((currentConnInfo.platform ?? null) === platform) return;
-  const next: ConnInfo = { name: currentConnInfo.name };
-  if (platform) next.platform = platform;
-  currentConnInfo = next;
-  activeRoom.platform = platform;
-  centrifuge.setData(next);
-  centrifuge.disconnect();
-  centrifuge.connect();
+// updatePlatform records the service this person listens through ("Ouvir no")
+// and tells the room with member.set_platform. It never reconnects (a reconnect
+// would run the host handoff). roomId guards against a stale call after SPA
+// navigation. Sent once the join settled and only while connected: a kicked or
+// terminally disconnected client never sends, and a reconnect re-sends it.
+export function updatePlatform(roomId: string, platform: 'spotify' | 'apple' | 'youtube'): void {
+  desiredPlatform = { roomId, platform };
+  applyDesiredPlatform(roomId);
+}
+
+function applyDesiredPlatform(roomId: string): void {
+  const want = desiredPlatform;
+  if (!want || want.roomId !== roomId) return;
+  if (!platformReady || !centrifuge || !activeRoom || activeRoom.roomId !== roomId) return;
+  const st = useStore.getState();
+  if (st.kicked || !st.connected) return;
+  if (sentPlatform === want.platform) return;
+  const conn = centrifuge;
+  sentPlatform = want.platform;
+  // Show it on our own entry right away; the room event confirms it.
+  if (st.clientId) st.setPlatformOverride(st.clientId, want.platform);
+  conn.rpc('member.set_platform', { roomId, platform: want.platform }).catch(() => {
+    // Not delivered: allow a later attempt (next change or reconnect).
+    if (sentPlatform === want.platform) sentPlatform = null;
+  });
 }
 
 // retryConnection (#187): recovery path after a terminal disconnect (e.g. a

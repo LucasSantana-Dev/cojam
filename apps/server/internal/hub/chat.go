@@ -46,6 +46,9 @@ var chatMethods = map[string]bool{
 	"chat.send":   true,
 	"chat.delete": true,
 	"room.kick":   true,
+	// A listening-service change republishes to the room: same per-caller
+	// budget as chat so it cannot be scripted into a flood.
+	"member.set_platform": true,
 }
 
 // ChatKindSystem marks a server-generated announcement (track change, member

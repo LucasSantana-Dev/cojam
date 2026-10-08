@@ -24,14 +24,20 @@ const AUTO_ORDER: readonly Source[] = ['spotify', 'apple', 'youtube'];
 // service can play the track; otherwise the auto order (an authorized
 // full-track service the track has a source for, then the YouTube embed)
 // applies and `fellBack` is true so the UI can say so.
+export type FallbackReason = 'not-connected' | 'no-version';
+
 export function resolveSource(
   track: TrackRef,
   opts: PickOptions,
-): { source: Source | null; fellBack: boolean } {
+): { source: Source | null; fellBack: boolean; reason: FallbackReason | null } {
   const pref = opts.preference ?? 'auto';
-  if (pref !== 'auto' && canPlay(track, pref, opts)) return { source: pref, fellBack: false };
+  if (pref !== 'auto' && canPlay(track, pref, opts)) return { source: pref, fellBack: false, reason: null };
   const source = AUTO_ORDER.find((s) => canPlay(track, s, opts)) ?? null;
-  return { source, fellBack: pref !== 'auto' };
+  if (pref === 'auto') return { source, fellBack: false, reason: null };
+  // Why the choice could not play: the account is not connected, or the track
+  // has no version on that service.
+  const notConnected = (pref === 'spotify' && !opts.spotifyAuthorized) || (pref === 'apple' && !opts.appleAuthorized);
+  return { source, fellBack: true, reason: notConnected ? 'not-connected' : 'no-version' };
 }
 
 export function pickSource(track: TrackRef, opts: PickOptions): Source | null {

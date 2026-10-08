@@ -51,7 +51,7 @@ describe('ListeningServicePicker', () => {
   it('offers to connect Spotify instead of selecting it', () => {
     const p = setup({ spotifyConnected: false });
     const btn = screen.getByRole('button', { name: 'Conectar Spotify' });
-    expect(btn).toHaveAttribute('aria-pressed', 'false');
+    expect(btn).not.toHaveAttribute('aria-pressed');
     fireEvent.click(btn);
     expect(p.onConnectSpotify).toHaveBeenCalled();
     expect(p.onChange).not.toHaveBeenCalled();
@@ -68,8 +68,13 @@ describe('ListeningServicePicker', () => {
   });
 
   it('says so when the chosen service fell back', () => {
-    setup({ preference: 'spotify', fallback: { wanted: 'spotify', playing: 'youtube' } });
+    setup({ preference: 'spotify', fallback: { wanted: 'spotify', playing: 'youtube', reason: 'no-version' } });
     expect(screen.getByRole('status')).toHaveTextContent('Esta faixa não tem versão no Spotify, tocando no YouTube.');
+  });
+
+  it('says the service is not connected when that is the cause', () => {
+    setup({ preference: 'spotify', spotifyConnected: false, fallback: { wanted: 'spotify', playing: 'youtube', reason: 'not-connected' } });
+    expect(screen.getByRole('status')).toHaveTextContent('Spotify não conectado, tocando no YouTube.');
   });
 
   it('has no note without a fallback', () => {

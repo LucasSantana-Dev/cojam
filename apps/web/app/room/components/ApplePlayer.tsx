@@ -153,6 +153,8 @@ export function ApplePlayer({
 }) {
   const musicRef = useRef<MusicKitInstance | null>(null);
   const adapterRef = useRef<ApplePlayerAdapter | null>(null);
+  // The song MusicKit was last told to queue.
+  const loadedSongRef = useRef<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'unconfigured' | 'ready' | 'error'>('idle');
   const f = useRuntimeFeatures();
   const state = useStore((s) => s.state);
@@ -211,22 +213,29 @@ export function ApplePlayer({
     if (!music || !authorized || !nowPlaying) return;
     const wanted = active ?? pickSource(nowPlaying, { appleAuthorized: authorized, spotifyAuthorized: false }) === 'apple';
     if (!wanted) return;
+    // Never start audio in a paused or stopped room; re-runs when it plays.
+    const ts = state?.transport?.state;
+    if (ts && ts !== 'playing') return;
     const songId = nowPlaying.sources.apple!.songId!;
+    if (loadedSongRef.current === songId) return;
+    loadedSongRef.current = songId;
     (async () => {
       try {
         await music.setQueue({ songs: [songId] });
         await music.play();
         onPlayErrorRef.current?.(null);
       } catch (e) {
+        loadedSongRef.current = null;
         console.error('Apple playback failed:', e);
         onPlayErrorRef.current?.(nowPlaying.id);
       }
     })();
-  }, [authorized, nowPlaying, active]);
+  }, [authorized, nowPlaying, active, state?.transport?.state]);
 
   // Switched to another service mid-track: stop MusicKit.
   useEffect(() => {
     if (active !== false) return;
+    loadedSongRef.current = null;
     adapterRef.current?.pause().catch(() => {});
   }, [active]);
 

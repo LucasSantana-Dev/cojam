@@ -113,6 +113,13 @@ class SpotifyPlayerAdapter implements IPlayer {
     void this.player.setVolume?.(level)?.catch?.(() => {});
   }
 
+  // Pause only this browser's SDK device. pause() goes through the Web API and
+  // pauses whatever device the account is playing on, which is wrong when the
+  // person just switched away from Spotify to listen elsewhere.
+  async pauseLocal(): Promise<void> {
+    await this.player.pause?.();
+  }
+
   async pause(): Promise<void> {
     const token = await getAccessToken();
     if (!token) return;
@@ -254,6 +261,10 @@ export function SpotifyPlayer({
     ? state.queue.find((t) => t.id === state.nowPlayingId)
     : undefined;
   const spotifyUri = nowPlaying?.sources.spotify?.trackUri;
+  // Re-runs the load effect when the room starts playing (a load skipped while paused).
+  const roomPlaying = state?.transport?.state === 'playing';
+  // The uri this SDK device was last told to load.
+  const loadedUriRef = useRef<string | null>(null);
   // Callbacks arrive as fresh inline arrows every render; keep them in refs so
   // the init effect identity stays stable. Otherwise the cleanup below ran on
   // every parent render, disposing the adapter right after ready.
@@ -349,6 +360,7 @@ export function SpotifyPlayer({
       // setStatus('ready') with an unchanged value is a React no-op and the
       // load effect below would never re-fire for the new device.
       deviceId.current = null;
+      loadedUriRef.current = null;
       setStatus('idle');
       if (playerRef.current) {
         playerRef.current.dispose();
@@ -374,21 +386,31 @@ export function SpotifyPlayer({
       : undefined;
     const wanted = active ?? (track ? pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) === 'spotify' : false);
     if (!track || !wanted) return;
+    // Never start audio in a paused or stopped room (a switch to Spotify there
+    // must stay silent); the effect re-runs when the room starts playing.
+    const ts = current?.transport?.state;
+    if (ts && ts !== 'playing') return;
+    // Load each uri on the device once: a pause/play cycle resumes through the
+    // drift-corrected transport instead of restarting the track.
+    if (loadedUriRef.current === spotifyUri) return;
+    loadedUriRef.current = spotifyUri;
     playerRef.current?.setExpected(spotifyUri);
     playUri(deviceId.current, spotifyUri)
       .then(() => onPlayErrorRef.current?.(null))
       .catch((e) => {
+        loadedUriRef.current = null;
         console.error('Spotify play failed:', e);
         onPlayErrorRef.current?.(track.id);
       });
-  }, [authorized, status, spotifyUri, active]);
+  }, [authorized, status, spotifyUri, active, roomPlaying]);
 
   // Switched to another service mid-track: stop the SDK. The new player takes
   // the synced position through the existing drift correction.
   useEffect(() => {
     if (active !== false || status !== 'ready') return;
+    loadedUriRef.current = null;
     playerRef.current?.setExpected(null);
-    playerRef.current?.pause().catch(() => {});
+    playerRef.current?.pauseLocal().catch(() => {});
   }, [active, status]);
 
   if (!clientId) return null;

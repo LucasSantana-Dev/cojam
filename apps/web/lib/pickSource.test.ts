@@ -99,25 +99,25 @@ describe('pickSource with a listening preference', () => {
     expect(pickSource(all, { ...both, preference: 'auto' })).toBe('spotify');
   });
   it.each(['spotify', 'apple', 'youtube'] as const)('an explicit %s choice wins when it can play', (p) => {
-    expect(resolveSource(all, { ...both, preference: p })).toEqual({ source: p, fellBack: false });
+    expect(resolveSource(all, { ...both, preference: p })).toEqual({ source: p, fellBack: false, reason: null });
   });
   it('youtube wins over a connected Spotify', () => {
     expect(pickSource(all, { ...both, preference: 'youtube' })).toBe('youtube');
   });
   it('falls back to the auto order and says so when the track lacks the chosen service', () => {
     const t = track({ youtube: { videoId: 'v1', confidence: 1 } });
-    expect(resolveSource(t, { ...both, preference: 'spotify' })).toEqual({ source: 'youtube', fellBack: true });
+    expect(resolveSource(t, { ...both, preference: 'spotify' })).toEqual({ source: 'youtube', fellBack: true, reason: 'no-version' });
   });
   it('falls back when the chosen service is not authorized', () => {
-    expect(resolveSource(all, { spotifyAuthorized: false, appleAuthorized: true, preference: 'spotify' })).toEqual({ source: 'apple', fellBack: true });
+    expect(resolveSource(all, { spotifyAuthorized: false, appleAuthorized: true, preference: 'spotify' })).toEqual({ source: 'apple', fellBack: true, reason: 'not-connected' });
   });
   it('returns null (still flagged as fallback) when nothing can play', () => {
     const t = track({ spotify: { trackUri: 'spotify:track:1', confidence: 1 } });
-    expect(resolveSource(t, { spotifyAuthorized: false, appleAuthorized: false, preference: 'spotify' })).toEqual({ source: null, fellBack: true });
+    expect(resolveSource(t, { spotifyAuthorized: false, appleAuthorized: false, preference: 'spotify' })).toEqual({ source: null, fellBack: true, reason: 'not-connected' });
     expect(isUnavailable(t, { spotifyAuthorized: false, appleAuthorized: false, preference: 'youtube' })).toBe(true);
   });
   it('auto never reports a fallback', () => {
-    expect(resolveSource(track({}), { ...both, preference: 'auto' })).toEqual({ source: null, fellBack: false });
+    expect(resolveSource(track({}), { ...both, preference: 'auto' })).toEqual({ source: null, fellBack: false, reason: null });
   });
 });
 

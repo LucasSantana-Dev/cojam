@@ -136,7 +136,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // can play this track; otherwise the auto order applies and fellBack says so.
   const preference = useListeningService();
   const pickOpts = { appleAuthorized, spotifyAuthorized, preference };
-  const resolved = nowPlaying ? resolveSource(nowPlaying, pickOpts) : { source: null, fellBack: false };
+  const resolved = nowPlaying ? resolveSource(nowPlaying, pickOpts) : { source: null, fellBack: false, reason: null };
   const activeSource = resolved.source;
   // The presence badge: the service this person listens through, track-independent.
   const platform = listeningPlatform(pickOpts);
@@ -145,11 +145,19 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // an actual change.
   // doJoin reads it through a ref so a late authorization never re-triggers the
   // auto-rejoin effect (that would join twice).
+  const activeSourceRef = useRef(activeSource);
+  useEffect(() => {
+    activeSourceRef.current = activeSource;
+  }, [activeSource]);
   const platformRef = useRef(platform);
   useEffect(() => {
     platformRef.current = platform;
-    updatePlatform(platform);
   }, [platform]);
+  // Tell the room which service we listen through. Sent after the join settles
+  // and again on a change; it never reconnects, so the host keeps the role.
+  useEffect(() => {
+    if (joined) updatePlatform(roomId, platform);
+  }, [joined, roomId, platform]);
   // isUnavailable() is exactly "pickSource() found nothing for this client"
   const trackUnavailable = Boolean(nowPlaying) && activeSource === null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
@@ -231,8 +239,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // before this effect) clears the old one. The new player then seeks to the
   // synced position through the drift correction below.
   useEffect(() => {
-    if (activeSource === 'spotify' && spotifyAdapterRef.current) setActivePlayer(spotifyAdapterRef.current);
-    else if (activeSource === 'apple' && appleAdapterRef.current) setActivePlayer(appleAdapterRef.current);
+    // A source whose player has not announced itself yet leaves no active
+    // player (null), never the previous service's one; it is set when it does.
+    if (activeSource === 'spotify') setActivePlayer(spotifyAdapterRef.current);
+    else if (activeSource === 'apple') setActivePlayer(appleAdapterRef.current);
+    else if (activeSource === 'youtube') {
+      // YouTube announces itself on mount; just drop a Spotify/Apple one.
+      setActivePlayer((p) => (p && (p === spotifyAdapterRef.current || p === appleAdapterRef.current) ? null : p));
+    }
   }, [activeSource]);
 
   // Local volume: applied to whichever player is active, and again whenever it
@@ -387,11 +401,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
               active={activeSource === 'spotify'}
               onPlayerReady={(player) => {
                 spotifyAdapterRef.current = player;
-                if (activeSource === 'spotify') setActivePlayer(player);
+                if (activeSourceRef.current === 'spotify') setActivePlayer(player);
               }}
               onPlayerGone={() => {
                 spotifyAdapterRef.current = null;
-                if (activeSource === 'spotify') setActivePlayer(null);
+                if (activeSourceRef.current === 'spotify') setActivePlayer(null);
               }}
               onPlayError={setPlayFailedId}
             />
@@ -403,11 +417,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
               active={activeSource === 'apple'}
               onPlayerReady={(player) => {
                 appleAdapterRef.current = player;
-                if (activeSource === 'apple') setActivePlayer(player);
+                if (activeSourceRef.current === 'apple') setActivePlayer(player);
               }}
               onPlayerGone={() => {
                 appleAdapterRef.current = null;
-                if (activeSource === 'apple') setActivePlayer(null);
+                if (activeSourceRef.current === 'apple') setActivePlayer(null);
               }}
               onPlayError={setPlayFailedId}
             />
@@ -442,7 +456,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       onConnectSpotify={() => {
         beginAuth(window.location.pathname).catch((e) => console.error('Spotify connect failed:', e));
       }}
-      fallback={nowPlaying && fallbackWanted ? { wanted: fallbackWanted, playing: activeSource } : null}
+      fallback={nowPlaying && fallbackWanted && resolved.reason ? { wanted: fallbackWanted, playing: activeSource, reason: resolved.reason } : null}
     />
   );
 
