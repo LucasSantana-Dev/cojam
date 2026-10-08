@@ -106,6 +106,15 @@ Question: on the vertical stage the pixel screen at an integer scale is 244x144 
 - On the wide stage the player is the pixel screen (393x222 at 1440). If a small window drops the screen under 200 px tall, the player grows the same way.
 - The e2e asserts at least 200x200 at 390x844 and 1440x900 with each panel open.
 
+### 10. The named audience faces the camera; arms up follow the outfit (decided 2026-10-08)
+
+Owner on part 2: "os personagens estão com braços gigantes, não dá pra ver o rosto deles". Two rounds of code-drawn arms were rejected ("retos como palitos, não segue a anatomia nem a roupa"); image-model frames were approved ("Ficou MUITO melhor").
+
+- The named front row uses the front sprites (plug.dj style), so faces show. Back sprites are only for someone turned round, which nothing does yet. The background silhouettes are unchanged.
+- Arms-up frames are `NN-up-front.png` and `NN-up-back.png`: 28x60, 4 px margin each side and 12 rows of headroom over the 20x48 sprite, bottom aligned. They split at row 41 (29 plus the headroom), so the legs half differs slightly where hems lift.
+- Name tags rise 6 native px while the arms are up.
+- This supersedes "seen from behind" in decision 1.
+
 ## Consequences
 
 ### Protocol
