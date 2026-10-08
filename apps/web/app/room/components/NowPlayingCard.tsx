@@ -1,49 +1,71 @@
 'use client';
 
-// "Tocando agora": the now-playing card of the room (#325, round 4). Cover with a
-// soft halo, kicker, big title, artist, who asked, progress and the transport,
-// and under it the service this client plays through plus the host and
-// enrichment tools. The card carries the one violet glow of the room.
-import type { ReactNode } from 'react';
+// "Tocando agora": the now-playing card of the room (#325, round 4), laid out as
+// in the approved mockup. Left: the cover with its halo and, under it, the
+// service icons (which are the "Ouvir no" picker) and the overflow menu. Right:
+// kicker, big title, artist, who asked, the progress bar and, under it, the
+// transport centred with the local volume at the right end. The unavailable,
+// failed and empty states keep this exact geometry: a cover placeholder and the
+// message in the text column, and the next button for whoever can control.
+// The card carries the one violet glow of the room.
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TrackRef } from '@cojam/shared';
-import { setRadio } from '@/lib/realtime';
+import { setRadio, nowPlayingAdvance } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
-import { platformIcon } from '@/app/components/icons';
+import { MoreVertIcon, MusicNoteIcon, SkipNextIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
 import { TransportUI } from './TransportUI';
 import { UnavailableTrack } from './UnavailableTrack';
 import { PlayFailedTrack } from './PlayFailedTrack';
 
-const SOURCE_NAME = { youtube: 'YouTube', spotify: 'Spotify', apple: 'Apple Music' } as const;
-
-// mm:ss for the shared room-age clock.
-function formatElapsed(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-// The service this client plays the track through: a monochrome white glyph and
-// the name, never the brand colour.
-function SourceLabel({ source }: { source: keyof typeof SOURCE_NAME }) {
-  const Icon = platformIcon[source];
-  return (
-    <span className="r4-source">
-      <Icon size={16} />
-      {SOURCE_NAME[source]}
-    </span>
-  );
-}
-
 function RadioSwitch({ roomId, on }: { roomId: string; on: boolean }) {
   return (
-    <label className="r4-radio" title="Toca músicas parecidas quando a fila acaba">
+    <label className="r4-menu__item r4-radio" title="Toca músicas parecidas quando a fila acaba">
       <input type="checkbox" checked={on} onChange={(e) => setRadio(roomId, e.target.checked)} className="sr-only" />
       <span>Rádio</span>
       <span className="r4-radio__track" data-on={on} aria-hidden="true">
         <span className="r4-radio__thumb" />
       </span>
     </label>
+  );
+}
+
+// The "⋮" under the cover: Detalhes, Letra, Mais and the radio switch. Stays
+// mounted while closed (hidden), so the radio checkbox keeps its state.
+function OverflowMenu({ children }: { children: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  return (
+    <div className="r4-now__more" ref={wrapRef}>
+      <button
+        type="button"
+        className="r4-iconbtn"
+        aria-label="Mais opções da faixa"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <MoreVertIcon size={22} />
+      </button>
+      <div className="r4-menu r4-menu--up" hidden={!open}>
+        {children(() => setOpen(false))}
+      </div>
+    </div>
   );
 }
 
@@ -63,17 +85,24 @@ interface NowPlayingCardProps {
   // Skip the current track. Given only to anyone with control (host, admin,
   // owner); the unavailable card shows it so nobody is stuck on a dead track.
   onNext?: () => void;
-  activeSource: keyof typeof SOURCE_NAME | null;
-  // The "Ouvir no" control; replaces the plain source label when given.
+  // The service icons ("Ouvir no"); rendered under the cover.
   servicePicker?: ReactNode;
+  // The "chosen service cannot play this" note, under the icons.
+  serviceNote?: ReactNode;
   // Local volume and mute; shown whether or not sync (transport) is on.
   volumeControl?: ReactNode;
   activePlayer: IPlayer | null;
-  roomAgeS: number | null;
   radioOn: boolean;
+  // false when the server cannot refill a radio queue: the switch is hidden.
+  radioAvailable?: boolean;
   onOpenDepth: () => void;
   onOpenLyrics: () => void;
   onOpenEnrichment: () => void;
+  // The YouTube player, when YouTube is the active source: it takes the cover
+  // slot (visible, square, nothing over it, as the YouTube API terms require).
+  media?: ReactNode;
+  // Pre-join preview: the same card, nothing to operate.
+  preview?: boolean;
 }
 
 export function NowPlayingCard({
@@ -88,119 +117,140 @@ export function NowPlayingCard({
   hostControl,
   hostLabel,
   onNext,
-  activeSource,
   servicePicker,
+  serviceNote,
   volumeControl,
   activePlayer,
-  roomAgeS,
   radioOn,
+  radioAvailable = true,
   onOpenDepth,
   onOpenLyrics,
   onOpenEnrichment,
+  media,
+  preview = false,
 }: NowPlayingCardProps) {
   const f = useRuntimeFeatures();
+  const ok = Boolean(track) && state === 'ok';
+  const showTransport = ok && f.sync;
+
+  const tools = (close: () => void) =>
+    preview
+      ? []
+      : [
+        ok && f.trackDepth && (
+          <button key="depth" type="button" onClick={() => { close(); onOpenDepth(); }} className="r4-menu__item" title="Ver detalhes da faixa no MusicBrainz">
+            Detalhes
+          </button>
+        ),
+        ok && f.lyrics && (
+          <button key="lyrics" type="button" onClick={() => { close(); onOpenLyrics(); }} className="r4-menu__item" title="Ver a letra desta faixa">
+            Letra
+          </button>
+        ),
+        ok && (f.listenBrainz || f.lastfmEnrich) && (
+          <button key="more" type="button" onClick={() => { close(); onOpenEnrichment(); }} className="r4-menu__item" title="Ver dados extras do ListenBrainz e do Last.fm">
+            Mais
+          </button>
+        ),
+        radioAvailable && <RadioSwitch key="radio" roomId={roomId} on={radioOn} />,
+      ].filter(Boolean);
+
+  const hasTools = tools(() => {}).length > 0;
+
+  // Same row as the transport, for the states that have none: next (controllers
+  // only) and the volume.
+  const fallbackRow = (
+    <div className="tp__row">
+      <span className="tp__side" aria-hidden="true" />
+      <div className="tp__ctrls">
+        {track && hostControl && !preview && (
+          <button
+            type="button"
+            className="tp__skip"
+            aria-label="Próxima"
+            title="Próxima faixa"
+            onClick={() => (onNext ? onNext() : nowPlayingAdvance(roomId, track.id).catch((err) => console.error('Skip error:', err)))}
+          >
+            <SkipNextIcon size={24} />
+          </button>
+        )}
+      </div>
+      <span className="tp__side tp__side--end">{preview ? null : volumeControl}</span>
+    </div>
+  );
 
   return (
-    <section className={`r4-card r4-now${track && isPlaying ? ' is-live' : ''}`} aria-label="Tocando agora">
-      {track && state === 'unavailable' ? (
-        <>
-          <UnavailableTrack />
-          <div className="r4-now__foot">
-            {servicePicker}
-            <span className="r4-now__tools">
-              {hostControl && onNext && (
-                <button type="button" onClick={onNext} className="btn-primary r4-next">
-                  Próxima
-                </button>
-              )}
-              <RadioSwitch roomId={roomId} on={radioOn} />
+    <section className={`r4-card r4-now${track && isPlaying ? ' is-live' : ''}`} aria-label="Tocando agora" data-state={track ? state : 'empty'}>
+      <div className="r4-now__grid">
+        <div className={`r4-cover${media && track ? ' r4-cover--media' : ''}`} aria-hidden={media && track ? undefined : true}>
+          {media && track ? (
+            <div className="r4-cover__media">{media}</div>
+          ) : track && artwork && coverLevel < 2 && state === 'ok' ? (
+            <>
+              {/* the cover's own soft halo: the same image, blurred behind it */}
+              {/* eslint-disable-next-line @next/next/no-img-element -- decorative copy of the cover */}
+              <img src={artwork} alt="" className="r4-cover__halo" />
+              {/* eslint-disable-next-line @next/next/no-img-element -- plain <img> keeps the cover loading from any host */}
+              <img
+                key={`${artwork}|${coverLevel}`}
+                src={artwork}
+                alt=""
+                className="r4-cover__img"
+                // load failed: fall back to the placeholder
+                onError={onCoverError}
+              />
+            </>
+          ) : (
+            <span className="r4-cover__fallback">
+              {track ? track.title.charAt(0).toUpperCase() : <MusicNoteIcon size={56} />}
             </span>
-          </div>
-        </>
-      ) : track && state === 'failed' ? (
-        <>
-          <PlayFailedTrack />
-          <div className="r4-now__foot">
-            {servicePicker}
-            <span className="r4-now__tools">
-              <RadioSwitch roomId={roomId} on={radioOn} />
-            </span>
-          </div>
-        </>
-      ) : track ? (
-        <>
-          <div className="r4-now__grid">
-            <div className="r4-cover" aria-hidden>
-              {artwork && coverLevel < 2 ? (
-                <>
-                  {/* the cover's own soft halo: the same image, blurred behind it */}
-                  {/* eslint-disable-next-line @next/next/no-img-element -- decorative copy of the cover */}
-                  <img src={artwork} alt="" className="r4-cover__halo" />
-                  {/* eslint-disable-next-line @next/next/no-img-element -- plain <img> keeps the cover loading from any host */}
-                  <img
-                    key={`${artwork}|${coverLevel}`}
-                    src={artwork}
-                    alt=""
-                    className="r4-cover__img"
-                    // load failed: fall back to the placeholder
-                    onError={onCoverError}
-                  />
-                </>
-              ) : (
-                <span className="r4-cover__fallback">{track.title.charAt(0).toUpperCase()}</span>
-              )}
-            </div>
-            <div className="r4-now__text">
+          )}
+        </div>
+
+        <div className="r4-now__info">
+          {track ? (
+            <>
               <p className="r4-kicker">
                 {isPlaying ? 'Tocando agora' : transportState === 'stopped' ? 'Parado' : 'Pausado'}
                 {hostLabel && <span className="host-chip">Anfitrião</span>}
               </p>
-              <div key={track.id} className="track-change-enter">
-                <h2 className="r4-now__title">{track.title}</h2>
-                <p className="r4-now__artist">{track.artist}</p>
-              </div>
-              <div className="r4-now__meta">
-                <span className="r4-chip">{track.addedBy} pediu</span>
-                {roomAgeS !== null && <span className="np-timer">na sala há {formatElapsed(roomAgeS)}</span>}
-              </div>
-              {f.sync && (
-                <div className="r4-now__transport">
-                  <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl} />
+              {state === 'unavailable' ? (
+                <UnavailableTrack />
+              ) : state === 'failed' ? (
+                <PlayFailedTrack />
+              ) : (
+                <div key={track.id} className="track-change-enter">
+                  <h2 className="r4-now__title">{track.title}</h2>
+                  <p className="r4-now__artist">{track.artist}</p>
                 </div>
               )}
-              {volumeControl}
+              {ok && (
+                <div className="r4-now__meta">
+                  <span className="r4-chip">{track.addedBy} pediu</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="hero-empty r4-now__empty">
+              <p className="r4-kicker">Tocando agora</p>
+              <p className="r4-now__title r4-now__title--empty">Nada tocando ainda</p>
+              <p className="r4-now__artist r4-now__artist--wrap">Adicione uma faixa para começar a sessão.</p>
             </div>
-          </div>
-          <div className="r4-now__foot">
-            {servicePicker ?? (activeSource && <SourceLabel source={activeSource} />)}
-            {servicePicker && activeSource && <SourceLabel source={activeSource} />}
-            <span className="r4-now__tools">
-              {f.trackDepth && (
-                <button type="button" onClick={onOpenDepth} className="r4-ghost" title="Ver detalhes da faixa no MusicBrainz">
-                  Detalhes
-                </button>
-              )}
-              {f.lyrics && (
-                <button type="button" onClick={onOpenLyrics} className="r4-ghost" title="Ver a letra desta faixa">
-                  Letra
-                </button>
-              )}
-              {(f.listenBrainz || f.lastfmEnrich) && (
-                <button type="button" onClick={onOpenEnrichment} className="r4-ghost" title="Ver dados extras do ListenBrainz e do Last.fm">
-                  Mais
-                </button>
-              )}
-              <RadioSwitch roomId={roomId} on={radioOn} />
-            </span>
-          </div>
-        </>
-      ) : (
-        <div className="hero-empty r4-now__empty">
-          <p className="r4-now__title r4-now__title--empty">Nada tocando ainda</p>
-          <p className="r4-now__artist">Adicione uma faixa para começar a sessão.</p>
-          <RadioSwitch roomId={roomId} on={radioOn} />
+          )}
         </div>
-      )}
+
+        {showTransport ? (
+          <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl && !preview} trailing={preview ? null : volumeControl} />
+        ) : (
+          fallbackRow
+        )}
+
+        <div className="r4-now__svc">
+          {servicePicker}
+          {hasTools && <OverflowMenu>{(close) => tools(close)}</OverflowMenu>}
+        </div>
+        {serviceNote && <div className="r4-now__note">{serviceNote}</div>}
+      </div>
     </section>
   );
 }

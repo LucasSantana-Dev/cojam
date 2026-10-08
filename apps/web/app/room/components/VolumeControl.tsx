@@ -2,6 +2,7 @@
 
 // Local volume and mute for whichever player is active. Not a transport
 // control: not gated by canControl or the sync flag, and never sent anywhere.
+// Compact: a mute button and a short slider, at the right end of the transport row.
 import { setVolume, useVolume } from '@/lib/volume';
 
 export function VolumeControl() {
@@ -26,18 +27,20 @@ export function VolumeControl() {
           )}
         </svg>
       </button>
-      <input
-        type="range"
-        className="r4-vol__range"
-        aria-label="Volume"
-        min={0}
-        max={100}
-        step={1}
-        value={Math.round(shown * 100)}
-        aria-valuetext={`${Math.round(shown * 100)}%`}
-        onChange={(e) => setVolume({ level: Number(e.target.value) / 100, muted: false })}
-        style={{ ['--pct' as string]: `${Math.round(shown * 100)}%` }}
-      />
+      <div className="r4-vol__pop">
+        <input
+          type="range"
+          className="r4-vol__range"
+          aria-label="Volume"
+          min={0}
+          max={100}
+          step={1}
+          value={Math.round(shown * 100)}
+          aria-valuetext={`${Math.round(shown * 100)}%`}
+          onChange={(e) => setVolume({ level: Number(e.target.value) / 100, muted: false })}
+          style={{ ['--pct' as string]: `${Math.round(shown * 100)}%` }}
+        />
+      </div>
     </div>
   );
 }

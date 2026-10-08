@@ -301,7 +301,7 @@ describe('QueuePanel voting (F4)', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Votar' }));
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('too many requests, slow down');
+    expect(alert).toHaveTextContent(/Muitas ações/);
     expect(useStore.getState().myVotes.t1).toBeUndefined();
     expect(within(row).getByRole('button', { name: 'Votar' })).toHaveAttribute('aria-pressed', 'false');
   });
@@ -330,9 +330,10 @@ describe('QueuePanel voting (F4)', () => {
     useStore.setState({ state: votingState({ t2: ['user:a', 'user:b'], t1: ['user:c'] }, 't2') });
     render(<QueuePanel roomId="r1" canControl />);
 
+    // The playing track is not listed again: one row left, and it is the pick.
     const rows = screen.getAllByTestId('queue-item');
+    expect(rows).toHaveLength(1);
     expect(within(rows[0]).getByTestId('listeners-pick')).toBeInTheDocument();
-    expect(within(rows[1]).queryByTestId('listeners-pick')).not.toBeInTheDocument();
   });
 
   it('counts only the upcoming tracks in the "A seguir" header and links to the add form', () => {
@@ -377,6 +378,34 @@ describe('QueuePanel voting (F4)', () => {
     const vote = within(row).getByRole('button', { name: 'Votar' });
     expect(vote).toHaveAttribute('title', 'Votaram: Bia, Caio, alguém');
     expect(vote).toHaveAccessibleDescription('Votaram: Bia, Caio, alguém');
-    expect(row.querySelector('.fq-stack')).toHaveTextContent('BC?');
+  });
+
+  it('does not list the now-playing track in the queue', () => {
+    useStore.setState({ state: votingState(undefined, 't1') });
+    render(<QueuePanel roomId="r1" canControl />);
+    const rows = screen.getAllByTestId('queue-item');
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).queryByText(/Tocando agora/)).toBeNull();
+  });
+
+  it('swaps the text line for a muted icon when the track has no version on this service', () => {
+    useStore.setState({ state: roomState([track('t1', 'A'), track('t2', 'B')]) });
+    render(<QueuePanel roomId="r1" canControl listeningOn="spotify" />);
+    const icons = screen.getAllByRole('img', { name: 'Sem versão no Spotify' });
+    expect(icons.length).toBeGreaterThan(0);
+    expect(icons[0]).toHaveAttribute('title', 'Sem versão no Spotify');
+    expect(screen.queryByText('Sem versão no Spotify')).toBeNull();
+  });
+
+  it('opens the inline add area at the top of the list and focuses its input', () => {
+    useStore.setState({ state: roomState([track('t1', 'A')]) });
+    const add = <input aria-label="Buscar uma música" />;
+    const { rerender } = render(<QueuePanel roomId="r1" canControl onAdd={() => {}} addOpen={false} addSlot={add} />);
+    const area = document.getElementById('r4-add-inline')!;
+    expect(area).toHaveAttribute('hidden');
+    rerender(<QueuePanel roomId="r1" canControl onAdd={() => {}} addOpen addSlot={add} />);
+    expect(area).not.toHaveAttribute('hidden');
+    expect(screen.getByLabelText('Buscar uma música')).toHaveFocus();
+    expect(screen.getByRole('button', { name: /Adicionar música/ })).toHaveAttribute('aria-expanded', 'true');
   });
 });

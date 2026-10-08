@@ -420,8 +420,8 @@ func TestChatSystem_AdvanceAnnouncesOnce(t *testing.T) {
 	if m.Kind != ChatKindSystem {
 		t.Fatalf("kind = %q, want %q", m.Kind, ChatKindSystem)
 	}
-	if m.Text != "Now playing: Song Two — B" {
-		t.Fatalf("text = %q, want %q", m.Text, "Now playing: Song Two — B")
+	if m.Text != "Tocando agora: Song Two, de B" {
+		t.Fatalf("text = %q, want %q", m.Text, "Tocando agora: Song Two, de B")
 	}
 	if m.Name != "" || m.UserID != "" {
 		t.Fatalf("system message must carry no member identity: name=%q userId=%q", m.Name, m.UserID)
@@ -478,7 +478,7 @@ func TestChatSystem_JoinLeaveAnnounces(t *testing.T) {
 	h.Leave("c-ghost") // never enrolled: must stay silent
 
 	msgs := chatHistoryKindsTexts(t, h, "jl")
-	want := []string{"Bia joined", "Someone joined", "Bia left"}
+	want := []string{"Bia entrou", "Alguém entrou", "Bia saiu"}
 	if len(msgs) != len(want) {
 		t.Fatalf("history len = %d, want %d: %+v", len(msgs), len(want), msgs)
 	}
@@ -501,7 +501,7 @@ func TestChatSystem_DisabledStaysSilent(t *testing.T) {
 	h.RecordClientName("c1", "Ana")
 	h.Join("c1", "off")
 	h.Leave("c1")
-	h.publishSystemChat("off", "Now playing: X — Y")
+	h.publishSystemChat("off", "Tocando agora: X, de Y")
 
 	room, err := h.GetOrCreateRoom("off")
 	if err != nil {

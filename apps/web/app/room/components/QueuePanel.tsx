@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import Image from 'next/image';
 import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage, isTrackNotFoundError } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
@@ -13,8 +13,8 @@ import {
   TrashIcon,
   MusicNoteIcon,
   PlusIcon,
+  BlockIcon,
 } from '@/app/components/icons';
-import { avatarGradient } from '@/lib/avatar';
 import { memberLabel } from '@/lib/nameSuffix';
 
 // queueArtwork resolves the row thumb: the stored artwork URL first (search
@@ -26,8 +26,6 @@ export function queueArtwork(track: TrackRef): string | null {
   const videoId = track.sources.youtube?.videoId;
   return videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null;
 }
-
-const VOTER_STACK_MAX = 3;
 
 function ThumbUp() {
   return (
@@ -42,12 +40,16 @@ interface QueuePanelProps {
   canControl: boolean;
   // The service this person listens through ("Ouvir no"); drives the "missing on your service" flag.
   listeningOn?: 'spotify' | 'apple' | 'youtube' | null;
-  // "+ Adicionar música" in the header: the room takes the viewer to the add
-  // form (the phone switches to its tab). Omitted, the link is not rendered.
+  // "+ Adicionar música" in the header toggles the inline add area at the top
+  // of the list (addSlot). Omitted, the link is not rendered.
   onAdd?: () => void;
+  addOpen?: boolean;
+  addSlot?: ReactNode;
+  // Shown instead of the plain empty text (the first-run guide).
+  emptySlot?: ReactNode;
 }
 
-export function QueuePanel({ roomId, canControl, onAdd, listeningOn }: QueuePanelProps) {
+export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot, emptySlot, listeningOn }: QueuePanelProps) {
   const state = useStore((s) => s.state);
   const queue = state?.queue ?? [];
   const nowPlayingId = state?.nowPlayingId;
@@ -71,17 +73,11 @@ export function QueuePanel({ roomId, canControl, onAdd, listeningOn }: QueuePane
   const nameSuffixes = useStore((s) => s.nameSuffixes);
   const myClientId = useStore((s) => s.clientId);
 
-  // Keep the now-playing row in view when it advances (Vibrdrome steal: the
-  // queue auto-scrolls to now playing). Guarded for jsdom (no scrollIntoView /
-  // matchMedia) and reduced-motion users (instant, not smooth).
+  // Opening the inline add area puts the cursor in its search field.
+  const addRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!nowPlayingId || !listRef.current) return;
-    const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(nowPlayingId) : nowPlayingId;
-    const el = listRef.current.querySelector(`[data-track-id="${escaped}"]`);
-    if (!el || typeof el.scrollIntoView !== 'function') return;
-    const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    el.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
-  }, [nowPlayingId]);
+    if (addOpen) addRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+  }, [addOpen]);
 
   // #179: a track that becomes now-playing during its undo window must not be
   // removed 4s later. Watch the store for now-playing transitions and cancel
@@ -231,10 +227,6 @@ export function QueuePanel({ roomId, canControl, onAdd, listeningOn }: QueuePane
     }
   };
 
-  const getInitial = (name: string): string => {
-    return name.charAt(0).toUpperCase();
-  };
-
   // Listeners' pick (F4): the queued track with the most votes, excluding now
   // playing. Pure render-side derivation: a reorder SUGGESTION only, the host
   // keeps full control of the actual order via queue.reorder.
@@ -283,12 +275,11 @@ export function QueuePanel({ roomId, canControl, onAdd, listeningOn }: QueuePane
     return null;
   };
 
-  const renderRow = (track: TrackRef, index: number, pinned: boolean) => {
+  const renderRow = (track: TrackRef, index: number) => {
     const requester = memberByName.get(track.addedBy);
     const requesterName = requester ? memberLabel(requester, nameSuffixes) : track.addedBy;
     const missing = missingOnMyService(track);
     const art = queueArtwork(track);
-    const isNow = track.id === nowPlayingId;
     const isRemoving = removingIds.has(track.id);
     const pendingTitle = 'Remoção pendente. Desfaça para restaurar';
     const voters = state?.votes?.[track.id] ?? [];
@@ -307,7 +298,7 @@ export function QueuePanel({ roomId, canControl, onAdd, listeningOn }: QueuePane
         data-track-id={track.id}
         data-more={moreOpenId === track.id}
         role="listitem"
-        className={`fq-row${isNow ? ' is-now' : ''}${pinned ? ' is-pinned' : ''}${isRemoving ? ' removing' : ''} group`}
+        className={`fq-row${isRemoving ? ' removing' : ''} group`}
       >
         <div className="fq-main">
           <div className="fq-art">
@@ -321,39 +312,20 @@ export function QueuePanel({ roomId, canControl, onAdd, listeningOn }: QueuePane
             <div data-testid="queue-title" className="fq-title">{track.title}</div>
             <div className="fq-artist">{track.artist}</div>
             <div className="fq-meta">
-              {isNow && <span className="fq-chip fq-chip--now">Tocando agora</span>}
               <span className="fq-chip" title={`Adicionada por ${requesterName}`}>
-                <i
-                  className="fq-chip__dot"
-                  aria-hidden="true"
-                  style={{ background: avatarGradient(requester ? requester.clientId || requester.name : track.addedBy) }}
-                />
                 {requesterName} pediu
               </span>
-              {voters.length > 0 && (
-                <span className="fq-stack" aria-hidden="true">
-                  {voters.slice(0, VOTER_STACK_MAX).map((key) => {
-                    const m = memberByVoteKey.get(key);
-                    return (
-                      <i key={key} className={m ? undefined : 'fq-stack__anon'} style={m ? { background: avatarGradient(m.clientId || m.name) } : undefined}>
-                        {m ? getInitial(m.name) : '?'}
-                      </i>
-                    );
-                  })}
-                  {count > VOTER_STACK_MAX && <i className="fq-stack__more">+{count - VOTER_STACK_MAX}</i>}
+              {track.id === listenersPickId && (
+                <span data-testid="listeners-pick" className="fq-pick" title="Mais votada pelos ouvintes">
+                  Escolha dos ouvintes
+                </span>
+              )}
+              {missing && (
+                <span className="fq-missing" role="img" aria-label={`Sem versão no ${missing}`} title={`Sem versão no ${missing}`}>
+                  <BlockIcon size={14} />
                 </span>
               )}
             </div>
-            {missing && (
-              <span className="fq-missing" role="img" aria-label={`Sem versão no ${missing}`} title={`Sem versão no ${missing}`}>
-                Sem versão no {missing}
-              </span>
-            )}
-            {track.id === listenersPickId && (
-              <span data-testid="listeners-pick" className="fq-pick" title="Mais votada pelos ouvintes">
-                Escolha dos ouvintes
-              </span>
-            )}
           </div>
           {queueVotingEnabled && (
             <div className="fq-votecol" data-voted={voted}>
@@ -433,22 +405,19 @@ export function QueuePanel({ roomId, canControl, onAdd, listeningOn }: QueuePane
     );
   };
 
-  // The current track is pinned on top with CSS `order`, so the DOM keeps the
-  // real queue order (reorder buttons, tab order and tests agree with it).
-  const hasNow = queue.some((t) => t.id === nowPlayingId);
-  const upcoming = queue.length - (hasNow ? 1 : 0);
+  // The playing track lives in the now-playing card, not in this list. Rows keep
+  // their real queue index so the reorder buttons move the right track.
+  const upcoming = queue.filter((t) => t.id !== nowPlayingId);
 
   return (
-    // Not sticky itself: the side column (client.tsx) already pins the whole
-    // rail. A second sticky here slid this panel over the Activity rail, which
-    // shares its parent, whenever the page scrolled.
+    // Not sticky itself: the side column (client.tsx) already pins the whole rail.
     <div data-testid="queue-panel" className="panel fq r4-card">
       <header className="r4-qhead">
         <h3 className="r4-h2">
-          A seguir <span className="r4-h2__n">({upcoming})</span>
+          A seguir <span className="r4-h2__n">({upcoming.length})</span>
         </h3>
         {onAdd && (
-          <button type="button" onClick={onAdd} className="r4-link">
+          <button type="button" onClick={onAdd} className="r4-link" aria-expanded={addOpen} aria-controls="r4-add-inline">
             <PlusIcon size={16} />
             Adicionar música
           </button>
@@ -461,27 +430,32 @@ export function QueuePanel({ roomId, canControl, onAdd, listeningOn }: QueuePane
         </p>
       )}
 
-      {queue.length === 0 ? (
-        <div className="py-8 text-center">
-          <div className="flex justify-center mb-2" style={{ color: 'var(--color-text-muted)' }}>
-            <MusicNoteIcon size={28} />
+      <div className="fq-list">
+        {addSlot && (
+          <div id="r4-add-inline" ref={addRef} className="r4-addinline" hidden={!addOpen}>
+            {addSlot}
           </div>
-          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            A fila está vazia
-          </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-            Adicione uma faixa para começar
-          </p>
-        </div>
-      ) : (
-        <div className="fq-list">
-          {/* display:contents on the list keeps the pinned row first in the flex
-              order while the DOM keeps the real queue order. */}
+        )}
+        {upcoming.length === 0 ? (
+          emptySlot ?? (
+            <div className="fq-empty">
+              <div className="flex justify-center mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                <MusicNoteIcon size={28} />
+              </div>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                A fila está vazia
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                Adicione uma faixa para começar
+              </p>
+            </div>
+          )
+        ) : (
           <div ref={listRef} role="list" aria-label="Faixas na fila" className="fq-items">
-            {queue.map((t, i) => renderRow(t, i, hasNow && t.id === nowPlayingId))}
+            {queue.map((t, i) => (t.id === nowPlayingId ? null : renderRow(t, i)))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

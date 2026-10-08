@@ -673,7 +673,7 @@ func (h *Hub) Join(clientID, roomID string) {
 		h.observeFirstShared(roomID)
 	}
 	if !alreadyMember {
-		h.announceMembership(roomID, h.displayName(clientID), "joined")
+		h.announceMembership(roomID, h.displayName(clientID), "entrou")
 	}
 	// A room reloaded from the store may already be playing video.
 	h.reconcileHeartbeat(roomID)
@@ -722,7 +722,7 @@ func (h *Hub) Leave(clientID string) {
 	if len(rooms) > 0 {
 		name := h.displayName(clientID)
 		for _, roomID := range rooms {
-			h.announceMembership(roomID, name, "left")
+			h.announceMembership(roomID, name, "saiu")
 		}
 	}
 }
@@ -2163,7 +2163,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		var req struct {
 			RoomID     string `json:"roomId"`
 			TrackID    string `json:"trackId,omitempty"`
-			PositionMs int64  `json:"positionMs"`
+			PositionMs *int64 `json:"positionMs"`
 		}
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
@@ -2171,18 +2171,30 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("transport.play: roomId required")
 		}
-		if req.PositionMs < 0 {
-			req.PositionMs = 0
-		}
 		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			if req.TrackID != "" {
 				if err := s.SetNowPlaying(req.TrackID); err != nil {
 					return err
 				}
 			}
+			// A missing positionMs means "resume": keep the paused position
+			// (or the live one if already playing) unless a new track starts.
+			var pos int64
+			switch {
+			case req.PositionMs != nil:
+				pos = *req.PositionMs
+			case req.TrackID == "" && s.Transport != nil:
+				pos = s.Transport.PositionMs
+				if s.Transport.State == "playing" {
+					pos += time.Now().UnixMilli() - s.Transport.UpdatedAtServerMs
+				}
+			}
+			if pos < 0 {
+				pos = 0
+			}
 			s.Transport = &queue.TransportState{
 				State:             "playing",
-				PositionMs:        req.PositionMs,
+				PositionMs:        pos,
 				UpdatedAtServerMs: time.Now().UnixMilli(),
 			}
 			s.Version++
@@ -2566,7 +2578,7 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 	// The system message rides chat, not RoomState: no Version bump, no
 	// store.Save beyond the advance's own write-through (#205).
 	if err == nil && announced != nil {
-		h.publishSystemChat(roomID, fmt.Sprintf("Now playing: %s — %s", announced.Title, announced.Artist))
+		h.publishSystemChat(roomID, fmt.Sprintf("Tocando agora: %s, de %s", announced.Title, announced.Artist))
 	}
 
 	return res, err

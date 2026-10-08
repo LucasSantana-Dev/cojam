@@ -246,7 +246,7 @@ func (h *Hub) publishSystemChat(roomID, text string) {
 // (RecordClientName), the same server-owned identity stamped on queue.add.
 func (h *Hub) announceMembership(roomID, name, verb string) {
 	if name == "" {
-		name = "Someone"
+		name = "Alguém"
 	}
 	h.publishSystemChat(roomID, fmt.Sprintf("%s %s", name, verb))
 }

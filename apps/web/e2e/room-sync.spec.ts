@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { proxyConnectionToken } from './connectionTokenProxy';
+import { openAdd } from './helpers';
 
 // Regression for the tracer-bullet demo: two users in one room, queue syncs
 // live in both directions via centrifuge publications.
@@ -16,11 +17,7 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 async function addTrack(page: Page, title: string, artist: string, videoId?: string) {
-  // Open the "Adicionar manualmente" details element using JavaScript to ensure it opens
-  await page.evaluate(() => {
-    const details = document.querySelector('details');
-    if (details) details.open = true;
-  });
+  await openAdd(page);
   await page.getByPlaceholder('Título').fill(title);
   await page.getByPlaceholder('Artista').fill(artist);
   if (videoId) {
@@ -29,7 +26,8 @@ async function addTrack(page: Page, title: string, artist: string, videoId?: str
   await page.getByRole('button', { name: 'Adicionar à fila' }).click();
   // Wait for the add to land (queue shows the title) before returning, so a
   // subsequent add doesn't race this submit's field-reset and lose its input.
-  await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
+  // The first add becomes the now-playing track, which is not repeated in the queue list.
+  await expect(page.locator('[data-testid="queue-title"], .r4-now__title').filter({ hasText: title }).first()).toBeVisible();
 }
 
 test('two users see each other\'s queue additions live', async ({ browser }) => {
@@ -44,9 +42,9 @@ test('two users see each other\'s queue additions live', async ({ browser }) => 
   // Lucas adds — Ana receives via publication (no reload)
   await addTrack(lucas, 'Me at the zoo', 'jawed', 'jNQXAC9IVRw');
   await expect(lucas.getByText('Me at the zoo').first()).toBeVisible();
-  // Ana receives Lucas's add in her queue. Scope to queue rows: the now-playing
-  // hero also shows the title/artist, so an unscoped text match is ambiguous.
-  await expect(ana.getByTestId('queue-title').filter({ hasText: 'Me at the zoo' })).toBeVisible();
+  // Ana receives Lucas's add: the first add is now playing, so it shows in the
+  // now-playing card (the queue list does not repeat it).
+  await expect(ana.locator('.r4-now__title').filter({ hasText: 'Me at the zoo' })).toBeVisible();
 
   // Ana adds, Lucas receives (bidirectional)
   await addTrack(ana, 'Second Song', 'Someone');
@@ -59,7 +57,7 @@ test('two users see each other\'s queue additions live', async ({ browser }) => 
 
   // Remove propagates. With room auth on, removal is host-gated: the host
   // (Lucas, first joiner) removes and Ana sees the track disappear.
-  await lucas.getByRole('button', { name: 'Remover', exact: true }).nth(1).click();
+  await lucas.getByRole('button', { name: 'Remover', exact: true }).first().click();
   // Scope to queue rows: the activity rail keeps a historical "added Second
   // Song" entry after removal, so an unscoped text match never disappears.
   await expect(ana.getByTestId('queue-title').filter({ hasText: 'Second Song' })).not.toBeVisible();

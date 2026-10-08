@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, getClockOffsetMs, updatePlatform, isPermissionDeniedError } from '@/lib/realtime';
+import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, updatePlatform, isPermissionDeniedError } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
-import { avatarGradient } from '@/lib/avatar';
 import { NAME_KEY } from '@/lib/guestName';
 
 // The chosen name is persisted for the session (lib/guestName) so a full-page
@@ -25,13 +24,13 @@ import { YouTubePlayer } from '../components/YouTubePlayer';
 import { ApplePlayer } from '../components/ApplePlayer';
 import { SpotifyPlayer } from '../components/SpotifyPlayer';
 import { QueuePanel } from '../components/QueuePanel';
-import { ActivityRail } from '../components/ActivityRail';
 import { ChatPanel } from '../components/ChatPanel';
 import { AddTrackForm } from '../components/AddTrackForm';
 import { ListenersStage } from '../components/ListenersStage';
 import { ShareRoomButton } from '../components/ShareRoomButton';
 import { ReportRoomButton } from '../components/ReportRoomButton';
 import { PublicRoomToggle } from '../components/PublicRoomToggle';
+import { AvatarMenu } from '../components/AvatarMenu';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
@@ -43,15 +42,17 @@ import { ListeningServicePicker } from '../components/ListeningServicePicker';
 import { Stage } from '../components/Stage';
 import { LogoMark } from '@/app/components/Logo';
 import type { IPlayer } from '@/lib/playerInterface';
-import { useTrackColors } from '@/lib/useTrackColor';
-import { tintStyle, groundPair } from '@/lib/trackColor';
 import { queueArtwork } from '../components/QueuePanel';
 import { useMotion } from '@/lib/motionFlags';
 import { useCoverFlight } from '@/lib/useCoverFlight';
-import { GroundStack } from '@/app/components/GroundStack';
 import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
+import { ServiceBadge } from '@/app/components/ServiceBadge';
+import { serviceOptions, ServiceFallbackNote } from '../components/ListeningServicePicker';
+import { fixtureKind, applyRoomFixture, fixturePlayer } from '@/lib/devFixture';
 
-type VideoPanelTab = 'playing' | 'queue' | 'chat' | 'add';
+type VideoPanelTab = 'playing' | 'queue' | 'chat';
+// One side drawer at a time: opening one closes the other.
+type Drawer = 'depth' | 'lyrics' | 'enrichment' | null;
 
 // The host-set room label, trimmed. A module-level helper: calling .trim() on a
 // store-derived value inside the component makes the React Compiler treat the
@@ -66,9 +67,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [loading, setLoading] = useState(false);
   const [joinError, setJoinError] = useState('');
   const [appleAuthorized, setAppleAuthorized] = useState(false);
+  // Dev fixture only (lib/devFixture): no SDK or iframe is mounted, the room is seeded.
+  const [fixture, setFixture] = useState(false);
+  // ?yt=1 with the fixture: a stand-in for the YouTube player in the cover slot.
+  const [fixtureYt, setFixtureYt] = useState(false);
   const [spotifyAuthorized, setSpotifyAuthorized] = useState(false);
-  const [trackDepthOpen, setTrackDepthOpen] = useState(false);
-  const [lyricsOpen, setLyricsOpen] = useState(false);
+  const [drawer, setDrawer] = useState<Drawer>(null);
+  // "+ Adicionar música" opens the search inline at the top of the queue.
+  const [addOpen, setAddOpen] = useState(false);
   const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
   // The Spotify and Apple adapters outlive a switch to another service: keep
   // them so switching back hands drift correction the right player again.
@@ -78,7 +84,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // provider failed to play, reported by the player adapters. Local-only;
   // never touches transport state or other members.
   const [playFailedId, setPlayFailedId] = useState<string | null>(null);
-  const [enrichmentOpen, setEnrichmentOpen] = useState(false);
   // Video rooms below 768px: which panel the tab bar shows under the pinned
   // stage. Ignored at md and up, where every panel is visible.
   const [panelTab, setPanelTab] = useState<VideoPanelTab>('playing');
@@ -161,30 +166,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const trackUnavailable = Boolean(nowPlaying) && activeSource === null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
 
-  // The cover of the playing track. Its colours only tint the pre-join ground
-  // (idle violet while no room state exists); once joined nothing reads them, so
-  // the extraction is skipped.
   const artwork = nowPlaying ? queueArtwork(nowPlaying) : null;
-  const { tint, palette } = useTrackColors(joined ? null : artwork);
   const [coverFail, setCoverFail] = useState<{ url: string | null; level: number }>({ url: null, level: 0 });
   const coverLevel = coverFail.url === artwork ? coverFail.level : 0;
   const motion = useMotion();
   useCoverFlight(nowPlaying?.id, motion.flip);
-
-  // Shared room-age clock: RoomState.createdAt is server-stamped, so every
-  // client shows the same age once the measured sync.ping offset is applied.
-  // Rooms created before timestamps existed carry no createdAt; stay silent
-  // rather than show a fake time (honest-data lock).
-  const createdAt = store.state?.createdAt;
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    if (!joined || !createdAt) return;
-    const id = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [joined, createdAt]);
-  const roomAgeS = createdAt
-    ? Math.max(0, Math.floor((nowMs + getClockOffsetMs() - createdAt) / 1000))
-    : null;
 
   // U5: compute room control permission for this user
   const myUserId = useMyUserId();
@@ -234,6 +220,25 @@ export function RoomClient({ roomId }: { roomId: string }) {
     if (name) doJoin(name);
   };
 
+  // Dev-only deterministic room for visual review (lib/devFixture, never in a
+  // production build): ?fixture=room joins a seeded room, ?fixture=join seeds
+  // the state behind the pre-join screen.
+  useEffect(() => {
+    const kind = fixtureKind();
+    if (!kind) return;
+    applyRoomFixture(kind);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot dev fixture seed on mount
+    setFixture(true);
+    setFixtureYt(new URLSearchParams(window.location.search).get('yt') === '1');
+    setSpotifyAuthorized(true);
+    setAppleAuthorized(true);
+    spotifyAdapterRef.current = fixturePlayer;
+    if (kind === 'room') {
+      setJoined(true);
+      setActivePlayer(fixturePlayer);
+    }
+  }, []);
+
   // Auto-rejoin after a full-page nav (e.g. Spotify OAuth) using the saved name.
   useEffect(() => {
     if (joined) return;
@@ -257,6 +262,28 @@ export function RoomClient({ roomId }: { roomId: string }) {
       setActivePlayer((p) => (p && (p === spotifyAdapterRef.current || p === appleAdapterRef.current) ? null : p));
     }
   }, [activeSource]);
+
+  // Below 1024px the drawers are bottom sheets. While one is open, measure where
+  // the player (the cover slot, or the video stage) ends and hand it to the CSS,
+  // so the sheet starts below it and never covers the player.
+  useEffect(() => {
+    if (!drawer) return;
+    const root = document.documentElement;
+    const measure = () => {
+      const el = document.getElementById('youtube-player');
+      const holder = el?.closest<HTMLElement>('.stage, .r4-cover') ?? el;
+      const bottom = holder ? Math.max(0, Math.ceil(holder.getBoundingClientRect().bottom)) : 0;
+      root.style.setProperty('--r4-player-bottom', bottom > 0 ? `${bottom + 8}px` : '0px');
+    };
+    measure();
+    window.addEventListener('scroll', measure, { passive: true });
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure);
+      window.removeEventListener('resize', measure);
+      root.style.removeProperty('--r4-player-bottom');
+    };
+  }, [drawer]);
 
   // Local volume: applied to whichever player is active, and again whenever it
   // changes (mount, "Ouvir no" switch), so a new player never starts at its own
@@ -285,80 +312,142 @@ export function RoomClient({ roomId }: { roomId: string }) {
     });
   }, [activePlayer, roomId]);
 
+  // Everything below needs the room's own tree; hooks all ran above.
+  const roomName = cleanLabel(store.state?.name);
+  const listeners = store.members.length;
+  const radioOn = store.state?.radioEnabled ?? false;
+  const radioAvailable = store.state?.radioAvailable !== false;
+  const fallbackWanted = preference !== 'auto' && resolved.fellBack ? preference : null;
+  const connectSpotify = () => {
+    beginAuth(window.location.pathname).catch((e) => console.error('Spotify connect failed:', e));
+  };
+
   if (!joined) {
-    // Pre-join screen on the same ground component as the room (#325). Before
-    // joining the client holds no room state (the room channel is only
-    // subscribed by joinRoom), so this is the idle ground: no cover, no member
-    // list.
-    const initial = (nameInput.trim() || 'G').charAt(0).toUpperCase();
+    // Pre-join screen in the room's language (approved mockup "r4-coer-4"): the
+    // room preview on the left when the client already holds the room's state,
+    // the join panel on the right. Before joining the client usually holds no
+    // room state (the channel is only subscribed by joinRoom), and then the
+    // panel stands alone.
+    const hasPreview = Boolean(store.state) && store.members.length > 0;
+    const joinOptions = [
+      f.spotify && { id: 'spotify' as const, label: 'Spotify' },
+      f.apple && { id: 'apple' as const, label: 'Apple Music' },
+      f.youtube && { id: 'youtube' as const, label: 'YouTube' },
+    ].filter((o): o is { id: 'spotify' | 'apple' | 'youtube'; label: string } => Boolean(o));
+    const chosen = preference === 'auto' ? null : preference;
     return (
-      <div
-        className="room join-room min-h-screen"
-        data-tint="room"
-        data-bg="sintonia"
-        data-has-track="false"
-        style={{ color: 'var(--color-text-primary)', ...tintStyle(tint) }}
-      >
-        <GroundStack spec={{ palette: groundPair(tint, palette) }} animate={motion.ground} originSelector={motion.flip ? '.r4-cover' : undefined} />
-        <main id="main" className="join-main">
-          <form onSubmit={handleJoin} className="join-form panel">
-            <div className="join-brand">
-              <LogoMark size={20} /> CoJam
-            </div>
-
-            {/* One H1: the framing sentence plus the room code, which stays visible. */}
-            <h1 className="join-title">
-              <span className="join-eyebrow">Você vai entrar na sala</span>
-              <span className="join-code" data-testid="join-room-code">{roomId}</span>
-            </h1>
-            <p className="join-tagline">Ouçam juntos, entre serviços</p>
-
-            {/* The wave, flat: nobody is here yet to link to. The visitor's own
-                avatar sits at the end, waiting until they join. */}
-            <div className="join-wave" role="group" aria-label="Você, esperando para entrar">
-              <svg className="join-wave__line" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 4">
-                <path d="M0 2 H100" fill="none" stroke="oklch(1 0 0)" strokeWidth="1.6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-              </svg>
-              <span className="lw-av join-wave__av" style={{ background: avatarGradient(nameInput.trim() || 'guest') }}>
-                {initial}
+      <div className="room r4 r4-joinroom" data-room="r4" data-view="join" style={{ color: 'var(--color-text-primary)' }}>
+        <header className="room-header r4-header">
+          <div className="r4-header__inner">
+            <div className="r4-brand">
+              <span className="r4-brand__logo">
+                <LogoMark size={48} />
+                <span className="r4-brand__word">CoJam</span>
               </span>
-              <span className="join-wave__wait">esperando</span>
+              <span className="r4-divider" aria-hidden="true" />
+              {/* One H1: the framing sentence plus the room (its name, else its code). */}
+              <h1 className="r4-title__name r4-title__name--join">
+                <span className="join-eyebrow">{roomName ? 'Você vai entrar na ' : 'Você vai entrar na sala '}</span>
+                <span className="join-code" data-testid="join-room-code">{roomName || roomId}</span>
+              </h1>
+              {hasPreview && nowPlaying && isPlaying && (
+                <span className="r4-live">
+                  <span className="r4-live__dot" aria-hidden="true" />
+                  AO VIVO
+                </span>
+              )}
+              {hasPreview && listeners > 0 && (
+                <span className="r4-count">{listeners === 1 ? '1 ouvindo' : `${listeners} ouvindo junto`}</span>
+              )}
             </div>
+          </div>
+        </header>
 
-            <input
-              type="text"
-              placeholder="Seu nome"
-              aria-label="Seu nome"
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              className="join-input focus-ring-grow"
-              autoComplete="nickname"
-              autoFocus
-            />
+        <main id="main" className="room-main r4-main">
+          <div className={`r4-joingrid${hasPreview ? ' has-preview' : ''}`}>
+            {hasPreview && (
+              <div className="r4-stage r4-stack" data-testid="join-preview">
+                <NowPlayingCard
+                  roomId={roomId}
+                  track={nowPlaying}
+                  state="ok"
+                  artwork={artwork}
+                  coverLevel={coverLevel}
+                  onCoverError={() => setCoverFail({ url: artwork, level: coverLevel + 1 })}
+                  isPlaying={isPlaying}
+                  transportState={transportState}
+                  hostControl={false}
+                  hostLabel={false}
+                  activePlayer={null}
+                  radioOn={false}
+                  onOpenDepth={() => {}}
+                  onOpenLyrics={() => {}}
+                  onOpenEnrichment={() => {}}
+                  preview
+                />
+                <ListenersStage roomId={roomId} running={isPlaying} hostUserId={store.state?.hostUserId} readOnly />
+              </div>
+            )}
 
-            <button type="submit" disabled={loading || !nameInput.trim()} className="btn-primary join-submit">
-              <span className="join-label-crossfade">
+            <form onSubmit={handleJoin} className="r4-card r4-joinpanel">
+              <h2 className="r4-join__title">Entrar na sala</h2>
+              <p className="r4-join__sub">Ouçam juntos, entre serviços</p>
+
+              <label htmlFor="join-name" className="r4-join__label">Seu nome</label>
+              <input
+                id="join-name"
+                type="text"
+                placeholder="Seu nome"
+                aria-label="Seu nome"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                className="r4-join__input"
+                autoComplete="nickname"
+                autoFocus
+              />
+
+              {joinOptions.length > 1 && (
+                <>
+                  <p className="r4-join__label" id="join-where">Onde você ouve?</p>
+                  <div className="r4-join__svc" role="group" aria-labelledby="join-where">
+                    {joinOptions.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        className="r4-join__svcbtn"
+                        aria-pressed={chosen === o.id}
+                        onClick={() => setListeningService(o.id)}
+                      >
+                        <ServiceBadge source={o.id} size="md" title="" />
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <button type="submit" disabled={loading || !nameInput.trim()} className="r4-join__submit">
                 {loading ? 'Entrando...' : 'Entrar na sala'}
-              </span>
-            </button>
+              </button>
 
-            {/* Guest-identity signal (#167): guests' identity lives in this
-                browser's localStorage only. Hidden from signed-in members and
-                when accounts are not deployed (no remedy to point at). */}
-            {accountsEnabled && !store.signedIn && (
-              <p className="join-note">
-                Sua identidade fica guardada neste navegador. Entre na sua conta antes de sair
-                da sala para manter seu papel em outros dispositivos.
-              </p>
-            )}
+              {/* Guest-identity signal (#167): guests' identity lives in this
+                  browser's localStorage only. Hidden from signed-in members and
+                  when accounts are not deployed (no remedy to point at). */}
+              {accountsEnabled && !store.signedIn && (
+                <p className="join-note">
+                  Sua identidade fica guardada neste navegador. Entre na sua conta antes de sair
+                  da sala para manter seu papel em outros dispositivos.
+                </p>
+              )}
 
-            {/* Error state */}
-            {joinError && (
-              <p className="join-error" role="alert">
-                {joinError}
-              </p>
-            )}
-          </form>
+              {/* Error state */}
+              {joinError && (
+                <p className="join-error" role="alert">
+                  {joinError}
+                </p>
+              )}
+            </form>
+          </div>
         </main>
       </div>
     );
@@ -397,81 +486,82 @@ export function RoomClient({ roomId }: { roomId: string }) {
     f.video && f.youtube && nowPlaying?.kind === 'video' && activeSource === 'youtube';
 
   const videoTabs: ReadonlyArray<readonly [VideoPanelTab, string]> = [
-    ['playing', 'Tocando'],
+    ['playing', 'Agora'],
     ['queue', 'Fila'],
     ...(f.roomChat ? ([['chat', 'Chat']] as const) : []),
-    ['add', 'Adicionar'],
   ];
 
-  const playerPanel = (
-    <div className="r4-player">
-      {(f.spotify || f.apple) && (
-        <div className="r4-player__connect">
-          {f.spotify && (
-            <SpotifyPlayer
-              authorized={spotifyAuthorized}
-              onAuthorized={setSpotifyAuthorized}
-              active={activeSource === 'spotify'}
-              onPlayerReady={(player) => {
-                spotifyAdapterRef.current = player;
-                if (activeSourceRef.current === 'spotify') setActivePlayer(player);
-              }}
-              onPlayerGone={() => {
-                spotifyAdapterRef.current = null;
-                if (activeSourceRef.current === 'spotify') setActivePlayer(null);
-              }}
-              onPlayError={setPlayFailedId}
-            />
-          )}
-          {f.apple && (
-            <ApplePlayer
-              authorized={appleAuthorized}
-              onAuthorized={setAppleAuthorized}
-              active={activeSource === 'apple'}
-              onPlayerReady={(player) => {
-                appleAdapterRef.current = player;
-                if (activeSourceRef.current === 'apple') setActivePlayer(player);
-              }}
-              onPlayerGone={() => {
-                appleAdapterRef.current = null;
-                if (activeSourceRef.current === 'apple') setActivePlayer(null);
-              }}
-              onPlayError={setPlayFailedId}
-            />
-          )}
-        </div>
+  // The Spotify and Apple players own their SDK and their connect buttons. They
+  // live in the avatar menu ("Trocar serviço"), mounted whether it is open or not.
+  const connectors = fixture ? null : (
+    <>
+      {f.spotify && (
+        <SpotifyPlayer
+          authorized={spotifyAuthorized}
+          onAuthorized={setSpotifyAuthorized}
+          active={activeSource === 'spotify'}
+          onPlayerReady={(player) => {
+            spotifyAdapterRef.current = player;
+            if (activeSourceRef.current === 'spotify') setActivePlayer(player);
+          }}
+          onPlayerGone={() => {
+            spotifyAdapterRef.current = null;
+            if (activeSourceRef.current === 'spotify') setActivePlayer(null);
+          }}
+          onPlayError={setPlayFailedId}
+        />
       )}
-
-      {!videoMode && f.youtube && activeSource === 'youtube' && (
-        <div className="r4-player__yt">
-          <YouTubePlayer
-            roomId={roomId}
-            onPlayerReady={setActivePlayer}
-            onPlayerGone={() => setActivePlayer(null)}
-            onPlayError={setPlayFailedId}
-          />
-        </div>
+      {f.apple && (
+        <ApplePlayer
+          authorized={appleAuthorized}
+          onAuthorized={setAppleAuthorized}
+          active={activeSource === 'apple'}
+          onPlayerReady={(player) => {
+            appleAdapterRef.current = player;
+            if (activeSourceRef.current === 'apple') setActivePlayer(player);
+          }}
+          onPlayerGone={() => {
+            appleAdapterRef.current = null;
+            if (activeSourceRef.current === 'apple') setActivePlayer(null);
+          }}
+          onPlayError={setPlayFailedId}
+        />
       )}
-    </div>
+    </>
   );
 
-  const radioOn = store.state?.radioEnabled ?? false;
+  // The YouTube player of an audio track takes the cover slot of the now-playing
+  // card: visible, square, nothing overlaid (YouTube API terms).
+  const youtubeAudio =
+    !fixture && !videoMode && f.youtube && activeSource === 'youtube' ? (
+      <YouTubePlayer
+        roomId={roomId}
+        fill
+        onPlayerReady={setActivePlayer}
+        onPlayerGone={() => setActivePlayer(null)}
+        onPlayError={setPlayFailedId}
+      />
+    ) : null;
 
-  const fallbackWanted = preference !== 'auto' && resolved.fellBack ? preference : null;
-  const servicePicker = (
-    <ListeningServicePicker
-      preference={preference}
-      onChange={setListeningService}
-      spotifyEnabled={f.spotify}
-      appleEnabled={f.apple}
-      spotifyConnected={spotifyAuthorized}
-      appleConnected={appleAuthorized}
-      onConnectSpotify={() => {
-        beginAuth(window.location.pathname).catch((e) => console.error('Spotify connect failed:', e));
-      }}
-      fallback={nowPlaying && fallbackWanted && resolved.reason ? { wanted: fallbackWanted, playing: activeSource, reason: resolved.reason } : null}
-    />
-  );
+  const pickerProps = {
+    preference,
+    onChange: setListeningService,
+    spotifyEnabled: f.spotify,
+    appleEnabled: f.apple,
+    spotifyConnected: spotifyAuthorized,
+    appleConnected: appleAuthorized,
+    onConnectSpotify: connectSpotify,
+    effective: platform,
+  };
+  // Only offer the icon row when there is a real choice to make.
+  const servicePicker = serviceOptions(pickerProps).length > 1 ? <ListeningServicePicker {...pickerProps} /> : null;
+  const serviceNote =
+    nowPlaying && fallbackWanted && resolved.reason ? (
+      <ServiceFallbackNote fallback={{ wanted: fallbackWanted, playing: activeSource, reason: resolved.reason }} />
+    ) : null;
+
+  // Detalhes / Letra / Mais are one drawer slot: opening one closes the other.
+  const closeDrawer = () => setDrawer(null);
 
   const heroPanel = (
     <NowPlayingCard
@@ -486,15 +576,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
       hostControl={hostControl}
       hostLabel={Boolean(f.roomAuth && store.state?.hostUserId && store.state.hostUserId === myUserId)}
       onNext={nowPlaying ? () => nowPlayingAdvance(roomId, nowPlaying.id).catch(() => {}) : undefined}
-      activeSource={activeSource}
       servicePicker={servicePicker}
+      serviceNote={serviceNote}
       volumeControl={<VolumeControl />}
       activePlayer={activePlayer}
-      roomAgeS={roomAgeS}
       radioOn={radioOn}
-      onOpenDepth={() => setTrackDepthOpen(true)}
-      onOpenLyrics={() => setLyricsOpen(true)}
-      onOpenEnrichment={() => setEnrichmentOpen(true)}
+      radioAvailable={radioAvailable}
+      onOpenDepth={() => setDrawer('depth')}
+      onOpenLyrics={() => setDrawer('lyrics')}
+      onOpenEnrichment={() => setDrawer('enrichment')}
+      media={fixtureYt ? <div id="youtube-player" className="r4-fixture-yt" /> : youtubeAudio}
     />
   );
 
@@ -513,29 +604,22 @@ export function RoomClient({ roomId }: { roomId: string }) {
     <AddTrackForm roomId={roomId} spotifyAuthorized={spotifyAuthorized} appleAuthorized={appleAuthorized} />
   );
 
-  // "+ Adicionar música" in the queue header: the phone switches to its Add tab,
-  // every width scrolls the add form into view and focuses its search field.
-  const goToAdd = () => {
-    setPanelTab('add');
-    requestAnimationFrame(() => {
-      const panel = document.getElementById('video-panel-add');
-      if (!panel) return;
-      const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      panel.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
-      panel.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
-    });
-  };
-
-  const queuePanels = (
-    <>
-      <QueuePanel roomId={roomId} canControl={hostControl} onAdd={goToAdd} listeningOn={platform} />
-      <ActivityRail />
-    </>
+  const queuePanel = (
+    <QueuePanel
+      roomId={roomId}
+      canControl={hostControl}
+      onAdd={() => {
+        setPanelTab('queue');
+        setAddOpen((o) => !o);
+      }}
+      addOpen={addOpen}
+      addSlot={addTrackForm}
+      emptySlot={queueEmpty ? <OnboardingCard /> : undefined}
+      listeningOn={platform}
+    />
   );
   const chatPanel = f.roomChat ? <ChatPanel roomId={roomId} canControl={moderate} /> : null;
 
-  const roomName = cleanLabel(store.state?.name);
-  const listeners = store.members.length;
   // Same seed as the ListenersStage avatar: userId when present, else clientId.
   const meSeed = store.members.find((m) => (m.clientIds ?? [m.clientId]).includes(store.clientId))?.userId ?? (store.clientId || store.name);
   const tabs = (extra: string) => (
@@ -559,7 +643,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   return (
     <div
-      className="room r4 min-h-screen"
+      className="room r4"
       data-room="r4"
       data-has-track={nowPlaying ? 'true' : 'false'}
       style={{ color: 'var(--color-text-primary)' }}
@@ -570,7 +654,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           the sign-in keep working; only the attribution handoff is lost. The
           live region stays mounted (empty when there is no notice) so screen
           readers announce the text when it appears. */}
-      <p role="status" className="text-xs text-center px-4" style={{ color: 'var(--color-text-muted)' }}>
+      <p role="status" className="r4-notice">
         {store.rebindNotice}
       </p>
       <header className="room-header r4-header">
@@ -582,29 +666,18 @@ export function RoomClient({ roomId }: { roomId: string }) {
               <span className="r4-brand__word">CoJam</span>
             </span>
             <span className="r4-divider" aria-hidden="true" />
-            <div className="r4-title">
-              <div className="r4-title__row">
-                <h1 className="r4-title__name">
-                  {roomName ? roomName : (<>Sala <span className="r4-title__code">{roomId}</span></>)}
-                </h1>
-                {nowPlaying && isPlaying && (
-                  <span className="r4-live">
-                    <span className="r4-live__dot" aria-hidden="true" />
-                    AO VIVO
-                  </span>
-                )}
-                {listeners > 0 && (
-                  <span className="r4-count">{listeners === 1 ? '1 ouvindo' : `${listeners} ouvindo junto`}</span>
-                )}
-              </div>
-              <p className="r4-title__sub">
-                {roomName && <span className="room-code-chip">{roomId}</span>}
-                <span className="truncate" data-testid="room-me">você é {store.name}</span>
-                {accountsEnabled && !store.signedIn && <span className="guest-chip">Convidado</span>}
-                {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
-                {hostControl && f.publicRooms && <PublicRoomToggle roomId={roomId} />}
-              </p>
-            </div>
+            <h1 className="r4-title__name">
+              {roomName ? roomName : (<>Sala <span className="r4-title__code">{roomId}</span></>)}
+            </h1>
+            {nowPlaying && isPlaying && (
+              <span className="r4-live">
+                <span className="r4-live__dot" aria-hidden="true" />
+                AO VIVO
+              </span>
+            )}
+            {listeners > 0 && (
+              <span className="r4-count">{listeners === 1 ? '1 ouvindo' : `${listeners} ouvindo junto`}</span>
+            )}
           </div>
           <div className="r4-actions">
             {(store.reconnecting || !store.connected) && (
@@ -613,18 +686,29 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 <span className="r4-conn__text">{store.reconnecting ? 'Reconectando...' : 'Desconectado'}</span>
               </span>
             )}
-            <ReportRoomButton roomId={roomId} variant="icon" />
-            <ReportRoomButton roomId={roomId} variant="text" />
             <ShareRoomButton />
-            {accountsEnabled ? (
-              <Link href="/account" className="r4-me" aria-label={`Conta de ${store.name}`} title="Conta" style={{ background: avatarGradient(meSeed) }}>
-                {store.name.charAt(0).toUpperCase()}
-              </Link>
-            ) : (
-              <span className="r4-me" title={store.name} style={{ background: avatarGradient(meSeed) }} aria-hidden="true">
-                {store.name.charAt(0).toUpperCase()}
-              </span>
-            )}
+            <AvatarMenu
+              roomId={roomId}
+              name={store.name}
+              seed={meSeed}
+              platform={platform}
+              serviceConnected={(platform === 'spotify' && spotifyAuthorized) || (platform === 'apple' && appleAuthorized)}
+              guest={accountsEnabled && !store.signedIn}
+              accountsEnabled={accountsEnabled}
+              picker={pickerProps}
+              connectors={connectors}
+              roomItems={
+                <>
+                  <ReportRoomButton roomId={roomId} />
+                  {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
+                  {hostControl && f.publicRooms && (
+                    <div className="r4-menu__public">
+                      <PublicRoomToggle roomId={roomId} />
+                    </div>
+                  )}
+                </>
+              }
+            />
           </div>
         </div>
       </header>
@@ -659,19 +743,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
             {tabs('')}
 
             <div data-testid="video-main-column" className="video-main r4-stack">
-              {(f.spotify || f.apple) && playerPanel}
               <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel r4-stack" data-active={panelTab === 'playing'}>
                 {heroPanel}
                 {listenersStage}
-              </div>
-              <div id="video-panel-add" role="tabpanel" aria-labelledby="video-tab-add" className="video-panel" data-active={panelTab === 'add'}>
-                {addTrackForm}
               </div>
             </div>
 
             <div data-testid="video-side-column" className="video-side r4-stack">
               <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel r4-stack" data-active={panelTab === 'queue'}>
-                {queuePanels}
+                {queuePanel}
               </div>
               {chatPanel && (
                 <div id="video-panel-chat" role="tabpanel" aria-labelledby="video-tab-chat" className="video-panel" data-active={panelTab === 'chat'}>
@@ -682,26 +762,19 @@ export function RoomClient({ roomId }: { roomId: string }) {
           </div>
         ) : (
           <>
-            <div className="audio-room r4-grid grid grid-cols-1 md:grid-cols-5" data-testid="audio-room" data-tab={panelTab}>
-              <div data-testid="room-main-column" className="r4-main-col md:col-span-3 room-arrival" style={{ ['--i' as string]: 0 }}>
-                {/* Below 768px the same Playing / Queue / Chat / Add tabs as the video
-                    room (#258) decide which panel shows; md and up shows every panel. */}
-                <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel video-panel-keep r4-stack" data-active={panelTab === 'playing'}>
-                  {queueEmpty && <OnboardingCard />}
-                  <div className="r4-stage r4-stack">
-                    {heroPanel}
-                    {listenersStage}
-                  </div>
-                  {playerPanel}
+            <div className="audio-room r4-grid" data-testid="audio-room" data-tab={panelTab}>
+              <div data-testid="room-main-column" className="r4-main-col room-arrival" style={{ ['--i' as string]: 0 }}>
+                {/* Below 768px the same Agora / Fila / Chat tabs as the video room
+                    (#258) decide which panel shows; md and up shows every panel. */}
+                <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel video-panel-keep r4-stack r4-stage" data-active={panelTab === 'playing'}>
+                  {heroPanel}
+                  {listenersStage}
                 </div>
               </div>
 
-              <div data-testid="room-side-column" className="r4-side md:col-span-2 room-arrival" style={{ ['--i' as string]: 1 }}>
+              <div data-testid="room-side-column" className="r4-side room-arrival" style={{ ['--i' as string]: 1 }}>
                 <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel r4-queue-col r4-stack" data-active={panelTab === 'queue'}>
-                  {queuePanels}
-                </div>
-                <div id="video-panel-add" role="tabpanel" aria-labelledby="video-tab-add" className="video-panel r4-add-col" data-active={panelTab === 'add'}>
-                  {addTrackForm}
+                  {queuePanel}
                 </div>
                 {chatPanel && (
                   <div id="video-panel-chat" role="tabpanel" aria-labelledby="video-tab-chat" className="video-panel r4-chat-col" data-active={panelTab === 'chat'}>
@@ -715,31 +788,25 @@ export function RoomClient({ roomId }: { roomId: string }) {
         )}
       </main>
 
-      <footer className="room-footer text-xs text-center px-4 pb-6" style={{ color: 'var(--color-text-muted)' }}>
-        <Link href="/privacidade" className="underline">Privacidade</Link>
-        {' · '}
-        <Link href="/termos" className="underline">Termos</Link>
-      </footer>
-
       {/* Track Depth Panel */}
       <TrackDepthPanel
         roomId={roomId}
         track={nowPlaying || null}
-        open={trackDepthOpen}
-        onClose={() => setTrackDepthOpen(false)}
+        open={drawer === 'depth'}
+        onClose={closeDrawer}
       />
       <LyricsPanel
         roomId={roomId}
         track={nowPlaying || null}
-        open={lyricsOpen}
-        onClose={() => setLyricsOpen(false)}
+        open={drawer === 'lyrics'}
+        onClose={closeDrawer}
         activePlayer={activePlayer}
       />
       <EnrichmentPanel
         roomId={roomId}
         track={nowPlaying || null}
-        open={enrichmentOpen}
-        onClose={() => setEnrichmentOpen(false)}
+        open={drawer === 'enrichment'}
+        onClose={closeDrawer}
       />
     </div>
   );

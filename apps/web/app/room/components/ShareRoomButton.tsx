@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { LinkIcon, CheckIcon } from '@/app/components/icons';
+import { CheckIcon } from '@/app/components/icons';
 
 // One-click invite: copies the current room URL so a friend can join. Clipboard
 // needs a secure context (localhost / 127.0.0.1 / https all qualify).
@@ -42,7 +42,7 @@ export function ShareRoomButton() {
       aria-label={copied ? 'Link de convite copiado' : 'Copiar link de convite'}
       className="r4-invite"
     >
-      {copied ? <CheckIcon size={16} /> : <LinkIcon size={16} />}
+      {copied && <CheckIcon size={16} />}
       {copied ? 'Copiado' : 'Convidar'}
     </button>
   );

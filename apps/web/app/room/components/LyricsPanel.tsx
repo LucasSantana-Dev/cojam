@@ -26,7 +26,7 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
   const lyricsContentRef = useRef<HTMLDivElement>(null);
   const activeLineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const positionPollingRef = useRef<NodeJS.Timeout | null>(null);
-  useDialogFocus(open, onClose, containerRef);
+  useDialogFocus(open, onClose, containerRef, { trap: false });
 
   // Panel stays mounted while closed; reset loaded data when the open/track
   // key changes (docs-sanctioned state adjustment during render).
@@ -136,7 +136,6 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
         }}
         ref={containerRef}
         role="dialog"
-        aria-modal="true"
         aria-label={`Letra de ${track.title}`}
       >
         {/* Header */}

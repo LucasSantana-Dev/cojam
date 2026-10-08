@@ -9,7 +9,11 @@ export function useDialogFocus(
   open: boolean,
   onClose: () => void,
   containerRef: { current: HTMLElement | null },
+  // Non-modal panels (the side drawers) take focus on open and give it back on
+  // close, but never trap Tab.
+  options: { trap?: boolean } = {},
 ) {
+  const trap = options.trap ?? true;
   // onClose changes identity each parent render; hold it in a ref so the focus
   // effect can depend on [open] alone and not tear down on every render.
   const onCloseRef = useRef(onClose);
@@ -35,7 +39,7 @@ export function useDialogFocus(
         onCloseRef.current();
         return;
       }
-      if (e.key !== 'Tab') return;
+      if (e.key !== 'Tab' || !trap) return;
       const items = focusables();
       if (items.length === 0) return;
       const first = items[0];
@@ -53,5 +57,5 @@ export function useDialogFocus(
       document.removeEventListener('keydown', handleKeyDown);
       previouslyFocused?.focus();
     };
-  }, [open, containerRef]);
+  }, [open, containerRef, trap]);
 }

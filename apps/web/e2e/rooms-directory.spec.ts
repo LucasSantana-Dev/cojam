@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { proxyConnectionToken } from './connectionTokenProxy';
+import { openAvatarMenu } from './helpers';
 
 // #306 /rooms directory: two public rooms are listed, a private room is not,
 // search filters by name, and the sort switch reorders. Requires
@@ -16,6 +17,7 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 async function makePublic(page: Page, label: string) {
+  await openAvatarMenu(page);
   await page.getByRole('checkbox', { name: 'Pública' }).click();
   await expect(page.getByRole('checkbox', { name: 'Pública' })).toBeChecked();
   await page.getByLabel('Nome da sala pública').fill(label);

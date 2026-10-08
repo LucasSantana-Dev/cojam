@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { proxyConnectionToken } from './connectionTokenProxy';
+import { openAdd } from './helpers';
 
 // E1 video co-watch (#258): two browsers in a video room converge on the
 // host's seek, and the phone layout pins the stage with tabbed panels.
@@ -63,17 +64,13 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 async function addVideo(page: Page, title: string) {
-  // Phone width (#289): the audio room keeps the add form behind its Add tab.
-  const addTab = page.getByRole('tab', { name: 'Adicionar', exact: true });
-  if (await addTab.isVisible()) await addTab.click();
-  await page.evaluate(() => {
-    const details = document.querySelector('details');
-    if (details) details.open = true;
-  });
+  await openAdd(page);
   await page.getByPlaceholder('Título').fill(title);
   await page.getByPlaceholder('Artista').fill('Channel');
   await page.getByPlaceholder('Link do YouTube ou ID do vídeo (opcional)').fill('https://youtu.be/abcdefghijk');
   await page.getByRole('button', { name: 'Adicionar à fila' }).click();
+  // Let the add land (the room may switch layout for a video) before the next step.
+  await expect(page.getByText(title, { exact: true }).first()).toBeAttached();
 }
 
 const position = (page: Page) =>
@@ -114,10 +111,14 @@ test('phone layout pins the stage and puts the panels in tabs', async ({ browser
   const roomId = `E2EM${Date.now().toString(36).toUpperCase()}`;
   const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
   await join(page, roomId, 'Lucas');
+  // The first add becomes the now-playing video, which the queue list does not repeat.
   await addVideo(page, 'Clip');
+  await addVideo(page, 'Clip two');
 
   await expect(page.getByTestId('video-room')).toBeVisible();
   await expect(page.getByRole('tablist', { name: 'Painéis da sala' })).toBeVisible();
+  // Adding opened the Fila tab; back to Agora, where the queue is hidden.
+  await page.getByRole('tab', { name: 'Agora', exact: true }).click();
 
   // Pinned: still in view after scrolling the page.
   await page.evaluate(() => window.scrollTo(0, 400));
@@ -141,6 +142,7 @@ test('desktop shows stage with queue beside it and no tab bar', async ({ browser
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
   await join(page, roomId, 'Lucas');
   await addVideo(page, 'Clip');
+  await addVideo(page, 'Clip two');
 
   await expect(page.getByTestId('stage')).toBeVisible();
   await expect(page.getByRole('tablist', { name: 'Painéis da sala' })).toBeHidden();
