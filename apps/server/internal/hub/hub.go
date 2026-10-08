@@ -233,7 +233,7 @@ type Hub struct {
 	store           store.Store
 	node            *centrifuge.Node
 	publishFn       func(roomID string, state json.RawMessage) error // test seam; nil = publish via node
-	wootPublishFn   func(roomID string, payload []byte) error        // test seam for reaction.woot; nil = node
+	wootPublishFn   func(roomID string, payload []byte) error        // test seam for reaction.woot and reaction.emote; nil = node
 	logger          *slog.Logger
 	moderationAudit ModerationAudit
 	metrics         *obs.Metrics
@@ -312,6 +312,10 @@ type Hub struct {
 	// (reactionMethods). Its own bucket: mashing Curtir must never leave the
 	// caller rate limited on chat.send.
 	reactionLimiter *rateLimiter
+
+	// emoteLimiter rate-limits reaction.emote per connection (one per
+	// emoteInterval), its own bucket like reactionLimiter.
+	emoteLimiter *rateLimiter
 
 	// listLimiter rate-limits the room.list directory read per caller. It is
 	// an unauthenticated read that landing visitors poll, so it gets its own
@@ -421,6 +425,7 @@ var mutatingMethods = map[string]bool{
 	"member.set_character":        true,
 	"member.characters":           true,
 	"reaction.woot":               true,
+	"reaction.emote":              true,
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
 }
@@ -462,6 +467,7 @@ var knownMethods = map[string]bool{
 	"member.set_character":        true,
 	"member.characters":           true,
 	"reaction.woot":               true,
+	"reaction.emote":              true,
 	"sync.ping":                   true,
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
@@ -608,6 +614,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		voteLimiter:       newRateLimiter(voteBurst, voteRefill, time.Now),
 		chatLimiter:       newRateLimiter(chatBurst, chatRefill, time.Now),
 		reactionLimiter:   newRateLimiter(reactionBurst, reactionRefill, time.Now),
+		emoteLimiter:      newRateLimiter(1, emoteInterval, time.Now),
 		transportLimiter:  newRateLimiter(transportBurst, transportRefill, time.Now),
 		heartbeatEvery:    videoHeartbeatEvery,
 		heartbeats:        make(map[string]chan struct{}),
@@ -2584,6 +2591,19 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, fmt.Errorf("reaction.woot: roomId required")
 		}
 		return h.reactionWoot(req.RoomID, clientID)
+
+	case "reaction.emote":
+		var req struct {
+			RoomID string `json:"roomId"`
+			Emote  string `json:"emote"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("reaction.emote: roomId required")
+		}
+		return h.reactionEmote(req.RoomID, clientID, req.Emote)
 
 	case "sync.ping":
 		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})

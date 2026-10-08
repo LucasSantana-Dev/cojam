@@ -7,7 +7,8 @@ import { fetchConnectionToken, getLastTokenFetchError, getStoredProofToken, clea
 import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
 import { isCharacterId } from './characters';
-import type { ChatDeletePub, ChatMessage, ChatMessagePub, MemberPlatformPub, MemberCharacterPub, ReactionWootPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
+import type { ChatDeletePub, ChatMessage, ChatMessagePub, Emote, MemberPlatformPub, MemberCharacterPub, ReactionEmotePub, ReactionWootPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
+import { EMOTES } from '@cojam/shared';
 
 export type Member = {
   clientId: string;
@@ -536,7 +537,7 @@ export async function joinRoom(
   const sub = centrifuge.newSubscription(`room:${roomId}`);
 
   sub.on('publication', (ctx) => {
-    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub | MemberPlatformPub | MemberCharacterPub | ReactionWootPub;
+    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub | MemberPlatformPub | MemberCharacterPub | ReactionWootPub | ReactionEmotePub;
     if (pub.type === 'room.state') {
       store.setState(pub.state);
       // Rebind completion rule (#172): the proof token is discarded only when
@@ -558,6 +559,8 @@ export async function joinRoom(
       if (isCharacterId(pub.characterId)) store.setCharacterOverride(pub.clientId, pub.characterId);
     } else if (pub.type === 'reaction.woot') {
       if (typeof pub.clientId === 'string') emitWoot(pub.clientId);
+    } else if (pub.type === 'reaction.emote') {
+      if (typeof pub.clientId === 'string' && (EMOTES as readonly string[]).includes(pub.emote)) emitEmote(pub.clientId, pub.emote);
     }
   });
 
@@ -985,6 +988,27 @@ function emitWoot(clientId: string): void {
 export async function sendWoot(roomId: string): Promise<void> {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('reaction.woot', { roomId });
+}
+
+// Emotes (Reagir, modo palco): same shape as Curtir, one of EMOTES each. An
+// unknown emote from the wire is dropped (the server allowlists them too).
+type EmoteListener = (clientId: string, emote: Emote) => void;
+const emoteListeners = new Set<EmoteListener>();
+
+export function onEmote(cb: EmoteListener): () => void {
+  emoteListeners.add(cb);
+  return () => {
+    emoteListeners.delete(cb);
+  };
+}
+
+function emitEmote(clientId: string, emote: Emote): void {
+  emoteListeners.forEach((l) => l(clientId, emote));
+}
+
+export async function sendEmote(roomId: string, emote: Emote): Promise<void> {
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
+  await centrifuge.rpc('reaction.emote', { roomId, emote });
 }
 
 // Room chat (F8). Server-first: no optimistic append; the message appears

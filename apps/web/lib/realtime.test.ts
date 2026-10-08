@@ -4,7 +4,7 @@
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore, isPermissionDeniedError, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
-  chatUnavailableNotice, updatePlatform, updateCharacter, onWoot, sendWoot,
+  chatUnavailableNotice, updatePlatform, updateCharacter, onWoot, sendWoot, onEmote, sendEmote,
 } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
 
@@ -1192,5 +1192,27 @@ describe('reactions (reaction.woot)', () => {
     off();
     publish({ type: 'reaction.woot', clientId: 'c-b' });
     expect(seen).toEqual(['c-a']);
+  });
+
+  it('sends reaction.emote and hands allowlisted emotes to listeners only', async () => {
+    const joinPromise = joinRoom('emote-1', 'Alice', 'youtube');
+    await vi.waitFor(() => expect(centrifugeMock.MockCentrifuge.instances.length).toBeGreaterThan(0));
+    const instance = centrifugeMock.MockCentrifuge.instances.at(-1)!;
+    instance.emit('connected', { client: 'c-me' });
+    await joinPromise;
+
+    await sendEmote('emote-1', 'fogo');
+    expect(instance.rpcCalls.filter((c) => c.method === 'reaction.emote')).toEqual([{ method: 'reaction.emote', payload: { roomId: 'emote-1', emote: 'fogo' } }]);
+
+    const seen: string[] = [];
+    const off = onEmote((id, e) => seen.push(`${id}:${e}`));
+    const before = useStore.getState();
+    const publish = (data: unknown) => (instance.subscriptions[0].handlers['publication'] ?? []).forEach((cb) => cb({ data }));
+    publish({ type: 'reaction.emote', clientId: 'c-a', emote: 'palmas' });
+    publish({ type: 'reaction.emote', clientId: 'c-a', emote: 'bomba' });
+    publish({ type: 'reaction.emote', clientId: 7, emote: 'uau' });
+    expect(seen).toEqual(['c-a:palmas']);
+    expect(useStore.getState().state).toBe(before.state);
+    off();
   });
 });
