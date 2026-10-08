@@ -36,12 +36,17 @@
      -soft is for inline form errors, which sit on a card and need the extra
      contrast headroom (7.19:1 vs 4.55:1 for the base token). */
   --color-status-error-soft: oklch(0.711 0.166 22);  /* was #f87171 */
-  --color-status-ok: oklch(0.871 0.136 152);         /* was #86efac, accent-2 hue */
+  /* Success feedback is not LIVE, so it must not be green (green = LIVE only,
+     accent-roles ADR). Same lightness as before, on the violet accent hue. */
+  --color-status-ok: oklch(0.871 0.09 300);
   /* Member and provider identity scale. Three fixed hues, previously duplicated
      as six literals across page.tsx and RoomShowcase.tsx with no definition. */
   --color-ident-1: oklch(0.654 0.211 296.6);    /* was #a06bff */
   --color-ident-2: oklch(0.714 0.143 254.6);    /* was #60a5fa */
-  --color-ident-3: oklch(0.773 0.153 163.2);    /* was #34d399 */
+  /* Hue 345 (rose). Was 163 (green), which broke green = LIVE only. 345 is
+     clear of violet 296, blue 254, green ~150, amber 55 and red 25, and sits at
+     the sibling lightness/chroma so dark initials keep far more than 4.5:1. */
+  --color-ident-3: oklch(0.773 0.153 345);
   /* Motion tokens (premium timing band). Enter = decelerate; never linear for UI. */
   --dur-micro: 160ms;
   --dur-base: 320ms;
@@ -254,12 +259,6 @@ input:focus, textarea:focus, select:focus {
   flex-shrink: 0;
 }
 
-.avatar-chip-sm {
-  width: 24px;
-  height: 24px;
-  font-size: 0.65rem;
-}
-
 /* Avatar stack for presence */
 .presence-stack {
   display: flex;
@@ -304,74 +303,6 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
-/* Queue item list polish */
-.queue-item {
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.queue-item:hover {
-  border-color: var(--color-accent);
-  background: var(--color-surface-3);
-}
-
-/* Queue item row (redesigned, clean single-line layout) */
-.queue-item-row {
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border);
-  border-left: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  overflow: hidden;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.queue-item-row:hover {
-  border-color: var(--color-accent);
-  background: var(--color-surface-3);
-}
-
-/* On now-playing, add left accent bar */
-.queue-item-row.is-now {
-  border-left: 3px solid var(--color-accent);
-  background: color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-2));
-}
-
-/* Pending-removal (#179): during the 4s undo window the row stays visible but
-   dimmed; its controls are disabled in the component, only Undo stays live. */
-.queue-item-row.removing {
-  opacity: 0.55;
-}
-
-/* Queue thumb (v2, ref-board-queue-v2 direction A): album art is the
-   recognition layer. Fallback tile is a muted music note on surface-3. */
-.queue-thumb-wrap {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  border-radius: 0.375rem;
-  overflow: hidden;
-}
-
-.queue-thumb {
-  width: 40px;
-  height: 40px;
-  border-radius: 0.375rem;
-  object-fit: cover;
-  display: block;
-}
-
-.queue-thumb-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-surface-3);
-  color: var(--color-text-muted);
-}
-
 /* Now-playing eq overlay on the thumb (renders only while transport is
    playing). Bars are green (--color-accent-2): green = sound playing right
    now, consistent with the LIVE-only lock. Static bars under reduced motion. */
@@ -400,52 +331,6 @@ input:focus, textarea:focus, select:focus {
 
 @media (prefers-reduced-motion: reduce) {
   .queue-thumb-eq span { animation: none; }
-}
-
-/* Single meta line under the title: truncating artist, then non-wrapping
-   provenance chunks (source icons, avatar, name, age) separated by middots. */
-.queue-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-  min-width: 0;
-  margin-top: 1px;
-}
-
-.queue-meta-sep {
-  opacity: 0.6;
-  flex-shrink: 0;
-}
-
-/* Icon-only source badges ride the meta line: shrink the standalone-badge
-   padding so the line stays text-height. */
-.queue-meta .badge-source {
-  padding: 0.125rem 0.25rem;
-  line-height: 1;
-}
-
-/* Touch-capable devices (incl. hybrid touch+mouse laptops): always show
-   controls. any-pointer:coarse matches if ANY pointer is touch, so a
-   touchscreen laptop is covered even when its primary pointer is a mouse. */
-@media (any-pointer: coarse) or (hover: none) {
-  .queue-controls {
-    opacity: 1 !important;
-  }
-}
-
-/* Desktop with fine pointer: hide controls until hover/focus-within */
-@media (pointer: fine) and (hover: hover) {
-  .queue-item-row:not(:hover):not(:focus-within) .queue-controls {
-    opacity: 0;
-  }
-}
-
-/* Keyboard focus must stay visible on the controls (they set outline-none). */
-.queue-controls button:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
 }
 
 /* Source badge polish */
@@ -479,14 +364,6 @@ input:focus, textarea:focus, select:focus {
 .presence-stack .avatar-chip:nth-child(4) { animation-delay: 150ms; }
 .presence-stack .avatar-chip:nth-child(5) { animation-delay: 200ms; }
 .presence-stack .avatar-chip:nth-child(6) { animation-delay: 250ms; }
-
-/* Stagger animation for queue items */
-.queue-item:nth-child(1) { animation-delay: 0ms; }
-.queue-item:nth-child(2) { animation-delay: 50ms; }
-.queue-item:nth-child(3) { animation-delay: 100ms; }
-.queue-item:nth-child(4) { animation-delay: 150ms; }
-.queue-item:nth-child(5) { animation-delay: 200ms; }
-.queue-item:nth-child(n+6) { animation-delay: 250ms; }
 
 /* ============================================================
    Landing page (marketing register) — Cyber / neon-violet.
@@ -837,7 +714,7 @@ input:focus, textarea:focus, select:focus {
 }
 .hero-ticker__track span { display: inline-flex; align-items: center; gap: 2.5rem; }
 .hero-ticker__track b {
-  color: var(--color-accent-2);
+  color: var(--color-accent);
   font-weight: 400;
 }
 @keyframes ticker-scroll {
@@ -932,6 +809,55 @@ input:focus, textarea:focus, select:focus {
   .hero-cta input {
     flex: 1;
   }
+}
+
+/* FAQ: native details/summary, 44px+ targets, tokens only. */
+.faq-list { max-width: 44rem; margin: 0 auto; text-align: left; }
+.faq-item { border-bottom: 1px solid var(--color-border); }
+.faq-item summary {
+  min-height: 44px;
+  padding: 0.9rem 0;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  list-style-position: outside;
+}
+.faq-item summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.faq-item p { margin: 0 0 1rem; color: var(--color-text-secondary); line-height: 1.6; }
+.platform-chip__soon {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* One-step create: name + button. 44px targets, stacks under 480px. */
+.hero-create {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.hero-create__input {
+  min-height: 44px;
+  min-width: 0;
+  flex: 1 1 11rem;
+  max-width: 16rem;
+  padding: 0 1rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+.hero-create .btn-primary { min-height: 44px; }
+.hero-create .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .hero-create { flex-direction: column; align-items: stretch; }
+  .hero-create__input { max-width: none; flex: none; }
+  .hero-create .hero-join__label { text-align: center; }
 }
 
 /* Join-by-code elevated to equal footing with Start a room (Spotify Jam steal:
@@ -1172,7 +1098,7 @@ input:focus, textarea:focus, select:focus {
 .live-room-card__join {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--color-accent-2);
+  color: var(--color-accent);
 }
 
 /* Strip header + /rooms page (#306). Reuses the .live-room-card language. */
@@ -1187,7 +1113,7 @@ input:focus, textarea:focus, select:focus {
 .live-rooms__all {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--color-accent-2);
+  color: var(--color-accent);
   text-decoration: none;
 }
 .live-rooms__all:hover { text-decoration: underline; }
@@ -1240,6 +1166,19 @@ input:focus, textarea:focus, select:focus {
   padding: 2rem 1rem;
   text-align: center;
   font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+/* Live counter (#307): "N people in M rooms right now" under the hero CTA. */
+.live-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1.5rem auto 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--color-text-secondary);
 }
 
@@ -1473,6 +1412,27 @@ input:focus, textarea:focus, select:focus {
 }
 .landing-footer a { color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 2px; }
 
+/* "Seus dados" (#318): the guest id a person sends to ask for erasure. */
+.your-data {
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 0;
+  font-size: 0.8rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+.your-data summary { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.your-data p { margin-top: 0.5rem; }
+.your-data-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.5rem; }
+.your-data code { overflow-wrap: anywhere; color: var(--color-text-primary); }
+.your-data button {
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
 /* Sticky landing header — hides on scroll-down, reveals on scroll-up. --------
    Persistent CTA + brand; glass so the hero reads through it. */
 .site-header {
@@ -1657,12 +1617,6 @@ input:focus, textarea:focus, select:focus {
 @keyframes eq-bounce {
   0%, 100% { transform: scaleY(0.35); }
   50% { transform: scaleY(1); }
-}
-
-/* Now-playing item highlight in the queue. */
-.queue-item.is-now {
-  border-color: color-mix(in oklab, var(--color-accent) 55%, transparent);
-  background: color-mix(in oklab, var(--color-accent) 8%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1863,23 +1817,6 @@ input:focus, textarea:focus, select:focus {
   .status-banner {
     animation: none;
     opacity: 1;
-  }
-}
-
-/* Queue reorder: FLIP animation via CSS transforms. Rows transition
-   to new positions when reorder RPC completes; removed rows collapse. */
-@media (prefers-reduced-motion: no-preference) {
-  .queue-item {
-    transition: all var(--dur-base) var(--ease-out-quart);
-  }
-
-  .queue-item.removing {
-    opacity: 0;
-    transform: scale(0.95);
-    height: 0;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
   }
 }
 
@@ -2116,26 +2053,6 @@ input:focus, textarea:focus, select:focus {
   font-variant-numeric: tabular-nums;
 }
 
-/* Queue aggregate header (R2): "N tracks · total duration · M contributors". */
-.queue-agg {
-  margin-top: 0.125rem;
-  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Per-row duration (R9): right-aligned, tabular, out of the truncation path. */
-.queue-duration {
-  flex-shrink: 0;
-  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-  align-self: center;
-}
-
 /* Metadata rail (R8): tracked-uppercase mono LABEL / value pairs. */
 .meta-rail {
   display: grid;
@@ -2165,6 +2082,7 @@ input:focus, textarea:focus, select:focus {
    Escape and an inert background, so only presentation is styled here. */
 .age-gate {
   border: none;
+  margin: auto; /* the preflight reset zeroes dialog margins, which pins it top-left */
   padding: 1.5rem;
   background: transparent;
   color: inherit;
@@ -2230,6 +2148,27 @@ input:focus, textarea:focus, select:focus {
 .legal-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; display: block; overflow-x: auto; }
 .legal-table th, .legal-table td { text-align: left; vertical-align: top; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--color-border); }
 .legal-table th { color: var(--color-text-secondary); font-weight: 600; }
+
+/* Report control under a directory card (#259). The card is a link, so the
+   button is a sibling, not a child (a button inside an anchor is invalid). */
+.live-room-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.live-room-report {
+  align-self: flex-end;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  background: transparent;
+  opacity: 0.75;
+}
+.live-room-report:hover,
+.live-room-report:focus-visible {
+  opacity: 1;
+  text-decoration: underline;
+}
 
 /* ---------- Stage + panels (video rooms, #258) ----------
    Only rendered when the now-playing track is video and FEATURE_VIDEO is on;
@@ -2318,7 +2257,7 @@ input:focus, textarea:focus, select:focus {
     background: var(--color-surface-1);
     padding-bottom: 0.5rem;
   }
-  .video-panel[data-active="false"] {
+  .video-panel[data-active="false"]:not(.video-panel-keep) {
     display: none;
   }
 }
@@ -2346,4 +2285,1046 @@ input:focus, textarea:focus, select:focus {
   .video-room {
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   }
+}
+
+/* ---------- Audio room on phones (#289) ----------
+   Same pattern as the video room: panels behind tabs, so chat is one tap away
+   instead of a scroll past the player and queue. The tab bar docks to the
+   bottom for thumb reach (and so the sticky header stays one short row).
+   Nothing below applies from 768px up: tablet and desktop keep the grid. */
+@media (max-width: 47.999rem) {
+  /* The Playing panel can hold the YouTube iframe of an audio track. Hiding it
+     with display:none could pause playback on some mobile browsers, so it
+     stays laid out but collapsed, unfocusable and out of the a11y tree. */
+  .video-panel-keep[data-active="false"] {
+    visibility: hidden;
+    height: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+  /* Same 44px floor as the coarse-pointer rule, but keyed to the phone
+     width so an emulated or desktop-narrow window gets it too. */
+  .room button,
+  .panel button,
+  .room input:not([type="checkbox"], [type="radio"]),
+  .panel input:not([type="checkbox"], [type="radio"]) {
+    min-height: 44px;
+  }
+  /* Focus / scrollIntoView keep a field clear of the docked tab bar. */
+  html {
+    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+  }
+  .room-main {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+  .audio-tabs {
+    position: fixed;
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    background: oklch(0.12 0.01 280 / 0.92);
+    backdrop-filter: blur(16px) saturate(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3);
+    box-shadow: 0 8px 30px oklch(0 0 0 / 0.5);
+  }
+  /* dvh tracks the on-screen keyboard where the browser resizes the viewport,
+     so the chat list never pushes the input below the fold. */
+  .chat-scroll {
+    max-height: min(20rem, 40dvh);
+  }
+
+  /* Header: one short band. The connection pill keeps its dot and drops the
+     text (still read by screen readers), and every target is 44px. */
+  .room-header-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .room-header :is(a, button),
+  .room-header label {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .room-header .avatar-chip button:not(.report-user-btn) {
+    background-color: transparent !important;
+    isolation: isolate;
+    position: absolute;
+    top: -14px;
+    right: -14px;
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+  }
+  .room-header .avatar-chip button:not(.report-user-btn)::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 8px;
+    right: 8px;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    background: var(--color-status-error);
+  }
+  /* Report-user flag (#259): same 44px hit area as kick, anchored top-left,
+     with a small visible disc so it does not collide with the kick control. */
+  .room-header .avatar-chip .report-user-btn {
+    isolation: isolate;
+    position: absolute;
+    top: -14px;
+    left: -14px;
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+    background: transparent !important;
+    border: 0 !important;
+    font-size: 0;
+  }
+  .room-header .avatar-chip .report-user-btn::before {
+    content: "⚑";
+    position: absolute;
+    z-index: -1;
+    top: 8px;
+    left: 8px;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    background: var(--color-surface-2);
+    color: var(--color-text-secondary);
+  }
+  .room-header input[type="text"] {
+    min-height: 44px;
+  }
+  .room-header label:has(input[type="checkbox"]) {
+    position: relative;
+  }
+  .room-header label input[type="checkbox"] {
+    /* -1px: the label's 1px border sits outside its padding box. */
+    position: absolute;
+    inset: -1px;
+    width: calc(100% + 2px);
+    height: calc(100% + 2px);
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .room-header label:has(input[type="checkbox"]:checked) {
+    border-color: var(--color-accent) !important;
+    color: var(--color-accent) !important;
+  }
+  .room-header label:has(input[type="checkbox"]:focus-visible) {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+}
+@media (min-width: 48rem) {
+  .audio-tabs {
+    display: none;
+  }
+  .chat-scroll {
+    max-height: 20rem;
+  }
+}
+
+/* ============================================================
+   Cor da faixa (#325)
+   The room and the landing take ONE saturated ground colour from the cover that
+   is playing (lib/trackColor.ts). The JS sets --tint-l/c/h; everything else is
+   derived here, so a track change is a colour glide (registered properties
+   animate) and the CoJam chrome (mark, violet actions, green LIVE) stays fixed.
+   Structure: Stationhead (host on top, now-playing stage, live chat). Colour:
+   Apple Music (full-bleed, controls white on the tint) and Spotify (one solid
+   colour per track, heavy white type).
+   ============================================================ */
+
+@property --tint-l { syntax: "<number>"; inherits: true; initial-value: 0.3; }
+@property --tint-c { syntax: "<number>"; inherits: true; initial-value: 0.11; }
+@property --tint-h { syntax: "<number>"; inherits: true; initial-value: 300; }
+
+[data-tint] {
+  --tint-fade: 800ms;
+  --tint: oklch(var(--tint-l) var(--tint-c) var(--tint-h));
+  --tint-hi: oklch(calc(var(--tint-l) + 0.1) calc(var(--tint-c) * 0.95) var(--tint-h));
+  --tint-pale: oklch(0.93 0.08 var(--tint-h));
+  --tint-deep: oklch(calc(var(--tint-l) - 0.12) calc(var(--tint-c) * 0.9) var(--tint-h));
+  --tint-abyss: oklch(calc(var(--tint-l) - 0.2) calc(var(--tint-c) * 0.75) var(--tint-h));
+  --on-tint: oklch(0.99 0.004 var(--tint-h));
+  transition:
+    --tint-l var(--tint-fade) cubic-bezier(0.4, 0, 0.2, 1),
+    --tint-c var(--tint-fade) cubic-bezier(0.4, 0, 0.2, 1),
+    --tint-h var(--tint-fade) cubic-bezier(0.4, 0, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-tint] { --tint-fade: 0ms; transition: none; }
+}
+
+/* ---- Room: tint on the whole room -------------------------------------- */
+.room[data-tint="room"] {
+  background: linear-gradient(180deg, var(--tint) 0%, var(--tint) 30%, var(--tint-deep) 100%);
+  --color-surface-1: var(--tint-deep);
+  --color-surface-2: oklch(calc(var(--tint-l) - 0.17) calc(var(--tint-c) * 0.8) var(--tint-h));
+  --color-surface-3: oklch(calc(var(--tint-l) - 0.07) calc(var(--tint-c) * 0.9) var(--tint-h));
+  --color-border: oklch(1 0 0 / 0.18);
+  --color-text-primary: var(--on-tint);
+  --color-text-secondary: oklch(0.99 0.004 var(--tint-h) / 0.97);
+  --color-text-muted: oklch(0.99 0.004 var(--tint-h) / 0.93);
+}
+.room[data-tint="room"]::before { display: none; }
+.room[data-tint="room"] .panel {
+  background: oklch(calc(var(--tint-l) - 0.13) calc(var(--tint-c) * 0.85) var(--tint-h) / 0.82);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: oklch(1 0 0 / 0.14);
+  box-shadow: 0 22px 44px -30px oklch(0 0 0 / 0.55);
+}
+
+/* ---- Header: a band on the tint, not a glass slab ----------------------- */
+.room[data-tint] .room-header {
+  background: color-mix(in oklab, var(--tint) 88%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: 1px solid oklch(1 0 0 / 0.16);
+}
+.room[data-tint] .room-code-chip {
+  background: oklch(0 0 0 / 0.28);
+  border-color: oklch(1 0 0 / 0.22);
+}
+
+/* ---- Stage: big cover, big title ---------------------------------------- */
+.room[data-tint] .player-panel { order: 2; }
+.room[data-tint] .np-stage { order: 1; }
+.room[data-tint] .video-panel-keep {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.room[data-tint] .video-panel-keep > * { margin: 0 !important; }
+.room[data-tint] .video-panel-keep[data-active="false"] { display: block; }
+
+.np-stage { padding: clamp(1.25rem, 3vw, 2.25rem); }
+.np-stage__row {
+  --np-fs: clamp(2rem, 4.8vw, 4rem); /* the title size drives the cover's top offset */
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(1.25rem, 3vw, 2.25rem);
+  container-type: inline-size;
+}
+/* The cover's top edge sits on the cap height of the title's first line (the
+   line box carries about 0.17em above the capitals at line-height 0.98). Its
+   width is a share of the row, kept large while the title still fits on one line at
+   desktop width; it stays square (never stretched) at every width, so its
+   bottom meets the text column only where the proportions allow. */
+.np-cover {
+  flex: none;
+  align-self: flex-start;
+  width: clamp(9rem, 38cqw, 21rem);
+  margin-top: calc(var(--np-fs) * 0.17);
+  aspect-ratio: 1;
+  border-radius: 1.1rem;
+  overflow: hidden;
+  background: var(--tint-abyss, var(--color-surface-2));
+  box-shadow: 0 34px 60px -24px oklch(0 0 0 / 0.6), 0 0 0 1px oklch(1 0 0 / 0.14);
+}
+.np-cover__img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.22); }
+.np-cover__fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 5rem;
+  font-weight: 800;
+  color: var(--on-tint);
+}
+.np-stage__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1.1rem; }
+.np-head { flex-direction: column; align-items: stretch !important; gap: 0.9rem !important; }
+.np-head > div:last-child { flex-wrap: wrap; justify-content: flex-start; }
+.np-title {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: var(--np-fs, clamp(2rem, 4.8vw, 4rem));
+  line-height: 0.98;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: clip;
+}
+.np-stage .np-title + p { font-size: 1.125rem; }
+.np-stage .np-timer { white-space: nowrap; }
+.np-stage .np-transport { border-top: 0 !important; padding-top: 0 !important; }
+
+/* Controls are white on the tint (Apple Music): the play button is the one
+   control that is not a violet action. */
+.room[data-tint] .transport-play {
+  background: var(--on-tint) !important;
+  color: var(--tint-deep) !important;
+  border-radius: 999px;
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+/* Source badges and secondary buttons sit on a dark scrim so they read on any hue. */
+.room[data-tint] .np-stage .badge-source { background: oklch(0 0 0 / 0.32); }
+.room[data-tint] .radio-control { background: oklch(0 0 0 / 0.28); border-color: oklch(1 0 0 / 0.2); }
+
+/* ---- Chat: set large, on the tint --------------------------------------- */
+.room[data-tint] .chat-panel .chat-scroll { font-size: 1.0625rem; }
+.room[data-tint] .chat-panel [data-testid="chat-message"] p { font-size: 1.0625rem; line-height: 1.35; }
+.room[data-tint] .chat-panel [data-testid="chat-message"] .text-xs { font-size: 0.8125rem; }
+.room[data-tint] .chat-panel {
+  background: oklch(calc(var(--tint-l) - 0.1) calc(var(--tint-c) * 0.9) var(--tint-h) / 0.9);
+}
+/* ---- Stage layout on small screens -------------------------------------- */
+@media (max-width: 47.999rem) {
+  .np-stage__row { flex-direction: column; align-items: stretch; }
+  .np-cover { width: min(62vw, 15rem); align-self: center; margin-top: 0; }
+  .np-title { font-size: clamp(1.9rem, 9vw, 2.6rem); }
+  .room[data-tint] .audio-tabs { background: oklch(0 0 0 / 0.55); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+/* ---- Landing hero: headline beside a tilted live room -------------------- */
+.hero[data-tint="hero"] {
+  text-align: left;
+  place-items: center;
+  background: linear-gradient(165deg, var(--tint) 0%, var(--tint-deep) 100%);
+  --color-text-primary: var(--on-tint);
+  --color-text-secondary: oklch(0.99 0.004 var(--tint-h) / 0.97);
+  --color-text-muted: oklch(0.99 0.004 var(--tint-h) / 0.93);
+  --color-border: oklch(1 0 0 / 0.22);
+}
+.hero[data-tint="hero"] :is(.hero-aurora, .hero-glow, .hero-grid) { display: none; }
+.hero[data-tint="hero"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 9rem;
+  background: linear-gradient(180deg, transparent, var(--color-surface-0));
+  pointer-events: none;
+  z-index: 1;
+}
+.hero-layout {
+  position: relative;
+  z-index: 2;
+  width: min(80rem, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: clamp(1.5rem, 4vw, 4rem);
+  align-items: center;
+}
+.hero[data-tint="hero"] .hero-title {
+  font-size: clamp(2.5rem, 5.6vw, 5.6rem);
+  line-height: 0.96;
+  letter-spacing: -0.035em;
+}
+.hero[data-tint="hero"] .hero-title .word { background: none; color: var(--on-tint); -webkit-text-fill-color: currentColor; }
+.hero[data-tint="hero"] .hero-title .word-mask.word-accent { filter: none; }
+.hero[data-tint="hero"] .hero-title .word-mask.word-accent .word { color: var(--tint-pale); }
+.hero[data-tint="hero"] .hero-sub { margin-left: 0; margin-right: 0; }
+.hero[data-tint="hero"] .hero-cta { justify-content: flex-start; }
+.hero[data-tint="hero"] .hero-claims,
+.hero[data-tint="hero"] .hero-manifest { justify-content: flex-start; }
+.hero[data-tint="hero"] .eyebrow.is-live { background: oklch(0 0 0 / 0.34); }
+.hero[data-tint="hero"] .hero-hud .cmd-readout { color: var(--on-tint); }
+.hero[data-tint="hero"] .hero-hud,
+.hero[data-tint="hero"] .hero-ticker { color: var(--color-text-secondary); }
+/* Violet actions keep their meaning on any hue: ringed in the on-tint white. */
+.hero[data-tint="hero"] .btn-primary { box-shadow: 0 0 0 2px var(--on-tint), 0 12px 30px -12px oklch(0 0 0 / 0.5); }
+.hero[data-tint="hero"] .btn-ghost { border-color: oklch(1 0 0 / 0.5); color: var(--on-tint); }
+.hero[data-tint="hero"] .hero-create__input,
+.hero[data-tint="hero"] #hero-room-code { background: oklch(0 0 0 / 0.3); border-color: oklch(1 0 0 / 0.3); color: var(--on-tint); }
+.hero[data-tint="hero"] .hero-create__input::placeholder,
+.hero[data-tint="hero"] #hero-room-code::placeholder { color: oklch(1 0 0 / 0.65); }
+
+/* Device: the room, in miniature, in the track colour. */
+.hero-device { display: grid; place-items: center; perspective: 1600px; }
+.hero-device__body {
+  position: relative;
+  background: var(--tint-abyss);
+  border: 1px solid oklch(1 0 0 / 0.2);
+  box-shadow: 0 50px 90px -30px oklch(0 0 0 / 0.65);
+  overflow: hidden;
+}
+.hero-device .hero-device__body {
+  width: min(19rem, 78vw);
+  aspect-ratio: 9 / 18.5;
+  border-radius: 2.4rem;
+  border: 8px solid oklch(0.1 0.01 280);
+  transform: rotateY(-16deg) rotateX(7deg) rotateZ(5deg);
+  transform-style: preserve-3d;
+}
+.dev-room {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  height: 100%;
+  padding: 1.1rem;
+  background: linear-gradient(180deg, var(--tint) 0%, var(--tint-deep) 100%);
+  color: var(--on-tint);
+}
+.dev-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.hero-device .room-card__live { background: oklch(0 0 0 / 0.32); }
+.dev-listeners { display: inline-flex; align-items: center; font-size: 0.7rem; }
+.dev-listeners i {
+  width: 1.4rem; height: 1.4rem; border-radius: 50%;
+  display: grid; place-items: center;
+  margin-left: -0.35rem;
+  font-style: normal; font-weight: 700; font-size: 0.65rem;
+  color: oklch(0.15 0.01 280);
+  border: 2px solid var(--tint);
+}
+.dev-listeners i:first-child { margin-left: 0; }
+.dev-listeners b { font-weight: 600; margin-left: 0.5rem; }
+.dev-stage { display: grid; gap: 0.8rem; justify-items: start; }
+.dev-cover {
+  width: 100%;
+  max-width: 11rem;
+  aspect-ratio: 1;
+  border-radius: 0.9rem;
+  background:
+    radial-gradient(circle at 72% 28%, var(--tint-pale) 0 11%, transparent 12%),
+    radial-gradient(circle at 30% 78%, var(--tint-hi) 0 38%, transparent 39%),
+    conic-gradient(from 210deg at 60% 60%, var(--tint-abyss), var(--tint-hi), var(--tint-deep), var(--tint-abyss));
+  box-shadow: 0 24px 40px -18px oklch(0 0 0 / 0.6), 0 0 0 1px oklch(1 0 0 / 0.16);
+}
+.hero-device .dev-cover { max-width: none; }
+.dev-meta { width: 100%; min-width: 0; }
+.dev-title {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 1.6rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.dev-artist { margin-top: 0.3rem; font-size: 0.85rem; color: oklch(0.99 0.004 var(--tint-h) / 0.94); }
+.dev-progress { margin-top: 0.8rem; height: 0.25rem; border-radius: 99px; background: oklch(1 0 0 / 0.28); overflow: hidden; }
+.dev-progress span { display: block; width: 100%; height: 100%; background: var(--on-tint); transform-origin: left; animation: dev-progress-run 5.2s linear infinite; }
+@keyframes dev-progress-run { from { transform: scaleX(0.04); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .dev-progress span { animation: none; transform: scaleX(0.42); } }
+.dev-chat { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; font-size: 0.78rem; min-width: 0; }
+.dev-chat li { display: flex; align-items: baseline; gap: 0.4rem; min-width: 0; }
+.dev-chat b { font-weight: 700; }
+.dev-chat span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: oklch(0.99 0.004 var(--tint-h) / 0.9); }
+.dev-chat em { display: inline-flex; align-items: center; gap: 0.2rem; font-style: normal; font-size: 0.68rem; color: var(--tint-pale); }
+.dev-input {
+  margin-top: auto;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  background: oklch(0 0 0 / 0.3);
+  border: 1px solid oklch(1 0 0 / 0.22);
+  font-size: 0.75rem;
+  color: oklch(1 0 0 / 0.82);
+}
+
+@media (max-width: 63.999rem) {
+  .hero-layout { grid-template-columns: 1fr; }
+  .hero[data-tint="hero"] { padding-top: 5.5rem; }
+}
+
+/* Hero copy column: left aligned, forms stacked, headline phrases on one line each. */
+.hero[data-tint="hero"] { padding-top: 7.5rem; }
+.hero-layout { grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr); }
+.hero[data-tint="hero"] .hero-title { font-size: clamp(2.4rem, 4.7vw, 4.9rem); margin-top: 1.25rem; }
+.hero[data-tint="hero"] .hero-cta { flex-direction: column; align-items: flex-start; gap: 0.9rem; }
+.hero[data-tint="hero"] .hero-create { justify-content: flex-start; flex-wrap: nowrap; }
+.hero[data-tint="hero"] .hero-create .hero-join__label { flex-basis: 100%; }
+.hero[data-tint="hero"] .hero-create { flex-wrap: wrap; }
+.hero[data-tint="hero"] .hero-create .btn-primary:disabled { opacity: 0.72; }
+.host-chip {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid oklch(1 0 0 / 0.3);
+  background: oklch(0 0 0 / 0.26);
+  color: var(--color-text-primary);
+}
+
+
+@media (max-width: 63.999rem) {
+  .hero-layout { grid-template-columns: 1fr; }
+  .hero[data-tint="hero"] { padding-top: 6rem; padding-bottom: 3rem; min-height: auto; }
+  .hero-device { margin-top: 1.5rem; }
+  .hero[data-tint="hero"] .hero-title { font-size: clamp(2.2rem, 10vw, 3.6rem); }
+}
+
+/* ============================================================
+   Cor da faixa: movimento (#325), off under prefers-reduced-motion
+   (the components never mount, so there is nothing to override).
+   ============================================================ */
+
+/* 2. scroll story: one pinned stage, washed to the step's track colour */
+.story {
+  --story-h: min(calc(100svh - 96px), 44rem);
+  height: var(--story-h);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  align-items: center;
+  gap: 2rem;
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  border-radius: 1.5rem;
+  background: linear-gradient(165deg, var(--tint) 0%, var(--tint-deep) 100%);
+  --color-text-primary: var(--on-tint);
+  --color-text-secondary: oklch(0.99 0.004 var(--tint-h) / 0.97);
+  overflow: hidden;
+}
+.story__steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.25rem; }
+.story__step { opacity: 0.72; transition: opacity 400ms ease, transform 400ms ease; padding-left: 1rem; border-left: 3px solid oklch(1 0 0 / 0.25); }
+.story__step[data-active="true"] { opacity: 1; transform: translateX(0.35rem); border-left-color: var(--on-tint); }
+.story__step h3 { font-family: var(--font-display), system-ui, sans-serif; font-size: clamp(1.3rem, 2.4vw, 2rem); font-weight: 800; letter-spacing: -0.02em; margin: 0.25rem 0; color: var(--on-tint); }
+.story__step p { color: var(--color-text-secondary); margin: 0; max-width: 32rem; }
+.story__step .step-num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.8rem; color: var(--tint-pale); }
+.story__phone { display: grid; place-items: center; min-height: 0; }
+.story .hero-device .hero-device__body { width: min(15.5rem, 62vw); max-height: calc(var(--story-h) - 3rem); transform: rotateY(-10deg) rotateX(4deg) rotateZ(3deg); }
+@media (max-width: 47.999rem) {
+  .story { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); align-items: start; gap: 0.75rem; }
+  .story__step { display: none; }
+  .story__step[data-active="true"] { display: block; transform: none; }
+  .story .hero-device .hero-device__body { width: min(11rem, 48vw); }
+}
+
+/* 3. wave break */
+.wave-break { max-width: 52rem; margin: 0 auto; padding: 0 1.5rem; }
+.wave-break svg { display: block; overflow: visible; }
+
+.np-cover.is-flying { position: relative; z-index: 30; will-change: transform; }
+
+.hero-device .room-card__live { white-space: nowrap; }
+
+/* ============================================================
+   Cor da faixa: ground stack (#325)
+   The ground sits on a fixed layer behind the content (room) or the page
+   (landing); a scrim keeps white type >= 4.5:1.
+   Every loop is CSS transform only (compositor), paused when hidden/off-screen,
+   and stops under prefers-reduced-motion (one static frame).
+   ============================================================ */
+.ground-stack { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: oklch(0.1 0.02 280); }
+.room > .ground-stack { position: fixed; z-index: 0; }
+.ground-stack__layer, .gl { position: absolute; inset: 0; overflow: hidden; }
+.gl-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, oklch(0 0 0 / 0.36), oklch(0 0 0 / 0.52)); }
+.ground-stack.is-held * { animation-play-state: paused !important; }
+
+.wave-break[data-beat] .wave-av circle { transform-box: fill-box; transform-origin: center; transform: scale(calc(1 + var(--beat, 0) * 0.14)); }
+.wave-break[data-beat] .wave-line { opacity: calc(0.7 + var(--beat, 0) * 0.3); }
+
+/* ============================================================
+   Cor da faixa: sintonia (#325)
+   One rule for the whole product:
+   - ONE fixed ground behind everything (landing: every section; room), the same
+     component, two colours of the cover (dominant + its nearest neighbour, at most
+     ~60 degrees apart), drifting over 36 s and 48 s, one scrim level.
+   - Colour roles: cover palette = ground only; violet = actions only; white = text;
+     green = LIVE only.
+   - ONE connection element: the logo's sine wave, inside the stage / the phone,
+     linking the listener avatars, breathing on the shared beat while playing.
+   - ONE surface treatment (glass): black at 34%, white 16% hairline, 0.9rem radius,
+     no blur, in the room and on the landing.
+   - Motion at rest: ground drift + wave breathing, nothing else.
+   ============================================================ */
+:root { --glass: oklch(0 0 0 / 0.34); --glass-line: oklch(1 0 0 / 0.16); --glass-radius: 0.9rem; }
+
+.ground-stack--page { position: fixed; z-index: -1; }
+.landing[data-bg="sintonia"] { isolation: isolate; }
+.gl--sintonia { background: var(--sbase, oklch(0.14 0.04 280)); }
+.gl-sblob {
+  position: absolute;
+  width: 95vmax;
+  height: 95vmax;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--c) 0%, transparent 100%);
+  will-change: transform;
+}
+.gl-sblob--a { --c: var(--s0); left: -28%; top: -40%; animation: gl-sdrift-a 36s ease-in-out infinite alternate; }
+.gl-sblob--b { --c: var(--s1); right: -32%; bottom: -48%; animation: gl-sdrift-b 48s ease-in-out infinite alternate; }
+@keyframes gl-sdrift-a { from { transform: translate(-3vw, -2vh) scale(1); } to { transform: translate(9vw, 7vh) scale(1.08); } }
+@keyframes gl-sdrift-b { from { transform: translate(3vw, 2vh) scale(1.06); } to { transform: translate(-9vw, -6vh) scale(1); } }
+.gl--sintonia .gl-scrim { background: oklch(0 0 0 / 0.22); }
+.gl--sintonia.is-static .gl-sblob { animation: none; }
+@media (prefers-reduced-motion: reduce) { .gl--sintonia .gl-sblob { animation: none; } }
+
+/* the wave: one thin line through the listener row */
+.listeners-wave { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; height: 3.25rem; margin-top: 0.25rem; }
+.listeners-wave__svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.lw-av {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: oklch(0.99 0.004 280);
+  border: 2px solid oklch(1 0 0 / 0.55);
+  transform: scale(calc(1 + var(--beat, 0) * 0.06));
+}
+.dev-wave { height: 2.4rem; margin-top: 0; }
+.dev-wave .lw-av { width: 1.55rem; height: 1.55rem; font-size: 0.62rem; border-width: 1.5px; }
+.hero[data-bg="sintonia"] .dev-listeners i { display: none; }
+.hero[data-bg="sintonia"] .dev-cover { background: var(--demo-cover) center / cover no-repeat; }
+
+/* room: the ground is behind, panels are glass, tokens carry no cover colour */
+.room[data-tint="room"][data-bg="sintonia"] {
+  background: oklch(0.1 0.02 280);
+  --color-surface-1: var(--glass);
+  --color-surface-2: oklch(0 0 0 / 0.26);
+  --color-surface-3: oklch(1 0 0 / 0.08);
+  --color-border: var(--glass-line);
+  --color-text-secondary: oklch(0.99 0.004 280 / 0.92);
+  --color-text-muted: oklch(0.99 0.004 280 / 0.8);
+}
+.room[data-tint="room"][data-bg="sintonia"] :is(.panel, .chat-panel) {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--glass-radius);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.room[data-tint="room"][data-bg="sintonia"] .room-header { background: var(--glass); border-bottom: 1px solid var(--glass-line); backdrop-filter: none; }
+.room[data-tint="room"][data-bg="sintonia"] .np-cover { box-shadow: 0 24px 50px -24px oklch(0 0 0 / 0.6); }
+.room[data-bg="sintonia"] .np-wave { margin-top: 0.5rem; }
+
+/* landing: sections sit on the ground, no section paints its own background */
+.landing[data-bg="sintonia"] {
+  --color-surface-1: var(--glass);
+  --color-surface-2: oklch(0 0 0 / 0.26);
+  --color-border: var(--glass-line);
+  --color-text-secondary: oklch(0.99 0.004 280 / 0.92);
+  --color-text-muted: oklch(0.99 0.004 280 / 0.8);
+}
+.landing[data-bg="sintonia"] .hero[data-tint="hero"] { background: none; }
+.landing[data-bg="sintonia"] .hero[data-tint="hero"]::after { display: none; }
+.landing[data-bg="sintonia"] :is(.hero-hud, .hero-ticker) { display: none; }
+.landing[data-bg="sintonia"] .final-cta { background: none; }
+.landing[data-bg="sintonia"] .site-header { background: var(--glass); backdrop-filter: none; -webkit-backdrop-filter: none; border-bottom: 1px solid var(--glass-line); }
+.landing[data-bg="sintonia"] .story { background: none; border-radius: 0; padding-inline: 0; }
+.landing[data-bg="sintonia"] :is(.section-eyebrow, .section-title em, .vs-table thead th:last-child, .step-num) { color: var(--tint-pale, oklch(0.93 0.08 280)); }
+.landing[data-bg="sintonia"] .dev-progress span { animation: none; transform: scaleX(0.42); }
+.landing[data-bg="sintonia"] .dev-room { background: var(--glass); }
+.landing[data-bg="sintonia"] .hero-device__body { background: oklch(0 0 0 / 0.45); border-color: oklch(0.1 0.01 280); }
+.landing[data-bg="sintonia"] .wave-break .wave-line { stroke: oklch(1 0 0 / 0.7); }
+.landing[data-bg="sintonia"] .wave-break .wave-av text { fill: oklch(0.15 0.01 280); }
+.landing[data-bg="sintonia"] .vs-table, .landing[data-bg="sintonia"] .platform-chip { border-color: var(--glass-line); }
+/* motion budget at rest: only the ground drifts and the wave breathes */
+.landing[data-bg="sintonia"] :is(.room-card__dot, .eyebrow-dot) { animation: none; }
+.room[data-bg="sintonia"] :is(.connection-dot, .eq span, .queue-thumb-eq span) { animation: none; }
+
+/* ============================================================
+   Join screen (sintonia, #325): the pre-join name screen on the same ground
+   component and the same glass surface as the room. Before joining the client
+   holds no room state, so the ground is the idle one; the visitor's own avatar
+   waits at the end of a flat wave. Violet = the one action, white = text.
+   ============================================================ */
+.join-main {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem 1rem;
+}
+.join-form {
+  width: 100%;
+  max-width: 26rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: clamp(1.5rem, 5vw, 2.25rem);
+}
+.join-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+.join-title { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.75rem; }
+.join-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--color-text-secondary);
+}
+.join-code {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: clamp(2rem, 9vw, 3rem);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+.join-tagline { margin-top: -0.4rem; font-size: 0.95rem; color: var(--color-text-secondary); }
+.join-wave {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 2.1rem;
+  margin: 0.5rem 0 1.1rem;
+}
+.join-wave__line {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: calc(100% - 1.05rem);
+  height: 4px;
+  translate: 0 -50%;
+  opacity: 0.45;
+  pointer-events: none;
+}
+.join-wave__wait {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.3rem);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+.join-input {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border-radius: var(--glass-radius);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font-size: 1rem;
+}
+.join-submit { width: 100%; justify-content: center; }
+.join-submit:disabled { opacity: 0.5; filter: none; box-shadow: none; }
+.join-note { font-size: 0.75rem; line-height: 1.5; color: var(--color-text-muted); }
+.join-form .join-error { color: oklch(0.88 0.1 25); }
+
+/* Age gate: the same glass surface as every other panel. */
+.age-gate::backdrop { background: oklch(0 0 0 / 0.55); }
+.age-gate__panel {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--glass-radius);
+  color: oklch(0.99 0.004 280);
+}
+.age-gate__body { opacity: 1; color: oklch(0.99 0.004 280 / 0.92); }
+
+/* ============================================================
+   Outras telas (sintonia, #325): 404, /account, /rooms, the Spotify callback,
+   removed-from-room and the error boundary. Same ground component (idle violet,
+   nothing plays here), same glass surface, same wave, same type. Page tokens are
+   remapped the way .landing[data-bg="sintonia"] does it. White = text, violet =
+   the one action, green = LIVE only (the dot on a room that is active now).
+   ============================================================ */
+.sx {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  background: oklch(0.1 0.02 280);
+  --color-surface-1: var(--glass);
+  --color-surface-2: oklch(0 0 0 / 0.26);
+  --color-surface-3: oklch(1 0 0 / 0.08);
+  --color-border: var(--glass-line);
+  --color-text-secondary: oklch(0.99 0.004 280 / 0.92);
+  --color-text-muted: oklch(0.99 0.004 280 / 0.8);
+}
+.sx-glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--glass-radius);
+}
+.sx .panel {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--glass-radius);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.sx-main {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem 1rem;
+}
+.sx-card {
+  width: 100%;
+  max-width: 28rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: clamp(1.5rem, 5vw, 2.25rem);
+}
+.sx-card--narrow { max-width: 25rem; }
+.sx-center { align-items: center; text-align: center; }
+.sx-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.sx-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+.sx-eyebrow {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--color-text-secondary);
+}
+.sx-title {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: clamp(2rem, 8vw, 2.75rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+.sx-title--sm { font-size: clamp(1.5rem, 6vw, 1.85rem); line-height: 1.1; letter-spacing: -0.02em; }
+.sx-eyebrow + .sx-title { margin-top: -0.6rem; }
+.sx-text { font-size: 0.95rem; line-height: 1.55; color: var(--color-text-secondary); }
+.sx-text strong { color: var(--color-text-primary); font-weight: 600; overflow-wrap: anywhere; }
+.sx-text--muted { color: var(--color-text-muted); }
+.sx-label { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.02em; color: var(--color-text-secondary); }
+.sx-ref { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.75rem; color: var(--color-text-muted); }
+.sx-link {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-color: oklch(1 0 0 / 0.5);
+}
+.sx-link:hover { text-decoration-color: currentColor; }
+.sx-stack { display: flex; flex-direction: column; gap: 0.9rem; }
+.sx-stack--tight { gap: 0.5rem; }
+.sx-row { display: flex; gap: 0.5rem; }
+.sx-row .join-input { flex: 1; min-width: 0; }
+.sx-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.25rem; }
+.sx-actions--center { justify-content: center; }
+.sx-actions :is(.btn-primary, .btn-ghost), .sx-block { text-align: center; }
+.sx-block { width: 100%; }
+.sx-actions > * { flex: 1 1 auto; }
+.sx-actions--center > * { flex: 0 1 auto; }
+.sx :is(.btn-primary, .btn-ghost) { min-height: 44px; }
+.sx .btn-primary:disabled, .sx .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; filter: none; box-shadow: none; }
+.sx-list { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.95rem; color: var(--color-text-primary); }
+.sx-or { display: flex; align-items: center; gap: 0.75rem; font-size: 0.75rem; color: var(--color-text-muted); }
+.sx-or::before, .sx-or::after { content: ""; flex: 1; height: 1px; background: var(--glass-line); }
+.sx-feedback { font-size: 0.875rem; color: var(--color-text-primary); }
+.sx-feedback--error { color: var(--color-status-error-soft); }
+.sx-wave { display: block; width: 100%; max-width: 12rem; height: 1.25rem; opacity: 0.7; }
+.sx-wave--wide { max-width: none; margin: -0.5rem 0 1.25rem; }
+.sx-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--glass-line);
+  border-top-color: oklch(1 0 0 / 0.9);
+  animation: callback-spin 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .sx-spinner { animation: none; } }
+.sx-badge {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid oklch(1 0 0 / 0.7);
+  color: oklch(1 0 0);
+}
+.sx-badge--error { border-color: var(--color-status-error-soft); color: var(--color-status-error-soft); }
+
+/* /rooms: the directory on the ground, one glass card per room */
+.sx .rooms-page__title { font-family: var(--font-display), system-ui, sans-serif; font-weight: 800; letter-spacing: -0.03em; font-size: clamp(1.75rem, 6vw, 2.5rem); line-height: 1; }
+.sx .rooms-page__sub { font-size: 0.95rem; }
+.sx .rooms-page__head { margin-bottom: 1.25rem; }
+.sx .live-counter { margin: 0.9rem 0 0; }
+.sx :is(.rooms-page__search, .rooms-page__sort select) {
+  background: oklch(0 0 0 / 0.34);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--glass-radius);
+  color: var(--color-text-primary);
+}
+.sx .rooms-page__search::placeholder { color: var(--color-text-muted); }
+.sx .rooms-page__sort { color: var(--color-text-secondary); }
+.sx .rooms-page__empty { color: var(--color-text-secondary); border-radius: var(--glass-radius); }
+.sx .live-room-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--glass-radius);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0.9rem 1rem;
+}
+.sx .live-room-card:hover { border-color: oklch(1 0 0 / 0.5); transform: none; }
+.sx .live-room-card:focus-visible { outline: 2px solid oklch(1 0 0); outline-offset: 2px; }
+.sx .live-room-card__name { font-family: var(--font-display), system-ui, sans-serif; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
+.sx .live-room-card__title { font-size: 0.9rem; }
+.sx .live-room-card__artist { font-size: 0.8rem; }
+.sx .live-room-card__count { font-size: 0.7rem; color: var(--color-text-secondary); }
+.sx .live-room-card__bottom { border-top-color: var(--glass-line); }
+.sx .live-room-report { color: var(--color-text-secondary); }
+.sx .live-room-report:hover, .sx .live-room-report:focus-visible { color: var(--color-text-primary); }
+.sx-kind {
+  flex: none;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--glass-line);
+  color: var(--color-text-primary);
+}
+.live-room-card__when { display: inline-flex; align-items: center; gap: 0.4rem; }
+.sx .room-card__dot { width: 0.4rem; height: 0.4rem; animation: none; box-shadow: none; }
+
+/* dialogs (age gate, report) sit in the top layer: keep the text white on glass */
+.age-gate { width: min(29rem, 100vw); max-width: none; }
+.age-gate::backdrop { background: oklch(0 0 0 / 0.68); }
+/* a modal covers content, so the glass sits on a solid deep-violet base here */
+.age-gate__panel { background: linear-gradient(var(--glass), var(--glass)), oklch(0.13 0.03 290); }
+.sx-link { white-space: nowrap; }
+.age-gate__panel { width: 100%; max-width: none; }
+.age-gate__title { font-family: var(--font-display), system-ui, sans-serif; font-weight: 700; font-size: 1.35rem; letter-spacing: -0.01em; }
+.age-gate__actions > * { flex: 1 1 auto; justify-content: center; text-align: center; min-height: 44px; }
+
+/* ============================================================
+   Fila: flat rows on the one glass panel (Apple Music Up Next, Spotify queue),
+   Stationhead social: who asked leads, votes are the voters' avatars. Violet is only for actions and the
+   voted state; no coloured source badges, no mono counters, no row boxes.
+   ============================================================ */
+.fq-h { font-family: var(--font-display), system-ui, sans-serif; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; color: var(--color-text-primary); }
+.fq-agg { margin-top: 0.25rem; font-size: 0.8125rem; color: var(--color-text-muted); }
+
+.fq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin-inline: -0.5rem;
+  max-height: min(40rem, calc(100vh - 11rem));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(1 0 0 / 0.28) transparent;
+}
+.fq-items { display: contents; }
+.fq-sub { order: -1; margin: 0.75rem 0.5rem 0.25rem; font-family: var(--font-display), system-ui, sans-serif; font-size: 0.8125rem; font-weight: 600; color: var(--color-text-muted); }
+
+.fq-row { position: relative; flex: none; border-radius: 0.5rem; transition: background-color 120ms ease; }
+.fq-row:hover, .fq-row:focus-within { background: oklch(1 0 0 / 0.07); }
+.fq-row.is-now { background: oklch(1 0 0 / 0.1); }
+.fq-row.removing { opacity: 0.55; }
+.fq-main { position: relative; display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem; }
+
+.fq-art { position: relative; flex: none; width: 40px; height: 40px; border-radius: 0.375rem; overflow: hidden; background: oklch(1 0 0 / 0.1); }
+.fq-art img, .fq-art__fallback { width: 100%; height: 100%; object-fit: cover; display: grid; place-items: center; color: var(--color-text-muted); }
+.fq-art .queue-thumb-eq { border-radius: 0; }
+
+.fq-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fq-kicker { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); }
+.fq-title {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.fq-artist { font-size: 0.8125rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fq-pick, .fq-missing { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fq-pick { font-size: 0.75rem; font-weight: 600; color: var(--tint-pale, var(--color-text-primary)); }
+
+.fq-av { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 0.8125rem; font-weight: 700; color: var(--on-tint, oklch(0.99 0.004 280)); }
+
+.fq-vote {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.fq-vote:hover:not(:disabled) { color: var(--color-text-primary); background: oklch(1 0 0 / 0.1); }
+.fq-vote[data-voted="true"] { color: var(--color-accent); }
+.fq-vote:disabled { opacity: 0.5; cursor: not-allowed; }
+.fq-vote:focus-visible, .fq-controls button:focus-visible, .fq-more:focus-visible, .fq-undo button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* reorder / play / remove: only on hover or focus, over the end of the row */
+.fq-controls {
+  position: absolute;
+  right: 7.5rem; /* clear of the vote pill (stack + chevron + count) */
+  bottom: 0.25rem;
+  display: flex;
+  gap: 0.125rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.fq-row:hover .fq-controls, .fq-row:focus-within .fq-controls { opacity: 1; }
+/* controls sit on the bottom line of the text column: keep that line (artist,
+   pick, missing-version note) clear of them while they show. Title, "pediu" line
+   and the pill are never covered. */
+.fq-row:hover :is(.fq-artist, .fq-pick, .fq-missing), .fq-row:focus-within :is(.fq-artist, .fq-pick, .fq-missing) { padding-right: 7.75rem; }
+.fq-missing { font-size: 0.75rem; color: var(--color-text-muted); }
+.fq-controls button { width: 1.75rem; height: 1.75rem; display: grid; place-items: center; border-radius: 50%; background: none; color: var(--color-text-secondary); }
+.fq-controls button:hover:not(:disabled) { background: oklch(1 0 0 / 0.14); color: var(--color-text-primary); }
+.fq-controls button:first-child:not(:disabled) { background: var(--color-accent); color: oklch(0.99 0.004 280); }
+.fq-controls button:disabled { opacity: 0.35; cursor: not-allowed; }
+.fq-more { display: none; }
+
+.fq-undo { display: flex; align-items: center; justify-content: space-between; padding: 0 0.5rem 0.5rem; font-size: 0.8125rem; color: var(--color-text-secondary); }
+.fq-undo button { color: var(--color-accent); font-weight: 600; padding: 0.25rem 0.5rem; border-radius: 0.375rem; }
+
+/* social (Stationhead): who asked leads the row; votes are stacked avatars */
+.fq-stack { display: inline-flex; align-items: center; padding-left: 0.375rem; }
+.fq-stack i { width: 20px; height: 20px; border-radius: 50%; margin-left: -0.375rem; border: 1.5px solid oklch(0.2 0.02 280); display: grid; place-items: center; font-style: normal; font-size: 0.625rem; font-weight: 700; color: var(--on-tint, oklch(0.99 0.004 280)); }
+.fq-stack__anon { background: oklch(1 0 0 / 0.28); }
+.fq-stack__more { background: oklch(0 0 0 / 0.35); }
+.fq-stack__empty { background: none !important; border: 1.5px dashed oklch(1 0 0 / 0.45) !important; }
+.fq-row.is-pinned { order: -2; margin-bottom: 0.25rem; border-radius: 0.7rem; background: color-mix(in oklab, var(--tint-hi, oklch(0.45 0.1 300)) 72%, oklch(0 0 0 / 0.1)); }
+.fq-row.is-pinned:hover, .fq-row.is-pinned:focus-within { background: color-mix(in oklab, var(--tint-hi, oklch(0.45 0.1 300)) 80%, oklch(0 0 0 / 0.1)); }
+.fq-row.is-pinned .fq-art { width: 56px; height: 56px; }
+.fq-row.is-pinned .fq-title { font-size: 1.05rem; font-weight: 700; }
+.fq-row.is-pinned .fq-kicker { color: var(--color-text-secondary); }
+
+@media (max-width: 47.999rem) {
+  .fq-list { max-height: none; overflow: visible; }
+  .fq-main { flex-wrap: wrap; gap: 0.5rem; }
+  .fq-av { width: 28px; height: 28px; font-size: 0.75rem; }
+  .fq-text { flex-basis: 0; }
+}
+/* phones and touch screens at any width: no hover, so the secondary actions
+   sit behind a 44px "more" toggle and open on their own line */
+@media (max-width: 47.999rem), (hover: none), (any-pointer: coarse) {
+  .fq-main { flex-wrap: wrap; }
+  .fq-row :is(button, a) { min-width: 44px; min-height: 44px; }
+  .fq-more { display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 50%; background: none; color: var(--color-text-secondary); font-size: 1.1rem; }
+  .fq-row:hover :is(.fq-artist, .fq-pick, .fq-missing), .fq-row:focus-within :is(.fq-artist, .fq-pick, .fq-missing) { padding-right: 0; }
+  .fq-controls { display: none; position: static; flex-basis: 100%; justify-content: flex-end; gap: 0.5rem; opacity: 1; padding: 0; }
+  .fq-row[data-more="true"] .fq-controls { display: flex; }
+  .fq-controls button { width: 44px; height: 44px; }
 }

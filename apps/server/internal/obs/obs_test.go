@@ -85,3 +85,23 @@ func TestFailureAndAdoptionCounters(t *testing.T) {
 		t.Fatalf("rooms_set_public series = %d, want 2 (true|false)", got)
 	}
 }
+
+// #319: the retention counter moves by rows purged, per table, and is
+// registered so /metrics exports it.
+func TestRetentionPurgedCounter(t *testing.T) {
+	m := New()
+	m.RetentionPurged("reports", 3)
+	m.RetentionPurged("reports", 2)
+	m.RetentionPurged("moderation_actions", 1)
+
+	if got := testutil.ToFloat64(m.RetentionPurgedRows.WithLabelValues("reports")); got != 5 {
+		t.Fatalf("retention_purged_total{table=reports} = %v, want 5", got)
+	}
+	if got := testutil.ToFloat64(m.RetentionPurgedRows.WithLabelValues("moderation_actions")); got != 1 {
+		t.Fatalf("retention_purged_total{table=moderation_actions} = %v, want 1", got)
+	}
+	n, err := testutil.GatherAndCount(m.Registry, "music_jam_retention_purged_total")
+	if err != nil || n != 2 {
+		t.Fatalf("registered series = %d, %v; want 2", n, err)
+	}
+}

@@ -57,7 +57,7 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
         );
         if (!cancelled) setData(result);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch lyrics');
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Não foi possível carregar a letra');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -137,14 +137,14 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
         ref={containerRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`Lyrics for ${track.title}`}
+        aria-label={`Letra de ${track.title}`}
       >
         {/* Header */}
         <div className="flex-shrink-0 px-6 py-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-accent)', letterSpacing: '0.15em' }}>
-                Lyrics
+                Letra
               </p>
               <h2 className="text-lg font-semibold mt-1 truncate" style={{ color: 'var(--color-text-primary)' }}>
                 {track.title}
@@ -157,7 +157,7 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
               onClick={onClose}
               className="flex-shrink-0 p-2 rounded-lg hover:opacity-70 transition-opacity"
               style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
-              aria-label="Close lyrics"
+              aria-label="Fechar letra"
             >
               ✕
             </button>
@@ -226,13 +226,13 @@ export function LyricsPanel({ roomId, track, open, onClose, activePlayer }: Lyri
                 </div>
               ) : (
                 <div style={{ color: 'var(--color-text-secondary)' }}>
-                  <p className="text-sm">No lyrics found for this track yet.</p>
+                  <p className="text-sm">Ainda não há letra para esta faixa.</p>
                 </div>
               )}
 
               {/* Source attribution */}
               <div className="pt-2 border-t text-xs" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}>
-                Data from LRCLIB
+                Dados do LRCLIB
               </div>
             </>
           )}

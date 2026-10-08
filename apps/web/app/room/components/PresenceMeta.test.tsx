@@ -35,7 +35,7 @@ describe('PresenceMeta (fused now-playing chip)', () => {
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Alice')]);
     render(<PresenceMeta />);
 
-    expect(screen.getByText('2 listening')).toBeInTheDocument();
+    expect(screen.getByText('2 ouvindo')).toBeInTheDocument();
   });
 
   it('renders nothing when the room is empty', () => {

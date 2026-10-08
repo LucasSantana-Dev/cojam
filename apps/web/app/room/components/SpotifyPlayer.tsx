@@ -3,23 +3,35 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useStore } from '@/lib/realtime';
 import { pickSource } from '@/lib/pickSource';
-import { beginAuth, getAccessToken, isAuthed } from '@/lib/spotifyAuth';
-import { decidePlayable } from '@/lib/spotifyAccount';
+import { beginAuth, getAccessToken, isAuthed, needsSpotifyReconnect } from '@/lib/spotifyAuth';
+import { checkAccount } from '@/lib/spotifyAccount';
+import {
+  canRetrySpotifyConnect,
+  kindFromAccountCheck,
+  spotifyConnectMessage,
+  type SpotifyConnectErrorKind,
+} from '@/lib/spotifyConnectError';
 import { getRuntimeEnv, pickEnv } from '@/lib/runtimeEnv';
 import { SpotifyIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
-import { detectSpotifyCanSeek, createEndedDetector } from '@/lib/playerUtils';
+import { detectSpotifyCanSeek, createEndedDetector, createSpotifyEndDetector, type SpotifyEndState } from '@/lib/playerUtils';
 
 // Minimal structural types for the Spotify Web Playback SDK surface we use.
 export interface SpotifyPlaybackState {
   position: number;
-  track_window?: { current_track?: { duration_ms?: number } };
+  paused?: boolean;
+  track_window?: {
+    current_track?: { duration_ms?: number; id?: string | null; uri?: string };
+    previous_tracks?: Array<{ id?: string | null; uri?: string }>;
+  };
 }
 
 export interface SpotifySDKPlayer {
   connect(): Promise<boolean>;
   getCurrentState(): Promise<SpotifyPlaybackState | null>;
+  pause?(): Promise<void>;
   addListener(event: 'ready', cb: (data: { device_id: string }) => void): boolean;
+  addListener(event: 'player_state_changed', cb: (state: SpotifyPlaybackState | null) => void): boolean;
   addListener(event: string, cb: () => void): boolean;
 }
 
@@ -75,6 +87,11 @@ class SpotifyPlayerAdapter implements IPlayer {
   private canSeekValue: boolean = false;
   private positionPollInterval: NodeJS.Timeout | null = null;
   private endedDetector = createEndedDetector();
+  private stateEndDetector = createSpotifyEndDetector();
+  // The track CoJam asked the SDK to play, and the one an advance was already
+  // sent for: the poll and state paths share this latch (one advance per track).
+  private expectedUri: string | null = null;
+  private advancedFor: string | null = null;
 
   constructor(player: SpotifySDKPlayer, deviceId: string, canSeek: boolean) {
     this.player = player;
@@ -136,10 +153,44 @@ class SpotifyPlayerAdapter implements IPlayer {
 
   onEnded(cb: () => void): void {
     this.endedCallbacks.push(cb);
+    // End detection must not depend on a position subscriber (the transport
+    // bar) being mounted.
+    this.startPolling();
+  }
+
+  // Fed by the SDK's player_state_changed: catches the natural end of a track
+  // (paused at position 0 with the track in previous_tracks), which the
+  // position poll cannot see.
+  setExpected(uri: string | null): void {
+    if (uri !== this.expectedUri) this.advancedFor = null;
+    this.expectedUri = uri;
+  }
+
+  private emitEnded(): void {
+    if (this.advancedFor !== null && this.advancedFor === this.expectedUri) return;
+    this.advancedFor = this.expectedUri;
+    this.endedCallbacks.forEach((c) => c());
+  }
+
+  handleStateChange(state: SpotifyEndState | null): void {
+    const end = this.stateEndDetector(state, this.expectedUri);
+    if (!end) {
+      // Replay of the same track (position back near 0, playing) re-arms.
+      if (state && !state.paused && state.position > 0 && state.position < 5000) this.advancedFor = null;
+      return;
+    }
+    // Spotify Autoplay (or a skip in the user's own app) moved to a track the
+    // room never queued: stop it so it does not play while the room advances.
+    if (end === 'foreign') void this.player.pause?.()?.catch?.(() => {});
+    this.emitEnded();
   }
 
   onPositionChanged(cb: (positionMs: number) => void): void {
     this.positionCallbacks.push(cb);
+    this.startPolling();
+  }
+
+  private startPolling(): void {
     if (!this.positionPollInterval) {
       this.positionPollInterval = setInterval(async () => {
         try {
@@ -147,9 +198,7 @@ class SpotifyPlayerAdapter implements IPlayer {
           const pos = state?.position ?? 0;
           const duration = state?.track_window?.current_track?.duration_ms ?? 0;
           this.positionCallbacks.forEach((c) => c(pos));
-          if (this.endedDetector(pos, duration)) {
-            this.endedCallbacks.forEach((c) => c());
-          }
+          if (this.endedDetector(pos, duration)) this.emitEnded();
         } catch {
           // Keep polling; a transient SDK read failure is not fatal.
         }
@@ -165,6 +214,7 @@ class SpotifyPlayerAdapter implements IPlayer {
     this.endedCallbacks = [];
     this.positionCallbacks = [];
     this.endedDetector = createEndedDetector();
+    this.stateEndDetector = createSpotifyEndDetector();
   }
 }
 
@@ -186,6 +236,8 @@ export function SpotifyPlayer({
   const deviceId = useRef<string | null>(null);
   const playerRef = useRef<SpotifyPlayerAdapter | null>(null);
   const [status, setStatus] = useState<'idle' | 'ready' | 'error'>('idle');
+  // Why Spotify is not usable right now; shown next to the connect button.
+  const [problem, setProblem] = useState<SpotifyConnectErrorKind | null>(null);
   const state = useStore((s) => s.state);
   const nowPlaying = state?.nowPlayingId
     ? state.queue.find((t) => t.id === state.nowPlayingId)
@@ -227,12 +279,14 @@ export function SpotifyPlayer({
         const token = await getAccessToken();
         if (cancelled) return;
         if (!token) {
+          setProblem(needsSpotifyReconnect() ? 'reconnect' : 'unknown');
           onAuthorized(false);
           return;
         }
-        const playable = await decidePlayable(token);
+        const problemKind = kindFromAccountCheck(await checkAccount(token));
         if (cancelled) return;
-        if (!playable) {
+        if (problemKind) {
+          setProblem(problemKind);
           onAuthorized(false);
           return;
         }
@@ -252,16 +306,30 @@ export function SpotifyPlayer({
           const canSeek = await detectSpotifyCanSeek(player);
           const adapter = new SpotifyPlayerAdapter(player, device_id, canSeek);
           playerRef.current = adapter;
+          player.addListener('player_state_changed', (st) => adapter.handleStateChange(st));
           onPlayerReadyRef.current?.(adapter);
+          setProblem(null);
           setStatus('ready');
         });
-        player.addListener('authentication_error', () => onAuthorized(false));
-        player.addListener('initialization_error', () => setStatus('error'));
-        player.addListener('account_error', () => setStatus('error'));
+        player.addListener('authentication_error', () => {
+          setProblem('reconnect');
+          onAuthorized(false);
+        });
+        player.addListener('initialization_error', () => {
+          setProblem('sdk');
+          setStatus('error');
+        });
+        player.addListener('account_error', () => {
+          setProblem('premium');
+          setStatus('error');
+        });
         await player.connect();
       } catch (e) {
         console.error('Spotify SDK init failed:', e);
-        if (!cancelled) setStatus('error');
+        if (!cancelled) {
+          setProblem('sdk');
+          setStatus('error');
+        }
       }
     })();
     return () => {
@@ -294,6 +362,7 @@ export function SpotifyPlayer({
       ? current.queue.find((t) => t.id === current.nowPlayingId)
       : undefined;
     if (!track || pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) !== 'spotify') return;
+    playerRef.current?.setExpected(spotifyUri);
     playUri(deviceId.current, spotifyUri)
       .then(() => onPlayErrorRef.current?.(null))
       .catch((e) => {
@@ -303,24 +372,50 @@ export function SpotifyPlayer({
   }, [authorized, status, spotifyUri]);
 
   if (!clientId) return null;
+  const connect = () => {
+    setProblem(null);
+    beginAuth(window.location.pathname).catch(() => setProblem('unknown'));
+  };
+  const problemKind = problem ?? 'unknown';
+  const problemNote = (
+    <div
+      role="alert"
+      data-testid="spotify-connect-error"
+      className="text-sm"
+      style={{ color: 'var(--color-status-error)' }}
+    >
+      {spotifyConnectMessage(problemKind)}
+    </div>
+  );
+  const connectButton = (label: string) => (
+    <button
+      onClick={connect}
+      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
+      style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+    >
+      <SpotifyIcon size={16} />
+      {label}
+    </button>
+  );
+
   if (status === 'error') {
     return (
-      <div className="text-sm" style={{ color: 'var(--color-status-error)' }}>
-        Spotify unavailable (Premium required)
+      <div className="flex flex-col items-start gap-2">
+        {problemNote}
+        {canRetrySpotifyConnect(problemKind) && connectButton('Tentar de novo')}
       </div>
     );
   }
 
   if (!authorized) {
+    if (!problem) return connectButton('Conectar Spotify');
+    // Premium: the account is the problem, so offer no button to loop on.
+    if (!canRetrySpotifyConnect(problem)) return problemNote;
     return (
-      <button
-        onClick={() => beginAuth(window.location.pathname)}
-        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 focus:outline-none"
-        style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
-      >
-        <SpotifyIcon size={16} />
-        Connect Spotify
-      </button>
+      <div className="flex flex-col items-start gap-2">
+        {connectButton('Tentar de novo')}
+        {problemNote}
+      </div>
     );
   }
 
@@ -330,7 +425,7 @@ export function SpotifyPlayer({
     <div className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-accent)' }} />
       <span>
-        Spotify connected{status === 'ready' ? '' : ' (starting...)'}
+        Spotify conectado{status === 'ready' ? '' : ' (iniciando...)'}
         {playingHere && <span style={{ color: 'var(--color-accent)' }}> playing &quot;{nowPlaying!.title}&quot;</span>}
       </span>
     </div>

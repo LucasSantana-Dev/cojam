@@ -17,7 +17,7 @@ export function Stage({
   children,
   overlay,
   caption,
-  label = 'Stage',
+  label = 'Palco',
 }: {
   children: ReactNode;
   /** Rendered on top of the media (status chip, reaction layer, error card). */

@@ -44,14 +44,14 @@ describe('ChatPanel', () => {
 
   it('renders the empty state', () => {
     render(<ChatPanel roomId="r1" />);
-    expect(screen.getByText('No messages yet. Say hi.')).toBeInTheDocument();
+    expect(screen.getByText('Nenhuma mensagem ainda. Diga oi.')).toBeInTheDocument();
   });
 
   it('explains the disabled input when disconnected', () => {
     useStore.setState({ connected: false });
     render(<ChatPanel roomId="r1" />);
-    expect(screen.getByText(/reconnect to send messages/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+    expect(screen.getByText(/reconecte para enviar mensagens/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled();
   });
 
   it('renders messages from the store with sender name', () => {
@@ -63,7 +63,7 @@ describe('ChatPanel', () => {
 
   it('sends the trimmed text with the joined name and clears the input', async () => {
     render(<ChatPanel roomId="r1" />);
-    const input = screen.getByLabelText('Message');
+    const input = screen.getByLabelText('Mensagem');
 
     fireEvent.change(input, { target: { value: '  hi there  ' } });
     fireEvent.submit(input.closest('form')!);
@@ -75,7 +75,7 @@ describe('ChatPanel', () => {
 
   it('does not send empty or whitespace-only text', async () => {
     render(<ChatPanel roomId="r1" />);
-    const input = screen.getByLabelText('Message');
+    const input = screen.getByLabelText('Mensagem');
 
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.submit(input.closest('form')!);
@@ -86,14 +86,14 @@ describe('ChatPanel', () => {
 
   it('renders system messages distinctly: mono, muted, no avatar or name', () => {
     const systemMsg: ChatMessage = {
-      ...msg('s1', 'Now playing: Song Two — B', ''),
+      ...msg('s1', 'Now playing: Song Two - B', ''),
       kind: 'system',
     };
     useStore.setState({ chat: [msg('m1', 'hello room'), systemMsg] });
     render(<ChatPanel roomId="r1" />);
 
     const row = screen.getByTestId('chat-system-message');
-    expect(row).toHaveTextContent('Now playing: Song Two — B');
+    expect(row).toHaveTextContent('Now playing: Song Two - B');
     // Mono font marks the row as a room event, not a member's line.
     expect(row.querySelector('.font-mono')).not.toBeNull();
     // No avatar chip and no sender-name header for system rows.
@@ -105,7 +105,7 @@ describe('ChatPanel', () => {
   it('shows the server error inline on rejection and keeps the draft', async () => {
     rpcMocks.sendChat.mockRejectedValueOnce({ code: 400, message: 'too many requests, slow down' });
     render(<ChatPanel roomId="r1" />);
-    const input = screen.getByLabelText('Message');
+    const input = screen.getByLabelText('Mensagem');
 
     fireEvent.change(input, { target: { value: 'spam' } });
     fireEvent.submit(input.closest('form')!);
@@ -120,14 +120,14 @@ describe('ChatPanel', () => {
   it('hides the delete button for listeners (canControl off)', () => {
     useStore.setState({ chat: [msg('m1', 'hello room')] });
     render(<ChatPanel roomId="r1" />);
-    expect(screen.queryByRole('button', { name: /delete message/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /apagar mensagem/i })).not.toBeInTheDocument();
   });
 
   it('lets the host delete a message via chat.delete', async () => {
     useStore.setState({ chat: [msg('m1', 'troll bait')] });
     render(<ChatPanel roomId="r1" canControl />);
 
-    fireEvent.click(screen.getByRole('button', { name: /delete message from ana/i }));
+    fireEvent.click(screen.getByRole('button', { name: /apagar mensagem de ana/i }));
     await act(async () => {});
 
     expect(rpcMocks.deleteChatMessage).toHaveBeenCalledWith('r1', 'm1');
@@ -138,7 +138,7 @@ describe('ChatPanel', () => {
     useStore.setState({ chat: [msg('m1', 'hello room')] });
     render(<ChatPanel roomId="r1" canControl />);
 
-    fireEvent.click(screen.getByRole('button', { name: /delete message from ana/i }));
+    fireEvent.click(screen.getByRole('button', { name: /apagar mensagem de ana/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('only the host can delete messages');
   });
@@ -209,14 +209,14 @@ describe('reporting a message (#259)', () => {
 
   it('is available to every member, not just the host', () => {
     render(<ChatPanel roomId="r1" />);
-    expect(screen.getByLabelText('Report message from Ana')).toBeInTheDocument();
+    expect(screen.getByLabelText('Denunciar mensagem de Ana')).toBeInTheDocument();
   });
 
   // The server cannot fetch the line: chat is ephemeral and may be gone.
   it('sends the message content along with the report', async () => {
     render(<ChatPanel roomId="r1" />);
     await act(async () => {
-      screen.getByLabelText('Report message from Ana').click();
+      screen.getByLabelText('Denunciar mensagem de Ana').click();
     });
 
     expect(fileReport).toHaveBeenCalledTimes(1);
@@ -231,10 +231,10 @@ describe('reporting a message (#259)', () => {
   it('does not file the same report twice', async () => {
     render(<ChatPanel roomId="r1" />);
     await act(async () => {
-      screen.getByLabelText('Report message from Ana').click();
+      screen.getByLabelText('Denunciar mensagem de Ana').click();
     });
     await act(async () => {
-      screen.getByLabelText('Reported message from Ana').click();
+      screen.getByLabelText('Mensagem de Ana denunciada').click();
     });
 
     expect(fileReport).toHaveBeenCalledTimes(1);

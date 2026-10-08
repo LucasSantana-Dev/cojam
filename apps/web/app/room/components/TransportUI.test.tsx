@@ -58,16 +58,16 @@ describe('TransportUI', () => {
 
   describe('transport state mapping', () => {
     it('maps playing state to pause label', () => {
-      expect(playPauseLabel('playing')).toBe('Pause');
+      expect(playPauseLabel('playing')).toBe('Pausar');
     });
 
     it('maps paused state to play label', () => {
-      expect(playPauseLabel('paused')).toBe('Play');
+      expect(playPauseLabel('paused')).toBe('Tocar');
     });
 
     it('maps stopped and undefined state to play label', () => {
-      expect(playPauseLabel('stopped')).toBe('Play');
-      expect(playPauseLabel(undefined)).toBe('Play');
+      expect(playPauseLabel('stopped')).toBe('Tocar');
+      expect(playPauseLabel(undefined)).toBe('Tocar');
     });
   });
 
@@ -84,8 +84,8 @@ describe('TransportUI', () => {
 
     it('provides correct reason text', () => {
       const canSeek = false;
-      const reason = !canSeek ? 'Seeking requires Spotify Premium' : '';
-      expect(reason).toBe('Seeking requires Spotify Premium');
+      const reason = !canSeek ? 'Mudar o ponto da faixa requer Spotify Premium' : '';
+      expect(reason).toBe('Mudar o ponto da faixa requer Spotify Premium');
     });
   });
 });
@@ -123,7 +123,7 @@ describe('TransportUI keyboard seek', () => {
 
   it('does not commit a seek on Tab or Escape keyup', () => {
     render(<TransportUI roomId="r1" activePlayer={player} canControl />);
-    const slider = screen.getByLabelText('Track position');
+    const slider = screen.getByLabelText('Posição da faixa');
 
     fireEvent.change(slider, { target: { value: '30000' } });
     fireEvent.keyUp(slider, { key: 'Tab' });
@@ -137,7 +137,7 @@ describe('TransportUI keyboard seek', () => {
 
   it('debounces repeated arrow-key seeks into one RPC per pause', () => {
     render(<TransportUI roomId="r1" activePlayer={player} canControl />);
-    const slider = screen.getByLabelText('Track position');
+    const slider = screen.getByLabelText('Posição da faixa');
 
     fireEvent.change(slider, { target: { value: '10000' } });
     fireEvent.keyUp(slider, { key: 'ArrowRight' });
@@ -155,7 +155,7 @@ describe('TransportUI keyboard seek', () => {
 
   it('commits again after a pause between key presses', () => {
     render(<TransportUI roomId="r1" activePlayer={player} canControl />);
-    const slider = screen.getByLabelText('Track position');
+    const slider = screen.getByLabelText('Posição da faixa');
 
     fireEvent.change(slider, { target: { value: '10000' } });
     fireEvent.keyUp(slider, { key: 'ArrowRight' });
@@ -196,7 +196,7 @@ describe('TransportUI duration fallback (#258)', () => {
       onPositionChanged: vi.fn(),
     };
     render(<TransportUI roomId="r1" activePlayer={player} canControl />);
-    await waitFor(() => expect(screen.getByLabelText('Track position')).toHaveAttribute('max', '90000'));
+    await waitFor(() => expect(screen.getByLabelText('Posição da faixa')).toHaveAttribute('max', '90000'));
   });
 
   it('ignores a non-finite player duration', async () => {
@@ -222,7 +222,7 @@ describe('TransportUI duration fallback (#258)', () => {
     };
     render(<TransportUI roomId="r1" activePlayer={player} canControl />);
     await waitFor(() => expect(player.getDurationMs).toHaveBeenCalled());
-    expect(screen.getByLabelText('Track position')).toHaveAttribute('max', '0');
+    expect(screen.getByLabelText('Posição da faixa')).toHaveAttribute('max', '0');
   });
 });
 
@@ -246,12 +246,12 @@ describe('TransportUI heartbeat republish (#258)', () => {
       onPositionChanged: vi.fn(),
     };
     render(<TransportUI roomId="r1" activePlayer={player} canControl />);
-    const slider = screen.getByLabelText('Track position');
+    const slider = screen.getByLabelText('Posição da faixa');
     fireEvent.change(slider, { target: { value: '30000' } });
     expect(slider).toHaveValue('30000');
     act(() => {
       useStore.setState({ state: { ...base, version: 2, transport: { state: 'playing', positionMs: 1000, updatedAtServerMs: 5 } } });
     });
-    expect(screen.getByLabelText('Track position')).toHaveValue('30000');
+    expect(screen.getByLabelText('Posição da faixa')).toHaveValue('30000');
   });
 });

@@ -73,7 +73,7 @@ describe('AddTrackForm search-seq guard', () => {
       .mockResolvedValueOnce([candidate('Fresh Song')]);
 
     render(<AddTrackForm roomId="r1" />);
-    const input = screen.getByRole('textbox', { name: 'Search for a song' });
+    const input = screen.getByRole('textbox', { name: 'Buscar uma música' });
 
     // First query fires and stays in flight (the RPC is not abortable).
     fireEvent.change(input, { target: { value: 'old query' } });
@@ -104,7 +104,7 @@ describe('AddTrackForm search-seq guard', () => {
       .mockImplementationOnce(() => new Promise<SearchCandidate[]>((res) => { resolveStale = res; }));
 
     render(<AddTrackForm roomId="r1" />);
-    const input = screen.getByRole('textbox', { name: 'Search for a song' });
+    const input = screen.getByRole('textbox', { name: 'Buscar uma música' });
 
     fireEvent.change(input, { target: { value: 'old query' } });
     await act(async () => {
@@ -134,7 +134,7 @@ describe('AddTrackForm search failure states', () => {
   });
 
   const typeQuery = async (value: string) => {
-    const input = screen.getByRole('textbox', { name: 'Search for a song' });
+    const input = screen.getByRole('textbox', { name: 'Buscar uma música' });
     fireEvent.change(input, { target: { value } });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
@@ -147,12 +147,12 @@ describe('AddTrackForm search failure states', () => {
     render(<AddTrackForm roomId="r1" />);
     await typeQuery('some query');
 
-    expect(screen.getByText('Search failed. Check your connection and try again.')).toBeInTheDocument();
-    expect(screen.queryByText(/No matches found/)).not.toBeInTheDocument();
+    expect(screen.getByText('A busca falhou. Confira sua conexão e tente de novo.')).toBeInTheDocument();
+    expect(screen.queryByText(/Nada encontrado/)).not.toBeInTheDocument();
 
     // Retry re-fires the search for the same query.
     rpcMocks.searchTracks.mockResolvedValue([candidate('Recovered Song')]);
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
@@ -166,8 +166,8 @@ describe('AddTrackForm search failure states', () => {
     render(<AddTrackForm roomId="r1" />);
     await typeQuery('some query');
 
-    expect(screen.getByText(/Slow down/)).toBeInTheDocument();
-    expect(screen.queryByText(/No matches found/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Aguarde um instante/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nada encontrado/)).not.toBeInTheDocument();
   });
 
   it('keeps the zero-results copy for an empty (successful) result set', async () => {
@@ -176,7 +176,7 @@ describe('AddTrackForm search failure states', () => {
     render(<AddTrackForm roomId="r1" />);
     await typeQuery('some query');
 
-    expect(screen.getByText(/No matches found/)).toBeInTheDocument();
+    expect(screen.getByText(/Nada encontrado/)).toBeInTheDocument();
   });
 });
 
@@ -191,13 +191,13 @@ describe('AddTrackForm video kind (#258)', () => {
 
   async function submit(link: string) {
     render(<AddTrackForm roomId="r1" />);
-    fireEvent.change(screen.getByPlaceholderText('Title'), { target: { value: 'T' } });
-    fireEvent.change(screen.getByPlaceholderText('Artist'), { target: { value: 'A' } });
+    fireEvent.change(screen.getByPlaceholderText('Título'), { target: { value: 'T' } });
+    fireEvent.change(screen.getByPlaceholderText('Artista'), { target: { value: 'A' } });
     if (link) {
-      fireEvent.change(screen.getByPlaceholderText('YouTube link or video ID (optional)'), { target: { value: link } });
+      fireEvent.change(screen.getByPlaceholderText('Link do YouTube ou ID do vídeo (opcional)'), { target: { value: link } });
     }
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add to Queue' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Adicionar à fila' }));
     });
   }
 
@@ -216,12 +216,12 @@ describe('AddTrackForm video kind (#258)', () => {
   it('leaves kind unset when the track also carries a Spotify source', async () => {
     window.__COJAM_ENV__ = { features: { video: true, spotify: true } };
     render(<AddTrackForm roomId="r1" />);
-    fireEvent.change(screen.getByPlaceholderText('Title'), { target: { value: 'T' } });
-    fireEvent.change(screen.getByPlaceholderText('Artist'), { target: { value: 'A' } });
-    fireEvent.change(screen.getByPlaceholderText('YouTube link or video ID (optional)'), { target: { value: 'abcdefghijk' } });
+    fireEvent.change(screen.getByPlaceholderText('Título'), { target: { value: 'T' } });
+    fireEvent.change(screen.getByPlaceholderText('Artista'), { target: { value: 'A' } });
+    fireEvent.change(screen.getByPlaceholderText('Link do YouTube ou ID do vídeo (opcional)'), { target: { value: 'abcdefghijk' } });
     fireEvent.change(screen.getByPlaceholderText(/Spotify/), { target: { value: 'spotify:track:4uLU6hMCjMI75M1A2tKUQC' } });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Add to Queue' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Adicionar à fila' }));
     });
     const track = (rpcMocks.queueAdd.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
     expect('kind' in track).toBe(false);

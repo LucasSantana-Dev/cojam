@@ -25,7 +25,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `transport.play` | `{ roomId, trackId?: string, positionMs: number }` | `RoomState` |
 | `transport.pause` | `{ roomId, positionMs: number }` | `RoomState` |
 | `transport.seek` | `{ roomId, positionMs: number }` | `RoomState` |
-| `chat.send` | `{ roomId, text: string, name: string }` | `{ message: ChatMessage }` |
+| `chat.send` | `{ roomId, text: string }` (a `name` field is ignored) | `{ message: ChatMessage }` |
 | `chat.history` | `{ roomId }` | `{ messages: ChatMessage[] }` |
 | `chat.delete` | `{ roomId, messageId: string }` | `{ messageId: string }` |
 | `room.kick` | `{ roomId, clientId: string }` | `{ clientId: string }` |
@@ -100,7 +100,11 @@ host revokes it; the default is private (zero value), so existing rooms are
 unaffected. `name` is an optional plain-text room label: trimmed, capped at 60
 chars (longer is rejected with a UserError, code 400), empty after trim clears
 the label, and an absent key leaves it untouched. The mutation bumps
-`RoomState.version` like every other mutation.
+`RoomState.version` like every other mutation. A label matching the server's
+blocklist of sexual, slur and minor-sexualizing terms (#259) is rejected with a
+UserError (code 400, message `room name not allowed`); going public with an
+already stored blocked label is rejected the same way, and `room.list` skips any
+room whose label matches.
 
 `room.list` is the directory read: any connected client may call it (not
 membership-gated), rate-limited per caller (burst 5, one token per 2s; a
@@ -232,7 +236,11 @@ host leaves). Host-only RPCs are rejected with `ErrorPermissionDenied` for non-h
 moderation RPCs (`chat.delete`, `room.kick`, #181), which reject non-hosts with a client-visible
 UserError (code 400) instead; the server
 is authoritative (the web UI also hides these controls for listeners, but that is convenience
-only). When the flag is off, every member has equal rights (v0), unchanged.
+only). The host check reads the room's persisted state, loading it from the store when it is not
+in memory (e.g. after a restart), and fails closed: with the flag on, a room with no host bound
+yet rejects host-only RPCs until a `room.join` claims it. When the flag is off, every member has
+equal rights (v0), unchanged; a host bound by a signed-in account (`FEATURE_SUPABASE_AUTH`) is
+still enforced.
 
 | RPC | Who may call (flag on) |
 |---|---|
@@ -301,7 +309,7 @@ line by id and never render history entries with `deleted: true`:
 { "type": "chat.delete", "messageId": "..." }
 ```
 
-Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated), never on display name: two connections that picked the same name are two distinct entries and count as two listeners. Each entry's ConnInfo is `{"name": string, "platform"?: "spotify"|"apple"|"youtube"}` — the name and playback platform the client presented at connect; the server drops unrecognized platform values, so presence only carries platforms the UI can render. Display concerns stay client-side: colliding names get a deterministic suffix ("Alice", "Alice (2)") derived from the member list (sorted by clientId), recomputed on every membership change; presence is centrifuge-level, so none of this touches `RoomState` or `Version`.
+Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated: centrifuge's native `user` field on each presence entry, no new field), never on display name: two connections that picked the same name are two distinct entries and count as two listeners. Each entry's ConnInfo is `{"name": string, "platform"?: "spotify"|"apple"|"youtube"}`: the name and playback platform the client presented at connect; the server trims the name and caps it at 40 runes, and drops unrecognized platform values, so presence only carries platforms the UI can render. Display concerns stay client-side: colliding names get a deterministic suffix ("Alice", "Alice (2)") derived from the member list (sorted by clientId), recomputed on every membership change; presence is centrifuge-level, so none of this touches `RoomState` or `Version`. Vote keys in `RoomState.votes` are `user:<userId>` (authenticated) or `client:<clientId>` (no room auth); the web client resolves a voter to a member by matching that id against the presence entry's `user` or `client`, and renders a voter who has left the room as anonymous.
 
 ## Accounts (Supabase Auth, behind `FEATURE_SUPABASE_AUTH`)
 
@@ -318,16 +326,28 @@ Account data lives in the Supabase project, written client-direct with row-level
 that Spotify/Apple is connected; OAuth tokens never leave the client). Persisted connected
 services feed the `prefer` parameter of `track.search` on any device.
 
-## Connection token endpoint (`GET /api/connection-token`)
+## Connection token endpoint (`POST /api/connection-token`)
 
 HTTP endpoint on the Go server (`cmd/server/connection_token.go`) that mints the
 anonymous connection token used above. Returns `501 {"error": "connection auth not enabled"}`
-when `FEATURE_ROOM_AUTH` is off.
+when `FEATURE_ROOM_AUTH` is off, and `429` when the caller's IP exceeds its
+budget (30 burst, one token per second; `CONNECTION_TOKEN_RATE_BURST` overrides
+the burst; the IP is resolved as for the other public endpoints, from
+`CF-Connecting-IP` behind the proxy chain).
 
-Query params (both optional):
+Body fields (both optional), form-encoded (`application/x-www-form-urlencoded`,
+what the web client sends: a CORS simple request) or JSON:
 
 - `userId`: a previous anonymous identity the caller wants to keep.
 - `token`: the previous connection JWT, proving ownership of that `userId`.
+  May instead be sent as an `Authorization` header with the `Bearer` scheme.
+
+Deprecated: `GET /api/connection-token?userId=&token=` is still honored for one
+release so older clients keep their identity, and logs a
+`connection_token_query_deprecated` warning (without the values). It puts the
+proof in the URL, so it will be removed. Deploy order: server first. The web
+client falls back to the GET form once when a POST gets 405 or 404, so a web
+deploy that lands before the server keeps working.
 
 Response `200`: `{ "token": string, "userId": string }`, where `token` is an HS256
 JWT (secret `ROOM_AUTH_SECRET`, claims `{sub, exp, iat}`, TTL 24h) with `sub` = `userId`.
@@ -434,7 +454,7 @@ type TransportState = {
 type ChatMessage = {       // F8: ephemeral, in-memory only; never in RoomState
   id: string;              // server-assigned uuid
   roomId: string;
-  name: string;            // sender display name (client-supplied, capped at 60)
+  name: string;            // sender display name: the connection's connect-time name ("Listener" when none); any name in the payload is ignored
   userId?: string;         // server-stamped connection identity; empty when room auth is off
   text: string;            // trimmed, 1..300 chars; redacted ("") once deleted
   kind?: 'system';         // #205: server announcement (advance, join/leave); absent on user messages
@@ -454,13 +474,21 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
+### Room ids and room creation
+
+A room id must match `^[0-9A-Z]{1,12}$`: the 12 uppercase base36 chars the web generator mints (`apps/web/lib/roomId.ts`), plus the shorter legacy ids (up to 6 chars) of the pre-#180 generator. Any RPC whose payload carries a malformed `roomId` is rejected at the transport boundary with a code-400 error (`invalid room id`) before enrollment or dispatch, and a subscription is accepted only for a `room:<id>` channel with a valid id (every other channel is refused with `ErrorPermissionDenied`). Ids are case-sensitive and never normalized, so lowercase ids are rejected rather than mapped.
+
+`room.join` draws from a per-caller rate limit (10 burst, one token per 2s). Creating a room draws from a separate budget (10 burst, one token per minute; `ROOM_CREATE_RATE_BURST` overrides the burst), charged both per caller and per client IP (the IP of the websocket upgrade, resolved like the HTTP limiters: IPv4 per address, IPv6 per /64); a creation is denied when either bucket is empty, and a denial charges neither. It is charged only when the target room exists neither in memory nor in the store, so joining an existing room never spends it. Both reject with a code-400 UserError. The caller key is the same as the other per-caller limits (`user:<userID>`, else `client:<clientID>`).
+
+State-fanout mutations (`queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `radio.set`, `room.set_public`) share one per-caller bucket (20 burst, one token per second), since every accepted call republishes the full `RoomState`. `queue.vote`, `transport.*`, the chat and moderation RPCs, and `playlist.import` keep their own buckets.
+
 ### Trust model (#180)
 
 Room access is a **link capability**: subscribing to `room:<id>` *is* the access grant — there is deliberately no separate join-approval step. Mutation rights follow membership (subscribe or `room.join`), so anyone holding the link can read state, read chat history, and mutate the room. This is the product: share-a-link must keep working for guests with no account, and public rooms (`FEATURE_PUBLIC_ROOMS`) are listable and joinable by design.
 
 Consequences of that decision:
 
-- The privacy boundary of a **private** room is the unguessability of its room ID, not a server-side access check. Room IDs are generated client-side with crypto entropy (`crypto.getRandomValues`, 12 uppercase base36 chars ≈ 62 bits, `apps/web/lib/roomId.ts`). Room IDs minted by the pre-#180 generator (6 chars, `Math.random`) remain valid for existing links but must be treated as guessable.
+- The privacy boundary of a **private** room is the unguessability of its room ID, not a server-side access check. Room IDs are generated client-side with crypto entropy (`crypto.getRandomValues`, 12 uppercase base36 chars ≈ 62 bits, `apps/web/lib/roomId.ts`). Room IDs minted by the pre-#180 generator (up to 6 chars, `Math.random`) remain valid for existing links but must be treated as guessable. See "Room ids and room creation" for the accepted format.
 - Subscribing alone is sufficient for mutation rights *by decision* — the membership gate exists to bind RPCs to a room-scoped subscription (and to reconnect survival), not to keep link-holders out.
 - Opting into the public directory (`room.set_public`) trades exactly this obscurity for discoverability; `room.list` exposes only summary fields.
 

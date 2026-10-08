@@ -6,11 +6,11 @@ import { useStore, joinRoom, setRadio, nowPlayingAdvance, getClockOffsetMs } fro
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
+import { NAME_KEY } from '@/lib/guestName';
 
-// Persist the chosen name for the session so a full-page redirect (Spotify OAuth
-// returns to /callback/spotify then back here) auto-rejoins instead of dropping
-// the user back to the name form. Session-scoped; cleared when the tab closes.
-const NAME_KEY = 'mj_room_name';
+// The chosen name is persisted for the session (lib/guestName) so a full-page
+// redirect (Spotify OAuth) and the landing's name+create both auto-rejoin
+// instead of dropping the user on the name form.
 
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
 const noopSubscribe = () => () => {};
@@ -30,6 +30,7 @@ import { AddTrackForm } from '../components/AddTrackForm';
 import { PresenceBar } from '../components/PresenceBar';
 import { PresenceMeta } from '../components/PresenceMeta';
 import { ShareRoomButton } from '../components/ShareRoomButton';
+import { ReportRoomButton } from '../components/ReportRoomButton';
 import { PublicRoomToggle } from '../components/PublicRoomToggle';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
@@ -42,6 +43,14 @@ import { Stage } from '../components/Stage';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
 import type { IPlayer } from '@/lib/playerInterface';
+import { useTrackColors } from '@/lib/useTrackColor';
+import { tintStyle, groundPair } from '@/lib/trackColor';
+import { ListenersWave } from '@/app/components/ListenersWave';
+import { queueArtwork } from '../components/QueuePanel';
+import { useMotion } from '@/lib/motionFlags';
+import { useCoverFlight } from '@/lib/useCoverFlight';
+import { GroundStack } from '@/app/components/GroundStack';
+import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 
 type VideoPanelTab = 'playing' | 'queue' | 'chat' | 'add';
 
@@ -124,6 +133,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
     : null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
 
+  // "Cor da faixa" (#325): the room takes its ground colour from the cover that
+  // is playing. The CSS crossfades --tint-l/c/h, so a track change is a colour
+  // glide, not a swap. Idle violet when nothing plays.
+  const artwork = nowPlaying ? queueArtwork(nowPlaying) : null;
+  const { tint, palette } = useTrackColors(artwork);
+  const [coverFail, setCoverFail] = useState<{ url: string | null; level: number }>({ url: null, level: 0 });
+  const coverLevel = coverFail.url === artwork ? coverFail.level : 0;
+  const motion = useMotion();
+  useCoverFlight(nowPlaying?.id, motion.flip);
+
   // Shared room-age clock: RoomState.createdAt is server-stamped, so every
   // client shows the same age once the measured sync.ping offset is applied.
   // Rooms created before timestamps existed carry no createdAt; stay silent
@@ -164,7 +183,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       } catch (error) {
         console.error('Failed to join:', error);
         setJoinError(
-          error instanceof Error ? error.message : 'Couldn\'t join. Check the room code and try again.'
+          error instanceof Error ? error.message : 'Não deu para entrar. Confira o código da sala e tente de novo.'
         );
       } finally {
         setLoading(false);
@@ -206,92 +225,82 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }, [activePlayer, roomId]);
 
   if (!joined) {
-    return (  <main id="main" className="room flex items-center justify-center min-h-screen p-4">
-        <form
-          onSubmit={handleJoin}
-          className="join-form panel w-full max-w-sm space-y-8 p-8"
-        >
-          {/* Framing: "You're about to join <CODE>" */}
-          <div className="space-y-3 text-center">
-            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              You&rsquo;re about to join
-            </p>
-            <div
-              className="inline-block px-4 py-2 rounded-full font-bold text-lg"
-              style={{
-                background: 'var(--color-surface-2)',
-                border: '2px solid var(--color-accent)',
-                color: 'var(--color-accent)',
-              }}
-            >
-              {roomId}
+    // Same ground component and surface as the room (sintonia, #325). Before
+    // joining the client holds no room state (the room channel is only
+    // subscribed by joinRoom), so this is the idle ground: no cover, no member
+    // list. The ground sits at the same tree position as in the joined room, so
+    // it is not remounted when the visitor enters: the colour carries over.
+    const initial = (nameInput.trim() || 'G').charAt(0).toUpperCase();
+    return (
+      <div
+        className="room join-room min-h-screen"
+        data-tint="room"
+        data-bg="sintonia"
+        data-has-track="false"
+        style={{ color: 'var(--color-text-primary)', ...tintStyle(tint) }}
+      >
+        <GroundStack spec={{ palette: groundPair(tint, palette) }} animate={motion.ground} originSelector={motion.flip ? '.np-cover' : undefined} />
+        <main id="main" className="join-main">
+          <form onSubmit={handleJoin} className="join-form panel">
+            <div className="join-brand">
+              <LogoMark size={20} /> CoJam
             </div>
-            <p className="text-xs pt-2" style={{ color: 'var(--color-text-muted)' }}>
-              Listen together, across services
-            </p>
-          </div>
 
-          {/* Avatar preview + name input */}
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <div
-                className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold transition-all duration-200"
-                style={{
-                  background: avatarGradient(nameInput.trim() || 'guest'),
-                  color: 'white',
-                  textShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                }}
-              >
-                {(nameInput.trim() || 'G').charAt(0).toUpperCase()}
-              </div>
+            {/* One H1: the framing sentence plus the room code, which stays visible. */}
+            <h1 className="join-title">
+              <span className="join-eyebrow">Você vai entrar na sala</span>
+              <span className="join-code" data-testid="join-room-code">{roomId}</span>
+            </h1>
+            <p className="join-tagline">Ouçam juntos, entre serviços</p>
+
+            {/* The wave, flat: nobody is here yet to link to. The visitor's own
+                avatar sits at the end, waiting until they join. */}
+            <div className="join-wave" role="group" aria-label="Você, esperando para entrar">
+              <svg className="join-wave__line" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 4">
+                <path d="M0 2 H100" fill="none" stroke="oklch(1 0 0)" strokeWidth="1.6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+              </svg>
+              <span className="lw-av join-wave__av" style={{ background: avatarGradient(nameInput.trim() || 'guest') }}>
+                {initial}
+              </span>
+              <span className="join-wave__wait">esperando</span>
             </div>
 
             <input
               type="text"
-              placeholder="Your name"
-              aria-label="Your name"
+              placeholder="Seu nome"
+              aria-label="Seu nome"
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
-              className="focus-ring-grow w-full px-4 py-3 rounded-lg focus:outline-none transition-all duration-150 text-center"
-              style={{
-                backgroundColor: 'var(--color-surface-2)',
-                borderColor: 'var(--color-border)',
-                color: 'var(--color-text-primary)',
-              }}
+              className="join-input focus-ring-grow"
+              autoComplete="nickname"
               autoFocus
             />
-          </div>
 
-          {/* Prominent Join CTA */}
-          <button
-            type="submit"
-            disabled={loading || !nameInput.trim()}
-            className="w-full px-6 py-4 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 text-base"
-            style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
-          >
-            <span className="join-label-crossfade">
-              {loading ? 'Joining...' : 'Join & Play'}
-            </span>
-          </button>
+            <button type="submit" disabled={loading || !nameInput.trim()} className="btn-primary join-submit">
+              <span className="join-label-crossfade">
+                {loading ? 'Entrando...' : 'Entrar na sala'}
+              </span>
+            </button>
 
-          {/* Guest-identity signal (#167): guests' identity lives in this
-              browser's localStorage only. Hidden from signed-in members and
-              when accounts are not deployed (no remedy to point at). */}
-          {accountsEnabled && !store.signedIn && (
-            <p className="text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
-              Your identity is stored in this browser. Sign in before leaving this room to keep
-              your room role across devices.
-            </p>
-          )}
+            {/* Guest-identity signal (#167): guests' identity lives in this
+                browser's localStorage only. Hidden from signed-in members and
+                when accounts are not deployed (no remedy to point at). */}
+            {accountsEnabled && !store.signedIn && (
+              <p className="join-note">
+                Sua identidade fica guardada neste navegador. Entre na sua conta antes de sair
+                da sala para manter seu papel em outros dispositivos.
+              </p>
+            )}
 
-          {/* Error state */}
-          {joinError && (
-            <p className="join-error" role="alert">
-              {joinError}
-            </p>
-          )}
-        </form>
-      </main>
+            {/* Error state */}
+            {joinError && (
+              <p className="join-error" role="alert">
+                {joinError}
+              </p>
+            )}
+          </form>
+        </main>
+      </div>
     );
   }
 
@@ -300,23 +309,23 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // since the disconnect was deliberate and the connection will not retry.
   if (store.kicked) {
     return (
-      <main id="main" className="room flex items-center justify-center min-h-screen p-4">
-        <div className="panel w-full max-w-sm space-y-4 p-8 text-center">
-          <h1 className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-            Removed from the room
-          </h1>
-          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            The host removed you from this session.
-          </p>
-          <Link
-            href="/"
-            className="inline-block px-6 py-3 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95"
-            style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
-          >
-            Back to home
-          </Link>
-        </div>
-      </main>
+      <SintoniaScreen>
+        <main id="main" className="sx-main">
+          <div className="sx-glass sx-card sx-card--narrow sx-center">
+            <div className="sx-brand">
+              <LogoMark size={20} /> CoJam
+            </div>
+            <h1 className="sx-title sx-title--sm">Você foi removido da sala</h1>
+            <SineLine flat />
+            <p className="sx-text">O anfitrião removeu você desta sessão.</p>
+            <div className="sx-actions sx-actions--center">
+              <Link href="/" className="btn-primary">
+                Voltar ao início
+              </Link>
+            </div>
+          </div>
+        </main>
+      </SintoniaScreen>
     );
   }
 
@@ -328,14 +337,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
     f.video && f.youtube && nowPlaying?.kind === 'video' && activeSource === 'youtube';
 
   const videoTabs: ReadonlyArray<readonly [VideoPanelTab, string]> = [
-    ['playing', 'Playing'],
-    ['queue', 'Queue'],
+    ['playing', 'Tocando'],
+    ['queue', 'Fila'],
     ...(f.roomChat ? ([['chat', 'Chat']] as const) : []),
-    ['add', 'Add'],
+    ['add', 'Adicionar'],
   ];
 
   const playerPanel = (
-            <div className="panel p-6 space-y-4">
+            <div className="panel player-panel p-6 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {f.spotify && (
                   <SpotifyPlayer
@@ -371,7 +380,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   );
 
   const heroPanel = (
-            <div className={`panel now-playing p-6 space-y-4${nowPlaying && isPlaying ? ' is-live' : ''}`}>
+            <div className={`panel now-playing np-stage p-6 space-y-4${nowPlaying && isPlaying ? ' is-live' : ''}`}>
               {/* Header row: section label anchors the left, Radio control the right,
                   so the toggle never floats alone above an empty panel. Eq + accent
                   render only while actually playing; paused/stopped say so (R6). */}
@@ -390,20 +399,23 @@ export function RoomClient({ roomId }: { roomId: string }) {
                     }}
                   >
                     {!nowPlaying || isPlaying
-                      ? 'Now playing'
+                      ? 'Tocando agora'
                       : transportState === 'stopped'
-                        ? 'Stopped'
-                        : 'Paused'}
+                        ? 'Parado'
+                        : 'Pausado'}
                   </span>
+                  {f.roomAuth && store.state?.hostUserId && hostControl && (
+                    <span className="host-chip">Anfitrião</span>
+                  )}
                 </div>
-                <label className="radio-control cursor-pointer" title="Auto-plays related songs when the queue runs out">
+                <label className="radio-control cursor-pointer" title="Toca músicas parecidas quando a fila acaba">
                   <input
                     type="checkbox"
                     checked={store.state?.radioEnabled ?? false}
                     onChange={(e) => setRadio(roomId, e.target.checked)}
                     className="sr-only"
                   />
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Radio</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Rádio</span>
                   <div
                     className="radio-toggle relative w-8 h-4 rounded-full transition-colors duration-150"
                     style={{
@@ -425,9 +437,27 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 <PlayFailedTrack />
               ) : nowPlaying ? (
                 <>
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="np-stage__row">
+                  <div className="np-cover" aria-hidden>
+                    {artwork && coverLevel < 2 ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- cover colour is read from this exact image; crossOrigin keeps the canvas untainted
+                      <img
+                        key={`${artwork}|${coverLevel}`}
+                        src={artwork}
+                        alt=""
+                        crossOrigin={coverLevel === 0 ? 'anonymous' : undefined}
+                        className="np-cover__img"
+                        // CORS load failed: show the plain (non-CORS) image, the ground stays idle; if that fails too, the placeholder
+                        onError={() => setCoverFail({ url: artwork, level: coverLevel + 1 })}
+                      />
+                    ) : (
+                      <span className="np-cover__fallback">{nowPlaying.title.charAt(0).toUpperCase()}</span>
+                    )}
+                  </div>
+                  <div className="np-stage__text">
+                  <div className="np-head flex items-start justify-between gap-4">
                     <div key={nowPlaying.id} className="flex-1 min-w-0 track-change-enter">
-                      <h2 className="text-2xl font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
+                      <h2 className="np-title text-2xl font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
                         {nowPlaying.title}
                       </h2>
                       <p className="text-sm mt-1 truncate" style={{ color: 'var(--color-text-secondary)' }}>
@@ -437,9 +467,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                           state lives on the player, not siloed in the header. */}
                       <div className="np-meta">
                         <PresenceMeta />
-                        <span>added by {nowPlaying.addedBy}</span>
+                        <span>adicionada por {nowPlaying.addedBy}</span>
                         {roomAgeS !== null && (
-                          <span className="np-timer">in room {formatElapsed(roomAgeS)}</span>
+                          <span className="np-timer">na sala há {formatElapsed(roomAgeS)}</span>
                         )}
                       </div>
                     </div>
@@ -471,9 +501,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                             border: '1px solid var(--color-border)',
                             color: 'var(--color-text-primary)',
                           }}
-                          title="View track details from MusicBrainz"
+                          title="Ver detalhes da faixa no MusicBrainz"
                         >
-                          Details
+                          Detalhes
                         </button>
                       )}
                       {f.lyrics && nowPlaying && (
@@ -485,9 +515,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
                             border: '1px solid var(--color-border)',
                             color: 'var(--color-text-primary)',
                           }}
-                          title="View lyrics for this track"
+                          title="Ver a letra desta faixa"
                         >
-                          Lyrics
+                          Letra
                         </button>
                       )}
                       {(f.listenBrainz || f.lastfmEnrich) && nowPlaying && (
@@ -499,25 +529,36 @@ export function RoomClient({ roomId }: { roomId: string }) {
                             border: '1px solid var(--color-border)',
                             color: 'var(--color-text-primary)',
                           }}
-                          title="View track enrichment from ListenBrainz and Last.fm"
+                          title="Ver dados extras do ListenBrainz e do Last.fm"
                         >
-                          More
+                          Mais
                         </button>
                       )}
                     </div>
                   </div>
 
                   {f.sync && (
-                    <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
+                    <div className="np-transport" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
                       <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl} />
                     </div>
                   )}
+                  {store.members.length > 0 && (
+                    <ListenersWave
+                      members={store.members.map((m) => ({ id: m.clientId, name: m.name }))}
+                      running={isPlaying}
+                      animate={motion.ground}
+                      getOffsetMs={getClockOffsetMs}
+                      className="np-wave"
+                    />
+                  )}
+                  </div>
+                  </div>
                 </>
               ) : (
                 <div className="hero-empty">
-                  <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>Nothing playing yet</p>
+                  <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>Nada tocando ainda</p>
                   <p className="text-sm mt-2" style={{ color: 'var(--color-text-secondary)' }}>
-                    Add a track below to start the session.
+                    Adicione uma faixa abaixo para começar a sessão.
                   </p>
                 </div>
               )}
@@ -537,7 +578,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const chatPanel = f.roomChat ? <ChatPanel roomId={roomId} canControl={hostControl} /> : null;
 
   return (
-    <div className="room min-h-screen" style={{ color: 'var(--color-text-primary)' }}>
+    <div
+      className="room min-h-screen"
+      data-tint="room"
+      data-bg="sintonia"
+      data-has-track={nowPlaying ? 'true' : 'false'}
+      style={{ color: 'var(--color-text-primary)', ...tintStyle(tint) }}
+    >
+      <GroundStack spec={{ palette: groundPair(tint, palette) }} animate={motion.ground} originSelector={motion.flip ? '.np-cover' : undefined} />
       <StatusBanner />
       {/* Rebind soft notice (#172): proof verification failed (secret rotation
           or expiry), so guest contributions could not be linked. The room and
@@ -548,24 +596,28 @@ export function RoomClient({ roomId }: { roomId: string }) {
         {store.rebindNotice}
       </p>
       <header className="room-header">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 md:gap-y-3">
             <div className="space-y-1 min-w-0">
-              <h1 className="text-2xl font-bold inline-flex items-center gap-2">
-                {/* Flows only while (re)connecting: colors moving = syncing. */}
-                <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
-              </h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-bold inline-flex items-center gap-2">
+                  {/* Flows only while (re)connecting: colors moving = syncing. */}
+                  <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
+                </h1>
+                <ReportRoomButton roomId={roomId} variant="icon" />
+              </div>
               <p className="text-sm flex items-center gap-2 flex-wrap" style={{ color: 'var(--color-text-secondary)' }}>
-                <span>Room</span>
+                <span>Sala</span>
                 <span className="room-code-chip">{roomId}</span>
                 <span aria-hidden style={{ opacity: 0.5 }}>·</span>
-                <span className="truncate">you&rsquo;re {store.name}</span>
-                {accountsEnabled && !store.signedIn && <span className="guest-chip">Guest</span>}
+                <span className="truncate" data-testid="room-me">você é {store.name}</span>
+                {accountsEnabled && !store.signedIn && <span className="guest-chip">Convidado</span>}
               </p>
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="room-header-controls flex items-center gap-2 md:gap-3 flex-wrap">
               <PresenceBar roomId={roomId} canControl={hostControl} />
               <ShareRoomButton />
+              <ReportRoomButton roomId={roomId} variant="text" />
               {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
               {hostControl && f.publicRooms && <PublicRoomToggle roomId={roomId} />}
               {accountsEnabled && (
@@ -574,7 +626,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                   className="text-sm underline"
                   style={{ color: 'var(--color-text-secondary)' }}
                 >
-                  Account
+                  Conta
                 </Link>
               )}
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
@@ -592,12 +644,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
                       : 'none',
                   }}
                 />
-                <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                <span className="text-xs font-medium sr-only md:not-sr-only" style={{ color: 'var(--color-text-secondary)' }}>
                   {store.reconnecting
-                    ? 'Reconnecting...'
+                    ? 'Reconectando...'
                     : store.connected
-                      ? 'Connected'
-                      : 'Disconnected'}
+                      ? 'Conectado'
+                      : 'Desconectado'}
                 </span>
               </div>
             </div>
@@ -605,20 +657,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
         </div>
       </header>
 
-      <main id="main" className="max-w-7xl mx-auto px-6 py-8">
+      <main id="main" className="room-main max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-8">
         {/* Switching between a video and an audio track changes layouts and remounts
             the YouTube player once (accepted: tracks rarely alternate mid-session). */}
         {videoMode ? (
           <div className="video-room" data-testid="video-room" data-tab={panelTab}>
             <Stage
-              label="Video stage"
+              label="Palco de vídeo"
               caption={
                 nowPlaying && (
                   <div className="min-w-0">
                     <div className="font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
                       {nowPlaying.title}
                     </div>
-                    <div className="text-xs truncate">by {nowPlaying.artist}</div>
+                    <div className="text-xs truncate">de {nowPlaying.artist}</div>
                   </div>
                 )
               }
@@ -632,7 +684,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
               />
             </Stage>
 
-            <div className="video-tabs" role="tablist" aria-label="Room panels">
+            <div className="video-tabs" role="tablist" aria-label="Painéis da sala">
               {videoTabs.map(([id, label]) => (
                 <button
                   key={id}
@@ -671,21 +723,49 @@ export function RoomClient({ roomId }: { roomId: string }) {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-5 lg:grid-cols-3 gap-8">
+          <>
+          <div className="audio-room grid grid-cols-1 md:grid-cols-5 lg:grid-cols-3 gap-4 md:gap-8" data-testid="audio-room" data-tab={panelTab}>
           <div data-testid="room-main-column" className="md:col-span-3 lg:col-span-2 space-y-6 room-arrival" style={{ ['--i' as string]: 0 }}>
-            {queueEmpty && <OnboardingCard />}
-            {playerPanel}
-
-            {heroPanel}
-
-            {addTrackForm}
+            {/* Below 768px the same Playing / Queue / Chat / Add tabs as the video
+                room (#258) decide which panel shows; md and up shows every panel. */}
+            <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel video-panel-keep space-y-6" data-active={panelTab === 'playing'}>
+              {queueEmpty && <OnboardingCard />}
+              {playerPanel}
+              {heroPanel}
+            </div>
+            <div id="video-panel-add" role="tabpanel" aria-labelledby="video-tab-add" className="video-panel" data-active={panelTab === 'add'}>
+              {addTrackForm}
+            </div>
           </div>
 
           <div data-testid="room-side-column" className="md:col-span-2 lg:col-span-1 room-arrival md:sticky md:top-24 md:self-start" style={{ ['--i' as string]: 1 }}>
-            {queuePanels}
-            {chatPanel}
+            <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel" data-active={panelTab === 'queue'}>
+              {queuePanels}
+            </div>
+            {chatPanel && (
+              <div id="video-panel-chat" role="tabpanel" aria-labelledby="video-tab-chat" className="video-panel" data-active={panelTab === 'chat'}>
+                {chatPanel}
+              </div>
+            )}
           </div>
         </div>
+          <div className="video-tabs audio-tabs" role="tablist" aria-label="Painéis da sala">
+            {videoTabs.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`video-tab-${id}`}
+                aria-selected={panelTab === id}
+                aria-controls={`video-panel-${id}`}
+                className="video-tab"
+                onClick={() => setPanelTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          </>
         )}
       </main>
 

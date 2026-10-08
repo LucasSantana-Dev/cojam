@@ -349,7 +349,7 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
       const instance = centrifugeMock.MockCentrifuge.instances.at(-1)!;
       instance.emit('error', { type: 'transport', error: { code: 4, message: 'transport closed' } });
       // Never emit 'connected': the timeout must fire with the unreachable state.
-      const assertion = expect(joinPromise).rejects.toThrow(/reach the server/);
+      const assertion = expect(joinPromise).rejects.toThrow(/falar com o servidor/);
       await vi.advanceTimersByTimeAsync(10_000);
       await assertion;
     } finally {
@@ -362,7 +362,7 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
     try {
       const joinPromise = joinRoom('room-1', 'Alice');
       // No transport error and no 'connected': a pure timeout, not "unreachable".
-      const assertion = expect(joinPromise).rejects.toThrow(/timed out/);
+      const assertion = expect(joinPromise).rejects.toThrow(/demorou demais/);
       await vi.advanceTimersByTimeAsync(10_000);
       await assertion;
     } finally {
@@ -375,7 +375,7 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
     authMocks.fetchConnectionToken.mockResolvedValueOnce(null);
     authMocks.lastTokenFetchError = 'HTTP 500';
 
-    await expect(joinRoom('room-1', 'Alice')).rejects.toThrow(/session token/);
+    await expect(joinRoom('room-1', 'Alice')).rejects.toThrow(/obter uma sessão/);
     // Fail fast: no connection is attempted against a token we know is missing.
     expect(centrifugeMock.MockCentrifuge.instances).toHaveLength(0);
   });
@@ -398,7 +398,7 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
     const joinPromise = joinRoom('room-1', 'Alice');
     const instance = await lastInstance();
     instance.emit('disconnected', { code: 103, reason: 'unauthorized' });
-    await expect(joinPromise).rejects.toThrow(/unauthorized/);
+    await expect(joinPromise).rejects.toThrow(/falta de autorização/);
   });
 
   it('normalizes a plain {code, message} room.join rejection into an Error (B11)', async () => {

@@ -10,6 +10,7 @@
 import { pickEnv, getRuntimeEnv } from './runtimeEnv';
 import { resolveConnectionToken } from './realtime';
 import { trackError } from './telemetry';
+import { SpotifyConnectError, kindFromExchangeStatus } from './spotifyConnectError';
 
 export type SpotifySession = {
   accessToken: string;
@@ -18,6 +19,7 @@ export type SpotifySession = {
 };
 const VERIFIER_KEY = 'mj_spotify_verifier';
 const RETURN_KEY = 'mj_spotify_return';
+const STATE_KEY = 'mj_spotify_state';
 const REFRESH_SKEW_MS = 60_000; // refresh a minute early
 // playlist-read-private enables RFC-0007 client-side playlist import. Verified
 // empirically (2026-07-20): this app gets `invalid_scope` when requesting
@@ -97,6 +99,22 @@ function store(t: SpotifySession | null) {
   session = t;
 }
 
+// Pure: only same-origin absolute paths may be used as a post-auth return
+// target. Rejects protocol-relative ("//host"), backslash variants and anything
+// not starting with a single "/". Falls back to "/" (exported for unit tests).
+export function safeReturnPath(p: string | null | undefined): string {
+  if (typeof p !== 'string' || !p.startsWith('/')) return '/';
+  if (p.startsWith('//') || p.startsWith('/\\')) return '/';
+  if (/[\u0000-\u001f]/.test(p)) return '/';
+  return p;
+}
+
+// Pure: does the `state` echoed by Spotify match the one we issued?
+// (exported for unit tests)
+export function stateMatches(expected: string | null, received: string | null): boolean {
+  return !!expected && !!received && expected === received;
+}
+
 function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, '-')
@@ -123,7 +141,9 @@ export async function beginAuth(returnPath: string): Promise<void> {
   }
   const { verifier, challenge } = await pkce();
   sessionStorage.setItem(VERIFIER_KEY, verifier);
-  sessionStorage.setItem(RETURN_KEY, returnPath);
+  sessionStorage.setItem(RETURN_KEY, safeReturnPath(returnPath));
+  const state = base64url(crypto.getRandomValues(new Uint8Array(16)));
+  sessionStorage.setItem(STATE_KEY, state);
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: clientId(),
@@ -131,31 +151,40 @@ export async function beginAuth(returnPath: string): Promise<void> {
     redirect_uri: redirectUri(),
     code_challenge_method: 'S256',
     code_challenge: challenge,
+    state,
   });
   window.location.assign(`${AUTH_URL}?${params}`);
 }
 
 // Called on the /callback/spotify page. Returns the path to navigate back to.
-export async function handleCallback(code: string): Promise<string> {
+export async function handleCallback(code: string, state: string | null): Promise<string> {
+  const expectedState = sessionStorage.getItem(STATE_KEY);
+  sessionStorage.removeItem(STATE_KEY);
+  if (!stateMatches(expectedState, state)) throw new SpotifyConnectError('expired');
   const verifier = sessionStorage.getItem(VERIFIER_KEY);
-  if (!verifier) throw new Error('missing PKCE verifier');
+  if (!verifier) throw new SpotifyConnectError('expired');
 
   // The connection JWT identifies which record the refresh token is filed
   // under. Without it the server cannot key the grant to anyone.
   const connToken = await resolveConnectionToken();
-  if (!connToken) throw new Error('Could not get a session token from the server. Try again in a moment.');
+  if (!connToken) throw new SpotifyConnectError('session');
 
-  const res = await fetch(EXCHANGE_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      code,
-      codeVerifier: verifier,
-      redirectUri: redirectUri(),
-      connToken,
-    }),
-  });
-  if (!res.ok) throw new Error(`token exchange failed: ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(EXCHANGE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        codeVerifier: verifier,
+        redirectUri: redirectUri(),
+        connToken,
+      }),
+    });
+  } catch {
+    throw new SpotifyConnectError('network');
+  }
+  if (!res.ok) throw new SpotifyConnectError(kindFromExchangeStatus(res.status));
 
   const data = await res.json();
   store({
@@ -165,7 +194,14 @@ export async function handleCallback(code: string): Promise<string> {
   });
   reconnectRequired = false;
   sessionStorage.removeItem(VERIFIER_KEY);
-  return sessionStorage.getItem(RETURN_KEY) ?? '/';
+  const returnTo = safeReturnPath(sessionStorage.getItem(RETURN_KEY));
+  sessionStorage.removeItem(RETURN_KEY);
+  return returnTo;
+}
+
+// Restart the flow after a failed callback, returning to where the person began.
+export async function retryAuth(): Promise<void> {
+  await beginAuth(safeReturnPath(sessionStorage.getItem(RETURN_KEY)));
 }
 
 // Asks the server to mint a fresh access token from the refresh token it holds.

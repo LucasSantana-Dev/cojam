@@ -31,7 +31,13 @@ export function PublicRoomToggle({ roomId }: { roomId: string }) {
     try {
       await setRoomPublic(roomId, next, name);
     } catch (err) {
-      setError(rpcErrorMessage(err, 'Could not update the public listing'));
+      const msg = rpcErrorMessage(err, 'Não foi possível atualizar a listagem pública');
+      // Server filter (#259): stable message, PT-BR copy.
+      setError(
+        /room name not allowed/i.test(msg)
+          ? 'Esse nome não é permitido em salas públicas. Escolha outro.'
+          : msg,
+      );
     } finally {
       setBusy(false);
     }
@@ -57,15 +63,15 @@ export function PublicRoomToggle({ roomId }: { roomId: string }) {
         style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)' }}
       >
         <input type="checkbox" checked={isPublic} disabled={busy} onChange={onToggle} />
-        Public
+        Pública
       </label>
       {isPublic && (
         <input
           type="text"
           value={label}
           maxLength={60}
-          placeholder="Room label (optional)"
-          aria-label="Public room label"
+          placeholder="Nome da sala (opcional)"
+          aria-label="Nome da sala pública"
           disabled={busy}
           onChange={(e) => setLabel(e.target.value)}
           onBlur={commitLabel}

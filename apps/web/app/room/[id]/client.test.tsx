@@ -57,16 +57,16 @@ vi.mock('@/lib/account', async (importOriginal) => ({
 // The distinct messages joinRoom rejects with per failure path (lib/realtime.ts);
 // the join form must render each one in the alert, not collapse them.
 const FAILURE_STATES: Array<[string, string]> = [
-  ['server unreachable', 'Could not reach the server. Check your connection and try again.'],
-  ['auth/token failure', 'Could not get a session token from the server (auth service issue). Try again in a moment.'],
-  ['join timeout', 'Joining timed out. The server is taking too long to respond. Try again.'],
-  ['unauthorized rejection', 'The server rejected the session as unauthorized. Try joining again.'],
+  ['server unreachable', 'Não foi possível falar com o servidor. Confira sua conexão e tente de novo.'],
+  ['auth/token failure', 'Não foi possível obter uma sessão do servidor (problema no serviço de autenticação). Tente de novo em instantes.'],
+  ['join timeout', 'A entrada demorou demais. O servidor está lento para responder. Tente de novo.'],
+  ['unauthorized rejection', 'O servidor recusou a sessão por falta de autorização. Tente entrar de novo.'],
 ];
 
 // Verbatim copy from docs/specs/167-guest-identity-signal.md §2; a reword must
 // not land silently.
 const GUEST_COPY =
-  'Your identity is stored in this browser. Sign in before leaving this room to keep your room role across devices.';
+  'Sua identidade fica guardada neste navegador. Entre na sua conta antes de sair da sala para manter seu papel em outros dispositivos.';
 
 const withNormalizedWhitespace = (text: string) => (_: string, el?: Element | null) =>
   el?.textContent?.replace(/\s+/g, ' ').trim() === text;
@@ -82,10 +82,10 @@ function seedRoomState(state: Partial<RoomState> & Pick<RoomState, 'queue'>) {
 }
 
 async function joinAs(name: string) {
-  fireEvent.change(screen.getByLabelText('Your name'), { target: { value: name } });
-  fireEvent.click(screen.getByRole('button', { name: 'Join & Play' }));
+  fireEvent.change(screen.getByLabelText('Seu nome'), { target: { value: name } });
+  fireEvent.click(screen.getByRole('button', { name: 'Entrar na sala' }));
   await waitFor(() => {
-    expect(screen.queryByRole('button', { name: 'Join & Play' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Entrar na sala' })).toBeNull();
   });
 }
 
@@ -99,8 +99,8 @@ describe('RoomClient join failure states (#190)', () => {
     realtimeMocks.joinError = new Error(message);
 
     render(<RoomClient roomId="NEON42" />);
-    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Alice' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Join & Play' }));
+    fireEvent.change(screen.getByLabelText('Seu nome'), { target: { value: 'Alice' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar na sala' }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(message);
@@ -121,7 +121,7 @@ describe('RoomClient shared room-age clock (#206)', () => {
     const track: TrackRef = {
       id: 't1',
       title: 'Song',
-      artist: 'Artist',
+      artist: 'Artista',
       sources: { youtube: { videoId: 'abc123', confidence: 1 } },
       addedBy: 'Bob',
     };
@@ -131,7 +131,7 @@ describe('RoomClient shared room-age clock (#206)', () => {
     await joinAs('Alice');
 
     await waitFor(() => {
-      expect(document.querySelector('.np-timer')?.textContent).toMatch(/^in room 5:0\d$/);
+      expect(document.querySelector('.np-timer')?.textContent).toMatch(/^na sala há 5:0\d$/);
     });
   });
 
@@ -139,7 +139,7 @@ describe('RoomClient shared room-age clock (#206)', () => {
     const track: TrackRef = {
       id: 't1',
       title: 'Song',
-      artist: 'Artist',
+      artist: 'Artista',
       sources: { youtube: { videoId: 'abc123', confidence: 1 } },
       addedBy: 'Bob',
     };
@@ -149,7 +149,7 @@ describe('RoomClient shared room-age clock (#206)', () => {
     await joinAs('Alice');
 
     await waitFor(() => {
-      expect(screen.getByText('added by Bob')).toBeInTheDocument();
+      expect(screen.getByText('adicionada por Bob')).toBeInTheDocument();
     });
     expect(document.querySelector('.np-timer')).toBeNull();
   });
@@ -199,7 +199,7 @@ describe('RoomClient guest-identity signal (#167)', () => {
     render(<RoomClient roomId="NEON42" />);
     await joinAs('Alice');
 
-    expect(document.querySelector('.guest-chip')?.textContent).toBe('Guest');
+    expect(document.querySelector('.guest-chip')?.textContent).toBe('Convidado');
 
     // Signing in mid-session flips current session state; the marker
     // disappears on the next render, no remount (#167 spec §4).
@@ -217,7 +217,7 @@ describe('RoomClient guest-identity signal (#167)', () => {
     await joinAs('Alice');
 
     await waitFor(() => {
-      expect(screen.getByText(/you’re/)).toBeInTheDocument();
+      expect(screen.getByText(/você é/)).toBeInTheDocument();
     });
     expect(document.querySelector('.guest-chip')).toBeNull();
   });
@@ -263,7 +263,7 @@ describe('RoomClient video stage layout (#258)', () => {
     await joinAs('Alice');
     const queuePanel = document.getElementById('video-panel-queue')!;
     expect(queuePanel).toHaveAttribute('data-active', 'false');
-    fireEvent.click(screen.getByRole('tab', { name: 'Queue' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Fila' }));
     expect(queuePanel).toHaveAttribute('data-active', 'true');
     expect(document.getElementById('video-panel-playing')).toHaveAttribute('data-active', 'false');
   });

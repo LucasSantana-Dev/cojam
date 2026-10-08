@@ -17,6 +17,12 @@ const mockLocalStorage = () => {
   };
 };
 
+// The URLSearchParams body of the most recent fetch call.
+const sentBody = (): URLSearchParams => {
+  const calls = (global.fetch as any).mock.calls;
+  return calls[calls.length - 1][1].body as URLSearchParams;
+};
+
 describe('auth module', () => {
   beforeEach(() => {
     global.fetch = vi.fn();
@@ -43,10 +49,11 @@ describe('auth module', () => {
       const result = await auth.fetchConnectionToken('http://localhost:8080');
 
       expect(result).toEqual({ token: 'jwt-token-123', userId: 'anon-456' });
-      expect(global.fetch).toHaveBeenCalledWith('http://localhost:8080/api/connection-token');
+      expect(global.fetch).toHaveBeenCalledWith('http://localhost:8080/api/connection-token', expect.objectContaining({ method: 'POST' }));
+      expect(sentBody().toString()).toBe('');
     });
 
-    it('includes ?userId query param when userId is stored', async () => {
+    it('sends userId in the POST body when userId is stored', async () => {
       const mockLS = mockLocalStorage();
       mockLS.setItem('cojam_uid', 'stored-user-789');
       (global as any).localStorage = mockLS;
@@ -63,7 +70,8 @@ describe('auth module', () => {
       const result = await auth.fetchConnectionToken('http://localhost:8080');
 
       expect(result).toEqual({ token: 'jwt-token-xyz', userId: 'stored-user-789' });
-      expect(global.fetch).toHaveBeenCalledWith('http://localhost:8080/api/connection-token?userId=stored-user-789');
+      expect(global.fetch).toHaveBeenCalledWith('http://localhost:8080/api/connection-token', expect.objectContaining({ method: 'POST' }));
+      expect(sentBody().get('userId')).toBe('stored-user-789');
     });
 
     it('includes the previous token as ownership proof when stored', async () => {
@@ -84,9 +92,10 @@ describe('auth module', () => {
       const result = await auth.fetchConnectionToken('http://localhost:8080');
 
       expect(result).toEqual({ token: 'new-jwt', userId: 'stored-user-789' });
-      expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:8080/api/connection-token?userId=stored-user-789&token=previous-jwt'
-      );
+      // The proof travels in the body, never in the URL.
+      expect(global.fetch).toHaveBeenCalledWith('http://localhost:8080/api/connection-token', expect.objectContaining({ method: 'POST' }));
+      expect(sentBody().get('userId')).toBe('stored-user-789');
+      expect(sentBody().get('token')).toBe('previous-jwt');
       // Returned identity replaces the stored one for the next refresh.
       expect(mockLS.getItem('cojam_token')).toBe('new-jwt');
     });
@@ -117,14 +126,61 @@ describe('auth module', () => {
       
       const auth = await import('./auth');
 
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      });
+      // POST 404, then the legacy GET fallback also 404s.
+      (global.fetch as any)
+        .mockResolvedValueOnce({ ok: false, status: 404 })
+        .mockResolvedValueOnce({ ok: false, status: 404 });
 
       const result = await auth.fetchConnectionToken('http://localhost:8080');
 
       expect(result).toBeNull();
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(auth.getLastTokenFetchError()).toBe('HTTP 404');
+    });
+
+    it('falls back to the legacy GET form when an older server rejects POST (405)', async () => {
+      const mockLS = mockLocalStorage();
+      mockLS.setItem('cojam_uid', 'stored-user-789');
+      mockLS.setItem('cojam_token', 'previous-jwt');
+      (global as any).localStorage = mockLS;
+      (global as any).window = (global as any).window || {};
+      (global as any).window.localStorage = mockLS;
+
+      const auth = await import('./auth');
+
+      (global.fetch as any)
+        .mockResolvedValueOnce({ ok: false, status: 405 })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ token: 'legacy-jwt', userId: 'stored-user-789' }),
+        });
+
+      const result = await auth.fetchConnectionToken('http://localhost:8080');
+
+      expect(result).toEqual({ token: 'legacy-jwt', userId: 'stored-user-789' });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect((global.fetch as any).mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'POST' }));
+      expect((global.fetch as any).mock.calls[1]).toEqual([
+        'http://localhost:8080/api/connection-token?userId=stored-user-789&token=previous-jwt',
+      ]);
+      expect(auth.getLastTokenFetchError()).toBeNull();
+    });
+
+    it('does not fall back to GET on other errors', async () => {
+      const mockLS = mockLocalStorage();
+      (global as any).localStorage = mockLS;
+      (global as any).window = (global as any).window || {};
+      (global as any).window.localStorage = mockLS;
+
+      const auth = await import('./auth');
+
+      (global.fetch as any).mockResolvedValueOnce({ ok: false, status: 429 });
+
+      const result = await auth.fetchConnectionToken('http://localhost:8080');
+
+      expect(result).toBeNull();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(auth.getLastTokenFetchError()).toBe('HTTP 429');
     });
 
     it('returns null on network error', async () => {
@@ -194,7 +250,7 @@ describe('auth module', () => {
       const result = await auth.fetchConnectionToken();
 
       expect(result).not.toBeNull();
-      expect(global.fetch).toHaveBeenCalledWith('http://app.local:3000/api/connection-token');
+      expect(global.fetch).toHaveBeenCalledWith('http://app.local:3000/api/connection-token', expect.objectContaining({ method: 'POST' }));
     });
   });
 

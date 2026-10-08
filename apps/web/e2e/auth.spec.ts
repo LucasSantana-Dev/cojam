@@ -18,27 +18,27 @@ async function join(page: Page, roomId: string, name: string) {
   await page.goto(`/room/${roomId}`);
   // Waiting-room card shows the room code in a chip ("You're about to join <CODE>").
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Your name').fill(name);
-  await page.getByRole('button', { name: 'Join & Play' }).click();
-  // Joined header shows the room-code chip + "you're <name>" (see RoomClient header).
-  await expect(page.getByText(`you\u2019re ${name}`)).toBeVisible();
+  await page.getByPlaceholder('Seu nome').fill(name);
+  await page.getByRole('button', { name: 'Entrar na sala' }).click();
+  // Joined header shows the room-code chip + "você é <name>" (see RoomClient header).
+  await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
 async function addTrack(page: Page, title: string, artist: string) {
-  // Open the "Add manually" details element using JavaScript to ensure it opens
+  // Open the "Adicionar manualmente" details element using JavaScript to ensure it opens
   await page.evaluate(() => {
     const details = document.querySelector('details');
     if (details) details.open = true;
   });
-  await page.getByPlaceholder('Title').fill(title);
-  await page.getByPlaceholder('Artist').fill(artist);
-  await page.getByRole('button', { name: 'Add to Queue' }).click();
+  await page.getByPlaceholder('Título').fill(title);
+  await page.getByPlaceholder('Artista').fill(artist);
+  await page.getByRole('button', { name: 'Adicionar à fila' }).click();
   // Wait for the add to land (queue shows the title) before returning.
   await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
 }
 
 test('room auth: listener sees host-only controls disabled, host sees them enabled', async ({ browser }) => {
-  const roomId = `ra${Date.now().toString(36)}`;
+  const roomId = `RA${Date.now().toString(36).toUpperCase()}`;
 
   // First joiner becomes the room host (server assigns hostUserId on room.join).
   const host = await (await browser.newContext()).newPage();
@@ -51,19 +51,19 @@ test('room auth: listener sees host-only controls disabled, host sees them enabl
   await addTrack(host, 'Beta', 'B-Two');
 
   // Host: queue controls are enabled.
-  await expect(host.getByRole('button', { name: 'Play' }).first()).toBeEnabled();
-  await expect(host.getByRole('button', { name: 'Remove' }).first()).toBeEnabled();
-  await expect(host.getByRole('button', { name: 'Move up' }).nth(1)).toBeEnabled();
-  await expect(host.getByRole('button', { name: 'Move down' }).first()).toBeEnabled();
+  await expect(host.getByRole('button', { name: 'Tocar' }).first()).toBeEnabled();
+  await expect(host.getByRole('button', { name: 'Remover', exact: true }).first()).toBeEnabled();
+  await expect(host.getByRole('button', { name: 'Mover para cima' }).nth(1)).toBeEnabled();
+  await expect(host.getByRole('button', { name: 'Mover para baixo' }).first()).toBeEnabled();
 
   // Listener: the same controls render but stay disabled and say why (gating
   // is disabled={!canControl} in QueuePanel, driven by room/[id]/client.tsx).
-  await expect(listener.getByRole('button', { name: 'Play' }).first()).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Remove' }).first()).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Move up' }).nth(1)).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Move down' }).first()).toBeDisabled();
-  await expect(listener.getByRole('button', { name: 'Remove' }).first())
-    .toHaveAttribute('title', 'Only the host can remove tracks');
+  await expect(listener.getByRole('button', { name: 'Tocar' }).first()).toBeDisabled();
+  await expect(listener.getByRole('button', { name: 'Remover', exact: true }).first()).toBeDisabled();
+  await expect(listener.getByRole('button', { name: 'Mover para cima' }).nth(1)).toBeDisabled();
+  await expect(listener.getByRole('button', { name: 'Mover para baixo' }).first()).toBeDisabled();
+  await expect(listener.getByRole('button', { name: 'Remover', exact: true }).first())
+    .toHaveAttribute('title', 'Só o anfitrião pode remover faixas');
 
   // Listeners can still add to the queue: membership-gated, not host-gated.
   await addTrack(listener, 'Listener Song', 'Someone');
@@ -114,20 +114,20 @@ test('supabase: sign-in entry points render when the Supabase env is present', a
 
   // Landing header entry point (app/page.tsx).
   await page.goto('/');
-  await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Entrar', exact: true })).toBeVisible();
 
   // Account page sign-in form (app/account/page.tsx).
   await page.goto('/account');
-  await expect(page.getByRole('button', { name: 'Email me a sign-in link' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Receber link de acesso por e-mail' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continuar com o Google' })).toBeVisible();
 });
 
 test('supabase: entry points stay hidden when the Supabase env is absent', async ({ page }) => {
   // The e2e web server has no Supabase env, so /env.js omits it and the
   // hydration-safe useSyncExternalStore gates keep the UI hidden.
   await page.goto('/');
-  await expect(page.getByRole('link', { name: 'Sign in' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Entrar', exact: true })).toHaveCount(0);
 
   await page.goto('/account');
-  await expect(page.getByText('Accounts are not configured on this deployment.')).toBeVisible();
+  await expect(page.getByText('As contas não estão configuradas neste servidor.')).toBeVisible();
 });

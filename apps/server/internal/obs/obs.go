@@ -49,6 +49,10 @@ type Metrics struct {
 	// ReportsFiled counts member reports by kind (#259). A report is the one
 	// exception to "chat is never retained", so it is worth watching.
 	ReportsFiled *prometheus.CounterVec
+
+	// RetentionPurgedRows counts rows deleted by the retention sweep (#319),
+	// by table. The label is a fixed table name, never input.
+	RetentionPurgedRows *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -142,11 +146,15 @@ func New() *Metrics {
 			Name: "music_jam_reports_filed_total",
 			Help: "Member reports filed, by kind (message, member, room).",
 		}, []string{"kind"}),
+		RetentionPurgedRows: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_retention_purged_total",
+			Help: "Rows deleted by the retention sweep, by table (reports, moderation_actions).",
+		}, []string{"table"}),
 	}
 	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
 		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.RoomsPersistedEvicted,
 		m.PublishErrors, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
-		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject, m.ReportsFiled)
+		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject, m.ReportsFiled, m.RetentionPurgedRows)
 
 	return m
 }
@@ -201,6 +209,11 @@ func (m *Metrics) ClientError(name string)    { m.ClientErrors.WithLabelValues(n
 func (m *Metrics) ProductEvent(name string)   { m.ProductEvents.WithLabelValues(name).Inc() }
 func (m *Metrics) TelemetryRejected(r string) { m.TelemetryReject.WithLabelValues(r).Inc() }
 func (m *Metrics) ReportFiled(kind string)    { m.ReportsFiled.WithLabelValues(kind).Inc() }
+
+// RetentionPurged counts n rows deleted from table by the retention sweep.
+func (m *Metrics) RetentionPurged(table string, n int64) {
+	m.RetentionPurgedRows.WithLabelValues(table).Add(float64(n))
+}
 
 func (m *Metrics) WebVital(name string, v float64) {
 	m.WebVitals.WithLabelValues(name).Observe(v)

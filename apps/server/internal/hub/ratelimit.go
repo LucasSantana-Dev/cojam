@@ -89,6 +89,28 @@ func newRateLimiter(burst int, refill time.Duration, now func() time.Time) *rate
 	}
 }
 
+// allowAll consumes one token from every key's bucket, or from none: it
+// returns false, charging nothing, when any bucket is empty.
+func (l *rateLimiter) allowAll(keys ...string) bool {
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.sweepLocked(now)
+	buckets := make([]*tokenBucket, 0, len(keys))
+	for _, key := range keys {
+		buckets = append(buckets, l.refillLocked(key, now))
+	}
+	for _, b := range buckets {
+		if b.tokens < 1 {
+			return false
+		}
+	}
+	for _, b := range buckets {
+		b.tokens--
+	}
+	return true
+}
+
 // allow consumes one token for key, returning false when the bucket is empty.
 // Rejected calls do not consume a token. Idle buckets are evicted by a lazy
 // sweep on access so the map cannot grow unboundedly.
@@ -97,30 +119,78 @@ func (l *rateLimiter) allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if now.Sub(l.lastSweep) >= l.sweepEvery {
-		for k, b := range l.buckets {
-			if now.Sub(b.last) > l.idleTTL {
-				delete(l.buckets, k)
-			}
-		}
-		l.lastSweep = now
-	}
+	l.sweepLocked(now)
 
-	b, ok := l.buckets[key]
-	if !ok {
-		b = &tokenBucket{tokens: l.burst, last: now}
-		l.buckets[key] = b
-	}
-
-	b.tokens += float64(now.Sub(b.last)) / float64(l.refill)
-	if b.tokens > l.burst {
-		b.tokens = l.burst
-	}
-	b.last = now
-
+	b := l.refillLocked(key, now)
 	if b.tokens < 1 {
 		return false
 	}
 	b.tokens--
 	return true
+}
+
+// mutationMethods are state-fanout RPCs: every accepted call bumps the room
+// version and republishes the full RoomState to every subscriber, so they
+// share one per-caller bucket. Methods already throttled elsewhere stay in
+// their own bucket (queue.vote: voteMethods; transport.*: transportMethods;
+// room.kick/chat.*: chatMethods; playlist.import: fanoutMethods).
+var mutationMethods = map[string]bool{
+	"queue.add":           true,
+	"queue.remove":        true,
+	"queue.reorder":       true,
+	"now_playing.set":     true,
+	"now_playing.advance": true,
+	"radio.set":           true,
+	"room.set_public":     true,
+}
+
+// Defaults for the mutation limiter: a host curating a queue clicks in
+// bursts, so the burst is generous. Tests shrink h.mutationLimiter.
+const (
+	mutationBurst  = 20
+	mutationRefill = time.Second
+)
+
+// checkMutationLimit enforces the per-caller bucket on mutationMethods.
+func (h *Hub) checkMutationLimit(method, rlKey string) error {
+	if !mutationMethods[method] || h.mutationLimiter == nil {
+		return nil
+	}
+	if !h.mutationLimiter.allow(rlKey) {
+		if h.metrics != nil {
+			h.metrics.RateLimitReject(method)
+		}
+		return userErrorf("too many requests, slow down")
+	}
+	return nil
+}
+
+// refillLocked returns key's bucket, created full on first use and refilled
+// for the time elapsed since its last access. Callers hold l.mu.
+func (l *rateLimiter) refillLocked(key string, now time.Time) *tokenBucket {
+	b, ok := l.buckets[key]
+	if !ok {
+		b = &tokenBucket{tokens: l.burst, last: now}
+		l.buckets[key] = b
+	}
+	b.tokens += float64(now.Sub(b.last)) / float64(l.refill)
+	if b.tokens > l.burst {
+		b.tokens = l.burst
+	}
+	b.last = now
+	return b
+}
+
+// sweepLocked evicts idle buckets at most once per sweepEvery, so the map
+// cannot grow unboundedly. Callers hold l.mu.
+func (l *rateLimiter) sweepLocked(now time.Time) {
+	if now.Sub(l.lastSweep) < l.sweepEvery {
+		return
+	}
+	for k, b := range l.buckets {
+		if now.Sub(b.last) > l.idleTTL {
+			delete(l.buckets, k)
+		}
+	}
+	l.lastSweep = now
 }

@@ -33,10 +33,10 @@ export function ActivityRail() {
   if (entries.length === 0) return null;
 
   return (
-    <div className="panel p-6 space-y-4 mt-6">
+    <div data-testid="activity-panel" className="panel p-6 space-y-4 mt-6">
       <div>
         <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          Activity
+          Atividade
         </h3>
       </div>
       <ul className="space-y-3">
@@ -44,7 +44,7 @@ export function ActivityRail() {
           <li key={track.id} className="flex items-baseline gap-2">
             <p className="flex-1 min-w-0 truncate text-sm" style={{ color: 'var(--color-text-primary)' }}>
               <span className="font-semibold">{track.addedBy}</span>
-              <span style={{ color: 'var(--color-text-secondary)' }}> added {track.title}</span>
+              <span style={{ color: 'var(--color-text-secondary)' }}> adicionou {track.title}</span>
             </p>
             <span className="text-xs flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
               {addedAgo(addedAt)}

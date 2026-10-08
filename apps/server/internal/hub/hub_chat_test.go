@@ -30,8 +30,8 @@ func newChatTestHub(t *testing.T) *Hub {
 func TestChat_MembershipGate(t *testing.T) {
 	h := NewHub(nil).WithChat(true)
 
-	send := []byte(`{"roomId":"x","text":"hi","name":"a"}`)
-	history := []byte(`{"roomId":"x"}`)
+	send := []byte(`{"roomId":"X","text":"hi","name":"a"}`)
+	history := []byte(`{"roomId":"X"}`)
 
 	if err := h.Authorize(newTestClient("attacker", ""), "chat.send", send); !errors.Is(err, centrifuge.ErrorPermissionDenied) {
 		t.Fatalf("unjoined chat.send: got %v, want ErrorPermissionDenied", err)
@@ -41,7 +41,7 @@ func TestChat_MembershipGate(t *testing.T) {
 	}
 
 	// Members pass the gate (chat is every member's channel, not host-only).
-	h.Join("c1", "x")
+	h.Join("c1", "X")
 	if err := h.Authorize(newTestClient("c1", ""), "chat.send", send); err != nil {
 		t.Fatalf("member chat.send: got %v, want nil", err)
 	}
@@ -63,7 +63,7 @@ func TestChatSend_Validation(t *testing.T) {
 	}{
 		{"empty", ""},
 		{"whitespace only", "   \n\t  "},
-		{"over 300 chars", strings.Repeat("x", maxChatTextLen+1)},
+		{"over 300 chars", strings.Repeat("X", maxChatTextLen+1)},
 	} {
 		payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": tc.text, "name": "a"})
 		_, err := h.HandleRPC("chat.send", payload, "")
@@ -73,8 +73,9 @@ func TestChatSend_Validation(t *testing.T) {
 		}
 	}
 
-	res, err := h.HandleRPC("chat.send",
-		[]byte(`{"roomId":"v","text":"  hello room  ","name":"  Ana  ","userId":"spoofed"}`), "u1")
+	h.RecordClientName("c-ana", "  Ana  ")
+	res, err := h.handleRPC("chat.send",
+		[]byte(`{"roomId":"v","text":"  hello room  ","name":"Mallory","userId":"spoofed"}`), "c-ana", "u1")
 	if err != nil {
 		t.Fatalf("valid send: %v", err)
 	}
@@ -105,9 +106,9 @@ func TestChatSend_Validation(t *testing.T) {
 	}
 
 	// Over-long display names are capped, not rejected (display label only).
-	longName := strings.Repeat("n", maxChatNameLen+10)
-	payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": "hi", "name": longName})
-	res, err = h.HandleRPC("chat.send", payload, "")
+	h.RecordClientName("c-long", strings.Repeat("n", maxChatNameLen+10))
+	payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": "hi"})
+	res, err = h.handleRPC("chat.send", payload, "c-long", "")
 	if err != nil {
 		t.Fatalf("long-name send: %v", err)
 	}
@@ -288,10 +289,10 @@ func TestChatSend_RateLimited(t *testing.T) {
 func TestChat_DisabledReturnsMethodNotFound(t *testing.T) {
 	h := NewHub(nil)
 
-	if _, err := h.HandleRPC("chat.send", []byte(`{"roomId":"x","text":"hi","name":"a"}`), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
+	if _, err := h.HandleRPC("chat.send", []byte(`{"roomId":"X","text":"hi","name":"a"}`), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
 		t.Fatalf("chat.send with flag off: got %v, want ErrorMethodNotFound", err)
 	}
-	if _, err := h.HandleRPC("chat.history", []byte(`{"roomId":"x"}`), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
+	if _, err := h.HandleRPC("chat.history", []byte(`{"roomId":"X"}`), ""); !errors.Is(err, centrifuge.ErrorMethodNotFound) {
 		t.Fatalf("chat.history with flag off: got %v, want ErrorMethodNotFound", err)
 	}
 }
@@ -304,9 +305,9 @@ func TestChatSend_MultiByteTruncation(t *testing.T) {
 	h := newChatTestHub(t)
 
 	// 70 CJK runes (> maxChatNameLen runes, > 3x that in bytes).
-	longName := strings.Repeat("名", maxChatNameLen+10) + "🎧"
-	payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": "hi", "name": longName})
-	res, err := h.HandleRPC("chat.send", payload, "")
+	h.RecordClientName("c-cjk", strings.Repeat("名", maxChatNameLen+10)+"🎧")
+	payload, _ := json.Marshal(map[string]string{"roomId": "v", "text": "hi"})
+	res, err := h.handleRPC("chat.send", payload, "c-cjk", "")
 	if err != nil {
 		t.Fatalf("multi-byte long-name send: %v", err)
 	}
@@ -511,5 +512,33 @@ func TestChatSystem_DisabledStaysSilent(t *testing.T) {
 	room.mu.Unlock()
 	if n != 0 {
 		t.Fatalf("chat disabled but ring has %d messages", n)
+	}
+}
+
+// The chat display name is the server-known connection name; a name in the
+// payload is ignored, so a member cannot post as someone else.
+func TestChatSend_UsesConnectionName(t *testing.T) {
+	h := newChatTestHub(t)
+	send := func(clientID string) string {
+		t.Helper()
+		res, err := h.handleRPC("chat.send", []byte(`{"roomId":"v","text":"hi","name":"Host"}`), clientID, "")
+		if err != nil {
+			t.Fatalf("chat.send: %v", err)
+		}
+		var out struct {
+			Message ChatMessage `json:"message"`
+		}
+		if err := json.Unmarshal(res, &out); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return out.Message.Name
+	}
+
+	h.RecordClientName("c-ana", "Ana")
+	if got := send("c-ana"); got != "Ana" {
+		t.Fatalf("name = %q, want the connection name Ana", got)
+	}
+	if got := send("c-nameless"); got != "Listener" {
+		t.Fatalf("nameless connection: name = %q, want the Listener fallback", got)
 	}
 }

@@ -93,8 +93,33 @@ func envDurationMinutes(key string, dflt time.Duration) time.Duration {
 	return time.Duration(n) * time.Minute
 }
 
+// Retention sweep cadence and bound (#319): one bounded DELETE per table per
+// hour. 5000 rows an hour is far above the report rate this deployment sees,
+// and a first-enable backlog drains over successive sweeps.
+const (
+	retentionInterval = time.Hour
+	retentionBatch    = 5000
+)
+
+// maxDisplayNameLen caps the connect-time display name, in runes. The name
+// is client-chosen and fans out to every member through presence, queue
+// attribution and chat.
+const maxDisplayNameLen = 40
+
+// envPositiveInt reads a positive integer (unset/invalid/<=0 = dflt). Used to
+// tune rate-limit bursts for environments where many callers share one IP
+// (local dev and e2e all arrive from 127.0.0.1).
+func envPositiveInt(getenv func(string) string, key string, dflt int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(getenv(key)))
+	if err != nil || n <= 0 {
+		return dflt
+	}
+	return n
+}
+
 // presenceConnInfo builds the centrifuge ConnInfo carried into presence from
-// the connect data {name, platform?}. The platform is the client's playback
+// the connect data {name, platform?}. The name is trimmed and capped at
+// maxDisplayNameLen runes (rune-safe). The platform is the client's playback
 // service (#171); unrecognized values are dropped here so presence only ever
 // carries platforms the web app can render an indicator for. Returns nil when
 // no name was presented (anonymous v0 connections keep empty ConnInfo).
@@ -103,10 +128,14 @@ func presenceConnInfo(data []byte) []byte {
 		Name     string `json:"name"`
 		Platform string `json:"platform"`
 	}
-	if err := json.Unmarshal(data, &d); err != nil || d.Name == "" {
+	if err := json.Unmarshal(data, &d); err != nil {
 		return nil
 	}
-	info := map[string]string{"name": d.Name}
+	name := truncateRunes(strings.TrimSpace(d.Name), maxDisplayNameLen)
+	if name == "" {
+		return nil
+	}
+	info := map[string]string{"name": name}
 	switch d.Platform {
 	case "spotify", "apple", "youtube":
 		info["platform"] = d.Platform
@@ -116,6 +145,11 @@ func presenceConnInfo(data []byte) []byte {
 }
 
 func main() {
+	// Operator subcommands run and exit before any server setup.
+	if len(os.Args) > 1 && os.Args[1] == "erase" {
+		os.Exit(runErase(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
+	}
+
 	var shutdownHooks []func()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -201,6 +235,9 @@ func main() {
 	// only (the membership gate is process-local).
 	roomPersistIdleTTL := envDurationMinutes("ROOM_PERSIST_IDLE_TTL_MINUTES", 0)
 	h.WithRoomPersistIdleTTL(roomPersistIdleTTL)
+
+	// Room-creation budget burst, per identity and per client IP.
+	h.WithRoomCreateBurst(envPositiveInt(os.Getenv, "ROOM_CREATE_RATE_BURST", hub.DefaultRoomCreateBurst))
 
 	shutdownHooks = append(shutdownHooks, h.StartRoomEvictor())
 	logger.Info("room_eviction_enabled", "idle_ttl", roomIdleTTL.String())
@@ -492,6 +529,27 @@ func main() {
 		}()
 	})
 
+	// Retention for reports and moderation actions (#319). REPORT_RETENTION_DAYS
+	// unset or 0 keeps them forever: the window is an owner decision tied to
+	// ECA Digital reporting duties, so the code does not pick one. Purge is by
+	// age only (no status column exists, so no legal-hold exemption).
+	reportWindow, err := reportRetention(os.Getenv)
+	if err != nil {
+		log.Fatal(err)
+	}
+	retention := report.NewRetention(reportWindow, retentionBatch,
+		report.RetentionTarget{Table: "reports", Purger: reports},
+		report.RetentionTarget{Table: "moderation_actions", Purger: audit},
+	).WithLogger(logger).WithPurgeObserver(metrics.RetentionPurged)
+	// Stopped before every other hook: the pool-close hook is already
+	// registered, and an in-flight purge must not race a closed pool.
+	shutdownHooks = append([]func(){retention.Start(retentionInterval)}, shutdownHooks...)
+	if retention.Enabled() {
+		logger.Info("report_retention_enabled", "window_days", int(reportWindow.Hours()/24))
+	} else {
+		logger.Info("report_retention_disabled", "hint", "set REPORT_RETENTION_DAYS to purge reports and moderation actions")
+	}
+
 	// Connection authentication setup
 	roomAuthEnabled := featureEnabled("FEATURE_ROOM_AUTH", false)
 	roomAuthSecret := os.Getenv("ROOM_AUTH_SECRET")
@@ -509,6 +567,11 @@ func main() {
 	if roomAuthEnabled {
 		h.WithRebind([]byte(roomAuthSecret), burns)
 	}
+
+	// With room auth on every connection carries an identity, so every joined
+	// room binds a host and a host-less room fails closed for host-only RPCs.
+	// Off keeps the v0 equal-member behaviour for host-less rooms.
+	h.WithHostAssignment(roomAuthEnabled)
 
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
@@ -557,6 +620,7 @@ func main() {
 		logger.Info("client_connected", "client_id", client.ID(), "transport", client.Transport().Name())
 
 		// Room routing happens per-RPC via params.roomId (docs/protocol.md)
+		h.RecordClientIP(client.ID(), clientIPFromContext(client.Context()))
 		h.RegisterClient(client)
 
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
@@ -569,21 +633,13 @@ func main() {
 		})
 
 		client.OnSubscribe(func(e centrifuge.SubscribeEvent, cb centrifuge.SubscribeCallback) {
-			logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
-			// Subscribing to room:<id> enrolls the client so it may mutate that room
-			// (link = capability; see docs/protocol.md "Trust model", #180).
-			// centrifuge re-subscribes on reconnect, so membership survives reconnects.
-			if roomID, ok := strings.CutPrefix(e.Channel, "room:"); ok {
-				h.Join(client.ID(), roomID)
+			reply, err := authorizeSubscribe(h, client.ID(), e.Channel)
+			if err != nil {
+				logger.Info("channel_subscribe_rejected", "client_id", client.ID())
+			} else {
+				logger.Info("channel_subscribed", "client_id", client.ID(), "channel", e.Channel)
 			}
-			// Presence + join/leave so the room can show who is listening.
-			cb(centrifuge.SubscribeReply{
-				Options: centrifuge.SubscribeOptions{
-					EmitPresence:  true,
-					EmitJoinLeave: true,
-					PushJoinLeave: true,
-				},
-			}, nil)
+			cb(reply, err)
 		})
 
 		// Authorize presence queries (else client presence() returns code 108).
@@ -596,7 +652,7 @@ func main() {
 	r := chi.NewRouter()
 
 	// Add middleware
-	r.Use(middleware.Logger)
+	r.Use(accessLog(logger))
 	r.Use(middleware.Recoverer)
 
 	// Liveness: the process is up. Readiness (/readyz) additionally gates on the
@@ -610,10 +666,23 @@ func main() {
 	// Carries no version: this one is internet-facing and the build stamp only
 	// helps someone fingerprint the deployment.
 	r.Get("/api/healthz", publicHealthzHandler())
+	// Live counter (#307): totals only, cached 10s in the hub.
+	r.Get("/api/stats/live", liveStatsHandler(h))
 	// Member reports (#259). Durable by design: chat is ephemeral, so the
 	// report copies what it concerns.
+	// REPORT_WEBHOOK_URL (optional) pushes a minimal summary of each report to
+	// the operator; unset means DB and logs only.
+	var reportNotifier report.Notifier
+	if wh, err := report.NewWebhookNotifier(os.Getenv("REPORT_WEBHOOK_URL"), logger); err != nil {
+		log.Fatalf("invalid REPORT_WEBHOOK_URL: %v", err)
+	} else if wh != nil {
+		reportNotifier = wh
+		logger.Info("report_webhook_enabled")
+	} else {
+		logger.Warn("report_webhook_disabled", "hint", "set REPORT_WEBHOOK_URL so reports reach the operator")
+	}
 	r.Post("/api/report", reportHandler(reports, roomAuthSecret, metrics, logger,
-		newCallerLimiter(reportBurst, reportRefill)))
+		newCallerLimiter(reportBurst, reportRefill), reportNotifier))
 
 	// Client telemetry (#245/#251): folds browser-reported errors, funnel
 	// events and web vitals into the existing Prometheus surface.
@@ -654,8 +723,16 @@ func main() {
 	})
 
 	// Connection token endpoint: returns a signed JWT token for anonymous connection auth.
-	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented).
-	r.Get("/api/connection-token", connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns))
+	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented). POST carries
+	// the refresh proof in the body; GET with query params is the deprecated
+	// form, kept for one release. Rate-limited per client IP.
+	// CONNECTION_TOKEN_RATE_BURST raises the per-IP burst where many callers
+	// share one address (local dev, e2e); production keeps the default.
+	connTokenLimiter := newCallerLimiter(
+		float64(envPositiveInt(os.Getenv, "CONNECTION_TOKEN_RATE_BURST", connTokenBurst)), connTokenRefill)
+	connToken := connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns, connTokenLimiter, logger)
+	r.Post("/api/connection-token", connToken)
+	r.Get("/api/connection-token", connToken)
 
 	// WebSocket handler for centrifuge. Origin allowlist prevents cross-site
 	// WebSocket hijacking: without it any page could open a socket and mutate rooms.
@@ -674,7 +751,7 @@ func main() {
 			return allowedOrigins[origin]
 		},
 	})
-	r.Handle("/connection/websocket", wsHandler)
+	r.Handle("/connection/websocket", withClientIP(wsHandler))
 
 	// Prometheus metrics (custom registry from obs). Served only on a dedicated
 	// listener when METRICS_ADDR is set (e.g. 127.0.0.1:9090), never on the
@@ -774,6 +851,17 @@ func publicHealthzHandler() http.HandlerFunc {
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}
+}
+
+// liveStatsHandler serves {people, rooms} for the landing hero. Unauthenticated
+// and public, so it exposes only the aggregate the hub caches (never per-room
+// data) and lets browsers and the proxy cache it for the same 10s.
+func liveStatsHandler(h *hub.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=10")
+		json.NewEncoder(w).Encode(h.LiveStats())
 	}
 }
 

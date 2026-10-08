@@ -8,6 +8,11 @@ import { proxyConnectionToken } from './connectionTokenProxy';
  * browsers laid out at ~980px and scaled down, so every device landed in the
  * desktop branch and the gap could not be seen.
  *
+ * The 390x844 block (#289) covers the phone layout: tabs instead of a scroll
+ * past every panel, no horizontal overflow, 44px targets in the header and
+ * queue rows, and a chat input that stays on screen with a keyboard-sized
+ * viewport.
+ *
  * Asserts geometry rather than class names, so a Tailwind config change that
  * moves a breakpoint still fails here.
  */
@@ -37,16 +42,16 @@ async function join(page: Page, roomId: string) {
   await proxyConnectionToken(page);
   await page.goto(`/room/${roomId}`);
   await expect(page.getByText(roomId, { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Your name').fill('Probe');
-  await page.getByRole('button', { name: 'Join & Play' }).click();
-  await expect(page.getByText('you\u2019re Probe')).toBeVisible();
+  await page.getByPlaceholder('Seu nome').fill('Probe');
+  await page.getByRole('button', { name: 'Entrar na sala' }).click();
+  await expect(page.getByTestId('room-me')).toContainText('Probe');
 }
 
 test.describe('room layout across the tablet range', () => {
   for (const width of [768, 834, 1023]) {
     test(`is two columns at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
-      await join(page, `e2eb${Date.now().toString(36)}`);
+      await join(page, `E2EB${Date.now().toString(36).toUpperCase()}`);
 
       // Polled, not sampled once. Two transients make a single measurement
       // unreliable, and both settle on their own:
@@ -69,7 +74,7 @@ test.describe('room layout across the tablet range', () => {
 
   test('is single column at 390px', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
-    await join(page, `e2eb${Date.now().toString(36)}`);
+    await join(page, `E2EB${Date.now().toString(36).toUpperCase()}`);
 
     await expect.poll(async () => (await geometry(page)).sideBySide).toBe(false);
 
@@ -78,5 +83,157 @@ test.describe('room layout across the tablet range', () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phone: 390x844 (#289)
+// ---------------------------------------------------------------------------
+
+const MIN_TARGET = 44;
+const INTERACTIVE = 'a, button, input, select, textarea, [role="button"], [role="tab"]';
+
+/** Every visible interactive element under `scope` whose box is under 44x44. */
+async function undersizedTargets(page: Page, scope: string) {
+  return page.evaluate(
+    ({ scope, selector, min }) => {
+      const out: string[] = [];
+      for (const root of Array.from(document.querySelectorAll(scope))) {
+        for (const el of Array.from(root.querySelectorAll<HTMLElement>(selector))) {
+          const style = getComputedStyle(el);
+          if (style.visibility === 'hidden' || style.display === 'none') continue;
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) continue;
+          if (r.width < min - 0.5 || r.height < min - 0.5) {
+            const label = el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 24) ?? '';
+            out.push(`${el.tagName.toLowerCase()}[${label}] ${Math.round(r.width)}x${Math.round(r.height)}`);
+          }
+        }
+      }
+      return out;
+    },
+    { scope, selector: INTERACTIVE, min: MIN_TARGET },
+  );
+}
+
+async function noHorizontalOverflow(page: Page) {
+  return page.evaluate(() => {
+    const el = document.scrollingElement ?? document.documentElement;
+    return el.scrollWidth <= window.innerWidth;
+  });
+}
+
+async function addTrack(page: Page, title: string, artist: string) {
+  await page.getByRole('tab', { name: 'Adicionar', exact: true }).click();
+  await page.evaluate(() => {
+    const details = document.querySelector('details');
+    if (details) details.open = true;
+  });
+  await page.getByPlaceholder('Título').fill(title);
+  await page.getByPlaceholder('Artista').fill(artist);
+  await page.getByRole('button', { name: 'Adicionar à fila' }).click();
+  await page.getByRole('tab', { name: 'Fila', exact: true }).click();
+  await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
+}
+
+/**
+ * The Queue panel used to be `sticky` inside a parent that also holds the
+ * Activity rail, so scrolling slid it over Activity. Boxes must stay disjoint
+ * at the desktop widths, at rest and after scrolling the page.
+ */
+test.describe('queue panel vs activity rail', () => {
+  for (const width of [1440, 1024]) {
+    test(`do not overlap at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await join(page, `E2EQ${Date.now().toString(36).toUpperCase()}`);
+
+      await page.evaluate(() => {
+        document.querySelectorAll('details').forEach((d) => {
+          d.open = true;
+        });
+      });
+      await page.getByPlaceholder('Título').locator('visible=true').fill('Row One');
+      await page.getByPlaceholder('Artista').locator('visible=true').fill('Artist A');
+      await page.getByRole('button', { name: 'Adicionar à fila' }).click();
+      const queue = page.locator('[data-testid="queue-panel"]:visible');
+      const activity = page.locator('[data-testid="activity-panel"]:visible');
+      await expect(activity).toBeVisible();
+
+      for (const scrollY of [0, 300]) {
+        await page.evaluate((y) => window.scrollTo(0, y), scrollY);
+        // Rows fade in and the column settles; poll until disjoint.
+        await expect
+          .poll(async () => {
+            const q = await queue.boundingBox();
+            const a = await activity.boundingBox();
+            if (!q || !a) return 'missing';
+            return q.y + q.height <= a.y + 0.5 || a.y + a.height <= q.y + 0.5 ? 'disjoint' : 'overlap';
+          })
+          .toBe('disjoint');
+      }
+    });
+  }
+});
+
+test.describe('room at 390x844', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('tabs, no overflow, 44px targets, chat one tap away', async ({ page }) => {
+    await join(page, `E2EM${Date.now().toString(36).toUpperCase()}`);
+    await expect(page.getByRole('tab', { name: 'Chat', exact: true })).toBeVisible();
+
+    // Header is one short band, not a stack that eats the fold.
+    const header = await page.locator('.room-header').boundingBox();
+    expect(header?.height ?? Infinity).toBeLessThanOrEqual(150);
+    expect(await undersizedTargets(page, '.room-header')).toEqual([]);
+    expect(await noHorizontalOverflow(page)).toBe(true);
+
+    await addTrack(page, 'Row One', 'Artist A');
+    await addTrack(page, 'Row Two', 'Artist B');
+    expect(await noHorizontalOverflow(page)).toBe(true);
+
+    // Rows: vote + "more" toggle on the row; secondary actions open on demand.
+    const row = page.getByTestId('queue-item').first();
+    await expect(row.getByRole('button', { name: 'Mais ações', exact: true })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Remover', exact: true })).toBeHidden();
+    await row.getByRole('button', { name: 'Mais ações', exact: true }).click();
+    await expect(row.getByRole('button', { name: 'Remover', exact: true })).toBeVisible();
+    expect(await undersizedTargets(page, '[data-testid="queue-item"]')).toEqual([]);
+    expect(await noHorizontalOverflow(page)).toBe(true);
+
+    // Chat is reachable with a single tab switch, no scrolling past the queue.
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    const input = page.getByLabel('Mensagem', { exact: true });
+    await expect(input).toBeVisible();
+    expect(await undersizedTargets(page, '#video-panel-chat')).toEqual([]);
+    await expect(page.getByTestId('queue-item').first()).toBeHidden();
+
+    // Keyboard open: iOS/Android leave roughly half the height. Shrink the
+    // viewport to model it, focus the input, and require it to stay on screen
+    // above the docked tab bar.
+    await page.setViewportSize({ width: 390, height: 420 });
+    await input.focus();
+    await input.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+    const box = await input.boundingBox();
+    const tabs = await page.locator('.audio-tabs').boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(420);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(tabs!.y + 1);
+    expect(box!.height).toBeGreaterThanOrEqual(MIN_TARGET);
+    expect(await noHorizontalOverflow(page)).toBe(true);
+
+    if (process.env.SHOT_DIR) {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.getByRole('tab', { name: 'Fila', exact: true }).click();
+      await page.waitForTimeout(800); // rows fade in
+      await page.screenshot({ path: `${process.env.SHOT_DIR}/after-queue.png` });
+      await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+      await page.waitForTimeout(800);
+      await page.screenshot({ path: `${process.env.SHOT_DIR}/after-chat.png` });
+      await page.getByRole('tab', { name: 'Tocando', exact: true }).click();
+      await page.getByRole('tab', { name: 'Tocando', exact: true }).click();
+      await page.screenshot({ path: `${process.env.SHOT_DIR}/after-playing.png` });
+    }
   });
 });

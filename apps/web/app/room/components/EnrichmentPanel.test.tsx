@@ -47,7 +47,7 @@ describe('EnrichmentPanel retry', () => {
 
     expect(await screen.findByText('boom')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
 
     expect(await screen.findByText('rock')).toBeInTheDocument();
     expect(rpcMocks.fetchListenBrainz).toHaveBeenCalledTimes(2);

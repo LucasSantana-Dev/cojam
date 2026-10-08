@@ -36,24 +36,24 @@ describe('StatusBanner', () => {
     render(<StatusBanner />);
     forceTerminalDisconnect();
 
-    expect(screen.getByText('Connection lost')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
+    expect(screen.getByText('Conexão perdida')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Recarregar' })).toBeInTheDocument();
   });
 
   it('does not offer the actions while still reconnecting', () => {
     render(<StatusBanner />);
     act(() => useStore.setState({ connected: false, reconnecting: true }));
 
-    expect(screen.getByText('Reconnecting...')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.getByText('Reconectando...')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();
   });
 
   it('Retry re-runs the join to recover the connection (#187)', () => {
     render(<StatusBanner />);
     forceTerminalDisconnect();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     expect(realtimeMocks.retryConnection).toHaveBeenCalledTimes(1);
   });
 });

@@ -8,7 +8,7 @@ import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
 import type { ChatDeletePub, ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
-export type Member = { clientId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' };
+export type Member = { clientId: string; userId?: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' };
 
 // Client-side chat scrollback cap (F8). The server ring holds the last 50;
 // the client keeps a bit more so a long session does not visibly drop lines.
@@ -288,7 +288,7 @@ export async function joinRoom(
   // see the generic join timeout. A null fetch error means the feature is off
   // server-side (501), where the anonymous fallback is legitimate.
   if (!token && resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomAuth && getLastTokenFetchError()) {
-    throw new Error('Could not get a session token from the server (auth service issue). Try again in a moment.');
+    throw new Error('Não foi possível obter uma sessão do servidor (problema no serviço de autenticação). Tente de novo em instantes.');
   }
 
   centrifuge = new Centrifuge(wsUrl, {
@@ -400,6 +400,7 @@ export async function joinRoom(
         const info = parseConnInfo(c.connInfo);
         return {
           clientId: c.client,
+          userId: c.user || undefined,
           name: info.name,
           platform: info.platform,
         };
@@ -409,7 +410,7 @@ export async function joinRoom(
   });
   sub.on('join', (ctx) => {
     const info = parseConnInfo(ctx.info.connInfo);
-    store.addMember({ clientId: ctx.info.client, name: info.name, platform: info.platform });
+    store.addMember({ clientId: ctx.info.client, userId: ctx.info.user || undefined, name: info.name, platform: info.platform });
   });
   sub.on('leave', (ctx) => {
     store.removeMember(ctx.info.client);
@@ -436,7 +437,7 @@ export async function joinRoom(
     new Promise<void>((_, reject) => {
       centrifuge!.on('disconnected', (ctx) => {
         if ((ctx as { code?: number } | undefined)?.code === 103) {
-          reject(new Error('The server rejected the session as unauthorized. Try joining again.'));
+          reject(new Error('O servidor recusou a sessão por falta de autorização. Tente entrar de novo.'));
         }
       });
     }),
@@ -444,8 +445,8 @@ export async function joinRoom(
       setTimeout(
         () => reject(new Error(
           transportFailed
-            ? 'Could not reach the server. Check your connection and try again.'
-            : 'Joining timed out. The server is taking too long to respond. Try again.',
+            ? 'Não foi possível falar com o servidor. Confira sua conexão e tente de novo.'
+            : 'A entrada demorou demais. O servidor está lento para responder. Tente de novo.',
         )),
         JOIN_TIMEOUT_MS,
       );
@@ -462,7 +463,7 @@ export async function joinRoom(
     // centrifuge-js rejects with a plain {code, message} object, not an
     // Error; normalize so the join UI can show the server's message.
     const msg = (err as { message?: string })?.message;
-    throw new Error(msg || 'Couldn\'t join. Check the room code and try again.');
+    throw new Error(msg || 'Não deu para entrar. Confira o código da sala e tente de novo.');
   }
   if (joinResult.data) {
     store.setState(joinResult.data as RoomState);

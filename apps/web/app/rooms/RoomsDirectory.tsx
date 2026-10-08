@@ -5,21 +5,16 @@ import Link from 'next/link';
 import type { PublicRoomSummary } from '@cojam/shared';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { subscribePublicRooms } from '@/lib/publicRooms';
-import { useAgeGatedJoin, type AgeGateCopy } from '@/app/components/useAgeGatedJoin';
-import { MINIMUM_AGE } from '@/lib/ageGate';
+import { AGE_GATE_COPY_PT, useAgeGatedJoin } from '@/app/components/useAgeGatedJoin';
+import { useReportDialog } from '@/app/components/useReportDialog';
+import { LiveCounter } from '@/app/components/LiveCounter';
+import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 
 type SortKey = 'people' | 'recent';
 
 // If the first poll has not landed by then (unreachable server), stop showing
 // the loading state and fall through to the empty state.
 const LOADING_GRACE_MS = 3000;
-
-const AGE_GATE_COPY_PT: AgeGateCopy = {
-  title: 'Antes de entrar',
-  body: `Salas públicas são abertas a pessoas que você não conhece. Você precisa ter ${MINIMUM_AGE} anos ou mais para entrar em uma.`,
-  confirm: `Tenho ${MINIMUM_AGE} anos ou mais`,
-  cancel: 'Cancelar',
-};
 
 // Accent- and case-insensitive match key ("Música" matches "musica").
 function fold(text: string): string {
@@ -54,6 +49,7 @@ function activeLabel(lastActiveMs: number, now: number): string {
 export function RoomsDirectory() {
   const features = useRuntimeFeatures();
   const { onCardClick, gate } = useAgeGatedJoin(AGE_GATE_COPY_PT);
+  const report = useReportDialog();
   const [rooms, setRooms] = useState<PublicRoomSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState('');
@@ -81,17 +77,20 @@ export function RoomsDirectory() {
   const visible = useMemo(() => filterAndSortRooms(rooms, query, sort), [rooms, query, sort]);
 
   return (
-    <main className="rooms-page">
+    <SintoniaScreen>
+    <main id="main" className="rooms-page">
       <header className="rooms-page__head">
         <div>
           <h1 className="rooms-page__title">Salas públicas</h1>
           <p className="rooms-page__sub">Salas abertas tocando agora. Entre em uma e ouça junto.</p>
+          <LiveCounter />
         </div>
-        <Link href="/" className="live-rooms__all">&larr; Início</Link>
+        <Link href="/" className="sx-link">&larr; Início</Link>
       </header>
+      <SineLine className="sx-wave--wide" />
 
       {!features.publicRooms ? (
-        <p className="rooms-page__empty" role="status">
+        <p className="rooms-page__empty sx-glass" role="status">
           O diretório de salas públicas não está disponível neste servidor.
         </p>
       ) : (
@@ -115,28 +114,25 @@ export function RoomsDirectory() {
           </div>
 
           {!loaded ? (
-            <p className="rooms-page__empty" role="status">Carregando salas...</p>
+            <p className="rooms-page__empty sx-glass" role="status">Carregando salas...</p>
           ) : rooms.length === 0 ? (
-            <p className="rooms-page__empty" role="status">
+            <p className="rooms-page__empty sx-glass" role="status">
               Nenhuma sala pública no ar agora. Crie uma e ative a opção Public.
             </p>
           ) : visible.length === 0 ? (
-            <p className="rooms-page__empty" role="status">Nenhuma sala encontrada para essa busca.</p>
+            <p className="rooms-page__empty sx-glass" role="status">Nenhuma sala encontrada para essa busca.</p>
           ) : (
             <div className="live-rooms__grid">
               {visible.map((room) => (
+                <div key={room.roomId} className="live-room-wrap">
                 <Link
-                  key={room.roomId}
                   href={`/room/${room.roomId}`}
                   className="live-room-card"
                   onClick={(e) => onCardClick(e, room.roomId)}
                 >
                   <span className="live-room-card__top">
                     <span className="live-room-card__name">{room.name || room.roomId}</span>
-                    <span className="room-card__live">
-                      <span className="room-card__dot" />
-                      {room.kind === 'video' ? 'Vídeo' : 'Áudio'}
-                    </span>
+                    <span className="sx-kind">{room.kind === 'video' ? 'Vídeo' : 'Áudio'}</span>
                   </span>
                   <span className="live-room-card__track">
                     {room.nowPlaying ? (
@@ -152,9 +148,23 @@ export function RoomsDirectory() {
                     <span className="live-room-card__count">
                       {room.memberCount} ouvindo
                     </span>
-                    <span className="live-room-card__artist">{activeLabel(room.lastActiveMs, now)}</span>
+                    <span className="live-room-card__artist live-room-card__when">
+                      {activeLabel(room.lastActiveMs, now) === 'ativa agora' && <span className="room-card__dot" aria-hidden="true" />}
+                      {activeLabel(room.lastActiveMs, now)}
+                    </span>
                   </span>
                 </Link>
+                {/* A sibling of the link, not a child: a button inside an anchor is
+                    invalid and would also navigate. */}
+                <button
+                  type="button"
+                  className="live-room-report"
+                  aria-label={`Denunciar sala ${room.name || room.roomId}`}
+                  onClick={() => report.open({ roomId: room.roomId, kind: 'room' })}
+                >
+                  Denunciar
+                </button>
+                </div>
               ))}
             </div>
           )}
@@ -162,6 +172,8 @@ export function RoomsDirectory() {
       )}
 
       {gate}
+      {report.dialog}
     </main>
+    </SintoniaScreen>
   );
 }

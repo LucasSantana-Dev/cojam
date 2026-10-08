@@ -1,16 +1,33 @@
 'use client';
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, CheckIcon } from '@/app/components/icons';
 import { RoomShowcase } from '@/app/components/RoomShowcase';
 import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
+import { LiveCounter } from '@/app/components/LiveCounter';
 import { LogoMark } from '@/app/components/Logo';
+import { YourDataId } from '@/app/components/YourDataId';
+import { HeroDevice } from '@/app/components/HeroDevice';
+import { useDemoCycle } from '@/lib/useDemoCycle';
+import { groundPair } from '@/lib/trackColor';
+import { demoTintStyle, demoCover, DEMO_TRACKS } from '@/lib/demoTracks';
+import { GroundStack } from '@/app/components/GroundStack';
+import { useMotion } from '@/lib/motionFlags';
+import { ScrollStory } from '@/app/components/ScrollStory';
+import { SectionWave } from '@/app/components/SectionWave';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
+import { MINIMUM_AGE } from '@/lib/ageGate';
+import { readGuestName, saveGuestName } from '@/lib/guestName';
 import { trackEvent } from '@/lib/telemetry';
+
+const STEPS = [
+  { n: '01', t: 'Digite seu nome e crie a sala', d: 'Sem instalar nada e sem conta. A sala nasce privada: só entra quem tem o link.' },
+  { n: '02', t: 'Mande o link', d: 'Um link coloca seus amigos na mesma sala, onde estiverem. Cada um entra com o próprio nome.' },
+  { n: '03', t: 'Toquem em sincronia', d: 'Montem a fila juntos; a sala sincroniza quem toca o quê. Cada um ouve na própria conta, no Spotify ou no YouTube.' },
+];
 
 // Protocol commands cycled in the HUD readout. The product is a protocol
 // (RoomState, RPC dispatch, version bumps) — this is its voice.
@@ -35,8 +52,57 @@ function Words({ text, start = 0 }: { text: string; start?: number }) {
   );
 }
 
+// Honest, current-state answers (README platform table, CONTEXT.md trust model).
+// Keep this list true: no video, no screen share, no unsupported services.
+const FAQ: Array<{ q: string; a: string }> = [
+  {
+    q: 'O CoJam é grátis?',
+    a: 'Sim, usar o CoJam não custa nada. O que continua por conta de cada pessoa é o próprio serviço de streaming: o Spotify, por exemplo, exige Premium para tocar no navegador.',
+  },
+  {
+    q: 'Preciso criar uma conta?',
+    a: 'Não. Para criar ou entrar numa sala basta digitar um nome. Nada de instalar app nem cadastrar e-mail.',
+  },
+  {
+    q: 'Como todo mundo ouve a mesma música se cada um usa um serviço?',
+    a: 'Cada pessoa toca na própria conta de streaming. O CoJam sincroniza só os metadados (a fila, quem toca o quê e em que ponto da faixa), nunca retransmite áudio. Entre serviços diferentes pode haver uma diferença de cerca de meio segundo, porque cada um usa a sua própria gravação.',
+  },
+  {
+    q: 'Quais serviços funcionam?',
+    a: 'Hoje funcionam o YouTube e o Spotify (com Premium). O Apple Music ainda está em desenvolvimento. YouTube Music e Tidal não são compatíveis por falta de API oficial ou de licença.',
+  },
+  {
+    q: 'Funciona no celular?',
+    a: 'A sala abre no navegador do celular, sem instalar nada. Como o som sai do player do próprio serviço dentro do navegador, o comportamento pode variar conforme o aparelho e o navegador.',
+  },
+  {
+    q: 'A sala é pública ou privada?',
+    a: `Toda sala nasce privada: só entra quem tem o link, e o link é a permissão. Quem cria a sala pode torná-la pública para aparecer na lista de salas ao vivo. Para entrar numa sala pública pela lista, é preciso confirmar que tem ${MINIMUM_AGE} anos ou mais.`,
+  },
+];
+
+function faqJsonLd(): string {
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    inLanguage: 'pt-BR',
+    mainEntity: FAQ.map(({ q, a }) => ({
+      '@type': 'Question',
+      name: q,
+      acceptedAnswer: { '@type': 'Answer', text: a },
+    })),
+  };
+  // Escape "<" so a future answer can never close the script tag.
+  return JSON.stringify(data).replace(/</g, '\\u003c');
+}
+
 export default function Home() {
   const [roomId, setRoomId] = useState('');
+  // Name for the one-step create. Prefilled from the shared guest name (the
+  // same session key the room's join form uses); null until the user types.
+  const savedName = useSyncExternalStore(noopSubscribe, readGuestName, () => '');
+  const [typedName, setTypedName] = useState<string | null>(null);
+  const nameInput = typedName ?? savedName;
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   // Accounts are optional and resolved at runtime (via /env.js); the server
@@ -49,6 +115,18 @@ export default function Home() {
   }, []);
 
   const createRoom = () => {
+    trackEvent('room_create');
+    router.push(`/room/${generateRoomId()}`);
+  };
+  // Name + create in one submit: store the name where the room page already
+  // looks for it, then land in a fresh room that auto-joins with it. The room
+  // is born private (the unguessable link is the permission); going public
+  // stays the host's PublicRoomToggle.
+  const createNamedRoom = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = nameInput.trim();
+    if (!name) return;
+    saveGuestName(name);
     trackEvent('room_create');
     router.push(`/room/${generateRoomId()}`);
   };
@@ -65,6 +143,14 @@ export default function Home() {
   // protocol command. Both tick only when motion is allowed.
   const [clock, setClock] = useState('00:00');
   const [cmdIndex, setCmdIndex] = useState(0);
+  // Landing device: a demo room that changes colour with its (fictional) track.
+  const motion = useMotion();
+  // cycles slowly (8 s): the ground is the only thing allowed to drift
+  const demoIndex = useDemoCycle(8000);
+  // the pinned scroll story washes the same page ground (null when not pinned)
+  const [storyStep, setStoryStep] = useState<number | null>(null);
+  const groundIdx = storyStep !== null ? storyStep : demoIndex;
+  const groundDemo = DEMO_TRACKS[groundIdx % DEMO_TRACKS.length];
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const t0 = Date.now();
@@ -405,6 +491,9 @@ export default function Home() {
             // Sections: staggered parallax for depth perception.
             const sections = root.querySelectorAll('.section');
             sections.forEach((section, i) => {
+              // #how hosts the pinned scroll story: a transformed ancestor would break
+              // position:fixed pinning, so it is the one section without parallax.
+              if (section.id === 'how') return;
               gsap.default.to(section, {
                 y: (i + 1) * -35,
                 scrollTrigger: {
@@ -487,20 +576,15 @@ export default function Home() {
     };
   }, []);
 
-  const steps = [
-    { n: '01', t: 'Everyone brings their own', d: 'Spotify, YouTube, or Apple Music. No one switches services or shares a login.' },
-    { n: '02', t: 'Share the room link', d: 'One link drops your friends into the same room, wherever they are.' },
-    { n: '03', t: 'Play in sync', d: 'Queue tracks together; the room syncs who plays what. Each of you streams on your own account.' },
-  ];
 
   // Evergreen value phrases for the hero marquee. Decorative (the parent is
   // aria-hidden); the same claims appear in the readable sections below.
   const tickerPhrases = [
-    'Per-user streams',
-    'Metadata only, never a rebroadcast',
-    'Everyone on their own account',
-    'The queue stays in sync',
-    'Bring the service you already pay for',
+    'Um stream por pessoa',
+    'Só metadados, nunca uma retransmissão',
+    'Cada um na própria conta',
+    'A fila fica em sincronia',
+    'Traga o serviço que você já paga',
   ].map((phrase, i) => (
     <span key={i} className="ticker-item">
       {phrase}
@@ -517,36 +601,39 @@ export default function Home() {
   const platforms: Array<[string, boolean]> = [
     ['YouTube', true],
     ['Spotify', true],
-    ['Apple Music', true],
+    ['Apple Music', false],
   ];
 
   return (
-    <div ref={rootRef} className="landing">
+    <div ref={rootRef} className="landing" data-bg="sintonia" data-tint="page" style={demoTintStyle(groundIdx)}>
+      <GroundStack
+        spec={{ palette: groundPair(groundDemo.tint, groundDemo.palette) }}
+        animate={motion.ground}
+        className="ground-stack--page"
+      />
       {/* Scroll progress rail: the page's own instrument readout. */}
       <div className="scroll-rail" aria-hidden><div className="scroll-rail__bar" /></div>
       <header className="site-header">
         <span className="brand"><LogoMark size={18} /> CoJam</span>
         <nav className="site-nav" aria-label="Primary">
-          <a href="#how">How it works</a>
-          <a href="#showcase">See it live</a>
+          <a href="#how">Como funciona</a>
+          <a href="#showcase">Veja ao vivo</a>
+          <a href="#faq">Dúvidas</a>
           <a href="https://github.com/LucasSantana-Dev/cojam" target="_blank" rel="noreferrer">
             GitHub
           </a>
-          {accountsEnabled && <Link href="/account">Sign in</Link>}
+          {accountsEnabled && <Link href="/account">Entrar</Link>}
         </nav>
         <button onClick={createRoom} className="btn-primary magnetic">
-          Start a room
+          Começar uma sala
         </button>
       </header>
       <main id="main" className="landing-content">
         {/* Hero */}
-        <header className="hero">
+        <header className="hero" data-tint="hero" data-bg="sintonia" style={{ ...demoTintStyle(groundIdx), ['--demo-cover' as string]: `url("${demoCover(demoIndex)}")` }}>
           <div className="hero-aurora" aria-hidden />
           <div className="hero-glow" aria-hidden />
           <div className="hero-grid" aria-hidden />
-          <p className="hero-backdrop-word" aria-hidden>together</p>
-          <p className="hero-backdrop-word hero-backdrop-word--a" aria-hidden>together</p>
-          <p className="hero-backdrop-word hero-backdrop-word--b" aria-hidden>together</p>
 
           {/* HUD corner readouts: the landing reports state like a room does.
               Honest signals only — a real session clock and the protocol's own
@@ -559,116 +646,90 @@ export default function Home() {
             <span className="hud-label">SESSION</span>
             <span className="hud-clock">{clock}</span>
           </div>
+          <div className="hero-layout">
           <div className="hero-inner">
             <span className="eyebrow is-live">
               <span className="eyebrow-dot" aria-hidden />
-              Live sync, across services
+              Sincronia ao vivo, entre serviços
             </span>
             <h1 className="hero-title">
-              <Words text="Your friends." start={0} />
+              <Words text="Seus amigos." start={0} />
               <br />
-              <Words text="Your platforms." start={2} />
+              <Words text="Suas plataformas." start={2} />
               <br />
-              <Words text="One" start={4} />
+              <Words text="Uma" start={4} />
               {/* Signature payoff word: italic + brighter glow, wrapped in mask. */}
               <span className="word-mask word-accent" style={{ ['--i' as string]: 5 }}>
-                <span className="word">room.</span>
+                <span className="word">sala.</span>
               </span>
             </h1>
             <p className="hero-sub">
-              Queued by people, not algorithms. CoJam keeps a shared queue in sync while everyone
-              plays on their own streaming account. Per-user streams, metadata only, never a
-              rebroadcast.
+              A fila é de quem está na sala, não de um algoritmo. O CoJam mantém a fila
+              sincronizada enquanto cada pessoa toca na própria conta de streaming. Um stream por
+              pessoa, só metadados, nunca uma retransmissão.
             </p>
             <div className="hero-cta">
-              <button onClick={createRoom} className="btn-primary magnetic">
-                Start a room
-              </button>
+              <form onSubmit={createNamedRoom} className="hero-create">
+                <label htmlFor="hero-name" className="hero-join__label">
+                  Seu nome
+                </label>
+                <input
+                  id="hero-name"
+                  type="text"
+                  autoComplete="nickname"
+                  maxLength={40}
+                  placeholder="Ana"
+                  value={nameInput}
+                  onChange={(e) => setTypedName(e.target.value)}
+                  className="hero-create__input"
+                />
+                <button type="submit" disabled={!nameInput.trim()} className="btn-primary magnetic">
+                  Criar sala
+                </button>
+              </form>
               <form onSubmit={joinRoom} className="hero-join">
                 <label htmlFor="hero-room-code" className="hero-join__label">
-                  Have a code?
+                  Tem um código?
                 </label>
                 <input
                   id="hero-room-code"
                   type="text"
-                  placeholder="Room code"
+                  placeholder="Código"
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value)}
                   style={{ width: '8rem', textAlign: 'center', textTransform: 'uppercase' }}
                 />
                 <button type="submit" disabled={!roomId.trim()} className="btn-ghost">
-                  Join
+                  Entrar
                 </button>
               </form>
             </div>
 
-            {/* Example room artifact — evidence, not promise (Stationhead
-                steal). Labeled as an example; same people/track as the
-                RoomShowcase below, one consistent story. Decorative
-                illustration, hidden from assistive tech.
-                F1: when FEATURE_PUBLIC_ROOMS is on and the directory returns
-                live rooms, LiveRoomsSlot swaps this mock for the live strip;
-                flag off, empty list, or fetch failure keeps the mock. */}
-            <LiveRoomsSlot
-              fallback={
-                <aside className="room-card" aria-hidden="true">
-                  <div className="room-card__top">
-                    <span className="room-card__label">Example room · NEON-4821</span>
-                    <span className="room-card__live">
-                      <span className="room-card__dot" />
-                      Live
-                    </span>
-                  </div>
-                  <div className="room-card__main">
-                    <Image
-                      src="https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/e8/43/5f/e8435ffa-b6b9-b171-40ab-4ff3959ab661/886443919266.jpg/600x600bb.jpg"
-                      alt=""
-                      className="room-card__art"
-                      width={52}
-                      height={52}
-                      loading="lazy"
-                      decoding="async"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="room-card__meta">
-                      <span className="room-card__title">Instant Crush</span>
-                      <span className="room-card__artist">Daft Punk &amp; Julian Casablancas</span>
-                    </div>
-                    <div className="eq">
-                      <span />
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  </div>
-                  <div className="room-card__bottom">
-                    <span className="room-card__avatars">
-                      <i style={{ background: 'var(--color-ident-1)' }}>L</i>
-                      <i style={{ background: 'var(--color-ident-2)' }}>M</i>
-                      <i style={{ background: 'var(--color-ident-3)' }}>T</i>
-                    </span>
-                    <span className="room-card__chat">
-                      <b>Maria</b> added Borderline to the queue
-                    </span>
-                  </div>
-                </aside>
-              }
-            />
+            <LiveCounter />
+
+            {/* F1: when FEATURE_PUBLIC_ROOMS is on and the directory returns live
+                rooms, LiveRoomsSlot renders the live strip here; flag off, empty
+                list, or fetch failure renders nothing and the hero device (the
+                static example room, beside the copy) is the whole story. */}
+            <LiveRoomsSlot fallback={null} />
 
             <div className="hero-claims">
-              <span className="claim"><CheckIcon size={13} /> No install</span>
-              <span className="claim"><CheckIcon size={13} /> No account for guests</span>
-              <span className="claim"><CheckIcon size={13} /> Free</span>
+              <span className="claim"><CheckIcon size={13} /> Sem instalar</span>
+              <span className="claim"><CheckIcon size={13} /> Sem conta para convidados</span>
+              <span className="claim"><CheckIcon size={13} /> Grátis</span>
               <span className="claim-sep" aria-hidden />
               <span className="claim"><SpotifyIcon size={13} /> Spotify</span>
               <span className="claim"><YouTubeIcon size={13} /> YouTube</span>
             </div>
             <nav className="hero-manifest" aria-label="Page sections">
-              <a href="#how">how</a>
-              <a href="#showcase">live</a>
-              <a href="#vs">vs</a>
-              <a href="#platforms">platforms</a>
+              <a href="#how">como</a>
+              <a href="#showcase">ao vivo</a>
+              <a href="#vs">por quê</a>
+              <a href="#platforms">serviços</a>
+              <a href="#faq">dúvidas</a>
             </nav>
+          </div>
+          <HeroDevice index={demoIndex} waveAnimate={motion.ground} testId="hero-device" />
           </div>
           <div className="hero-ticker" aria-hidden>
             <div className="hero-ticker__track">
@@ -678,76 +739,82 @@ export default function Home() {
           </div>
         </header>
 
+        {motion.wave && <SectionWave animate={!motion.reduced} beat={motion.ground} />}
         {/* How it works */}
         <section id="how" className="section">
-          <p className="section-eyebrow reveal">How it works</p>
-          <h2 className="section-title reveal">One room, your streaming services, <em>zero switching.</em></h2>
-          <div className="step-grid">
-            {steps.map((s) => (
-              <div key={s.n} className="step-card reveal">
-                <i className="step-rule" aria-hidden />
-                <span className="step-num">{s.n}]</span>
-                <h3>{s.t}</h3>
-                <p>{s.d}</p>
-              </div>
-            ))}
-          </div>
+          <p className="section-eyebrow reveal">Como funciona em 3 passos</p>
+          <h2 className="section-title reveal">Uma sala, seus serviços de streaming, <em>zero troca de app.</em></h2>
+          {motion.scrollstory ? (
+            <ScrollStory steps={STEPS} waveAnimate={motion.ground} onActive={setStoryStep} />
+          ) : (
+            <div className="step-grid">
+              {STEPS.map((s) => (
+                <div key={s.n} className="step-card reveal">
+                  <i className="step-rule" aria-hidden />
+                  <span className="step-num">{s.n}]</span>
+                  <h3>{s.t}</h3>
+                  <p>{s.d}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Room Showcase */}
         <section id="showcase" className="section">
-          <p className="section-eyebrow reveal">In the room right now</p>
-          <h2 className="section-title reveal">See it <em>in sync.</em></h2>
+          <p className="section-eyebrow reveal">Na sala agora</p>
+          <h2 className="section-title reveal">Veja <em>em sincronia.</em></h2>
           <p className="max-w-2xl mx-auto text-center reveal" style={{ color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
-            Watch how CoJam keeps everyone&rsquo;s queue in perfect sync while each person plays on their own service.
+            Veja como o CoJam mantém a fila de todo mundo em sincronia enquanto cada pessoa toca no próprio serviço.
           </p>
           <RoomShowcase />
         </section>
 
         {/* Alone vs in a room (Direction B borrow: evidence as comparison table) */}
         <section id="vs" className="section">
-          <p className="section-eyebrow reveal">Why a room</p>
+          {motion.wave && <SectionWave animate={!motion.reduced} beat={motion.ground} />}
+          <p className="section-eyebrow reveal">Por que uma sala</p>
           <h2 className="section-title reveal">
-            Alone works. <em>Together hits different.</em>
+            Sozinho funciona. <em>Junto é outra coisa.</em>
           </h2>
           <table className="vs-table">
             <thead>
               <tr>
-                <th scope="col"><span className="sr-only">Topic</span></th>
-                <th scope="col">Listening alone</th>
-                <th scope="col">In a CoJam room</th>
+                <th scope="col"><span className="sr-only">Tema</span></th>
+                <th scope="col">Ouvindo sozinho</th>
+                <th scope="col">Numa sala do CoJam</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <th scope="row">Queue</th>
-                <td>You, alone</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Everyone adds, everyone hears</span></td>
+                <th scope="row">Fila</th>
+                <td>Só você</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Todo mundo adiciona, todo mundo ouve</span></td>
               </tr>
               <tr>
-                <th scope="row">What plays</th>
-                <td>Whatever the algorithm serves</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Picked by the people in the room</span></td>
+                <th scope="row">O que toca</th>
+                <td>O que o algoritmo servir</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Escolhido por quem está na sala</span></td>
               </tr>
               <tr>
-                <th scope="row">Inviting</th>
-                <td>Send songs one by one</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> One link</span></td>
+                <th scope="row">Convite</th>
+                <td>Mandar música por música</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Um link</span></td>
               </tr>
               <tr>
-                <th scope="row">Services</th>
-                <td>Everyone needs the same one</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Each brings their own</span></td>
+                <th scope="row">Serviços</th>
+                <td>Todo mundo precisa do mesmo</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Cada um traz o seu</span></td>
               </tr>
               <tr>
-                <th scope="row">Sync</th>
-                <td>Count down out loud, press play</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Automatic, on metadata</span></td>
+                <th scope="row">Sincronia</th>
+                <td>Contar &ldquo;3, 2, 1&rdquo; e apertar play</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Automática, por metadados</span></td>
               </tr>
               <tr>
-                <th scope="row">Setup</th>
-                <td>An app per person</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> A browser tab</span></td>
+                <th scope="row">Preparo</th>
+                <td>Um app por pessoa</td>
+                <td><span className="vs-yes"><CheckIcon size={14} /> Uma aba do navegador</span></td>
               </tr>
             </tbody>
           </table>
@@ -755,8 +822,8 @@ export default function Home() {
 
         {/* Platforms */}
         <section id="platforms" className="section" style={{ textAlign: 'center' }}>
-          <p className="section-eyebrow reveal">Works with</p>
-          <h2 className="section-title reveal">Bring the service <em>you already pay for.</em></h2>
+          <p className="section-eyebrow reveal">Funciona com</p>
+          <h2 className="section-title reveal">Traga o serviço <em>que você já paga.</em></h2>
           <div className="platform-row">
             {platforms.map(([name, live]) => {
               const Icon = platformIcons[name];
@@ -764,22 +831,47 @@ export default function Home() {
                 <span key={name} className="platform-chip reveal inline-flex items-center gap-2" data-live={live ? '1' : '0'}>
                   <Icon size={16} />
                   {name}
+                  {!live && <span className="platform-chip__soon">em breve</span>}
                 </span>
               );
             })}
           </div>
         </section>
 
+        {/* FAQ: native details/summary (keyboard + a11y for free). The same
+            array feeds the FAQPage JSON-LD, so markup and structured data
+            cannot drift. Answers describe CoJam as it ships today. */}
+        <section id="faq" className="section">
+          {motion.wave && <SectionWave animate={!motion.reduced} beat={motion.ground} />}
+          <p className="section-eyebrow reveal">Perguntas frequentes</p>
+          <h2 className="section-title reveal">O que as pessoas <em>perguntam antes de criar a sala.</em></h2>
+          <div className="faq-list reveal">
+            {FAQ.map((item) => (
+              <details key={item.q} className="faq-item">
+                <summary>{item.q}</summary>
+                <p>{item.a}</p>
+              </details>
+            ))}
+          </div>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: faqJsonLd() }}
+          />
+        </section>
+
         {/* Final CTA */}
         <section className="final-cta">
           <h2 className="section-title reveal" style={{ marginBottom: '1.5rem' }}>
-            Start a room <em>in one click.</em>
+            Crie uma sala <em>em um clique.</em>
           </h2>
           <button onClick={createRoom} className="btn-primary magnetic reveal">
-            Start a room
+            Começar uma sala
           </button>
         </section>
       </main>
+
+      {/* LGPD erasure (#318): only for browsers that hold a guest id. */}
+      <YourDataId />
 
       <footer className="landing-footer">
         Built in public ·{' '}

@@ -13,8 +13,8 @@ export function formatTime(ms: number): string {
 }
 
 // Label for the play/pause control given the current transport state.
-export function playPauseLabel(state: string | undefined): 'Play' | 'Pause' {
-  return state === 'playing' ? 'Pause' : 'Play';
+export function playPauseLabel(state: string | undefined): 'Tocar' | 'Pausar' {
+  return state === 'playing' ? 'Pausar' : 'Tocar';
 }
 
 // Keys that actually move the slider. Tab/Escape are focus navigation, not
@@ -155,9 +155,9 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
   );
 
   const seekDisabledReason = !canControl
-    ? 'Only the host can seek'
+    ? 'Só o anfitrião pode mudar o ponto da faixa'
     : !canSeek
-      ? 'Seeking requires Spotify Premium'
+      ? 'Mudar o ponto da faixa requer Spotify Premium'
       : '';
 
   return (
@@ -166,13 +166,13 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
         <button
           onClick={handlePlayPause}
           disabled={!activePlayer || !canControl}
-          className="flex-shrink-0 w-12 h-12 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 flex items-center justify-center"
+          className="transport-play flex-shrink-0 w-12 h-12 rounded-lg font-semibold transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 flex items-center justify-center"
           style={{
             backgroundColor: 'var(--color-accent)',
             color: 'var(--color-surface-0)',
           }}
-          aria-label={isPlaying ? 'Pause' : 'Play'}
-          title={canControl ? (isPlaying ? 'Pause playback' : 'Start playback') : 'Only the host can control playback'}
+          aria-label={isPlaying ? 'Pausar' : 'Tocar'}
+          title={canControl ? (isPlaying ? 'Pausar' : 'Tocar') : 'Só o anfitrião controla a reprodução'}
         >
           {isPlaying ? (
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -204,8 +204,8 @@ export function TransportUI({ roomId, activePlayer, canControl }: TransportUIPro
                 backgroundColor: 'var(--color-surface-3)',
                 accentColor: 'var(--color-accent)',
               }}
-              aria-label="Track position"
-              title={seekDisabledReason || 'Seek to position'}
+              aria-label="Posição da faixa"
+              title={seekDisabledReason || 'Ir para este ponto'}
             />
           </div>
 

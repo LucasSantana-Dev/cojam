@@ -9,21 +9,21 @@ describe('formatRelativeTime', () => {
     expect(formatRelativeTime(0, now)).toBeNull();
   });
 
-  it('is "just now" under 45s, clamping slight future skew', () => {
-    expect(formatRelativeTime(now - 10_000, now)).toBe('just now');
-    expect(formatRelativeTime(now + 5_000, now)).toBe('just now');
+  it('is "agora há pouco" under 45s, clamping slight future skew', () => {
+    expect(formatRelativeTime(now - 10_000, now)).toBe('agora há pouco');
+    expect(formatRelativeTime(now + 5_000, now)).toBe('agora há pouco');
   });
 
   it('rounds to minutes under an hour', () => {
-    expect(formatRelativeTime(now - 60_000, now)).toBe('1m ago');
-    expect(formatRelativeTime(now - 5 * 60_000, now)).toBe('5m ago');
+    expect(formatRelativeTime(now - 60_000, now)).toBe('há 1 min');
+    expect(formatRelativeTime(now - 5 * 60_000, now)).toBe('há 5 min');
   });
 
   it('rounds to hours under a day', () => {
-    expect(formatRelativeTime(now - 3 * 3_600_000, now)).toBe('3h ago');
+    expect(formatRelativeTime(now - 3 * 3_600_000, now)).toBe('há 3 h');
   });
 
   it('rounds to days beyond that', () => {
-    expect(formatRelativeTime(now - 2 * 86_400_000, now)).toBe('2d ago');
+    expect(formatRelativeTime(now - 2 * 86_400_000, now)).toBe('há 2 d');
   });
 });

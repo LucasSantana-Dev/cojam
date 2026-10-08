@@ -3,6 +3,15 @@ import { resolveConnectionToken } from './realtime';
 
 export type ReportKind = 'message' | 'member' | 'room';
 
+// Closed set mirrored by report.NormalizeCategory on the server; anything else
+// is stored as "other".
+export type ReportCategory =
+  | 'minor_at_risk'
+  | 'sexual_content'
+  | 'harassment'
+  | 'spam'
+  | 'other';
+
 // The content is sent from the client because the server cannot fetch it:
 // chat is ephemeral and the line may already be gone.
 export async function fileReport(input: {
@@ -11,6 +20,7 @@ export async function fileReport(input: {
   subjectId?: string;
   content?: string;
   reason?: string;
+  category?: ReportCategory;
 }): Promise<boolean> {
   // Identity is optional; a guest report still counts.
   const connToken = await resolveConnectionToken().catch(() => '');
