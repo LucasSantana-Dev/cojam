@@ -372,9 +372,7 @@ export async function joinRoom(
     // The server-assigned client id (self-identification in presence, #181).
     store.setClientId((ctx as { client?: string } | undefined)?.client ?? '');
     // Re-measure clock offset on reconnect (fire-and-forget, non-fatal on error)
-    measureClockOffset().catch(() => {
-      /* clock sync error - not fatal */
-    });
+    measureClockOffsetWithRetry();
     // Reconnect resync (B10): on the FIRST connect activeRoom is still null
     // (set only after the initial room.join below), so this fires only on
     // reconnects: re-join to adopt the authoritative state, healing anything
@@ -539,9 +537,7 @@ export async function joinRoom(
   }
 
   // Measure initial clock offset (fire-and-forget, non-fatal on error)
-  measureClockOffset().catch(() => {
-    /* clock sync error - not fatal */
-  });
+  measureClockOffsetWithRetry();
 
   return sub;
 }
@@ -870,7 +866,39 @@ export async function measureClockOffset(samples = 5): Promise<{ offsetMs: numbe
 
   const result = estimateOffset(pingSamples);
   clockOffsetMs = result.offsetMs;
+  clockOffsetMeasured = true;
   return result;
+}
+
+let clockOffsetMeasured = false;
+let clockMeasureInFlight = false;
+const CLOCK_RETRY_DELAYS_MS = [1000, 3000, 10_000, 30_000];
+
+export function hasMeasuredClockOffset(): boolean {
+  return clockOffsetMeasured;
+}
+
+// Fire-and-forget measure that retries on failure. A single failed attempt used
+// to leave the offset at 0 forever, so a client whose wall clock ran behind the
+// server computed a negative elapsed time, clamped the expected position to 0
+// and drift-seeked to 0 every 1.5 s (the YouTube 2 s loop).
+export function measureClockOffsetWithRetry(attempt = 0): void {
+  if (attempt === 0) {
+    if (clockMeasureInFlight) return;
+    clockMeasureInFlight = true;
+  }
+  measureClockOffset().then(
+    () => {
+      clockMeasureInFlight = false;
+    },
+    () => {
+      if (attempt >= CLOCK_RETRY_DELAYS_MS.length) {
+        clockMeasureInFlight = false;
+        return;
+      }
+      setTimeout(() => measureClockOffsetWithRetry(attempt + 1), CLOCK_RETRY_DELAYS_MS[attempt]);
+    },
+  );
 }
 
 export function getClockOffsetMs(): number {

@@ -21,6 +21,7 @@ type YTEvents = {
 };
 
 let capturedEvents: YTEvents | null = null;
+const loadCalls: unknown[] = [];
 
 class FakeYTPlayer {
   playVideo() {}
@@ -32,7 +33,9 @@ class FakeYTPlayer {
   getDuration() {
     return 0;
   }
-  loadVideoById() {}
+  loadVideoById(arg: unknown) {
+    loadCalls.push(arg);
+  }
   constructor(_elementId: string, opts: { events?: YTEvents }) {
     capturedEvents = opts.events ?? null;
   }
@@ -108,5 +111,41 @@ describe('YouTubePlayer onError wiring', () => {
     expect(onPlayError).toHaveBeenCalledWith('t1');
     act(() => capturedEvents!.onStateChange!({ data: 1 }));
     expect(onPlayError).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe('YouTubePlayer synced start', () => {
+  beforeEach(() => {
+    capturedEvents = null;
+    loadCalls.length = 0;
+    (window as { YT?: unknown }).YT = { Player: FakeYTPlayer };
+  });
+  afterEach(() => {
+    delete (window as { YT?: unknown }).YT;
+    useStore.setState({ state: undefined });
+  });
+
+  it('loads the video at the synced position, not 0', () => {
+    useStore.setState({
+      state: { ...roomState, transport: { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 30_000 } },
+    });
+    render(<YouTubePlayer roomId="r1" />);
+    act(() => {
+      capturedEvents?.onReady?.();
+    });
+    const arg = loadCalls[0] as { videoId: string; startSeconds: number };
+    expect(arg.videoId).toBe('vid1');
+    expect(arg.startSeconds).toBeGreaterThan(29);
+  });
+
+  it('falls back to a plain load when the clock offset is unusable', () => {
+    useStore.setState({
+      state: { ...roomState, transport: { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() + 60_000 } },
+    });
+    render(<YouTubePlayer roomId="r1" />);
+    act(() => {
+      capturedEvents?.onReady?.();
+    });
+    expect(loadCalls[0]).toBe('vid1');
   });
 });

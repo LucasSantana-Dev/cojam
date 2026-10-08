@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useStore } from './realtime';
-import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS, serverNow } from './playbackSync';
+import { useStore, measureClockOffsetWithRetry } from './realtime';
+import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, DRIFT_THRESHOLD_MS, SEEK_COOLDOWN_MS, serverNow } from './playbackSync';
 import type { IPlayer } from './playerInterface';
 
 // U4: Drift correction loop (gated by the sync feature flag).
@@ -25,13 +25,21 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
   useEffect(() => {
     if (!syncEnabled || !activePlayer || !transport) return;
 
+    let lastSeekAt = 0;
     // Handle state transitions: play/pause/stop
     if (transport.state === 'playing') {
       activePlayer.play().catch((err) => {
         console.warn('Failed to play:', err);
       });
       // Seek to expected position to sync with server
-      const expected = computeExpectedPosition(transport, serverNow());
+      const now = serverNow();
+      if (!isExpectedPositionKnown(transport, now)) {
+        // Clock offset is wrong: never seek to a clamped 0. Re-measure instead.
+        measureClockOffsetWithRetry();
+        return;
+      }
+      const expected = computeExpectedPosition(transport, now);
+      lastSeekAt = Date.now();
       activePlayer.seekToMs(expected).catch((err) => {
         if (activePlayer.canSeek()) {
           console.warn('Failed to seek to expected position:', err);
@@ -66,12 +74,22 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         return;
       }
 
-      const expected = computeExpectedPosition(current, serverNow());
+      const now = serverNow();
+      if (!isExpectedPositionKnown(current, now)) {
+        measureClockOffsetWithRetry();
+        return;
+      }
+      // Cued/buffering/unstarted reads are unreliable (getCurrentTime() is 0).
+      if (activePlayer.isPlaying && !activePlayer.isPlaying()) return;
+      // Let the last seek settle before judging drift again.
+      if (Date.now() - lastSeekAt < SEEK_COOLDOWN_MS) return;
+      const expected = computeExpectedPosition(current, now);
 
       activePlayer.getCurrentPositionMs()
         .then((actual) => {
           const drift = actual - expected;
           if (shouldCorrect(drift, DRIFT_THRESHOLD_MS)) {
+            lastSeekAt = Date.now();
             activePlayer.seekToMs(expected).catch((err) => {
               console.warn('Drift correction seek failed:', err);
             });

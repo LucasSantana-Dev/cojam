@@ -107,4 +107,54 @@ describe('useDriftCorrection (#177)', () => {
     expect(player.seekToMs).not.toHaveBeenCalled();
     unmount();
   });
+  describe('YouTube 2 s loop (clock behind server, buffering reads)', () => {
+    it('never seeks to a clamped 0 when the client clock is behind the server', async () => {
+      const player = makePlayer();
+      player.getCurrentPositionMs.mockResolvedValue(30_000);
+      // Server stamped the play 60 s "in the future" of this client's clock.
+      const t: TransportState = { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() + 60_000 };
+      useStore.getState().setState(roomState(1, t));
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      expect(player.seekToMs).not.toHaveBeenCalled();
+      unmount();
+    });
+
+    it('skips drift checks while the player is not PLAYING', async () => {
+      const player = { ...makePlayer(), isPlaying: vi.fn(() => false) };
+      player.getCurrentPositionMs.mockResolvedValue(0);
+      useStore.getState().setState(
+        roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 20_000 }),
+      );
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      player.seekToMs.mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      expect(player.seekToMs).not.toHaveBeenCalled();
+      unmount();
+    });
+
+    it('waits out a cooldown after a seek before correcting again', async () => {
+      const player = makePlayer();
+      // Position read stays stale at 0 (seek not settled): old code re-seeked every 1.5 s.
+      player.getCurrentPositionMs.mockResolvedValue(0);
+      useStore.getState().setState(
+        roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 20_000 }),
+      );
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      expect(player.seekToMs).toHaveBeenCalledTimes(1); // initial sync seek
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000); // ticks at 1.5 s and 3.0 s
+      });
+      expect(player.seekToMs).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500); // past 3 s cooldown
+      });
+      expect(player.seekToMs).toHaveBeenCalledTimes(2);
+      unmount();
+    });
+  });
 });

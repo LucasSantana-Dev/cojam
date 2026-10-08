@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { computeExpectedPosition, shouldCorrect, DRIFT_THRESHOLD_MS } from './playbackSync';
+import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, DRIFT_THRESHOLD_MS } from './playbackSync';
 
 // Mock getClockOffsetMs to control clock offset in tests
 vi.mock('./realtime', () => ({
@@ -79,5 +79,18 @@ describe('playbackSync', () => {
     it('is set to 1000ms as default anti-thrash tolerance', () => {
       expect(DRIFT_THRESHOLD_MS).toBe(1000);
     });
+  });
+});
+
+describe('isExpectedPositionKnown', () => {
+  const playing = { state: 'playing' as const, positionMs: 0, updatedAtServerMs: 10_000 };
+  it('tolerates small jitter', () => {
+    expect(isExpectedPositionKnown(playing, 9_000)).toBe(true);
+  });
+  it('is unknown when the stamp is far in the future (clock behind)', () => {
+    expect(isExpectedPositionKnown(playing, 1_000)).toBe(false);
+  });
+  it('is always known when paused', () => {
+    expect(isExpectedPositionKnown({ ...playing, state: 'paused' }, 0)).toBe(true);
   });
 });
