@@ -505,6 +505,18 @@ func main() {
 		spotifyStore = spotifytoken.NewMemory(spotifySealer)
 	}
 	if spotifyStore != nil {
+		// Playlist import reads with the caller's own Spotify grant: Spotify
+		// refuses most playlist reads for a development-mode app's client
+		// credentials. The store key is the connection identity (the sub of the
+		// room-auth token), which is the hub's userID for those callers.
+		store := spotifyStore
+		h.WithSpotifyUserToken(func(ctx context.Context, userID string) (string, error) {
+			reply, err := mintSpotifyAccess(ctx, store, userID, logger)
+			if err != nil {
+				return "", err
+			}
+			return reply.AccessToken, nil
+		})
 		logger.Info("spotify_token_custody_enabled", "store", map[bool]string{true: "postgres", false: "memory"}[dbPool != nil])
 	}
 
@@ -572,6 +584,8 @@ func main() {
 	// room binds a host and a host-less room fails closed for host-only RPCs.
 	// Off keeps the v0 equal-member behaviour for host-less rooms.
 	h.WithHostAssignment(roomAuthEnabled)
+	h.WithHostGrace(hub.DefaultHostGrace)
+	h.WithAutoSkipSourceless(true)
 
 	// Setup centrifuge connection handlers
 	node.OnConnecting(func(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
@@ -810,6 +824,7 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down server...")
+	h.BeginShutdown() // disconnects from here on are the server leaving: promote no one
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

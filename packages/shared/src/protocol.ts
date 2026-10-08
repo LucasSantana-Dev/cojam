@@ -44,6 +44,11 @@ export type RoomState = {
   queue: TrackRef[];
   nowPlayingId?: string;
   hostUserId?: string;
+  // Room creator (server-set at creation). Always reclaims host on join and
+  // cannot be demoted or kicked. Absent on rooms that predate it.
+  ownerUserId?: string;
+  // userIDs granted full queue and transport control by the host or owner.
+  admins?: string[];
   radioEnabled: boolean;
   // Server capability (not room state, never persisted): true when the server
   // can actually refill a radio queue (FEATURE_RADIO + a Last.fm key). When

@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ListenersStage } from './ListenersStage';
-import { useStore, type Member } from '@/lib/realtime';
+import { useStore, setRoomAdmin, transferHost, claimHost, type Member } from '@/lib/realtime';
+
+vi.mock('@/lib/realtime', async (orig) => ({
+  ...(await orig<typeof import('@/lib/realtime')>()),
+  setRoomAdmin: vi.fn().mockResolvedValue(undefined),
+  transferHost: vi.fn().mockResolvedValue(undefined),
+  claimHost: vi.fn().mockResolvedValue(undefined),
+}));
 
 const m = (clientId: string, name: string, platform?: Member['platform']): Member => ({
   clientId,
@@ -135,7 +142,7 @@ describe('ListenersStage', () => {
     const { rerender } = render(<ListenersStage roomId="r" running={false} />);
     expect(screen.queryByLabelText('Remover Bob da sala')).not.toBeInTheDocument();
 
-    rerender(<ListenersStage roomId="r" running={false} canControl />);
+    rerender(<ListenersStage roomId="r" running={false} canModerate />);
     expect(screen.getByLabelText('Remover Bob da sala')).toBeInTheDocument();
     expect(screen.queryByLabelText('Remover Alice da sala')).not.toBeInTheDocument();
   });
@@ -151,7 +158,7 @@ describe('ListenersStage', () => {
   it('hides report and remove controls in the read-only preview', () => {
     useStore.setState({ clientId: 'a' });
     useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
-    render(<ListenersStage roomId="r" running={false} canControl readOnly />);
+    render(<ListenersStage roomId="r" running={false} canModerate readOnly />);
     expect(screen.queryByLabelText('Denunciar Bob')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Remover Bob da sala')).not.toBeInTheDocument();
   });
@@ -181,6 +188,68 @@ describe('ListenersStage', () => {
       act(() => useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]));
       const row = container.querySelector<HTMLElement>('.r4-ls')!;
       await waitFor(() => expect(row.style.getPropertyValue('--b0')).not.toBe(''));
+    });
+  });
+
+  describe('role menu', () => {
+    const withUsers = () => {
+      useStore.setState({ clientId: 'a' });
+      useStore.getState().setMembers([
+        { ...m('a', 'Alice'), userId: 'ua' },
+        { ...m('b', 'Bob'), userId: 'ub' },
+        { ...m('c', 'Cris'), userId: 'uc' },
+      ]);
+    };
+
+    it('uses the presence identity, not the stored anonymous id, for the owner button', async () => {
+      withUsers(); // I am connection a, server identity ua
+      const { rerender } = render(<ListenersStage roomId="r" running={false} ownerUserId="ua" hostUserId="ub" />);
+      fireEvent.click(screen.getByRole('button', { name: 'Retomar anfitrião' }));
+      await waitFor(() => expect(claimHost).toHaveBeenCalledWith('r'));
+      rerender(<ListenersStage roomId="r" running={false} ownerUserId="ua" hostUserId="ua" />);
+      expect(screen.queryByRole('button', { name: 'Retomar anfitrião' })).not.toBeInTheDocument();
+      rerender(<ListenersStage roomId="r" running={false} ownerUserId="ub" hostUserId="uc" />);
+      expect(screen.queryByRole('button', { name: 'Retomar anfitrião' })).not.toBeInTheDocument();
+    });
+
+    it('shows an admin chip next to admins only', () => {
+      withUsers();
+      render(<ListenersStage roomId="r" running={false} admins={['ub']} />);
+      expect(screen.getAllByText('admin')).toHaveLength(1);
+    });
+
+    it('is hidden from non-moderators and from the owner target', () => {
+      withUsers();
+      const { rerender } = render(<ListenersStage roomId="r" running={false} admins={[]} />);
+      expect(screen.queryByLabelText('Papéis de Bob')).not.toBeInTheDocument();
+      rerender(<ListenersStage roomId="r" running={false} canModerate ownerUserId="ub" />);
+      expect(screen.queryByLabelText('Papéis de Bob')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Remover Bob da sala')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Papéis de Cris')).toBeInTheDocument();
+    });
+
+    it('grants and revokes admin through the RPC', async () => {
+      withUsers();
+      const { rerender } = render(<ListenersStage roomId="r" running={false} canModerate admins={[]} />);
+      fireEvent.click(screen.getByLabelText('Papéis de Bob'));
+      fireEvent.click(screen.getByRole('button', { name: 'Tornar admin' }));
+      await waitFor(() => expect(setRoomAdmin).toHaveBeenCalledWith('r', 'ub', true));
+
+      rerender(<ListenersStage roomId="r" running={false} canModerate admins={['ub']} />);
+      fireEvent.click(screen.getByLabelText('Papéis de Bob'));
+      fireEvent.click(screen.getByRole('button', { name: 'Remover admin' }));
+      await waitFor(() => expect(setRoomAdmin).toHaveBeenCalledWith('r', 'ub', false));
+    });
+
+    it('confirms by name before passing the host role', async () => {
+      withUsers();
+      render(<ListenersStage roomId="r" running={false} canModerate hostUserId="ua" />);
+      fireEvent.click(screen.getByLabelText('Papéis de Cris'));
+      fireEvent.click(screen.getByRole('button', { name: 'Passar anfitrião' }));
+      expect(screen.getByRole('dialog')).toHaveTextContent('Passar o anfitrião para Cris?');
+      expect(transferHost).not.toHaveBeenCalled();
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Passar anfitrião' }));
+      await waitFor(() => expect(transferHost).toHaveBeenCalledWith('r', 'uc'));
     });
   });
 });

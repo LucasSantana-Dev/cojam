@@ -82,6 +82,9 @@ interface NowPlayingCardProps {
   hostControl: boolean;
   // Show the "Anfitrião" chip (room auth on and this client is the host).
   hostLabel: boolean;
+  // Skip the current track. Given only to anyone with control (host, admin,
+  // owner); the unavailable card shows it so nobody is stuck on a dead track.
+  onNext?: () => void;
   // The service icons ("Ouvir no"); rendered under the cover.
   servicePicker?: ReactNode;
   // The "chosen service cannot play this" note, under the icons.
@@ -113,6 +116,7 @@ export function NowPlayingCard({
   transportState,
   hostControl,
   hostLabel,
+  onNext,
   servicePicker,
   serviceNote,
   volumeControl,
@@ -160,9 +164,9 @@ export function NowPlayingCard({
           <button
             type="button"
             className="tp__skip"
-            aria-label="Próxima faixa"
+            aria-label="Próxima"
             title="Próxima faixa"
-            onClick={() => nowPlayingAdvance(roomId, track.id).catch((err) => console.error('Skip error:', err))}
+            onClick={() => (onNext ? onNext() : nowPlayingAdvance(roomId, track.id).catch((err) => console.error('Skip error:', err)))}
           >
             <SkipNextIcon size={24} />
           </button>

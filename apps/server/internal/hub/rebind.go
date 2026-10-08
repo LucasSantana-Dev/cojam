@@ -68,6 +68,10 @@ func (h *Hub) roomRebind(roomID, proof, clientID, userID string) (json.RawMessag
 		if s.HostUserID == oldSub {
 			s.HostUserID = userID
 		}
+		if s.OwnerUserID == oldSub {
+			s.OwnerUserID = userID
+		}
+		s.Admins = rewriteAdmins(s.Admins, oldSub, userID)
 		s.RewriteVoter("user:"+oldSub, "user:"+userID)
 		h.transferJoinTime(roomID, oldSub, userID)
 		s.Version++ // exactly one bump for the whole rebind (#172)
@@ -164,4 +168,21 @@ func (h *Hub) disconnectReboundSub(roomID, oldSub string) {
 			h.logger.Info("rebind_zombie_disconnect_failed", "room_id", roomID, "client_id", cid, "err", err.Error())
 		}
 	}
+}
+
+// rewriteAdmins swaps oldSub for newSub and drops duplicates, so a member who
+// was already an admin under both identities is listed once.
+func rewriteAdmins(admins []string, oldSub, newSub string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, a := range admins {
+		if a == oldSub {
+			a = newSub
+		}
+		if !seen[a] {
+			seen[a] = true
+			out = append(out, a)
+		}
+	}
+	return out
 }

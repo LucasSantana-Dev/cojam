@@ -57,7 +57,7 @@ var spotifyTrackURIRe = regexp.MustCompile(`^spotify:track:[0-9A-Za-z]{22}$`)
 // Errors are user-facing (UserError) so the host sees why the import failed.
 func validateImportTracks(tracks []queue.TrackRef) error {
 	if len(tracks) > maxImportTracks {
-		return userErrorf("too many tracks: %d (max %d per import)", len(tracks), maxImportTracks)
+		return userErrorf("Músicas demais: %d (o máximo por importação é %d)", len(tracks), maxImportTracks)
 	}
 	for i, t := range tracks {
 		if t.Title == "" {
@@ -243,14 +243,17 @@ type Hub struct {
 	spotifyMatcher  Matcher
 	searcher        Searcher
 	playlistFetcher PlaylistFetcher
-	similar         SimilarProvider
-	trackDepth      TrackDepthProvider
-	lyrics          LyricsProvider
-	listenBrainz    ListenBrainzProvider
-	lastfmEnrich    LastfmEnrichProvider
-	syncEnabled     bool
-	votingEnabled   bool
-	chatEnabled     bool
+	// spotifyUserToken mints a Spotify access token for a caller's userID from
+	// the server-held grant (nil when token custody is off).
+	spotifyUserToken func(ctx context.Context, userID string) (string, error)
+	similar          SimilarProvider
+	trackDepth       TrackDepthProvider
+	lyrics           LyricsProvider
+	listenBrainz     ListenBrainzProvider
+	lastfmEnrich     LastfmEnrichProvider
+	syncEnabled      bool
+	votingEnabled    bool
+	chatEnabled      bool
 
 	// videoEnabled gates the video heartbeat (FEATURE_VIDEO, #258). Its own
 	// flag, not syncEnabled: video carries ToS exposure and must switch off
@@ -377,6 +380,9 @@ type Hub struct {
 	// FEATURE_ROOM_AUTH is off: the RPC then replies ErrorMethodNotFound.
 	rebindSecret []byte
 	rebindBurns  rebind.BurnList
+
+	// Host grace, shutdown and roles state (see roles.go).
+	roles roleState
 }
 
 // mutatingMethods are the membership-gated RPCs: the caller must be a member
@@ -394,6 +400,9 @@ var mutatingMethods = map[string]bool{
 	"playlist.import":     true,
 	"radio.set":           true,
 	"room.set_public":     true,
+	"room.set_admin":      true,
+	"room.transfer_host":  true,
+	"room.claim_host":     true,
 	"room.kick":           true,
 	"room.rebind":         true,
 	"transport.play":      true,
@@ -433,6 +442,9 @@ var knownMethods = map[string]bool{
 	"chat.history":        true,
 	"chat.delete":         true,
 	"room.kick":           true,
+	"room.set_admin":      true,
+	"room.transfer_host":  true,
+	"room.claim_host":     true,
 	"room.rebind":         true,
 	"member.set_platform": true,
 	"member.platforms":    true,
@@ -448,22 +460,29 @@ func metricMethod(method string) string {
 	return "unknown"
 }
 
-// hostOnlyMethods are mutating RPCs that disrupt room control and therefore
-// require the caller to be the room's host (RFC-0005 U4).
-// queue.add and room.join are always allowed for members.
-// queue.remove is host-gated with one exception: the track's owner
+// controlMethods are mutating RPCs that disrupt room control and therefore
+// require queue and transport control: the room's host, its owner or an admin
+// (RFC-0005 U4, extended by room admins). queue.add and room.join are always
+// allowed for members. queue.remove has one exception: the track's adder
 // (TrackRef.AddedByUserID) may remove it (B16), enforced in Authorize.
-var hostOnlyMethods = map[string]bool{
+var controlMethods = map[string]bool{
 	"now_playing.set":     true,
 	"now_playing.advance": true,
 	"queue.reorder":       true,
 	"queue.remove":        true,
 	"radio.set":           true,
 	"playlist.import":     true,
-	"room.set_public":     true,
 	"transport.play":      true,
 	"transport.pause":     true,
 	"transport.seek":      true,
+}
+
+// hostOnlyMethods are gated on the host or the owner, not on admins:
+// directory visibility is a room-identity decision. Kick, chat.delete,
+// set_admin and transfer_host are host-or-owner too, checked in dispatch
+// (requireHost) so a mistake is a 400 rather than PermissionDenied.
+var hostOnlyMethods = map[string]bool{
+	"room.set_public": true,
 }
 
 // WithMatcher enables async YouTube-source enrichment on queue.add.
@@ -594,14 +613,14 @@ const (
 // fire unbounded concurrent matcher lookups. Admission is bounded and
 // non-blocking: when enrichPending is full the job is dropped and logged
 // rather than parking another goroutine (#196).
-func (h *Hub) launchEnrich(fn func()) {
+func (h *Hub) launchEnrich(fn func()) bool {
 	select {
 	case h.enrichPending <- struct{}{}:
 	default:
 		if h.logger != nil {
 			h.logger.Info("enrich_dropped", "reason", "pending_full")
 		}
-		return
+		return false
 	}
 	go func() {
 		defer func() { <-h.enrichPending }()
@@ -609,6 +628,7 @@ func (h *Hub) launchEnrich(fn func()) {
 		defer func() { <-h.enrichSem }()
 		fn()
 	}()
+	return true
 }
 
 // Join enrolls a client as a member of a room (called on room.join and on
@@ -894,9 +914,22 @@ func (h *Hub) promoteInRoom(roomID, clientID, userID string) {
 	if h.GetHostUserID(roomID) != userID {
 		return
 	}
+	if h.roles.shuttingDown.Load() {
+		// The server is going away: every client drops at once and will be
+		// back. Handing the room to whoever reconnects first cost an owner
+		// their room, so nothing is promoted and nothing is persisted.
+		if h.logger != nil {
+			h.logger.Info("host_promotion_skipped_shutdown", "room_id", roomID)
+		}
+		return
+	}
 	successor, others := h.selectSuccessor(roomID, clientID)
 	if !others {
 		return // empty room: nothing to promote; evictIdleRooms reaps it
+	}
+	if h.roles.hostGrace > 0 {
+		h.scheduleHostGrace(roomID, userID)
+		return
 	}
 	h.commitHostHandoff(roomID, userID, successor)
 }
@@ -947,6 +980,9 @@ func (h *Hub) commitHostHandoff(roomID, userID, successor string) {
 	if _, err := h.mutate(roomID, func(s *queue.RoomState) error {
 		if s.HostUserID != userID {
 			return nil // a concurrent promotion already applied
+		}
+		if h.roles.hostGrace > 0 && h.IsUserIDInRoom(roomID, userID) {
+			return nil // the host is back (another tab, or a rejoin racing the grace timer)
 		}
 		if successor == "" {
 			s.HostUserID = ""
@@ -999,15 +1035,27 @@ func (h *Hub) hostAllows(roomID, userID string) (bool, error) {
 		return false, err
 	}
 	host := ""
+	allowed := false
 	if room != nil {
 		room.mu.Lock()
 		host = room.State.HostUserID
+		allowed = room.State.IsHostOrOwner(userID)
 		room.mu.Unlock()
+	}
+	if allowed {
+		return true, nil
 	}
 	if host == "" {
 		return !h.hostAssignment, nil
 	}
-	return userID == host, nil
+	return false, nil
+}
+
+// userIDOf returns the authenticated userID recorded for a connection.
+func (h *Hub) userIDOf(clientID string) string {
+	h.clientUserIDMu.RLock()
+	defer h.clientUserIDMu.RUnlock()
+	return h.clientUserID[clientID]
 }
 
 // GetHostUserID returns the hostUserID for a resident room, or empty if no
@@ -1063,8 +1111,8 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 	// Host-only gate (RFC-0005 U4): only the room's host may run these. The
 	// room is loaded when not resident, and a host-less room is denied unless
 	// host assignment is off (v0 equal members); see hostAllows.
-	if hostOnlyMethods[method] {
-		allowed, err := h.hostAllows(probe.RoomID, userID)
+	if controlMethods[method] {
+		allowed, err := h.controlAllows(probe.RoomID, userID)
 		if err != nil {
 			return rpcClientError(err)
 		}
@@ -1073,6 +1121,15 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 			if method == "queue.remove" && h.isTrackOwner(probe.RoomID, probe.TrackID, userID) {
 				return nil
 			}
+			return centrifuge.ErrorPermissionDenied
+		}
+	}
+	if hostOnlyMethods[method] {
+		allowed, err := h.hostAllows(probe.RoomID, userID)
+		if err != nil {
+			return rpcClientError(err)
+		}
+		if !allowed {
 			return centrifuge.ErrorPermissionDenied
 		}
 	}
@@ -1334,6 +1391,16 @@ func (h *Hub) hasMembersLocked(roomID string) bool {
 // state (#178): the mutation already succeeded, so an RPC error would invite a
 // retry that duplicates it.
 func (h *Hub) mutate(roomID string, fn func(*queue.RoomState) error) (json.RawMessage, error) {
+	data, err := h.mutateNoSkip(roomID, fn)
+	if err == nil {
+		h.autoSkipSourceless(roomID)
+	}
+	return data, err
+}
+
+// mutateNoSkip is mutate without the sourceless auto-skip check (the skip's
+// own advance uses it so the check does not recurse).
+func (h *Hub) mutateNoSkip(roomID string, fn func(*queue.RoomState) error) (json.RawMessage, error) {
 	room, err := h.GetOrCreateRoom(roomID)
 	if err != nil {
 		return nil, err
@@ -1595,16 +1662,31 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		// Stamp presence for longest-present host promotion (#166); a rejoin
 		// resets seniority by design.
 		h.recordJoinTime(req.RoomID, userID)
+		h.cancelHostGrace(req.RoomID, userID) // the host came back inside the grace window
 		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			// Set host if authenticated and room has no host yet.
 			// If host left the room, reclaim for the new joiner.
 			if userID != "" {
 				if s.HostUserID == "" {
-					// Fresh room: first authenticated joiner becomes host
+					// Fresh room: first authenticated joiner becomes host, and
+					// the owner when the room is brand new (version 0). Older
+					// rooms without an owner stay ownerless: never guessed.
+					if s.OwnerUserID == "" && s.Version == 0 {
+						s.OwnerUserID = userID
+					}
 					s.HostUserID = userID
 					s.Version++ // host changed: bump so version-guarded clients accept it
-				} else if !h.IsUserIDInRoom(req.RoomID, s.HostUserID) {
-					// Host is not present: claim host
+				} else if s.OwnerUserID != "" && s.OwnerUserID == userID {
+					// The owner takes host back when the host is absent (a
+					// restart, a dropped connection). A present host stays:
+					// the owner uses room.claim_host to take it deliberately,
+					// so a transfer is not undone by a page refresh.
+					if s.HostUserID != userID && !h.IsUserIDInRoom(req.RoomID, s.HostUserID) {
+						s.HostUserID = userID
+						s.Version++
+					}
+				} else if !h.IsUserIDInRoom(req.RoomID, s.HostUserID) && !h.hostHeld(req.RoomID, s.HostUserID) {
+					// Host is not present and not inside a grace window: claim host
 					s.HostUserID = userID
 					s.Version++ // host changed: bump so version-guarded clients accept it
 				}
@@ -1646,14 +1728,16 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			if len(s.Queue) >= queue.MaxQueueSize {
 				return userErrorf("queue is full (max %d)", queue.MaxQueueSize)
 			}
-			addedID = s.Add(req.Track).ID
+			added := s.Add(req.Track)
+			addedID = added.ID
+			h.enrichBookkeeping(added)
 			return nil
 		})
 		if err == nil && h.matcher != nil && req.Track.Sources.YouTube == nil {
-			h.launchEnrich(func() { h.enrichYouTube(req.RoomID, addedID, req.Track) })
+			h.launchTrackEnrich(req.RoomID, addedID, func() bool { return h.enrichYouTube(req.RoomID, addedID, req.Track) })
 		}
 		if err == nil && h.spotifyMatcher != nil && req.Track.Sources.Spotify == nil {
-			h.launchEnrich(func() { h.enrichSpotify(req.RoomID, addedID, req.Track) })
+			h.launchTrackEnrich(req.RoomID, addedID, func() bool { return h.enrichSpotify(req.RoomID, addedID, req.Track) })
 		}
 		return res, err
 
@@ -1693,58 +1777,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, fmt.Errorf("now_playing.advance: roomId required")
 		}
 
-		// Capture seed for potential radio refill (if queue runs dry)
-		var refillSeed *queue.TrackRef
-
-		// Capture the newly playing track for the chat announcement (#205).
-		var announced *queue.TrackRef
-
-		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
-			// Store old NowPlayingID to detect if advance actually changed state
-			oldNowPlayingID := s.NowPlayingID
-
-			if err := s.AdvanceAfter(req.AfterID); err != nil {
-				return err
-			}
-
-			// Detect if advance actually changed state and queue is now empty
-			if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" && len(s.Queue) > 0 {
-				// Queue ran dry; capture the last track as seed for refill.
-				// Copy the value: a pointer into s.Queue would race with
-				// concurrent queue mutations (Move rewrites elements, Add can
-				// reallocate) once refillRadio reads it after unlock.
-				seed := s.Queue[len(s.Queue)-1]
-				refillSeed = &seed
-			}
-
-			// A real advance to a next track (not the idempotent no-op, not
-			// queue-end) announces the change in chat. Copy the value for the
-			// same racing reason as refillSeed above.
-			if s.NowPlayingID != oldNowPlayingID && s.NowPlayingID != "" {
-				for i := range s.Queue {
-					if s.Queue[i].ID == s.NowPlayingID {
-						track := s.Queue[i]
-						announced = &track
-						break
-					}
-				}
-			}
-
-			return nil
-		})
-
-		// After successful mutate, trigger refill if needed (async, outside the lock)
-		if err == nil && refillSeed != nil && h.similar != nil {
-			go h.refillRadio(req.RoomID, refillSeed)
-		}
-
-		// The system message rides chat, not RoomState: no Version bump, no
-		// store.Save beyond the advance's own write-through (#205).
-		if err == nil && announced != nil {
-			h.publishSystemChat(req.RoomID, fmt.Sprintf("Now playing: %s — %s", announced.Title, announced.Artist))
-		}
-
-		return res, err
+		return h.advanceAfter(req.RoomID, req.AfterID, true)
 
 	case "queue.reorder":
 		var req struct {
@@ -1929,7 +1962,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, userErrorf("room id required")
 		}
 		if req.URL == "" {
-			return nil, userErrorf("enter a playlist URL")
+			return nil, userErrorf("Cole o link de uma playlist.")
 		}
 		if len(req.AddedBy) > maxImportFieldLen {
 			return nil, userErrorf("addedBy too long (max %d chars)", maxImportFieldLen)
@@ -1947,22 +1980,22 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		} else {
 			// If playlist fetcher not configured, return error
 			if h.playlistFetcher == nil {
-				return nil, userErrorf("playlist import is not enabled on this server")
+				return nil, userErrorf("A importação de playlists não está ativada neste servidor.")
 			}
 
 			// Fetch playlist tracks (short timeout to not block the RPC too long)
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
+			if h.spotifyUserToken != nil && userID != "" {
+				ctx = playlist.WithUserToken(ctx, func(c context.Context) (string, error) {
+					return h.spotifyUserToken(c, userID)
+				})
+			}
 
 			var err error
 			tracks, err = h.playlistFetcher(ctx, req.URL)
 			if err != nil {
-				// Fetcher errors are already sanitized (no upstream bodies, see
-				// httpx/playlist packages), so they are safe to show the user.
-				if errors.Is(err, playlist.ErrNotConfigured) {
-					return nil, userErrorf("this playlist service is not configured on the server (Spotify import needs server credentials)")
-				}
-				return nil, userErrorf("could not load playlist: %v", err)
+				return nil, h.playlistImportError(err)
 			}
 		}
 
@@ -1982,7 +2015,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		res, mutErr := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			remaining := queue.MaxQueueSize - len(s.Queue)
 			if remaining <= 0 {
-				return userErrorf("queue is full")
+				return userErrorf("A fila está cheia.")
 			}
 
 			toAdd := tracks
@@ -1995,6 +2028,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 				// Server-owned identity: never trust a client-supplied addedByUserId.
 				track.AddedByUserID = userID
 				added := s.Add(track)
+				h.enrichBookkeeping(added)
 				addedIDs = append(addedIDs, added.ID)
 			}
 			return nil
@@ -2020,10 +2054,10 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 					continue
 				}
 				if h.matcher != nil && track.Sources.YouTube == nil {
-					h.launchEnrich(func() { h.enrichYouTube(req.RoomID, track.ID, track) })
+					h.launchTrackEnrich(req.RoomID, track.ID, func() bool { return h.enrichYouTube(req.RoomID, track.ID, track) })
 				}
 				if h.spotifyMatcher != nil && track.Sources.Spotify == nil {
-					h.launchEnrich(func() { h.enrichSpotify(req.RoomID, track.ID, track) })
+					h.launchTrackEnrich(req.RoomID, track.ID, func() bool { return h.enrichSpotify(req.RoomID, track.ID, track) })
 				}
 			}
 		}
@@ -2276,10 +2310,64 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		if err := h.requireHost(req.RoomID, userID, "kick members"); err != nil {
 			return nil, err
 		}
+		if h.isOwner(req.RoomID, h.userIDOf(req.ClientID)) {
+			return nil, userErrorf("the room owner cannot be removed")
+		}
 		res, err := h.roomKick(req.RoomID, req.ClientID)
 		if err == nil && h.moderationAudit != nil {
 			h.moderationAudit("room.kick", req.RoomID, userID, req.ClientID)
 		}
+		return res, err
+
+	case "room.set_admin":
+		var req struct {
+			RoomID string `json:"roomId"`
+			UserID string `json:"userId"`
+			Admin  bool   `json:"admin"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("room.set_admin: roomId required")
+		}
+		if err := h.requireHost(req.RoomID, userID, "change admins"); err != nil {
+			return nil, err
+		}
+		res, err := h.setAdmin(req.RoomID, userID, req.UserID, req.Admin)
+		return res, err
+
+	case "room.claim_host":
+		var req struct {
+			RoomID string `json:"roomId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("room.claim_host: roomId required")
+		}
+		res, err := h.claimHost(req.RoomID, userID)
+		if err == nil && h.logger != nil {
+			h.logger.Info("room_host_claimed", "room_id", req.RoomID, "by", userID)
+		}
+		return res, err
+
+	case "room.transfer_host":
+		var req struct {
+			RoomID string `json:"roomId"`
+			UserID string `json:"userId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("room.transfer_host: roomId required")
+		}
+		if err := h.requireHost(req.RoomID, userID, "transfer the host role"); err != nil {
+			return nil, err
+		}
+		res, err := h.transferHost(req.RoomID, userID, req.UserID)
 		return res, err
 
 	case "room.rebind":
@@ -2365,7 +2453,7 @@ func (h *Hub) enrichQuery(logEvent, title, artist string, configured bool, empty
 
 // enrichYouTube resolves a YouTube source for a freshly added track and
 // republishes the room state (own mutation → version bump → clients accept).
-func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) {
+func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certain bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -2374,7 +2462,7 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) {
 		if h.logger != nil {
 			h.logger.Info("match_miss", "room_id", roomID, "track_id", trackID, "err", fmt.Sprint(err))
 		}
-		return
+		return err == nil
 	}
 	if h.metrics != nil {
 		h.metrics.ObserveMatchConfidence(ref.Confidence)
@@ -2389,6 +2477,70 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) {
 		h.logger.Info("match_applied", "room_id", roomID, "track_id", trackID,
 			"video_id", ref.VideoID, "confidence", ref.Confidence)
 	}
+	return true
+}
+
+// advanceAfter moves playback past afterID (idempotent) and runs the side
+// effects of a real advance: radio refill when the queue ran dry, and the
+// now-playing chat line. withSkipCheck is false for the sourceless auto skip,
+// which loops itself.
+func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.RawMessage, error) {
+	mutate := h.mutate
+	if !withSkipCheck {
+		mutate = h.mutateNoSkip
+	}
+	// Capture seed for potential radio refill (if queue runs dry)
+	var refillSeed *queue.TrackRef
+
+	// Capture the newly playing track for the chat announcement (#205).
+	var announced *queue.TrackRef
+
+	res, err := mutate(roomID, func(s *queue.RoomState) error {
+		// Store old NowPlayingID to detect if advance actually changed state
+		oldNowPlayingID := s.NowPlayingID
+
+		if err := s.AdvanceAfter(afterID); err != nil {
+			return err
+		}
+
+		// Detect if advance actually changed state and queue is now empty
+		if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" && len(s.Queue) > 0 {
+			// Queue ran dry; capture the last track as seed for refill.
+			// Copy the value: a pointer into s.Queue would race with
+			// concurrent queue mutations (Move rewrites elements, Add can
+			// reallocate) once refillRadio reads it after unlock.
+			seed := s.Queue[len(s.Queue)-1]
+			refillSeed = &seed
+		}
+
+		// A real advance to a next track (not the idempotent no-op, not
+		// queue-end) announces the change in chat. Copy the value for the
+		// same racing reason as refillSeed above.
+		if s.NowPlayingID != oldNowPlayingID && s.NowPlayingID != "" {
+			for i := range s.Queue {
+				if s.Queue[i].ID == s.NowPlayingID {
+					track := s.Queue[i]
+					announced = &track
+					break
+				}
+			}
+		}
+
+		return nil
+	})
+
+	// After successful mutate, trigger refill if needed (async, outside the lock)
+	if err == nil && refillSeed != nil && h.similar != nil && h.refillAllowed(roomID) {
+		go h.refillRadio(roomID, refillSeed)
+	}
+
+	// The system message rides chat, not RoomState: no Version bump, no
+	// store.Save beyond the advance's own write-through (#205).
+	if err == nil && announced != nil {
+		h.publishSystemChat(roomID, fmt.Sprintf("Now playing: %s — %s", announced.Title, announced.Artist))
+	}
+
+	return res, err
 }
 
 // RegisterClient wires a connected client's RPCs to the hub dispatch.
@@ -2439,6 +2591,33 @@ func (h *Hub) WithSearcher(s Searcher) *Hub {
 	return h
 }
 
+// WithSpotifyUserToken lets playlist.import read Spotify playlists with the
+// importing user's own authorization instead of client credentials.
+func (h *Hub) WithSpotifyUserToken(f func(ctx context.Context, userID string) (string, error)) *Hub {
+	h.spotifyUserToken = f
+	return h
+}
+
+// playlistImportError turns fetcher errors into pt-BR messages the host can
+// act on. Fetcher errors never carry upstream bodies, so wrapping is safe.
+func (h *Hub) playlistImportError(err error) error {
+	switch {
+	case errors.Is(err, playlist.ErrSpotifyConnectRequired):
+		return userErrorf("O Spotify só deixa importar playlists de quem conectou a conta. Conecte o Spotify e tente de novo, ou cole uma playlist do Deezer ou do YouTube.")
+	case errors.Is(err, playlist.ErrSpotifyEditorial):
+		return userErrorf("Playlists criadas pelo próprio Spotify (como as Daily Mix e as do Spotify) não podem ser importadas. Copie as músicas para uma playlist sua e cole o link dela.")
+	case errors.Is(err, playlist.ErrSpotifyNotOwner):
+		return userErrorf("O Spotify só deixa importar playlists que são suas ou em que você colabora. Copie as músicas para uma playlist sua e cole o link dela.")
+	case errors.Is(err, playlist.ErrNotConfigured):
+		return userErrorf("Esse serviço de playlists não está configurado no servidor.")
+	}
+	// Anything else stays server-side: transport errors can embed URLs.
+	if h.logger != nil {
+		h.logger.Warn("playlist_import_failed", "err", err.Error())
+	}
+	return userErrorf("Não foi possível carregar a playlist. Tente de novo em instantes.")
+}
+
 // WithPlaylistFetcher enables playlist import via playlist.import RPC.
 func (h *Hub) WithPlaylistFetcher(pf PlaylistFetcher) *Hub {
 	h.playlistFetcher = pf
@@ -2477,7 +2656,7 @@ func (h *Hub) WithLastfmEnrichProvider(lep LastfmEnrichProvider) *Hub {
 
 // enrichSpotify resolves a Spotify source for a freshly added track and
 // republishes the room state (own mutation -> version bump -> clients accept).
-func (h *Hub) enrichSpotify(roomID, trackID string, track queue.TrackRef) {
+func (h *Hub) enrichSpotify(roomID, trackID string, track queue.TrackRef) (certain bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -2486,7 +2665,7 @@ func (h *Hub) enrichSpotify(roomID, trackID string, track queue.TrackRef) {
 		if h.logger != nil {
 			h.logger.Info("spotify_match_miss", "room_id", roomID, "track_id", trackID, "err", fmt.Sprint(err))
 		}
-		return
+		return err == nil
 	}
 	if h.metrics != nil {
 		h.metrics.ObserveMatchConfidence(ref.Confidence)
@@ -2501,6 +2680,7 @@ func (h *Hub) enrichSpotify(roomID, trackID string, track queue.TrackRef) {
 		h.logger.Info("spotify_match_applied", "room_id", roomID, "track_id", trackID,
 			"track_uri", ref.TrackURI, "confidence", ref.Confidence)
 	}
+	return true
 }
 
 // refillRadio fetches similar tracks and appends them to the queue when it runs dry.
@@ -2545,7 +2725,9 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 				break
 			}
 			track.AddedBy = "radio"
-			appended = append(appended, *s.Add(track))
+			added := s.Add(track)
+			h.enrichBookkeeping(added)
+			appended = append(appended, *added)
 		}
 
 		return nil
@@ -2560,10 +2742,10 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 		for _, tr := range appended {
 			tr := tr
 			if h.matcher != nil && tr.Sources.YouTube == nil {
-				h.launchEnrich(func() { h.enrichYouTube(roomID, tr.ID, tr) })
+				h.launchTrackEnrich(roomID, tr.ID, func() bool { return h.enrichYouTube(roomID, tr.ID, tr) })
 			}
 			if h.spotifyMatcher != nil && tr.Sources.Spotify == nil {
-				h.launchEnrich(func() { h.enrichSpotify(roomID, tr.ID, tr) })
+				h.launchTrackEnrich(roomID, tr.ID, func() bool { return h.enrichSpotify(roomID, tr.ID, tr) })
 			}
 		}
 	}

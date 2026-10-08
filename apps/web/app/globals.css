@@ -3263,6 +3263,8 @@ input:focus, textarea:focus, select:focus {
 .r4-main-col { min-width: 0; }
 .r4-stage { min-width: 0; }
 .r4-stack { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.r4-ghost { min-height: 2.25rem; padding: 0 0.7rem; border-radius: 0.6rem; background: none; color: var(--color-text-secondary); font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+.r4-ghost:hover { background: oklch(1 0 0 / 0.08); color: var(--color-text-primary); }
 
 @media (min-width: 48rem) {
   .r4-header__inner { padding: 1rem 1.5rem; }
@@ -3551,6 +3553,22 @@ input:focus, textarea:focus, select:focus {
   .r4-ls__name { font-size: 1rem; }
   .r4-ls__svc { font-size: 0.75rem; }
 }
+
+.r4-ls__chip { margin-left: 0.35rem; padding: 0 0.45rem; font-size: 0.75rem; }
+/* the role button sits under the member, shown on hover or focus so the row stays as in the mockup */
+.r4-ls__roles { position: absolute; top: 100%; left: 50%; translate: -50% 0; z-index: 5; display: flex; flex-direction: column; align-items: center; opacity: 0; transition: opacity var(--dur-micro) ease; }
+.r4-ls__member:hover .r4-ls__roles, .r4-ls__member:focus-within .r4-ls__roles { opacity: 1; }
+@media (hover: none), (any-pointer: coarse) { .r4-ls__roles { position: static; translate: none; opacity: 1; } }
+.r4-ls__roles-btn, .r4-ls__menu-btn { min-height: 2.75rem; min-width: 2.75rem; }
+.r4-ls__menu { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.35rem; margin-top: 0.25rem; border-radius: 0.7rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); }
+.r4-ls__menu-err { margin: 0; font-size: 0.8125rem; color: var(--color-status-error); max-width: 14rem; }
+.r4-ls__scrim { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 1rem; background: oklch(0 0 0 / 0.6); }
+.r4-ls__dialog { max-width: 26rem; width: 100%; padding: 1.25rem; border-radius: 1rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); display: flex; flex-direction: column; gap: 0.75rem; }
+.r4-ls__dialog-text { margin: 0; color: var(--color-text-secondary); }
+.r4-ls__dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+.r4-ls__dialog-btn { min-height: 2.75rem; }
+.r4-ls__claim { min-height: 2.75rem; }
+.r4-next { min-height: 2.75rem; padding: 0 1.1rem; }
 
 /* ---- queue ----------------------------------------------------------------- */
 .room[data-room="r4"] .fq { display: flex; flex-direction: column; min-width: 0; }
