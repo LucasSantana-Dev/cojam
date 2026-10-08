@@ -195,6 +195,28 @@ func (rs *RoomState) Remove(trackID string) error {
 	return fmt.Errorf("%w: %s", ErrTrackNotFound, trackID)
 }
 
+// ClearUpcoming removes every upcoming track, keeping the playing head and
+// History untouched, drops the votes of the removed tracks and returns how many
+// went. Version only bumps when something was removed.
+func (rs *RoomState) ClearUpcoming() int {
+	kept := make([]TrackRef, 0, 1)
+	removed := 0
+	for _, t := range rs.Queue {
+		if t.ID == rs.NowPlayingID {
+			kept = append(kept, t)
+			continue
+		}
+		delete(rs.Votes, t.ID)
+		removed++
+	}
+	if removed == 0 {
+		return 0
+	}
+	rs.Queue = kept
+	rs.Version++
+	return removed
+}
+
 // ToggleVote flips voter's upvote on trackID (F4): absent appends (vote on),
 // present removes (vote off). One vote per voter per track is structural (set
 // semantics). Returns whether the vote is now on. Bumps Version only when the

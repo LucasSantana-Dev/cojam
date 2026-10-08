@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import Image from 'next/image';
-import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, historyReadd, rpcErrorMessage, isTrackNotFoundError } from '@/lib/realtime';
+import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, historyReadd, queueClear, rpcErrorMessage, isTrackNotFoundError } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import type { TrackRef, HistoryEntry } from '@cojam/shared';
 import type { Member } from '@/lib/realtime';
@@ -17,6 +17,7 @@ import {
   ChevronDownIcon,
 } from '@/app/components/icons';
 import { memberLabel } from '@/lib/nameSuffix';
+import { useDialogFocus } from './useDialogFocus';
 
 // queueArtwork resolves the row thumb: the stored artwork URL first (search
 // adds + Spotify playlist imports carry it), then a derived YouTube thumb
@@ -38,6 +39,31 @@ export function playedAgo(playedAt: number | undefined, now: number): string {
   const h = Math.floor(min / 60);
   if (h < 24) return `há ${h} h`;
   return `há ${Math.floor(h / 24)} d`;
+}
+
+// Confirm step for "Limpar fila". Cancelar takes focus first (useDialogFocus
+// focuses the first button); Esc cancels and focus returns to the trigger.
+function ClearQueueDialog({ count, busy, onCancel, onConfirm }: { count: number; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useDialogFocus(true, onCancel, ref);
+  return (
+    <div className="r4-ls__scrim">
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="r4-clearq-h" className="r4-ls__dialog">
+        <h3 id="r4-clearq-h" className="r4-h2">Limpar a fila?</h3>
+        <p className="r4-ls__dialog-text">
+          {count === 1 ? 'A 1 música que está na fila sai.' : `As ${count} músicas que estão na fila saem.`} A música que está tocando continua.
+        </p>
+        <div className="r4-ls__dialog-actions">
+          <button type="button" className="r4-ghost r4-ls__dialog-btn" onClick={onCancel}>
+            Cancelar
+          </button>
+          <button type="button" className="btn-primary r4-ls__dialog-btn" onClick={onConfirm} disabled={busy}>
+            Limpar fila
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ThumbUp() {
@@ -77,6 +103,9 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, [historyOpen]);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearedMsg, setClearedMsg] = useState('');
   const [readdingId, setReaddingId] = useState<string | null>(null);
   const connected = useStore((s) => s.connected);
   const myVotes = useStore((s) => s.myVotes);
@@ -253,6 +282,23 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
       setActionError(rpcErrorMessage(err, 'Não deu para adicionar esta faixa de novo. Tente de novo.'));
     } finally {
       setReaddingId(null);
+    }
+  };
+
+  const handleClear = async () => {
+    if (clearing) return;
+    setActionError('');
+    setClearedMsg('');
+    setClearing(true);
+    try {
+      await queueClear(roomId);
+      setConfirmClear(false);
+      setClearedMsg('Fila limpa');
+    } catch (err) {
+      setConfirmClear(false);
+      setActionError(rpcErrorMessage(err, 'Não deu para limpar a fila. Tente de novo.'));
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -457,6 +503,11 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
         <h3 className="r4-h2">
           A seguir <span className="r4-h2__n">({upcoming.length})</span>
         </h3>
+        {canControl && upcoming.length > 0 && (
+          <button type="button" onClick={() => setConfirmClear(true)} className="r4-link r4-link--quiet" disabled={!connected}>
+            Limpar fila
+          </button>
+        )}
         {onAdd && (
           <button type="button" onClick={onAdd} className="r4-link" aria-expanded={addOpen} aria-controls="r4-add-inline">
             <PlusIcon size={16} />
@@ -464,6 +515,11 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
           </button>
         )}
       </header>
+
+      <span aria-live="polite" className="sr-only">{clearedMsg}</span>
+      {confirmClear && (
+        <ClearQueueDialog count={upcoming.length} busy={clearing} onCancel={() => setConfirmClear(false)} onConfirm={handleClear} />
+      )}
 
       {actionError && (
         <p role="alert" aria-live="polite" className="text-sm" style={{ color: 'var(--color-status-error)' }}>

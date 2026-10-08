@@ -415,6 +415,7 @@ var mutatingMethods = map[string]bool{
 	"chat.delete":                 true,
 	"member.set_platform":         true,
 	"member.platforms":            true,
+	"queue.clear":                 true,
 }
 
 // knownMethods is the dispatch set. RPC method names are client-supplied, so
@@ -453,6 +454,7 @@ var knownMethods = map[string]bool{
 	"member.set_platform":         true,
 	"member.platforms":            true,
 	"sync.ping":                   true,
+	"queue.clear":                 true,
 }
 
 // metricMethod is the bounded label for method: itself when known, else
@@ -481,6 +483,7 @@ var controlMethods = map[string]bool{
 	"transport.play":              true,
 	"transport.pause":             true,
 	"transport.seek":              true,
+	"queue.clear":                 true,
 }
 
 // hostOnlyMethods are gated on the host or the owner, not on admins:
@@ -1803,6 +1806,25 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			h.relaunchEnrich(req.RoomID, added)
 		}
 		return res, err
+
+	case "queue.clear":
+		var req struct {
+			RoomID string `json:"roomId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("queue.clear: roomId required")
+		}
+		removed := 0
+		if _, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			removed = s.ClearUpcoming()
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]int{"removed": removed})
 
 	case "queue.remove":
 		var req struct {

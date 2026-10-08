@@ -147,6 +147,7 @@ var mutationMethods = map[string]bool{
 	"room.set_admin":              true,
 	"room.transfer_host":          true,
 	"room.claim_host":             true,
+	"queue.clear":                 true,
 }
 
 // Defaults for the mutation limiter: a host curating a queue clicks in
