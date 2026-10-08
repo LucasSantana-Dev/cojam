@@ -34,6 +34,7 @@ export interface SpotifySDKPlayer {
   addListener(event: 'ready', cb: (data: { device_id: string }) => void): boolean;
   addListener(event: 'player_state_changed', cb: (state: SpotifyPlaybackState | null) => void): boolean;
   addListener(event: string, cb: () => void): boolean;
+  activateElement?(): Promise<void>;
 }
 
 interface SpotifySDKGlobal {
@@ -63,7 +64,15 @@ async function loadSDK(): Promise<void> {
   });
 }
 
-async function playUri(deviceId: string, uri: string) {
+class SpotifyPlayHttpError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`Spotify play failed: ${status}`);
+    this.status = status;
+  }
+}
+
+async function playUri(deviceId: string, uri: string, retries = 1): Promise<void> {
   const token = await getAccessToken();
   if (!token) return;
   const res = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
@@ -71,7 +80,13 @@ async function playUri(deviceId: string, uri: string) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ uris: [uri] }),
   });
-  if (!res.ok) throw new Error(`Spotify play failed: ${res.status}`);
+  // 404 right after `ready`: Spotify's backend has not registered the new
+  // device yet. One short retry before calling it a failure.
+  if (res.status === 404 && retries > 0) {
+    await new Promise((r) => setTimeout(r, 500));
+    return playUri(deviceId, uri, retries - 1);
+  }
+  if (!res.ok) throw new SpotifyPlayHttpError(res.status);
 }
 
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
@@ -236,6 +251,7 @@ export function SpotifyPlayer({
   onPlayerReady,
   onPlayerGone,
   onPlayError,
+  onProblem,
   active,
 }: {
   authorized: boolean;
@@ -250,6 +266,9 @@ export function SpotifyPlayer({
   // Per-user playback failure surface: called with the track id when this
   // client can't play the now-playing track, null when playback (re)starts.
   onPlayError?: (trackId: string | null) => void;
+  // Why Spotify is not producing sound (null when it is). `retry` restarts the
+  // track and must be called from a click: it unlocks browser audio first.
+  onProblem?: (kind: SpotifyConnectErrorKind | null, retry?: () => void) => void;
 }) {
   const deviceId = useRef<string | null>(null);
   const playerRef = useRef<SpotifyPlayerAdapter | null>(null);
@@ -271,7 +290,10 @@ export function SpotifyPlayer({
   const onPlayerReadyRef = useRef(onPlayerReady);
   const onPlayerGoneRef = useRef(onPlayerGone);
   const onPlayErrorRef = useRef(onPlayError);
+  const onProblemRef = useRef(onProblem);
+  const sdkPlayerRef = useRef<SpotifySDKPlayer | null>(null);
   useEffect(() => {
+    onProblemRef.current = onProblem;
     onPlayerReadyRef.current = onPlayerReady;
     onPlayerGoneRef.current = onPlayerGone;
     onPlayErrorRef.current = onPlayError;
@@ -345,6 +367,9 @@ export function SpotifyPlayer({
           setProblem('premium');
           setStatus('error');
         });
+        player.addListener('autoplay_failed', () => setProblem('autoplay'));
+        player.addListener('playback_error', () => setProblem('sdk'));
+        sdkPlayerRef.current = player;
         await player.connect();
       } catch (e) {
         console.error('Spotify SDK init failed:', e);
@@ -400,9 +425,35 @@ export function SpotifyPlayer({
       .catch((e) => {
         loadedUriRef.current = null;
         console.error('Spotify play failed:', e);
+        if (e instanceof SpotifyPlayHttpError) {
+          if (e.status === 403) setProblem('premium');
+          else if (e.status === 404) setProblem('sdk');
+        }
         onPlayErrorRef.current?.(track.id);
       });
   }, [authorized, status, spotifyUri, active, roomPlaying]);
+
+  // Hand the problem (and a click-driven retry) to the room card: this
+  // component lives inside the closed avatar menu, so its own note is hidden.
+  useEffect(() => {
+    const retry = () => {
+      const uri = spotifyUri;
+      const dev = deviceId.current;
+      void sdkPlayerRef.current?.activateElement?.()?.catch?.(() => {});
+      if (!uri || !dev) return;
+      loadedUriRef.current = uri;
+      playUri(dev, uri)
+        .then(() => {
+          setProblem(null);
+          onPlayErrorRef.current?.(null);
+        })
+        .catch((e) => {
+          console.error('Spotify play failed:', e);
+          if (e instanceof SpotifyPlayHttpError && e.status === 403) setProblem('premium');
+        });
+    };
+    onProblemRef.current?.(problem, problem === 'autoplay' ? retry : undefined);
+  }, [problem, spotifyUri]);
 
   // Switched to another service mid-track: stop the SDK. The new player takes
   // the synced position through the existing drift correction.

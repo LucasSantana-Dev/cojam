@@ -20,10 +20,17 @@ vi.mock('@/lib/spotifyAccount', () => ({
 
 const sdkPause = vi.fn(async () => {});
 
+// Events the next fake player fires right after connect (instead of `ready`).
+let fireEvent: string | null = null;
+const activateElement = vi.fn(async () => {});
+
 class FakeSpotifySDKPlayer {
   pause = sdkPause;
+  activateElement = activateElement;
   addListener(event: string, cb: (data: { device_id: string }) => void) {
-    if (event === 'ready') queueMicrotask(() => cb({ device_id: 'dev1' }));
+    if (fireEvent) {
+      if (event === fireEvent) queueMicrotask(() => cb({ device_id: 'dev1' }));
+    } else if (event === 'ready') queueMicrotask(() => cb({ device_id: 'dev1' }));
     return true;
   }
   async connect() {
@@ -274,5 +281,45 @@ describe('SpotifyPlayer switching service', () => {
     rerender(<SpotifyPlayer authorized={true} onAuthorized={() => {}} active={false} />);
     await waitFor(() => expect(sdkPause).toHaveBeenCalled());
     expect(calls(fetchMock, '/me/player/pause')).toHaveLength(0);
+  });
+});
+
+describe('SpotifyPlayer problem surface (card, not the closed menu)', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    (window as { Spotify?: unknown }).Spotify = { Player: FakeSpotifySDKPlayer };
+    window.__COJAM_ENV__ = { spotifyClientId: 'test-client' };
+    useStore.setState({ state: roomState });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 204 }) as Response));
+  });
+  afterEach(() => {
+    fireEvent = null;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    delete (window as { Spotify?: unknown }).Spotify;
+    delete window.__COJAM_ENV__;
+    useStore.setState({ state: undefined });
+  });
+
+  it('reports sdk when the SDK cannot initialise (Brave without Widevine)', async () => {
+    fireEvent = 'initialization_error';
+    const onProblem = vi.fn();
+    render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} onProblem={onProblem} />);
+    await waitFor(() => expect(onProblem).toHaveBeenCalledWith('sdk', undefined));
+  });
+
+  it('reports autoplay with a retry that activates the element inside the click', async () => {
+    fireEvent = 'autoplay_failed';
+    const onProblem = vi.fn();
+    render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} onProblem={onProblem} />);
+    await waitFor(() => expect(onProblem).toHaveBeenCalledWith('autoplay', expect.any(Function)));
+    expect(activateElement).not.toHaveBeenCalled();
+  });
+
+  it('reports premium when the play request is 403', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 403 }) as Response));
+    const onProblem = vi.fn();
+    render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} onProblem={onProblem} />);
+    await waitFor(() => expect(onProblem).toHaveBeenCalledWith('premium', undefined));
   });
 });
