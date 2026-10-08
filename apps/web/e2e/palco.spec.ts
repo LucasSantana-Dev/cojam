@@ -117,9 +117,14 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
       await expect(ctrls).toBeVisible();
       await expect(ctrls.getByRole('slider', { name: 'Volume' })).toBeVisible();
       await expect(ctrls.getByRole('button', { name: 'Silenciar' })).toBeVisible();
-      // The fixture room has no auth: everyone controls, so the transport shows.
-      await expect(ctrls.getByRole('button', { name: /^(Pausar|Tocar)$/ })).toBeVisible();
-      await expect(ctrls.getByRole('button', { name: 'Próxima faixa' })).toBeVisible();
+      // The fixture's host is Bia and we are Lucas. With room auth off everyone
+      // controls and the transport shows; with it on (CI sets the web flag only on
+      // the dev server, not here) we are a listener and it is absent. Either way
+      // pause and skip come together, and the 44 px loop below measures whichever
+      // buttons are there.
+      const transport = await ctrls.getByRole('button', { name: /^(Pausar|Tocar)$/ }).count();
+      const skip = await ctrls.getByRole('button', { name: 'Próxima faixa' }).count();
+      expect(transport).toBe(skip);
       if (process.env.NEXT_PUBLIC_FEATURE_SPOTIFY === 'on') await expect(ctrls.getByRole('group', { name: 'Ouvir no' })).toBeVisible();
       const vpw = page.viewportSize()!;
       const player = await playerBox(page);
@@ -183,7 +188,8 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
       await expect(emote).toBeVisible();
       for (const wait of [100, 300, 500]) {
         await page.waitForTimeout(wait);
-        const e = await emote.boundingBox();
+        // The emote fades out on its own; a missing one is not a failure and must not wait.
+        const e = await emote.boundingBox({ timeout: 500 }).catch(() => null);
         if (e) expect(overlaps(e, player)).toBe(false);
         if (SHOTS && wait === 300) {
           await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
