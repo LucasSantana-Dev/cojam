@@ -4,7 +4,7 @@
 // in the approved mockup. Left: the cover with its halo and, under it, the
 // service icons (which are the "Ouvir no" picker) and the overflow menu. Right:
 // kicker, big title, artist, who asked, the progress bar and, under it, the
-// transport centred with the local volume at the right end. The unavailable,
+// transport centred, the local volume beside the service picker. The unavailable,
 // failed and empty states keep this exact geometry: a cover placeholder and the
 // message in the text column, and the next button for whoever can control.
 // The card carries the one violet glow of the room.
@@ -158,7 +158,7 @@ export function NowPlayingCard({
   const hasTools = tools(() => {}).length > 0;
 
   // Same row as the transport, for the states that have none: next (controllers
-  // only) and the volume.
+  // only).
   const fallbackRow = (
     <div className="tp__row">
       <span className="tp__side" aria-hidden="true" />
@@ -175,7 +175,7 @@ export function NowPlayingCard({
           </button>
         )}
       </div>
-      <span className="tp__side tp__side--end">{preview ? null : volumeControl}</span>
+      <span className="tp__side tp__side--end" aria-hidden="true" />
     </div>
   );
 
@@ -240,7 +240,7 @@ export function NowPlayingCard({
         </div>
 
         {showTransport ? (
-          <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl && !preview} trailing={preview ? null : volumeControl} />
+          <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl && !preview} />
         ) : (
           fallbackRow
         )}
@@ -248,6 +248,9 @@ export function NowPlayingCard({
         <div className="r4-now__svc">
           {servicePicker}
           {hasTools && <OverflowMenu>{(close) => tools(close)}</OverflowMenu>}
+          {/* local volume: beside the listening service, where the row has room
+              for the slider (in the transport row it covered next and play) */}
+          {!preview && volumeControl}
         </div>
         {serviceNote && <div className="r4-now__note">{serviceNote}</div>}
       </div>

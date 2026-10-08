@@ -12,6 +12,7 @@ const rpcMocks = vi.hoisted(() => ({
   queueReorder: vi.fn(async () => {}),
   voteTrack: vi.fn(async () => {}),
   historyReadd: vi.fn(async () => {}),
+  queueClear: vi.fn(async () => 2),
 }));
 
 vi.mock('@/lib/realtime', async (importOriginal) => ({
@@ -21,6 +22,7 @@ vi.mock('@/lib/realtime', async (importOriginal) => ({
   queueReorder: rpcMocks.queueReorder,
   voteTrack: rpcMocks.voteTrack,
   historyReadd: rpcMocks.historyReadd,
+  queueClear: rpcMocks.queueClear,
 }));
 
 // The F4 flag resolves through useRuntimeFeatures: the /env.js runtime
@@ -550,5 +552,67 @@ describe('QueuePanel Tocadas a11y and clock', () => {
     expect(screen.getByRole('list', { name: 'Faixas já tocadas' })).toHaveAttribute('aria-busy', 'true');
     await act(async () => release());
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(''));
+  });
+});
+
+describe('QueuePanel Limpar fila', () => {
+  beforeEach(() => {
+    rpcMocks.queueClear.mockClear();
+    useStore.setState({
+      connected: true,
+      state: { ...roomState([track('t0', 'Playing'), track('t1', 'One'), track('t2', 'Two')]), nowPlayingId: 't0' },
+    });
+  });
+
+  it('is hidden for non-controllers', () => {
+    render(<QueuePanel roomId="r1" canControl={false} />);
+    expect(screen.queryByRole('button', { name: 'Limpar fila' })).not.toBeInTheDocument();
+  });
+
+  it('is hidden when nothing is upcoming', () => {
+    useStore.setState({ state: { ...roomState([track('t0', 'Playing')]), nowPlayingId: 't0' } });
+    render(<QueuePanel roomId="r1" canControl />);
+    expect(screen.queryByRole('button', { name: 'Limpar fila' })).not.toBeInTheDocument();
+  });
+
+  it('confirms with Cancelar focused, then calls the RPC and announces Fila limpa', async () => {
+    render(<QueuePanel roomId="r1" canControl />);
+    const trigger = screen.getByRole('button', { name: 'Limpar fila' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Limpar a fila?')).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('As 2 músicas que estão na fila saem. A música que está tocando continua.');
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toHaveFocus();
+    expect(rpcMocks.queueClear).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Limpar fila' }));
+    await waitFor(() => expect(rpcMocks.queueClear).toHaveBeenCalledWith('r1'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByText('Fila limpa')).toBeInTheDocument();
+  });
+
+  it('cancel does not call the RPC, and Esc closes and returns focus to the trigger', () => {
+    render(<QueuePanel roomId="r1" canControl />);
+    const trigger = screen.getByRole('button', { name: 'Limpar fila' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(rpcMocks.queueClear).not.toHaveBeenCalled();
+
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(rpcMocks.queueClear).not.toHaveBeenCalled();
+  });
+
+  it('maps a rejection to PT-BR', async () => {
+    rpcMocks.queueClear.mockRejectedValueOnce({ code: 103, message: 'permission denied' });
+    render(<QueuePanel roomId="r1" canControl />);
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar fila' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Limpar fila' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Você não tem permissão para fazer isso.');
   });
 });

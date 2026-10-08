@@ -921,6 +921,16 @@ export async function historyReadd(roomId: string, trackId: string) {
   await centrifuge.rpc('history.readd', { roomId, trackId });
 }
 
+// queue.clear: drops every upcoming track in one call. The playing track and
+// Tocadas stay. Controllers only (host, owner, admin). Resolves with how many
+// tracks went.
+export async function queueClear(roomId: string): Promise<number> {
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
+  const res = await centrifuge.rpc('queue.clear', { roomId });
+  const removed = (res?.data as { removed?: unknown } | undefined)?.removed;
+  return typeof removed === 'number' ? removed : 0;
+}
+
 export async function queueReorder(roomId: string, trackId: string, toIndex: number) {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('queue.reorder', { roomId, trackId, toIndex });
