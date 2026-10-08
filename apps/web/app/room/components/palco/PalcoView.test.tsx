@@ -28,12 +28,22 @@ const fake = vi.hoisted(() => {
     woot(k: string) { this.woots.push(k); }
     setFrameListener(cb: ((out: FrameOut) => void) | null) { this.listener = cb; }
   }
-  return { FakeScene, wootListeners: [] as Array<(id: string) => void>, sendWoot: vi.fn(async () => {}) };
+  return {
+    FakeScene,
+    wootListeners: [] as Array<(id: string) => void>,
+    sendWoot: vi.fn(async () => {}),
+    advance: vi.fn(async () => {}),
+    pause: vi.fn(async () => {}),
+    play: vi.fn(async () => {}),
+  };
 });
 vi.mock('./scene', () => ({ PalcoScene: fake.FakeScene, loadSceneImages: async () => ({}) }));
 vi.mock('@/lib/realtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/realtime')>()),
   sendWoot: fake.sendWoot,
+  nowPlayingAdvance: fake.advance,
+  transportPause: fake.pause,
+  transportPlay: fake.play,
   onWoot: (cb: (id: string) => void) => {
     fake.wootListeners.push(cb);
     return () => { fake.wootListeners.splice(fake.wootListeners.indexOf(cb), 1); };
@@ -83,13 +93,16 @@ beforeEach(() => {
   fake.FakeScene.last = null;
   fake.wootListeners.length = 0;
   fake.sendWoot.mockClear();
+  fake.advance.mockClear();
+  fake.pause.mockClear();
+  fake.play.mockClear();
   useStore.setState({ state: state(), clientId: 'c-lucas', chat: [], nameSuffixes: {} });
   useStore.getState().setMembers(MEMBERS);
   useStore.getState().setCharacterOverride('c-lucas', 5);
 });
 
-async function mount() {
-  render(<PalcoView {...props} />);
+async function mount(extra: Partial<React.ComponentProps<typeof PalcoView>> = {}) {
+  render(<PalcoView {...props} {...extra} />);
   await waitFor(() => expect(fake.FakeScene.last).not.toBeNull());
   return fake.FakeScene.last!;
 }
@@ -149,5 +162,26 @@ describe('PalcoView', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Chat' }));
     expect(screen.queryByTestId('queue-slot')).toBeNull();
     expect(screen.getByTestId('chat-slot')).toBeTruthy();
+  });
+
+  it('puts the volume, the service picker and, for who controls, pause and skip in the HUD', async () => {
+    const player = { getCurrentPositionMs: async () => 4200 } as unknown as import('@/lib/playerInterface').IPlayer;
+    await mount({ canControl: true, activePlayer: player, volume: <input aria-label="Volume" />, servicePicker: <div role="group" aria-label="Ouvir no" /> });
+    const hud = screen.getByTestId('palco-hud');
+    const ctrls = screen.getByRole('group', { name: 'Controles da música' });
+    expect(hud.contains(ctrls)).toBe(true);
+    expect(screen.getByLabelText('Volume')).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Ouvir no' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima faixa' }));
+    expect(fake.advance).toHaveBeenCalledWith('R1', 't1');
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar' }));
+    await waitFor(() => expect(fake.pause).toHaveBeenCalledWith('R1', 4200));
+  });
+
+  it('shows no transport to who cannot control', async () => {
+    await mount({ canControl: false, volume: <input aria-label="Volume" /> });
+    expect(screen.queryByRole('button', { name: 'Próxima faixa' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pausar' })).toBeNull();
+    expect(screen.getByLabelText('Volume')).toBeTruthy();
   });
 });
