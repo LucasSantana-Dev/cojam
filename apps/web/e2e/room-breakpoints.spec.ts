@@ -124,13 +124,18 @@ async function noHorizontalOverflow(page: Page) {
   });
 }
 
+const YT_ID = 'jNQXAC9IVRw';
+
 async function addTrack(page: Page, title: string, artist: string) {
   await openAdd(page);
   await page.getByPlaceholder('Título').fill(title);
   await page.getByPlaceholder('Artista').fill(artist);
+  // A source keeps the sourceless auto skip from dropping the track at once.
+  await page.getByPlaceholder('Link do YouTube ou ID do vídeo (opcional)').fill(YT_ID);
   await page.getByRole('button', { name: 'Adicionar à fila' }).click();
   await page.getByRole('tab', { name: 'Fila', exact: true }).click();
-  await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
+  // The first add is now playing: it shows in the stage card, not the queue list.
+  await expect(page.locator('[data-testid="queue-title"], .r4-now__title').filter({ hasText: title }).first()).toBeVisible();
 }
 
 /**

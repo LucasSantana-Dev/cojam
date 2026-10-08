@@ -19,13 +19,18 @@ async function join(page: Page, roomId: string, name: string) {
   await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
+const YT_ID = 'jNQXAC9IVRw';
+
 async function addTrack(page: Page, title: string, artist: string) {
   await openAdd(page);
   await page.getByPlaceholder('Título').fill(title);
   await page.getByPlaceholder('Artista').fill(artist);
+  // A source keeps the sourceless auto skip from dropping the track at once.
+  await page.getByPlaceholder('Link do YouTube ou ID do vídeo (opcional)').fill(YT_ID);
   await page.getByRole('button', { name: 'Adicionar à fila' }).click();
   // Wait for the add to land (queue shows the title) before returning.
-  await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
+  // The first add is now playing: it shows in the stage card, not the queue list.
+  await expect(page.locator('[data-testid="queue-title"], .r4-now__title').filter({ hasText: title }).first()).toBeVisible();
 }
 
 test('voting a queued track increments the count, second click decrements', async ({ browser }) => {
@@ -33,6 +38,7 @@ test('voting a queued track increments the count, second click decrements', asyn
 
   const page = await (await browser.newContext()).newPage();
   await join(page, roomId, 'Voter');
+  await addTrack(page, 'Opener', 'Z-Zero'); // plays now; Vote Me is upcoming
   await addTrack(page, 'Vote Me', 'Artista');
 
   const row = page.getByTestId('queue-item').first();

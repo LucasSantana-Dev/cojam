@@ -503,3 +503,52 @@ describe('QueuePanel Tocadas (history)', () => {
     expect(playedAgo(now - 2 * 86_400_000, now)).toBe('há 2 d');
   });
 });
+
+describe('QueuePanel Tocadas a11y and clock', () => {
+  const seed = () =>
+    useStore.setState({
+      state: {
+        ...roomState([track('t3', 'Playing Now')]),
+        nowPlayingId: 't3',
+        history: [{ id: 'h1', title: 'Played', artist: 'X', addedBy: 'Bia', playedAt: Date.now(), sources: {} }],
+      },
+    });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps the aria-controls target in the DOM, hidden while collapsed', () => {
+    seed();
+    render(<QueuePanel roomId="r1" canControl />);
+    const toggle = screen.getByRole('button', { name: /Tocadas/ });
+    const target = document.getElementById(toggle.getAttribute('aria-controls')!);
+    expect(target).not.toBeNull();
+    expect(target).not.toBeVisible();
+    fireEvent.click(toggle);
+    expect(target).toBeVisible();
+  });
+
+  it('refreshes the played time every minute while open', () => {
+    vi.useFakeTimers();
+    seed();
+    render(<QueuePanel roomId="r1" canControl />);
+    fireEvent.click(screen.getByRole('button', { name: /Tocadas/ }));
+    expect(screen.getByText(/agora/)).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(3 * 60_000);
+    });
+    expect(screen.getByText(/há 3 min/)).toBeInTheDocument();
+  });
+
+  it('announces a pending re-add in a live region and marks the list busy', async () => {
+    let release: () => void = () => {};
+    rpcMocks.historyReadd.mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
+    seed();
+    render(<QueuePanel roomId="r1" canControl />);
+    fireEvent.click(screen.getByRole('button', { name: /Tocadas/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar de novo: Played' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Adicionando à fila');
+    expect(screen.getByRole('list', { name: 'Faixas já tocadas' })).toHaveAttribute('aria-busy', 'true');
+    await act(async () => release());
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(''));
+  });
+});

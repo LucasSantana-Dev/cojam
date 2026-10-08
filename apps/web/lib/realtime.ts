@@ -683,6 +683,7 @@ let rebindWaiter: { roomId: string; userId: string; resolve: (confirmed: boolean
 function stateShowsIdentity(state: RoomState, userId: string): boolean {
   if (state.hostUserId === userId) return true;
   if (state.queue.some((t) => t.addedByUserId === userId)) return true;
+  if ((state.history ?? []).some((t) => t.addedByUserId === userId)) return true;
   const voterKey = `user:${userId}`;
   return Object.values(state.votes ?? {}).some((voters) => voters.includes(voterKey));
 }

@@ -69,6 +69,14 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
   const history = state?.history ?? [];
   // Tocadas starts collapsed: it is reference material, not the queue.
   const [historyOpen, setHistoryOpen] = useState(false);
+  // "há 5 min" must not go stale: a clock state refreshed once a minute while
+  // the section is open (Date.now is not read during render).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!historyOpen) return;
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, [historyOpen]);
   const [readdingId, setReaddingId] = useState<string | null>(null);
   const connected = useStore((s) => s.connected);
   const myVotes = useStore((s) => s.myVotes);
@@ -496,7 +504,10 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
                 className="fq-hist__toggle"
                 aria-expanded={historyOpen}
                 aria-controls="fq-hist-list"
-                onClick={() => setHistoryOpen((o) => !o)}
+                onClick={() => {
+                  setNow(Date.now());
+                  setHistoryOpen((o) => !o);
+                }}
               >
                 <span>
                   Tocadas <span className="r4-h2__n">({history.length})</span>
@@ -504,20 +515,31 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
                 <span className="fq-hist__chev" aria-hidden="true"><ChevronDownIcon size={20} /></span>
               </button>
             </h4>
-            {historyOpen && (
-              <div id="fq-hist-list" role="list" aria-label="Faixas já tocadas" className="fq-hist__list">
-                {history.map((h) => (
+            {/* Always rendered so aria-controls resolves; hidden while collapsed. */}
+            <div
+              id="fq-hist-list"
+              role="list"
+              aria-label="Faixas já tocadas"
+              aria-busy={readdingId !== null}
+              className="fq-hist__list"
+              hidden={!historyOpen}
+            >
+              {historyOpen &&
+                history.map((h) => (
                   <HistoryRow
                     key={h.id}
                     entry={h}
+                    now={now}
                     canControl={canControl}
                     busy={readdingId === h.id}
                     disabled={!connected || readdingId !== null}
                     onReadd={handleReadd}
                   />
                 ))}
-              </div>
-            )}
+            </div>
+            <span role="status" className="sr-only">
+              {readdingId ? 'Adicionando à fila' : ''}
+            </span>
           </section>
         )}
       </div>
@@ -527,19 +549,21 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
 
 function HistoryRow({
   entry,
+  now,
   canControl,
   busy,
   disabled,
   onReadd,
 }: {
   entry: HistoryEntry;
+  now: number;
   canControl: boolean;
   busy: boolean;
   disabled: boolean;
   onReadd: (id: string) => void;
 }) {
   const art = queueArtwork(entry);
-  const when = playedAgo(entry.playedAt, Date.now());
+  const when = playedAgo(entry.playedAt, now);
   return (
     <div data-testid="history-item" data-track-id={entry.id} role="listitem" className="fq-hrow">
       <div className="fq-hrow__art">
