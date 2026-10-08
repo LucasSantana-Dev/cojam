@@ -10,7 +10,8 @@
 // Loaded with next/dynamic (ssr: false) from the room client, so three.js and
 // this file stay out of the round 4 bundle.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useStore, onWoot, sendWoot, transportPlay, transportPause, nowPlayingAdvance } from '@/lib/realtime';
+import { useStore, onWoot, sendWoot, onEmote, sendEmote, transportPlay, transportPause, nowPlayingAdvance } from '@/lib/realtime';
+import { EMOTES, type Emote } from '@cojam/shared';
 import { SkipNextIcon } from '@/app/components/icons';
 import { playPauseLabel } from '../TransportUI';
 import type { IPlayer } from '@/lib/playerInterface';
@@ -47,6 +48,13 @@ interface PalcoViewProps {
 }
 
 const BUBBLE_MS = 4500;
+// Emotes: pop, float about EMOTE_FLOAT native px, blink out at EMOTE_MS.
+const EMOTE_MS = 1500;
+const EMOTE_FLOAT = 10;
+const EMOTE_COOLDOWN_MS = 600; // the server allows one per 600 ms per connection
+const EMOTE_LABEL: Record<Emote, string> = {
+  amei: 'Amei', fogo: 'Fogo', rindo: 'Rindo', palmas: 'Palmas', uau: 'Uau', cantando: 'Cantando',
+};
 const LIKE_COOLDOWN_MS = 1500;
 const VARS = ['--palco-sx', '--palco-sy', '--palco-sw', '--palco-sh'] as const;
 
@@ -299,6 +307,40 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
     sendWoot(roomId).catch(() => { /* the local woot already showed; the room just misses this one */ });
   };
 
+  // --- emotes (reaction.emote): a pixel bubble over the sender's character ---
+  const [emotes, setEmotes] = useState<Array<{ id: number; key: string; emote: Emote }>>([]);
+  const emoteSeq = useRef(0);
+  const emoteTimers = useRef(new Set<number>());
+  const showEmote = useCallback((key: string, emote: Emote) => {
+    const id = ++emoteSeq.current;
+    setEmotes((list) => [...list.filter((x) => x.key !== key), { id, key, emote }]);
+    const timer = window.setTimeout(() => {
+      emoteTimers.current.delete(timer);
+      setEmotes((list) => list.filter((x) => x.id !== id));
+    }, EMOTE_MS);
+    emoteTimers.current.add(timer);
+  }, []);
+  useEffect(() => {
+    const timers = emoteTimers.current;
+    return () => timers.forEach(clearTimeout);
+  }, []);
+  useEffect(() => onEmote((cid, emote) => {
+    if (cid === useStore.getState().clientId) return; // our own press already showed locally
+    const m = memberForClient(cid, membersRef.current);
+    if (m) showEmote(memberKey(m), emote);
+  }), [showEmote]);
+  const [emoteCooling, setEmoteCooling] = useState(false);
+  const [reactOpen, setReactOpen] = useState(false);
+  const react = (emote: Emote) => {
+    if (emoteCooling) return;
+    const me = members.find((m) => isMe(m, clientId));
+    if (me) showEmote(memberKey(me), emote);
+    setEmoteCooling(true);
+    window.setTimeout(() => setEmoteCooling(false), EMOTE_COOLDOWN_MS);
+    setReactOpen(false);
+    sendEmote(roomId, emote).catch(() => { /* shown locally; the room just misses this one */ });
+  };
+
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const seenChat = useRef<Set<string> | null>(null);
   useEffect(() => {
@@ -323,9 +365,10 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
   // --- overlays follow the sprites every frame (imperative: no React render per frame) ---
   const tagRefs = useRef(new Map<string, HTMLElement>());
   const bubbleRefs = useRef(new Map<string, HTMLElement>());
-  const layoutRef = useRef<{ screen: typeof screen; viewW: number; below: boolean }>({ screen: null, viewW: 0, below: false });
+  const emoteRefs = useRef(new Map<string, HTMLElement>());
+  const layoutRef = useRef<{ screen: typeof screen; viewW: number; below: boolean; scale: number }>({ screen: null, viewW: 0, below: false, scale: 1 });
   useEffect(() => {
-    layoutRef.current = { screen, viewW: size?.cw ?? 0, below: kind === 'phone' };
+    layoutRef.current = { screen, viewW: size?.cw ?? 0, below: kind === 'phone', scale: framing?.scale ?? 1 };
   });
   useEffect(() => {
     if (!scene) return;
@@ -346,7 +389,7 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
       if (el.style.visibility !== 'hidden') el.style.visibility = 'hidden';
     };
     scene.setFrameListener((out: FrameOut) => {
-      const { screen: s, viewW, below } = layoutRef.current;
+      const { screen: s, viewW, below, scale } = layoutRef.current;
       if (!s) return;
       for (const [key, el] of tagRefs.current) {
         const a = key === 'booth-L' ? out.booths[0] : key === 'booth-R' ? out.booths[1] : out.people.get(key);
@@ -365,6 +408,17 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
         el.style.setProperty('--tail', `${p.tail}px`);
         show(el, p.left, p.top);
       }
+      for (const [key, el] of emoteRefs.current) {
+        const a = out.people.get(key) ?? (out.booths[0].key === key ? out.booths[0] : out.booths[1].key === key ? out.booths[1] : undefined);
+        if (!a || !a.visible) { hide(el); continue; }
+        const [ew, eh] = sizeOf(el);
+        // The float rises EMOTE_FLOAT native px: place the whole travel, so even
+        // the top of the float stays off the player, then start at its foot.
+        const float = EMOTE_FLOAT * scale;
+        const p = placeBubble(a.x, a.y - 22, ew, eh + float, viewW, s);
+        el.style.setProperty('--float', `${-float}px`);
+        show(el, p.left, p.top + float);
+      }
     });
     return () => scene.setFrameListener(null);
   }, [scene]);
@@ -376,6 +430,10 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
   const bubbleRef = (key: string) => (el: HTMLElement | null) => {
     if (el) bubbleRefs.current.set(key, el);
     else bubbleRefs.current.delete(key);
+  };
+  const emoteRef = (key: string) => (el: HTMLElement | null) => {
+    if (el) emoteRefs.current.set(key, el);
+    else emoteRefs.current.delete(key);
   };
 
   // --- now playing and progress ---
@@ -466,6 +524,14 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
             {bubbles.map((b) => (
               <p key={b.id} ref={bubbleRef(b.key)} className="palco-bubble">{b.text}</p>
             ))}
+            {emotes.map((e) => (
+              <span key={e.id} ref={emoteRef(e.key)} className="palco-emote" data-emote={e.emote}>
+                <span className="palco-emote__box">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- 16 px pixel art at an integer scale */}
+                  <img src={`/palco/emotes/${e.emote}.png`} alt="" width={32} height={32} />
+                </span>
+              </span>
+            ))}
           </div>
           {placed.overflow > 0 && <span className="palco__more">+{placed.overflow} na plateia</span>}
         </div>
@@ -501,6 +567,39 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
               Curtir
               {likeCount > 0 && <span className="palco__likes" aria-label={`${likeCount} curtidas`}>{likeCount}</span>}
             </button>
+            {kind === 'phone' ? (
+              <div className="palco__react">
+                <button
+                  type="button"
+                  className="palco__toggle palco__react-open"
+                  aria-expanded={reactOpen}
+                  aria-controls="palco-emotes"
+                  disabled={!nowPlaying}
+                  onClick={() => setReactOpen((o) => !o)}
+                >
+                  Reagir
+                </button>
+                {reactOpen && (
+                  <div id="palco-emotes" className="palco__emotes palco__emotes--pop" role="group" aria-label="Reações">
+                    {EMOTES.map((e) => (
+                      <button key={e} type="button" className="palco__emote" aria-label={EMOTE_LABEL[e]} title={EMOTE_LABEL[e]} aria-disabled={emoteCooling || undefined} onClick={() => react(e)}>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- 16 px pixel art at an integer scale */}
+                        <img src={`/palco/emotes/${e}.png`} alt="" width={32} height={32} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="palco__emotes" role="group" aria-label="Reações">
+                {EMOTES.map((e) => (
+                  <button key={e} type="button" className="palco__emote" aria-label={EMOTE_LABEL[e]} title={EMOTE_LABEL[e]} disabled={!nowPlaying} aria-disabled={emoteCooling || undefined} onClick={() => react(e)}>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- 16 px pixel art at an integer scale */}
+                    <img src={`/palco/emotes/${e}.png`} alt="" width={32} height={32} />
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               type="button"
               className="palco__toggle"

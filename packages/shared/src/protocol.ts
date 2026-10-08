@@ -172,3 +172,15 @@ export type ReactionWootPub = {
   type: 'reaction.woot';
   clientId: string;
 };
+
+// The emotes of the Reagir bar (reaction.emote); the server rejects any other.
+export const EMOTES = ['amei', 'fogo', 'rindo', 'palmas', 'uau', 'cantando'] as const;
+export type Emote = (typeof EMOTES)[number];
+
+// ReactionEmotePub: a member sent an emote (reaction.emote). Same contract as
+// ReactionWootPub: ephemeral, not RoomState, the connection named only.
+export type ReactionEmotePub = {
+  type: 'reaction.emote';
+  clientId: string;
+  emote: Emote;
+};

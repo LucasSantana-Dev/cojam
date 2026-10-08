@@ -25,7 +25,7 @@ async function playerBox(page: Page): Promise<Box> {
 async function overlayBoxes(page: Page): Promise<Array<{ what: string; box: Box }>> {
   return page.evaluate(() => {
     const out: Array<{ what: string; box: { x: number; y: number; width: number; height: number } }> = [];
-    const sel = '.palco-tag, .palco-bubble, .palco__more, .palco-board, [data-testid="palco-hud"], .palco__panel, .room-header';
+    const sel = '.palco-tag, .palco-bubble, .palco__more, .palco-board, .palco-emote, .palco__emotes--pop, [data-testid="palco-hud"], .palco__panel, .room-header';
     document.querySelectorAll<HTMLElement>(sel).forEach((el) => {
       const cs = getComputedStyle(el);
       if (cs.visibility === 'hidden' || cs.display === 'none') return;
@@ -152,6 +152,45 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
         expect(overlaps(t.box, b), t.what).toBe(false);
       }
       await expectPlayerClear(page);
+    });
+
+    test('emotes: the reaction bar sends one and it shows over you, never over the player', async ({ page }) => {
+      await openPalco(page);
+      const hud = page.getByTestId('palco-hud');
+      if (vp.width < 640) {
+        // Phones: one Reagir button opens the six.
+        await expect(hud.getByRole('group', { name: 'Reações' })).toHaveCount(0);
+        await hud.getByRole('button', { name: 'Reagir' }).click();
+      }
+      const bar = hud.getByRole('group', { name: 'Reações' });
+      await expect(bar).toBeVisible();
+      const labels = await bar.getByRole('button').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+      expect(labels).toEqual(['Amei', 'Fogo', 'Rindo', 'Palmas', 'Uau', 'Cantando']);
+      const player = await playerBox(page);
+      for (const b of await bar.getByRole('button').all()) {
+        const r = (await b.boundingBox())!;
+        expect(r.width).toBeGreaterThanOrEqual(44);
+        expect(r.height).toBeGreaterThanOrEqual(44);
+        expect(overlaps(r, player)).toBe(false);
+      }
+      await expectPlayerClear(page);
+      if (SHOTS && vp.width < 640) {
+        await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
+        await page.screenshot({ path: `${SHOTS}/${SHOT_PREFIX}-${vp.width}x${vp.height}-reagir.png` });
+      }
+      await bar.getByRole('button', { name: 'Fogo' }).click();
+      const emote = page.locator('.palco-emote[data-emote="fogo"]');
+      await expect(emote).toBeVisible();
+      for (const wait of [100, 300, 500]) {
+        await page.waitForTimeout(wait);
+        const e = await emote.boundingBox();
+        if (e) expect(overlaps(e, player)).toBe(false);
+        if (SHOTS && wait === 300) {
+          await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
+          await page.screenshot({ path: `${SHOTS}/${SHOT_PREFIX}-${vp.width}x${vp.height}-emote.png` });
+        }
+      }
+      await expect(emote).toHaveCount(0, { timeout: 3000 });
     });
 
     test('the view is remembered and the player is never remounted by the switch', async ({ page }) => {

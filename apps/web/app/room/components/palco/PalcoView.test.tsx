@@ -32,6 +32,8 @@ const fake = vi.hoisted(() => {
     FakeScene,
     wootListeners: [] as Array<(id: string) => void>,
     sendWoot: vi.fn(async () => {}),
+    sendEmote: vi.fn(async () => {}),
+    emoteListeners: [] as Array<(id: string, e: string) => void>,
     advance: vi.fn(async () => {}),
     pause: vi.fn(async () => {}),
     play: vi.fn(async () => {}),
@@ -42,6 +44,11 @@ vi.mock('@/lib/realtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/realtime')>()),
   sendWoot: fake.sendWoot,
   nowPlayingAdvance: fake.advance,
+  sendEmote: fake.sendEmote,
+  onEmote: (cb: (id: string, e: string) => void) => {
+    fake.emoteListeners.push(cb);
+    return () => { fake.emoteListeners.splice(fake.emoteListeners.indexOf(cb), 1); };
+  },
   transportPause: fake.pause,
   transportPlay: fake.play,
   onWoot: (cb: (id: string) => void) => {
@@ -93,6 +100,8 @@ beforeEach(() => {
   fake.FakeScene.last = null;
   fake.wootListeners.length = 0;
   fake.sendWoot.mockClear();
+  fake.sendEmote.mockClear();
+  fake.emoteListeners.length = 0;
   fake.advance.mockClear();
   fake.pause.mockClear();
   fake.play.mockClear();
@@ -191,6 +200,27 @@ describe('PalcoView', () => {
     expect([...board.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['1Faixa t2 · Artista', '2Faixa t3 · Artista']);
     act(() => useStore.getState().setState({ ...state(undefined, 2), queue: [track('t1', 'Bia', 'u-bia')] }));
     expect(screen.queryByRole('region', { name: 'A seguir' })).toBeNull();
+  });
+
+  it('sends an emote from the reaction bar and shows emotes over the sender, ours once', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await mount();
+      const bar = screen.getByRole('group', { name: 'Reações' });
+      expect([...bar.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Amei', 'Fogo', 'Rindo', 'Palmas', 'Uau', 'Cantando']);
+      fireEvent.click(screen.getByRole('button', { name: 'Fogo' }));
+      expect(fake.sendEmote).toHaveBeenCalledWith('R1', 'fogo');
+      // Cooling down: a second press within 600 ms sends nothing.
+      fireEvent.click(screen.getByRole('button', { name: 'Uau' }));
+      expect(fake.sendEmote).toHaveBeenCalledTimes(1);
+      act(() => fake.emoteListeners.forEach((l) => l('c-lucas', 'fogo'))); // our own echo
+      act(() => fake.emoteListeners.forEach((l) => l('c-dani', 'palmas')));
+      expect([...document.querySelectorAll('.palco-emote')].map((el) => el.getAttribute('data-emote'))).toEqual(['fogo', 'palmas']);
+      act(() => { vi.advanceTimersByTime(1600); });
+      expect(document.querySelectorAll('.palco-emote')).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
