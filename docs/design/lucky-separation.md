@@ -23,7 +23,7 @@ CoJam and Lucky stay separate products. None of the following may be built:
 3. **No CoJam promotion of Lucky.** CoJam's UI, copy and docs never recommend or link to Lucky.
 4. **Separate identities on every platform:**
    - **Discord:** a separate application and team. If CoJam ever adds Discord login or a Discord Activity, it registers its own application ID and never reuses Lucky's.
-   - **Google:** the Google Cloud project that holds CoJam's `YOUTUBE_API_KEY` must not belong to the Google account whose cookies Lucky's yt-dlp uses, so one ban cannot take out both. Checked 2026-10-08: the key is set in the `cojam-server` container and absent from `lucky-bot`. Which account owns CoJam's project is the owner's check (below).
+   - **Google:** the Google Cloud project that holds CoJam's `YOUTUBE_API_KEY` must not belong to the Google account whose cookies Lucky's yt-dlp uses, so one ban cannot take out both. Checked 2026-10-08: the key is set in the `cojam-server` container and absent from `lucky-bot`. Owner, the same day: "Acredito que as chaves estão na mesma conta". **This rule is currently violated.** The fix is to move Lucky's yt-dlp cookies to a dedicated throwaway Google account. CoJam's key stays where it is. The risky activity then sits on the account that is cheap to lose. Owner action, because it means creating an account and exporting cookies.
    - **Web:** no redirects or deep links between `cojam.*` and `lucky.*` hosts. Sharing the owner's parent domain is accepted.
 5. **A Discord Activity waits.** A CoJam Discord Activity (Embedded App SDK) may only be considered after:
    - the minor-safety work in [`docs/specs/259-eca-minor-safety.md`](../specs/259-eca-minor-safety.md) has shipped;
@@ -45,7 +45,7 @@ Out of scope here, and the owner's call:
 
 **What stays open:**
 
-- **Watch Together in Brazil.** No public source says whether Discord's Watch Together Activity (synced YouTube in a voice channel) still runs there. Checking takes one minute from a Brazilian account: join a voice channel, open the Activities (rocket) button, and see whether Watch Together is listed and plays.
+- **Watch Together in Brazil: available, but poor.** The owner checked from a Brazilian account on 2026-10-08: "Ele aparece mas ele tem muitos anúncios, é praticamente inutilizável e não favorece quem já TEM o youtube premium". Discord's own synced YouTube still runs there, but it is ad-heavy and ignores a viewer's YouTube Premium.
 - **Whether Activities fall under the order.** No public source covers this either. A synced YouTube Activity is a plausible "equivalent video sharing resource", and Discord has turned off more than the order required.
 
 **What it means:**
@@ -53,12 +53,11 @@ Out of scope here, and the owner's call:
 - The gap for synchronized video in a group in Brazil is wider than the CoJam premise assumed: Discord video calls and screen share are off too, not just livestream.
 - A CoJam Activity would sit inside the platform whose video features the ANPD has frozen, and would be exposed to the same order.
 - Standalone web, where CoJam carries its own ECA Digital duties (#259), is the cleaner position.
+- CoJam's edge over Watch Together comes from its design. Each person plays on their own account in their own player. A YouTube Premium viewer signed in to YouTube in the same browser keeps their Premium benefits in the embedded player, and a Spotify listener uses their own Spotify. Watch Together gives everyone the same ad-supported stream. The seeding phase tests this pitch.
 
 ## Next
 
-1. **Owner checks (2 minutes):**
-   - Watch Together in Brazil, as described above;
-   - which Google account owns the Cloud project of CoJam's `YOUTUBE_API_KEY`. It must not be the account whose cookies Lucky uses.
+1. **Owner action:** create a throwaway Google account just for Lucky, export its YouTube cookies, and swap them into Lucky's yt-dlp cookies file. Then log out of the old account in that cookie session. Until that is done, a YouTube action against Lucky's cookies can reach the account that holds CoJam's API key.
 2. **Measure:** add the `room_create`, `room_join` and `second_listener` events from [`docs/specs/245-251-client-telemetry.md`](../specs/245-251-client-telemetry.md), with a fixed `src` label (`direct|seed|discord|other`, never free text). Close the launch-readiness checklist.
 3. **Seed:** for two weeks, post `?src=seed` room links in about 10 Brazilian Discord communities. Gate: at least 10 seeded rooms reach a second listener, and at least 3 rooms are used again in week two. Below that, a Discord Activity is off the table and the pitch needs work.
 
