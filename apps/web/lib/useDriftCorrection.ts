@@ -61,18 +61,13 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     // catalogue entry is never cut short. Hold (no seek) meanwhile.
     if (activePlayer && playerMs === 0 && confirmedRef.current !== id) {
       confirmedRef.current = id;
-      const recheck = () => {
-        const s = useStore.getState().state;
-        if (s?.nowPlayingId !== id || s.transport?.state !== 'playing') return;
-        handlePastEnd(s.transport, serverNow());
-      };
+      // The next drift tick re-evaluates with whatever was learned.
       activePlayer
         .getDurationMs()
         .then((ms) => {
           if (Number.isFinite(ms) && ms > 0) playerDurationRef.current = { id, ms };
-          recheck();
         })
-        .catch(recheck);
+        .catch(() => {});
       return true;
     }
     const last = advancedRef.current;
