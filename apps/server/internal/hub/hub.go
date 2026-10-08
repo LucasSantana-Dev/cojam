@@ -2557,11 +2557,10 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certa
 // s.Queue would race with later queue mutations. Kept in one place so the
 // queue-history change only has to re-point the seed source.
 func radioSeedAfterEmptied(s *queue.RoomState) *queue.TrackRef {
-	if s.NowPlayingID != "" || !s.RadioEnabled || len(s.Queue) == 0 {
+	if s.NowPlayingID != "" || !s.RadioEnabled {
 		return nil
 	}
-	seed := s.Queue[len(s.Queue)-1]
-	return &seed
+	return s.RefillSeed()
 }
 
 // advanceAfter moves playback past afterID (idempotent) and runs the side
@@ -2606,7 +2605,7 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 		// Detect if advance actually changed state and queue is now empty
 		if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" {
 			// Queue ran dry; seed from the last played track (History[0]).
-			refillSeed = s.RefillSeed()
+			refillSeed = radioSeedAfterEmptied(s)
 		}
 
 		// A real advance to a next track (not the idempotent no-op, not

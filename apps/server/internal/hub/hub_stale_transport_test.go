@@ -78,8 +78,12 @@ func TestJoinKeepsLiveTransport(t *testing.T) {
 func TestStaleAdvanceRefillsRadio(t *testing.T) {
 	mem := store.NewMemory()
 	st := staleRoom(62 * time.Minute)
-	st.NowPlayingID = "t2" // last track: the advance empties the queue
-	st.Queue[1].DurationMs = 180_000
+	// Head-first shape: t1 already played, t2 is the last track, so the
+	// join-time advance empties the queue.
+	st.History = []queue.HistoryEntry{{ID: "t1", Title: "One", Artist: "A"}}
+	st.Queue = st.Queue[1:]
+	st.NowPlayingID = "t2"
+	st.Queue[0].DurationMs = 180_000
 	st.RadioEnabled = true
 	if err := mem.Save(context.Background(), st); err != nil {
 		t.Fatal(err)

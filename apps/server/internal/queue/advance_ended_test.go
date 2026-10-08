@@ -20,6 +20,9 @@ func TestAdvanceIfEndedStaleTransport(t *testing.T) {
 	if rs.NowPlayingID != second {
 		t.Fatalf("now playing = %q, want the next track %q", rs.NowPlayingID, second)
 	}
+	if len(rs.History) != 1 || rs.History[0].Title != "a" || len(rs.Queue) != 1 {
+		t.Fatalf("the finished track must be retired once: history=%v queue=%v", historyTitles(rs), queueTitles(rs))
+	}
 	if rs.Version != v+1 {
 		t.Fatalf("version = %d, want %d", rs.Version, v+1)
 	}
@@ -56,12 +59,18 @@ func TestAdvanceIfEndedLeavesLiveAndUnknownAlone(t *testing.T) {
 
 func TestAdvanceIfEndedLastTrackClears(t *testing.T) {
 	rs := playingAt(0, 1_000)
-	rs.NowPlayingID = rs.Queue[1].ID
+	_ = rs.AdvanceAfter(rs.NowPlayingID) // head-first: "b" is now the only queued track
+	rs.Transport = &TransportState{State: "playing", PositionMs: 0, UpdatedAtServerMs: 1_000}
+	last := rs.NowPlayingID
 	if !rs.AdvanceIfEnded(1_000 + 3_600_000) {
 		t.Fatal("last track past its end must advance")
 	}
 	if rs.NowPlayingID != "" {
 		t.Fatalf("now playing = %q, want cleared", rs.NowPlayingID)
+	}
+	// Each outgoing track is retired exactly once: a, then b.
+	if len(rs.History) != 2 || rs.History[0].ID != last || len(rs.Queue) != 0 {
+		t.Fatalf("history=%v queue=%v", historyTitles(rs), queueTitles(rs))
 	}
 }
 
