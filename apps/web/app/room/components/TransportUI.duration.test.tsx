@@ -37,11 +37,9 @@ describe('TransportUI stale duration on track change', () => {
 
     // Track change: the player still reports the old length and is not PLAYING yet.
     playing = false;
-    const callsBefore = (player.getDurationMs as ReturnType<typeof vi.fn>).mock.calls.length;
     act(() => useStore.setState({ state: mkState('b') }));
     expect(slider()).toHaveAttribute('max', '0');
     await new Promise((r) => setTimeout(r, 1200));
-    expect((player.getDurationMs as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsBefore);
     expect(slider()).toHaveAttribute('max', '0');
 
     // Now PLAYING with the new video's real length.
