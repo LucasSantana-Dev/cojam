@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, updatePlatform, isPermissionDeniedError } from '@/lib/realtime';
+import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, updatePlatform, updateCharacter, isPermissionDeniedError } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { NAME_KEY } from '@/lib/guestName';
@@ -32,6 +32,9 @@ import { ShareRoomButton } from '../components/ShareRoomButton';
 import { ReportRoomButton } from '../components/ReportRoomButton';
 import { PublicRoomToggle } from '../components/PublicRoomToggle';
 import { AvatarMenu } from '../components/AvatarMenu';
+import { CharacterPicker } from '../components/CharacterPicker';
+import { useStoredCharacter, setStoredCharacter, defaultCharacterId, memberCharacter } from '@/lib/characters';
+import { getStoredUserId } from '@/lib/auth';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
@@ -170,6 +173,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
   useEffect(() => {
     if (joined) updatePlatform(roomId, platform);
   }, [joined, roomId, platform]);
+  // The audience character: the stored choice goes out once the join settles
+  // and again on every change (never a reconnect). A person who never chose
+  // sends nothing and shows the default derived from the userId.
+  const storedCharacter = useStoredCharacter();
+  useEffect(() => {
+    if (joined && storedCharacter) updateCharacter(roomId, storedCharacter);
+  }, [joined, roomId, storedCharacter]);
+  // Pre-join only: the guest id this browser already holds seeds the default.
+  const preJoinUserId = useSyncExternalStore(noopSubscribe, () => getStoredUserId() ?? '', () => '');
   // isUnavailable() is exactly "pickSource() found nothing for this client"
   const trackUnavailable = Boolean(nowPlaying) && activeSource === null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0 && (store.state?.history?.length ?? 0) === 0;
@@ -411,6 +423,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
               <h2 className="r4-join__title">Entrar na sala</h2>
               <p className="r4-join__sub">Ouçam juntos, entre serviços</p>
 
+              <CharacterPicker
+                idPrefix="join-char"
+                value={storedCharacter ?? defaultCharacterId(preJoinUserId)}
+                onChange={setStoredCharacter}
+              />
+
               <label htmlFor="join-name" className="r4-join__label">Seu nome</label>
               <input
                 id="join-name"
@@ -646,6 +664,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const chatPanel = f.roomChat ? <ChatPanel roomId={roomId} canControl={moderate} /> : null;
 
   // Same seed as the ListenersStage avatar: userId when present, else clientId.
+  const me = store.members.find((m) => (m.clientIds ?? [m.clientId]).includes(store.clientId));
+  const myCharacter = storedCharacter ?? (me ? memberCharacter(me) : defaultCharacterId(store.clientId || store.name));
   const meSeed = store.members.find((m) => (m.clientIds ?? [m.clientId]).includes(store.clientId))?.userId ?? (store.clientId || store.name);
   const tabs = (extra: string) => (
     <div className={`video-tabs ${extra}`.trim()} role="tablist" aria-label="Painéis da sala">
@@ -716,6 +736,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
               roomId={roomId}
               name={store.name}
               seed={meSeed}
+              characterId={myCharacter}
+              onCharacterChange={setStoredCharacter}
               platform={platform}
               serviceConnected={(platform === 'spotify' && spotifyAuthorized) || (platform === 'apple' && appleAuthorized)}
               guest={accountsEnabled && !store.signedIn}

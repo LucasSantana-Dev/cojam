@@ -2,6 +2,7 @@
 // approved mockup. Never active in a production build: fixtureKind() returns
 // null when NODE_ENV is "production", so the branch is dead code there.
 //   /room/<ID>?fixture=room  joined room (Pétala, 5 listeners, 4 queued, 3 chat lines)
+//     members get characters (Modo palco); extras use the userId default
 //     add &members=1|2|5|8 and &long=1 for long names (stage review)
 //   /room/<ID>?fixture=join  pre-join screen with the room preview
 import { useStore, type Member } from './realtime';
@@ -67,6 +68,10 @@ const MEMBERS: Member[] = [
   { clientId: 'c-maju', userId: 'u-maju', name: 'Maju', platform: 'youtube' },
 ];
 
+// Characters of the fixture members (Modo palco); the extras of ?members=N keep
+// the default derived from their userId.
+const FIXTURE_CHARACTERS: Record<string, number> = { 'c-bia': 2, 'c-caio': 9, 'c-dani': 4, 'c-lucas': 1, 'c-maju': 7 };
+
 const LONG_NAMES = ['Jalam pibau', 'Luk', 'Maria Eduarda Albuquerque', 'Joao Pedro', 'Anna Beatriz Souza', 'Lucas', 'Fernanda Cristina', 'Zé'];
 const PLATFORMS: Member['platform'][] = ['spotify', 'youtube', 'apple', 'spotify', 'youtube', 'apple', 'spotify', 'youtube'];
 
@@ -122,6 +127,7 @@ export function applyRoomFixture(kind: FixtureKind): void {
   s.setConnected(true);
   s.setState(fixtureState());
   s.setMembers(fixtureMembers());
+  s.setCharacterOverrides(FIXTURE_CHARACTERS);
   s.setMyVotes({ t3: true });
   if (kind === 'room') s.setChat(chatLines());
 }

@@ -4366,6 +4366,29 @@ input:focus, textarea:focus, select:focus {
 /* dev fixture stand-in for the YouTube player (?fixture=room&yt=1) */
 .r4-fixture-yt { width: 100%; height: 100%; background: linear-gradient(135deg, oklch(0.3 0.02 292), oklch(0.12 0.01 292)); }
 
+/* Modo palco: character portraits. 64px native art, shown at 64px (1x) or 32px
+   (a clean 1:2 step). Nearest-neighbour only, never smoothed. */
+.px-portrait { display: block; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; image-rendering: pixelated; user-select: none; }
+.px-portrait--half { width: 32px; height: 32px; }
+.r4-ls.r4-ls { --ls-av: 64px; }
+.r4-ls__av:has(.px-portrait), .r4-menu__av:has(.px-portrait), .r4-me:has(.px-portrait), .room[data-room="r4"] .chat-msg__av:has(.px-portrait) { text-shadow: none; }
+.r4-menu__av:has(.px-portrait) { width: 64px; height: 64px; }
+.room[data-room="r4"] .chat-msg__av:has(.px-portrait) { width: 32px; height: 32px; }
+
+.r4-chars { margin-top: 0.4rem; }
+.r4-chars__title { margin-top: 0.9rem; font-family: var(--font-display), system-ui, sans-serif; font-weight: 700; font-size: 1.375rem; }
+.r4-chars__hint { margin: 0 0 0.6rem; font-size: 0.9375rem; color: var(--color-text-secondary); }
+.r4-chars__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; justify-items: center; }
+.r4-chars__btn { position: relative; display: grid; place-items: center; width: 100%; max-width: 6rem; aspect-ratio: 1; min-width: 44px; min-height: 44px; padding: 0; border-radius: 0.875rem; background: var(--r4-panel-2); border: 2px solid var(--r4-line); cursor: pointer; transition: border-color var(--dur-micro) var(--ease-out-quart), box-shadow var(--dur-micro) var(--ease-out-quart); }
+.r4-chars__btn:hover { border-color: oklch(1 0 0 / 0.35); }
+.r4-chars__btn[aria-checked="true"] { border-color: var(--r4-violet-text); box-shadow: 0 0 0 3px oklch(0.62 0.2 298 / 0.65), 0 0 26px -8px var(--r4-glow); }
+.r4-chars__btn:focus-visible { outline: 3px solid var(--color-text-primary); outline-offset: 3px; }
+.r4-chars__btn .px-portrait { width: 64px; height: 64px; border-radius: 0.5rem; }
+.r4-chars__check { position: absolute; right: -0.35rem; top: -0.35rem; display: grid; place-items: center; width: 1.375rem; height: 1.375rem; border-radius: 50%; background: oklch(0.62 0.2 298); color: oklch(0.99 0.004 292); border: 2px solid var(--r4-panel-2); }
+.r4-chars__fallback { font-family: var(--font-display), system-ui, sans-serif; font-weight: 700; font-size: 1.25rem; color: var(--color-text-primary); }
+.r4-menu__chars { padding: 0.25rem 0.75rem 0.75rem; }
+.r4-menu__chars .r4-chars__grid { gap: 0.35rem; }
+
 /* ---- Tocadas: played tracks, collapsed under the queue ---------------------------- */
 .fq-hist { flex: none; margin-top: 0.5rem; padding-top: 0.25rem; border-top: 1px solid var(--r4-line); }
 .fq-hist__head { margin: 0; font: inherit; }

@@ -37,10 +37,11 @@ ENV NODE_ENV=production \
 
 # Next standalone in a pnpm monorepo with outputFileTracingRoot=repo root nests
 # the server + traced deps under apps/web/. Copy the whole standalone tree, then
-# the static assets into their nested location (standalone omits them). There is
-# no public/ dir in this app, so it is not copied. Owned by the non-root `node`
-# user that ships with the official image.
+# the static assets and public/ (the Modo palco pixel art) into their nested
+# location (standalone omits both). Owned by the non-root `node` user that ships
+# with the official image.
 COPY --from=builder --chown=node:node /build/apps/web/.next/standalone ./
+COPY --from=builder --chown=node:node /build/apps/web/public ./apps/web/public
 COPY --from=builder --chown=node:node /build/apps/web/.next/static ./apps/web/.next/static
 
 USER node

@@ -18,6 +18,8 @@ import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { memberLabel } from '@/lib/nameSuffix';
 import { ServiceBadge } from '@/app/components/ServiceBadge';
 import { avatarGradient } from '@/lib/avatar';
+import { memberCharacter } from '@/lib/characters';
+import { CharacterAvatar } from './CharacterAvatar';
 import { useReportDialog } from '@/app/components/useReportDialog';
 import { beatAt } from '@/lib/beatClock';
 import { useMotion } from '@/lib/motionFlags';
@@ -251,7 +253,7 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
                     ))}
                   </svg>
                   <div className="r4-ls__av" style={{ background: avatarGradient(member.userId ?? member.clientId ?? member.name) }}>
-                    <span aria-hidden="true">{member.name.charAt(0).toUpperCase()}</span>
+                    <CharacterAvatar characterId={memberCharacter(member)} initial={member.name.charAt(0).toUpperCase()} />
                     {member.platform && (
                       <span className="r4-ls__badge">
                         <ServiceBadge source={member.platform} size="md" />
