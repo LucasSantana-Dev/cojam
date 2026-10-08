@@ -108,7 +108,7 @@ describe('RoomClient join failure states (#190)', () => {
   });
 });
 
-describe('RoomClient shared room-age clock (#206)', () => {
+describe('RoomClient now-playing card', () => {
   beforeEach(() => {
     realtimeMocks.joinError = null;
     accountMocks.session = null;
@@ -117,25 +117,7 @@ describe('RoomClient shared room-age clock (#206)', () => {
     useStore.setState({ state: null, signedIn: false, name: '' });
   });
 
-  it('shows the shared room age from server-stamped createdAt', async () => {
-    const track: TrackRef = {
-      id: 't1',
-      title: 'Song',
-      artist: 'Artista',
-      sources: { youtube: { videoId: 'abc123', confidence: 1 } },
-      addedBy: 'Bob',
-    };
-    seedRoomState({ queue: [track], nowPlayingId: 't1', createdAt: Date.now() - 300_000 });
-
-    render(<RoomClient roomId="NEON42" />);
-    await joinAs('Alice');
-
-    await waitFor(() => {
-      expect(document.querySelector('.np-timer')?.textContent).toMatch(/^na sala há 5:0\d$/);
-    });
-  });
-
-  it('stays silent for rooms created before timestamps existed', async () => {
+  it('shows who asked, with no room-age line', async () => {
     const track: TrackRef = {
       id: 't1',
       title: 'Song',
@@ -217,7 +199,7 @@ describe('RoomClient guest-identity signal (#167)', () => {
     await joinAs('Alice');
 
     await waitFor(() => {
-      expect(screen.getByText(/você é/)).toBeInTheDocument();
+      expect(screen.getByTestId('room-me')).toBeInTheDocument();
     });
     expect(document.querySelector('.guest-chip')).toBeNull();
   });
@@ -252,6 +234,8 @@ describe('RoomClient video stage layout (#258)', () => {
     expect(screen.getByTestId('video-room')).toBeInTheDocument();
     expect(screen.getByTestId('stage')).toBeInTheDocument();
     expect(screen.queryByTestId('room-main-column')).toBeNull();
+    // The legal links live in the avatar menu now (no page footer).
+    fireEvent.click(screen.getByRole('button', { name: /^Menu de/ }));
     expect(screen.getByRole('link', { name: 'Privacidade' })).toHaveAttribute('href', '/privacidade');
     expect(screen.getByRole('link', { name: 'Termos' })).toHaveAttribute('href', '/termos');
   });
@@ -274,6 +258,8 @@ describe('RoomClient video stage layout (#258)', () => {
     await joinAs('Alice');
     expect(screen.queryByTestId('video-room')).toBeNull();
     expect(screen.getByTestId('room-main-column')).toBeInTheDocument();
+    // The legal links live in the avatar menu now (no page footer).
+    fireEvent.click(screen.getByRole('button', { name: /^Menu de/ }));
     expect(screen.getByRole('link', { name: 'Privacidade' })).toHaveAttribute('href', '/privacidade');
     expect(screen.getByRole('link', { name: 'Termos' })).toHaveAttribute('href', '/termos');
   });

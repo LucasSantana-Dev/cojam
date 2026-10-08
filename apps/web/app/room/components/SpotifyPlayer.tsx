@@ -461,14 +461,11 @@ export function SpotifyPlayer({
     );
   }
 
-  const playingHere =
-    nowPlaying && (active ?? pickSource(nowPlaying, { appleAuthorized: false, spotifyAuthorized: true }) === 'spotify');
   return (
     <div className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-accent)' }} />
       <span>
         Spotify conectado{status === 'ready' ? '' : ' (iniciando...)'}
-        {playingHere && <span style={{ color: 'var(--color-accent)' }}> playing &quot;{nowPlaying!.title}&quot;</span>}
       </span>
     </div>
   );

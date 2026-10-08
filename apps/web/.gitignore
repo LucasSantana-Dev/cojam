@@ -12,3 +12,7 @@ playwright-report/
 
 # TS incremental build cache
 tsconfig.tsbuildinfo
+
+# local env backups
+.env*
+!.env.example

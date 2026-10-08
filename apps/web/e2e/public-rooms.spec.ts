@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { proxyConnectionToken } from './connectionTokenProxy';
+import { openAvatarMenu } from './helpers';
 
 // F1 public rooms: the host opts the room into the public directory
 // (PublicRoomToggle), the landing page's LiveRoomsSlot renders the live strip
@@ -38,6 +39,7 @@ test('host enables public, the landing strip lists the room, and the join link l
   // The host (first joiner) opts the room into the directory with a label.
   // The checkbox is controlled by the room-state publication, so click and
   // wait for the round-trip rather than check() (which verifies immediately).
+  await openAvatarMenu(host);
   await host.getByRole('checkbox', { name: 'Pública' }).click();
   await expect(host.getByRole('checkbox', { name: 'Pública' })).toBeChecked();
   await host.getByLabel('Nome da sala pública').fill('E2E Lounge');

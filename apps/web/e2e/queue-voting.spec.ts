@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { proxyConnectionToken } from './connectionTokenProxy';
+import { openAdd } from './helpers';
 
 // F4 queue voting: members upvote queued tracks, counts sync live, and the
 // most-voted track gets a listeners-pick marker. Reorder stays host-driven;
@@ -19,11 +20,7 @@ async function join(page: Page, roomId: string, name: string) {
 }
 
 async function addTrack(page: Page, title: string, artist: string) {
-  // Open the "Adicionar manualmente" details element using JavaScript to ensure it opens
-  await page.evaluate(() => {
-    const details = document.querySelector('details');
-    if (details) details.open = true;
-  });
+  await openAdd(page);
   await page.getByPlaceholder('Título').fill(title);
   await page.getByPlaceholder('Artista').fill(artist);
   await page.getByRole('button', { name: 'Adicionar à fila' }).click();

@@ -6,6 +6,10 @@ import { useStore, sendChat, deleteChatMessage, rpcErrorMessage, getClockOffsetM
 import { fileReport } from '@/lib/report';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { avatarGradient } from '@/lib/avatar';
+import { EmojiIcon } from '@/app/components/icons';
+
+// A short, fixed set: a full picker is out of scope, this covers a room's reactions.
+const EMOJIS = ['😂', '😍', '🔥', '👏', '🎶', '❤️', '🙌', '😎', '🥹', '👍', '🤘', '💜'];
 
 // Server caps chat text at 300 chars (F8); the input enforces the same limit
 // so the client never ships a message the server would reject.
@@ -35,6 +39,20 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   const hostUserId = useStore((s) => s.state?.hostUserId);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const emojiBtnRef = useRef<HTMLButtonElement>(null);
+  // Esc closes the emoji picker.
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setEmojiOpen(false);
+      emojiBtnRef.current?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [emojiOpen]);
   const [actionError, setActionError] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
@@ -170,9 +188,8 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
             m.kind === 'system' ? (
               // Server announcements (#205): no avatar/identity, muted so track
               // changes and join/leave read as room events, not chat.
-              <div key={m.id} data-testid="chat-system-message" className="chat-sys">
+              <div key={m.id} data-testid="chat-system-message" className="chat-sys" title={chatTime(m.sentAtServerMs)}>
                 <p className="chat-sys__text">{m.text}</p>
-                <span className="chat-sys__time">{chatTime(m.sentAtServerMs)}</span>
               </div>
             ) : (
             <div
@@ -198,7 +215,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                       anfitrião
                     </span>
                   )}
-                  <span className="chat-msg__time">{chatTime(m.sentAtServerMs)}</span>
+                  <span className="chat-msg__time" title="Enviada há">{chatTime(m.sentAtServerMs)}</span>
                 </div>
                 <p className="chat-msg__text">{m.text}</p>
               </div>
@@ -232,6 +249,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
 
       <form onSubmit={handleSend} className="chat-form">
         <input
+          ref={inputRef}
           type="text"
           placeholder={connected ? 'Conversar com a sala...' : 'Reconecte para enviar mensagens'}
           aria-label="Mensagem"
@@ -241,6 +259,38 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
           disabled={!connected}
           className="chat-form__input"
         />
+        <div className="chat-emoji">
+          <button
+            ref={emojiBtnRef}
+            type="button"
+            className="chat-form__emoji"
+            aria-label="Inserir emoji"
+            aria-haspopup="true"
+            aria-expanded={emojiOpen}
+            disabled={!connected}
+            onClick={() => setEmojiOpen((o) => !o)}
+          >
+            <EmojiIcon size={22} />
+          </button>
+          {emojiOpen && (
+            <div className="chat-emoji__pop" role="group" aria-label="Emojis">
+              {EMOJIS.map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  aria-label={`Inserir ${e}`}
+                  onClick={() => {
+                    setDraft((d) => Array.from(d + e).slice(0, MAX_CHAT_TEXT_LEN).join(''));
+                    setEmojiOpen(false);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button
           type="submit"
           disabled={!connected || !draft.trim() || sending}

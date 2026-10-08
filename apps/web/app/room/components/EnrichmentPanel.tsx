@@ -36,7 +36,7 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
   const [lfmRetry, setLfmRetry] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(open, onClose, containerRef);
+  useDialogFocus(open, onClose, containerRef, { trap: false });
 
   // Panel stays mounted while closed; reset loaded data when the open/track
   // key changes (docs-sanctioned state adjustment during render).
@@ -127,7 +127,6 @@ export function EnrichmentPanel({ roomId, track, open, onClose }: EnrichmentPane
         }}
         ref={containerRef}
         role="dialog"
-        aria-modal="true"
         aria-label={`Mais sobre ${track.title}`}
       >
         {/* Header */}

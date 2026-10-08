@@ -1,21 +1,12 @@
 'use client';
 
 import { useReportDialog } from '@/app/components/useReportDialog';
+import { FlagIcon } from '@/app/components/icons';
 
 // Report this room (#259). Visible to everyone in the room, guests included.
-// Two presentations of the same action: an icon-only button beside the title
-// on phones (the sticky header must stay one short band, and the .room-header
-// rule in globals.css gives it a 44px target), and a text button in the
-// controls row from md up. Each owns its dialog; only one is ever displayed.
-export function ReportRoomButton({
-  roomId,
-  variant,
-}: {
-  roomId: string;
-  variant: 'icon' | 'text';
-}) {
+// Lives in the avatar menu as one of its items; it owns its dialog.
+export function ReportRoomButton({ roomId }: { roomId: string }) {
   const report = useReportDialog();
-  const icon = variant === 'icon';
   return (
     <>
       <button
@@ -23,14 +14,10 @@ export function ReportRoomButton({
         onClick={() => report.open({ roomId, kind: 'room' })}
         aria-label="Denunciar sala"
         title="Denunciar sala"
-        className={
-          icon
-            ? 'report-room-btn md:hidden inline-flex items-center justify-center text-sm'
-            : 'report-room-btn hidden md:inline-flex items-center text-sm underline'
-        }
-        style={{ color: 'var(--color-text-secondary)' }}
+        className="report-room-btn r4-menu__item"
       >
-        {icon ? <span aria-hidden>⚑</span> : 'Denunciar sala'}
+        <FlagIcon size={18} />
+        <span>Denunciar sala</span>
       </button>
       {report.dialog}
     </>

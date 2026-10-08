@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { proxyConnectionToken } from './connectionTokenProxy';
+import { openAdd } from './helpers';
 
 /**
  * Guards the tablet range against regressing to single column (#288).
@@ -124,11 +125,7 @@ async function noHorizontalOverflow(page: Page) {
 }
 
 async function addTrack(page: Page, title: string, artist: string) {
-  await page.getByRole('tab', { name: 'Adicionar', exact: true }).click();
-  await page.evaluate(() => {
-    const details = document.querySelector('details');
-    if (details) details.open = true;
-  });
+  await openAdd(page);
   await page.getByPlaceholder('Título').fill(title);
   await page.getByPlaceholder('Artista').fill(artist);
   await page.getByRole('button', { name: 'Adicionar à fila' }).click();
@@ -137,42 +134,19 @@ async function addTrack(page: Page, title: string, artist: string) {
 }
 
 /**
- * The Queue panel used to be `sticky` inside a parent that also holds the
- * Activity rail, so scrolling slid it over Activity. Boxes must stay disjoint
- * at the desktop widths, at rest and after scrolling the page.
+ * Desktop shell: the room fits the viewport (no page scroll) and the queue and
+ * chat scroll inside their panels.
  */
-test.describe('queue panel vs activity rail', () => {
-  for (const width of [1440, 1024]) {
-    test(`do not overlap at ${width}px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
-      await join(page, `E2EQ${Date.now().toString(36).toUpperCase()}`);
-
-      await page.evaluate(() => {
-        document.querySelectorAll('details').forEach((d) => {
-          d.open = true;
-        });
-      });
-      await page.getByPlaceholder('Título').locator('visible=true').fill('Row One');
-      await page.getByPlaceholder('Artista').locator('visible=true').fill('Artist A');
-      await page.getByRole('button', { name: 'Adicionar à fila' }).click();
-      const queue = page.locator('[data-testid="queue-panel"]:visible');
-      const activity = page.locator('[data-testid="activity-panel"]:visible');
-      await expect(activity).toBeVisible();
-
-      for (const scrollY of [0, 300]) {
-        await page.evaluate((y) => window.scrollTo(0, y), scrollY);
-        // Rows fade in and the column settles; poll until disjoint.
-        await expect
-          .poll(async () => {
-            const q = await queue.boundingBox();
-            const a = await activity.boundingBox();
-            if (!q || !a) return 'missing';
-            return q.y + q.height <= a.y + 0.5 || a.y + a.height <= q.y + 0.5 ? 'disjoint' : 'overlap';
-          })
-          .toBe('disjoint');
-      }
+test.describe('room shell at 1440x900', () => {
+  test('fits the viewport with no page scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await join(page, `E2EQ${Date.now().toString(36).toUpperCase()}`);
+    const fits = await page.evaluate(() => {
+      const el = document.scrollingElement ?? document.documentElement;
+      return el.scrollHeight <= window.innerHeight + 1;
     });
-  }
+    expect(fits).toBe(true);
+  });
 });
 
 test.describe('room at 390x844', () => {
@@ -231,8 +205,8 @@ test.describe('room at 390x844', () => {
       await page.getByRole('tab', { name: 'Chat', exact: true }).click();
       await page.waitForTimeout(800);
       await page.screenshot({ path: `${process.env.SHOT_DIR}/after-chat.png` });
-      await page.getByRole('tab', { name: 'Tocando', exact: true }).click();
-      await page.getByRole('tab', { name: 'Tocando', exact: true }).click();
+      await page.getByRole('tab', { name: 'Agora', exact: true }).click();
+      await page.getByRole('tab', { name: 'Agora', exact: true }).click();
       await page.screenshot({ path: `${process.env.SHOT_DIR}/after-playing.png` });
     }
   });

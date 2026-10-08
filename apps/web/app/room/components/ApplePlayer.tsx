@@ -276,9 +276,6 @@ export function ApplePlayer({
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-info)' }} />
       <span>
         Apple Music conectado
-        {nowPlaying && (active ?? pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple') && (
-          <span style={{ color: 'var(--color-info)' }}> playing &quot;{nowPlaying.title}&quot;</span>
-        )}
       </span>
     </div>
   );
