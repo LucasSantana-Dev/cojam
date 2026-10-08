@@ -2,7 +2,8 @@
 
 // Local volume and mute for whichever player is active. Not a transport
 // control: not gated by canControl or the sync flag, and never sent anywhere.
-// Compact: a mute button and a short slider, at the right end of the transport row.
+// Compact: a mute button and an always-visible short slider, at the right end
+// of the transport row.
 import { setVolume, useVolume } from '@/lib/volume';
 
 export function VolumeControl() {

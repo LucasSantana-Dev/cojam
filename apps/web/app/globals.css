@@ -3441,9 +3441,9 @@ input:focus, textarea:focus, select:focus {
 .r4-vol__mute:hover { background: oklch(1 0 0 / 0.08); color: var(--color-text-primary); }
 .r4-vol__mute[aria-pressed="true"] { color: var(--r4-violet-text); }
 .r4-vol__mute:focus-visible, .r4-vol__range:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-/* the slider opens above the mute button on hover or focus */
-.r4-vol__pop { position: absolute; z-index: 30; right: 0; bottom: calc(100% + 0.15rem); width: 8.5rem; padding: 0 0.75rem; border-radius: 0.7rem; background: var(--r4-panel-2); border: 1px solid oklch(1 0 0 / 0.16); box-shadow: 0 12px 30px -10px oklch(0 0 0 / 0.8); opacity: 0; visibility: hidden; transition: opacity 120ms ease; }
-.r4-vol:hover .r4-vol__pop, .r4-vol:focus-within .r4-vol__pop { opacity: 1; visibility: visible; }
+/* the slider sits next to the mute button, always visible: a hover popover
+   closed in the gap between the button and the slider (owner report 2026-10-08) */
+.r4-vol__pop { flex: 0 1 auto; width: clamp(3.5rem, 9vw, 6.5rem); min-width: 0; }
 .r4-vol__range { display: block; width: 100%; height: 2.5rem; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; appearance: none; -webkit-appearance: none; cursor: pointer; }
 .r4-vol__range::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(to right, oklch(1 0 0 / 0.85) var(--pct, 0%), oklch(1 0 0 / 0.24) var(--pct, 0%)); }
 .r4-vol__range::-moz-range-track { height: 4px; border-radius: 999px; background: oklch(1 0 0 / 0.24); }
