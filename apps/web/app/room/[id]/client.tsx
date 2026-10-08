@@ -328,8 +328,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // the stage screen, muted and kept in step; Spotify still plays the audio.
   // Palco only, and only when the track has a YouTube match (else the cover).
   const [visualPlayer, setVisualPlayer] = useState<IPlayer | null>(null);
+  // A video that cannot embed falls back to the cover, not a black frame.
+  const [visualFailedId, setVisualFailedId] = useState<string | null>(null);
   const mutedVideo =
-    palco && !fixture && f.youtube && activeSource === 'spotify' && nowPlaying?.kind !== 'video' && Boolean(nowPlaying?.sources.youtube?.videoId);
+    palco && nowPlaying?.id !== visualFailedId && !fixture && f.youtube && activeSource === 'spotify' && nowPlaying?.kind !== 'video' && Boolean(nowPlaying?.sources.youtube?.videoId);
   useVisualSync(mutedVideo ? visualPlayer : null);
 
   // Auto-advance at track end for Spotify (YouTube also advances via its
@@ -622,7 +624,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           <div id="youtube-player" className="r4-fixture-yt" />
         ) : (
           youtubeAudio ??
-          (mutedVideo ? <YouTubePlayer roomId={roomId} fill muted onPlayerReady={setVisualPlayer} onPlayerGone={() => setVisualPlayer(null)} /> : null)
+          (mutedVideo ? <YouTubePlayer roomId={roomId} fill muted onMutedError={setVisualFailedId} onPlayerReady={setVisualPlayer} onPlayerGone={() => setVisualPlayer(null)} /> : null)
         )
       }
     />

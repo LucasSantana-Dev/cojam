@@ -201,6 +201,7 @@ export function YouTubePlayer({
   onPlayError,
   fill = false,
   muted = false,
+  onMutedError,
 }: {
   roomId: string;
   onPlayerReady?: (player: IPlayer) => void;
@@ -215,6 +216,9 @@ export function YouTubePlayer({
   // another service. It never advances the room at its end (the audio player
   // owns that) and its owner (useVisualSync) keeps it in step.
   muted?: boolean;
+  // Muted video only: the embed cannot play this video (removed, embedding
+  // off). The owner falls back to the cover. Never skips or touches the room.
+  onMutedError?: (trackId: string) => void;
 }) {
   const playerRef = useRef<YTPlayerInstance | null>(null);
   const adapterRef = useRef<YouTubePlayerAdapter | null>(null);
@@ -230,10 +234,12 @@ export function YouTubePlayer({
   const onPlayErrorRef = useRef(onPlayError);
   // Fixed per mount (a muted palco video is its own instance).
   const mutedRef = useRef(muted);
+  const onMutedErrorRef = useRef(onMutedError);
   useEffect(() => {
     onPlayerReadyRef.current = onPlayerReady;
     onPlayerGoneRef.current = onPlayerGone;
     onPlayErrorRef.current = onPlayError;
+    onMutedErrorRef.current = onMutedError;
   });
   const [apiReady, setApiReady] = useState(false);
   const nowPlayingId = useStore((s) => s.state?.nowPlayingId);
@@ -275,6 +281,11 @@ export function YouTubePlayer({
           onStateChange: (event: { data: number }) => {
             // PLAYING: playback actually started, clear any prior failure.
             if (event.data === 1) onPlayErrorRef.current?.(null);
+            // The muted visual video autoplays on every loadVideoById; in a room
+            // that is not playing, stop it as soon as it starts.
+            if (event.data === 1 && mutedRef.current && useStore.getState().state?.transport?.state !== 'playing') {
+              player.pauseVideo();
+            }
             if (event.data === 0 && nowPlayingIdRef.current && !mutedRef.current) {
               // Advance is control-gated on the server: a listener's rejection is expected.
               nowPlayingAdvance(roomId, nowPlayingIdRef.current).catch((err) => {
@@ -284,7 +295,8 @@ export function YouTubePlayer({
           },
           onError: (event: { data: number }) => {
             if (isUnplayableYtError(event.data) && nowPlayingIdRef.current) {
-              onPlayErrorRef.current?.(nowPlayingIdRef.current);
+              if (mutedRef.current) onMutedErrorRef.current?.(nowPlayingIdRef.current);
+              else onPlayErrorRef.current?.(nowPlayingIdRef.current);
             }
           },
         },
