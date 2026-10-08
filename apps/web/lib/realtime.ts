@@ -8,7 +8,47 @@ import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
 import type { ChatDeletePub, ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
-export type Member = { clientId: string; userId?: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' };
+export type Member = {
+  clientId: string;
+  // Every live connection of this person (same userId), representative first.
+  // Absent on raw per-connection entries; set by collapseMembers.
+  clientIds?: string[];
+  userId?: string;
+  name: string;
+  platform?: 'spotify' | 'apple' | 'youtube';
+};
+
+// One person = one listener. Presence is per connection (new clientId on every
+// reconnect or tab), so a person who left for the Spotify OAuth round trip is
+// briefly listed twice while the old connection lingers. Collapse entries that
+// share a userId into one member. Deterministic regardless of arrival order
+// (every viewer must compute identical labels, see nameSuffix.ts): the
+// representative is the smallest clientId, name comes from it, platform from
+// the smallest clientId that has one. Output is ordered by representative id.
+// Entries without a userId stay one per connection.
+export function collapseMembers(connections: Member[]): Member[] {
+  const groups = new Map<string, Member[]>();
+  const solo: Member[] = [];
+  for (const c of connections) {
+    if (!c.userId) {
+      solo.push({ ...c, clientIds: c.clientIds ?? [c.clientId] });
+      continue;
+    }
+    const g = groups.get(c.userId);
+    if (g) g.push(c);
+    else groups.set(c.userId, [c]);
+  }
+  const merged = [...groups.values()].map((g) => {
+    const sorted = [...g].sort((x, y) => (x.clientId < y.clientId ? -1 : x.clientId > y.clientId ? 1 : 0));
+    const rep = sorted[0];
+    return {
+      ...rep,
+      platform: sorted.find((m) => m.platform)?.platform,
+      clientIds: sorted.flatMap((m) => m.clientIds ?? [m.clientId]),
+    };
+  });
+  return [...merged, ...solo].sort((x, y) => (x.clientId < y.clientId ? -1 : x.clientId > y.clientId ? 1 : 0));
+}
 
 // Client-side chat scrollback cap (F8). The server ring holds the last 50;
 // the client keeps a bit more so a long session does not visibly drop lines.
@@ -39,6 +79,11 @@ function roomChatEnabled(): boolean {
   return resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomChat;
 }
 
+function derivePresence(connections: Member[]) {
+  const members = collapseMembers(connections);
+  return { members, nameSuffixes: computeNameSuffixes(members) };
+}
+
 export interface AppStore {
   state: RoomState | null;
   connected: boolean;
@@ -47,7 +92,9 @@ export interface AppStore {
   // This connection's server-assigned centrifuge client id (from the
   // 'connected' context); drives self-identification in presence lists.
   clientId: string;
+  // Deduped by person (collapseMembers); `connections` is the raw per-client list.
   members: Member[];
+  connections: Member[];
   // Collision suffixes for duplicate display names (#170), recomputed on every
   // membership change so PresenceBar and the fused chip cannot disagree.
   nameSuffixes: Record<string, string>;
@@ -98,6 +145,7 @@ export const useStore = create<AppStore>((set) => ({
   name: '',
   clientId: '',
   members: [],
+  connections: [],
   nameSuffixes: {},
   connectedServices: [],
   kicked: false,
@@ -113,7 +161,10 @@ export const useStore = create<AppStore>((set) => ({
   setReconnecting: (reconnecting) => set({ reconnecting }),
   setClientId: (clientId) => set({ clientId }),
   setKicked: (kicked) => set({ kicked }),
-  setMembers: (members) => set({ members, nameSuffixes: computeNameSuffixes(members) }),
+  setMembers: (connections) => set({
+    connections,
+    ...derivePresence(connections),
+  }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
   setSignedIn: (signedIn) => set({ signedIn }),
   setRebindNotice: (rebindNotice) => set({ rebindNotice }),
@@ -129,13 +180,13 @@ export const useStore = create<AppStore>((set) => ({
     return { myVotes };
   }),
   addMember: (m) => set((s) => {
-    if (s.members.some((x) => x.clientId === m.clientId)) return s;
-    const members = [...s.members, m];
-    return { members, nameSuffixes: computeNameSuffixes(members) };
+    if (s.connections.some((x) => x.clientId === m.clientId)) return s;
+    const connections = [...s.connections, m];
+    return { connections, ...derivePresence(connections) };
   }),
   removeMember: (clientId) => set((s) => {
-    const members = s.members.filter((x) => x.clientId !== clientId);
-    return { members, nameSuffixes: computeNameSuffixes(members) };
+    const connections = s.connections.filter((x) => x.clientId !== clientId);
+    return { connections, ...derivePresence(connections) };
   }),
   setChat: (messages) => set({ chat: messages }),
   // Chat has no version guard (it is not RoomState): dedupe by id so live

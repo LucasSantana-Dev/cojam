@@ -432,6 +432,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   const roomName = cleanLabel(store.state?.name);
   const listeners = store.members.length;
+  // Same seed as the ListenersStage avatar: userId when present, else clientId.
+  const meSeed = store.members.find((m) => (m.clientIds ?? [m.clientId]).includes(store.clientId))?.userId ?? (store.clientId || store.name);
   const tabs = (extra: string) => (
     <div className={`video-tabs ${extra}`.trim()} role="tablist" aria-label="Painéis da sala">
       {videoTabs.map(([id, label]) => (
@@ -511,11 +513,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <ReportRoomButton roomId={roomId} variant="text" />
             <ShareRoomButton />
             {accountsEnabled ? (
-              <Link href="/account" className="r4-me" aria-label={`Conta de ${store.name}`} title="Conta" style={{ background: avatarGradient(store.clientId || store.name) }}>
+              <Link href="/account" className="r4-me" aria-label={`Conta de ${store.name}`} title="Conta" style={{ background: avatarGradient(meSeed) }}>
                 {store.name.charAt(0).toUpperCase()}
               </Link>
             ) : (
-              <span className="r4-me" title={store.name} style={{ background: avatarGradient(store.clientId || store.name) }} aria-hidden="true">
+              <span className="r4-me" title={store.name} style={{ background: avatarGradient(meSeed) }} aria-hidden="true">
                 {store.name.charAt(0).toUpperCase()}
               </span>
             )}

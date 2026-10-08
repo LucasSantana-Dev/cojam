@@ -257,7 +257,7 @@ export function QueuePanel({ roomId, canControl, onAdd }: QueuePanelProps) {
   const memberByVoteKey = useMemo(() => {
     const map = new Map<string, Member>();
     for (const m of members) {
-      map.set(`client:${m.clientId}`, m);
+      for (const id of m.clientIds ?? [m.clientId]) map.set(`client:${id}`, m);
       if (m.userId) map.set(`user:${m.userId}`, m);
     }
     return map;
@@ -272,7 +272,7 @@ export function QueuePanel({ roomId, canControl, onAdd }: QueuePanelProps) {
   }, [members]);
 
   // Mixed-service rooms: only flag a track the viewer's own service cannot play.
-  const myPlatform = members.find((m) => m.clientId === myClientId)?.platform;
+  const myPlatform = members.find((m) => (m.clientIds ?? [m.clientId]).includes(myClientId))?.platform;
   const missingOnMyService = (track: TrackRef): string | null => {
     if (myPlatform === 'spotify' && !track.sources.spotify?.trackUri) return 'Spotify';
     if (myPlatform === 'apple' && !track.sources.apple?.songId) return 'Apple Music';
