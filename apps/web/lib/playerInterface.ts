@@ -45,4 +45,9 @@ export interface IPlayer {
    * Implementations may debounce or throttle these callbacks for efficiency.
    */
   onPositionChanged(cb: (positionMs: number) => void): void;
+
+  /**
+   * Set the local output level, 0 (silent) to 1 (full). Local only; never synced.
+   */
+  setVolume?(level: number): void;
 }

@@ -38,6 +38,8 @@ import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
 import { EnrichmentPanel } from '../components/EnrichmentPanel';
 import { NowPlayingCard } from '../components/NowPlayingCard';
+import { VolumeControl } from '../components/VolumeControl';
+import { useApplyVolume } from '@/lib/volume';
 import { ListeningServicePicker } from '../components/ListeningServicePicker';
 import { Stage } from '../components/Stage';
 import { LogoMark } from '@/app/components/Logo';
@@ -232,6 +234,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
     if (activeSource === 'spotify' && spotifyAdapterRef.current) setActivePlayer(spotifyAdapterRef.current);
     else if (activeSource === 'apple' && appleAdapterRef.current) setActivePlayer(appleAdapterRef.current);
   }, [activeSource]);
+
+  // Local volume: applied to whichever player is active, and again whenever it
+  // changes (mount, "Ouvir no" switch), so a new player never starts at its own
+  // default level. Never sent to the server.
+  useApplyVolume(activePlayer);
 
   // U4: Drift correction loop (gated by the sync feature flag). The hook keys
   // off the meaningful transport fields, not publication object identity (#177).
@@ -453,6 +460,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       hostLabel={Boolean(f.roomAuth && store.state?.hostUserId && hostControl)}
       activeSource={activeSource}
       servicePicker={servicePicker}
+      volumeControl={<VolumeControl />}
       activePlayer={activePlayer}
       roomAgeS={roomAgeS}
       radioOn={radioOn}

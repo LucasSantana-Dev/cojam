@@ -63,6 +63,8 @@ interface NowPlayingCardProps {
   activeSource: keyof typeof SOURCE_NAME | null;
   // The "Ouvir no" control; replaces the plain source label when given.
   servicePicker?: ReactNode;
+  // Local volume and mute; shown whether or not sync (transport) is on.
+  volumeControl?: ReactNode;
   activePlayer: IPlayer | null;
   roomAgeS: number | null;
   radioOn: boolean;
@@ -84,6 +86,7 @@ export function NowPlayingCard({
   hostLabel,
   activeSource,
   servicePicker,
+  volumeControl,
   activePlayer,
   roomAgeS,
   radioOn,
@@ -156,6 +159,7 @@ export function NowPlayingCard({
                   <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl} />
                 </div>
               )}
+              {volumeControl}
             </div>
           </div>
           <div className="r4-now__foot">

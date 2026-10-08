@@ -30,6 +30,7 @@ export interface SpotifySDKPlayer {
   connect(): Promise<boolean>;
   getCurrentState(): Promise<SpotifyPlaybackState | null>;
   pause?(): Promise<void>;
+  setVolume?(volume: number): Promise<void>;
   addListener(event: 'ready', cb: (data: { device_id: string }) => void): boolean;
   addListener(event: 'player_state_changed', cb: (state: SpotifyPlaybackState | null) => void): boolean;
   addListener(event: string, cb: () => void): boolean;
@@ -106,6 +107,10 @@ class SpotifyPlayerAdapter implements IPlayer {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}` },
     });
+  }
+
+  setVolume(level: number): void {
+    void this.player.setVolume?.(level)?.catch?.(() => {});
   }
 
   async pause(): Promise<void> {

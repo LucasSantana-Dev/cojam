@@ -14,6 +14,7 @@ interface YTPlayerInstance {
   getCurrentTime(): number;
   getDuration(): number;
   loadVideoById(videoId: string): void;
+  setVolume?(volume: number): void;
 }
 
 interface YTGlobal {
@@ -87,6 +88,14 @@ class YouTubePlayerAdapter implements IPlayer {
 
   async pause(): Promise<void> {
     this.ytPlayer.pauseVideo();
+  }
+
+  setVolume(level: number): void {
+    try {
+      this.ytPlayer.setVolume?.(Math.round(level * 100));
+    } catch {
+      /* player not ready yet; applied again when it announces itself */
+    }
   }
 
   async seekToMs(positionMs: number): Promise<void> {

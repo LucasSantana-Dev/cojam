@@ -17,6 +17,7 @@ interface MusicKitInstance {
   isAuthorized: boolean;
   currentPlaybackTime: number;
   currentPlaybackDuration: number;
+  volume?: number;
 }
 
 interface MusicKitGlobal {
@@ -73,6 +74,10 @@ class ApplePlayerAdapter implements IPlayer {
 
   async pause(): Promise<void> {
     await this.music.pause();
+  }
+
+  setVolume(level: number): void {
+    this.music.volume = level;
   }
 
   async seekToMs(positionMs: number): Promise<void> {
