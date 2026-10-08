@@ -30,6 +30,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `chat.delete` | `{ roomId, messageId: string }` | `{ messageId: string }` |
 | `room.kick` | `{ roomId, clientId: string }` | `{ clientId: string }` |
 | `room.set_admin` | `{ roomId, userId: string, admin: boolean }` | `RoomState` |
+| `room.claim_host` | `{ roomId }` | `RoomState` |
 | `room.transfer_host` | `{ roomId, userId: string }` | `RoomState` |
 | `room.rebind` | `{ roomId, proof: string }` | `RoomState` |
 | `member.set_platform` | `{ roomId, platform: 'spotify' \| 'apple' \| 'youtube' }` | `{ clientId: string, platform: string }` |
@@ -252,10 +253,11 @@ still enforced.
 | `queue.add` | any member |
 | `queue.vote` | any member (guests included) |
 | `chat.send`, `chat.history` | any member |
-| `chat.delete` | host only (non-host gets a code-400 UserError) |
+| `chat.delete` | host or owner (others get a code-400 UserError) |
 | `room.kick` | host or owner (others get a code-400 UserError); the owner cannot be kicked |
 | `room.set_admin` | host or owner; cannot target the owner or yourself; max 20 admins |
 | `room.transfer_host` | host or owner; target must be a member present now |
+| `room.claim_host` | owner only; takes the host role back from a present host |
 | `room.rebind` | any member; caller must be signed in (`sb:` identity) |
 | `room.join`, `sync.ping`, reads | any caller |
 | `now_playing.set` / `now_playing.advance` | host, owner or admin |
@@ -490,7 +492,7 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`, `room.claim_host`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 ### Room ids and room creation
 
@@ -517,11 +519,14 @@ Rules: state carries metadata only, never audio. Each client plays the head trac
 
 ## Host grace, owner and admins
 
-- The room creator is stored as `ownerUserId` and takes the host role back on every `room.join`.
+- The room creator is stored as `ownerUserId`. On `room.join` the owner takes the host role back only when the host is absent (including during the post-restart window); from a present host the owner takes it with `room.claim_host`, so a deliberate transfer survives a refresh.
 - A disconnected host keeps the role for 60 s (`DefaultHostGrace`); if the same user rejoins the
   promotion is cancelled. During a server shutdown no host is promoted. For the same period after a
   restart, a persisted host that has not reconnected yet cannot be displaced by a first joiner.
 - Admins can run every queue and transport RPC, but not kick, delete chat, set_public, set_admin or
   transfer_host.
-- With `FEATURE_*` matchers wired, a now-playing track with no source after every lookup missed is
-  skipped by the server (`auto_skip_sourceless`). A lookup that errored never triggers a skip.
+- The server skips a now-playing track that has no source once a lookup ran in this process and cleanly
+  missed, or when no matcher is configured at all (`auto_skip_sourceless`). A lookup that errored never
+  triggers a skip, and a track loaded from storage is looked up once before it can be judged. The skip
+  never triggers a radio refill, a refill seeds only from the last playable track, and refills are capped
+  at one per room per 30 s.

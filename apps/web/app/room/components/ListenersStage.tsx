@@ -12,9 +12,8 @@
 // member can report another member, the host can remove one. The server
 // re-checks both.
 import { useEffect, useRef, useState } from 'react';
-import { useStore, kickMember, setRoomAdmin, transferHost, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
+import { useStore, useMyUserId, claimHost, kickMember, setRoomAdmin, transferHost, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
 import { useDialogFocus } from './useDialogFocus';
-import { getStoredUserId } from '@/lib/auth';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { memberLabel } from '@/lib/nameSuffix';
 import { platformIcon } from '@/app/components/icons';
@@ -98,7 +97,7 @@ function TransferDialog({ target, onCancel, onConfirm, busy }: { target: RoleMem
 
 export function ListenersStage({ roomId, canModerate = false, running, hostUserId, admins, ownerUserId }: ListenersStageProps) {
   const canControl = canModerate;
-  const myUserId = getStoredUserId();
+  const myUserId = useMyUserId();
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [transferTo, setTransferTo] = useState<RoleMember | null>(null);
   const [busy, setBusy] = useState(false);
@@ -197,6 +196,16 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
     <section className="r4-card r4-listeners" aria-labelledby="r4-listeners-h">
       <header className="r4-listeners__head">
         <h2 id="r4-listeners-h" className="r4-h2">Ouvindo agora</h2>
+        {Boolean(myUserId && ownerUserId === myUserId && hostUserId && hostUserId !== myUserId) && (
+          <button
+            type="button"
+            className="r4-ghost r4-ls__claim"
+            disabled={busy}
+            onClick={() => runRole(() => claimHost(roomId))}
+          >
+            Retomar anfitrião
+          </button>
+        )}
         <span className="r4-listeners__count">
           {members.length === 1 ? '1 ouvindo' : `${members.length} ouvindo`}
         </span>

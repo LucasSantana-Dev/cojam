@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ListenersStage } from './ListenersStage';
-import { useStore, setRoomAdmin, transferHost, type Member } from '@/lib/realtime';
+import { useStore, setRoomAdmin, transferHost, claimHost, type Member } from '@/lib/realtime';
 
 vi.mock('@/lib/realtime', async (orig) => ({
   ...(await orig<typeof import('@/lib/realtime')>()),
   setRoomAdmin: vi.fn().mockResolvedValue(undefined),
   transferHost: vi.fn().mockResolvedValue(undefined),
+  claimHost: vi.fn().mockResolvedValue(undefined),
 }));
 
 const m = (clientId: string, name: string, platform?: Member['platform']): Member => ({
@@ -155,6 +156,17 @@ describe('ListenersStage', () => {
         { ...m('c', 'Cris'), userId: 'uc' },
       ]);
     };
+
+    it('uses the presence identity, not the stored anonymous id, for the owner button', async () => {
+      withUsers(); // I am connection a, server identity ua
+      const { rerender } = render(<ListenersStage roomId="r" running={false} ownerUserId="ua" hostUserId="ub" />);
+      fireEvent.click(screen.getByRole('button', { name: 'Retomar anfitrião' }));
+      await waitFor(() => expect(claimHost).toHaveBeenCalledWith('r'));
+      rerender(<ListenersStage roomId="r" running={false} ownerUserId="ua" hostUserId="ua" />);
+      expect(screen.queryByRole('button', { name: 'Retomar anfitrião' })).not.toBeInTheDocument();
+      rerender(<ListenersStage roomId="r" running={false} ownerUserId="ub" hostUserId="uc" />);
+      expect(screen.queryByRole('button', { name: 'Retomar anfitrião' })).not.toBeInTheDocument();
+    });
 
     it('shows an admin chip next to admins only', () => {
       withUsers();

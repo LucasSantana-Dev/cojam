@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, joinRoom, nowPlayingAdvance, getClockOffsetMs, updatePlatform } from '@/lib/realtime';
+import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, getClockOffsetMs, updatePlatform } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
@@ -19,7 +19,6 @@ import { useListeningService, setListeningService } from '@/lib/listeningService
 import { beginAuth } from '@/lib/spotifyAuth';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { canControl } from '@/lib/roomRole';
-import { getStoredUserId } from '@/lib/auth';
 import { getAccountSession, getConnectedServices, getDisplayName, markServiceConnected } from '@/lib/account';
 import { supabaseEnabled } from '@/lib/supabase';
 import { YouTubePlayer } from '../components/YouTubePlayer';
@@ -188,9 +187,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
     : null;
 
   // U5: compute room control permission for this user
+  const myUserId = useMyUserId();
   const hostControl = canControl({
     roomAuth: f.roomAuth,
-    myUserId: getStoredUserId(),
+    myUserId,
     hostUserId: store.state?.hostUserId,
     ownerUserId: store.state?.ownerUserId,
     admins: store.state?.admins,
@@ -198,7 +198,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // Moderation and role management are host or owner only (not admins).
   const moderate = canControl({
     roomAuth: f.roomAuth,
-    myUserId: getStoredUserId(),
+    myUserId,
     hostUserId: store.state?.hostUserId,
     ownerUserId: store.state?.ownerUserId,
   });
@@ -480,7 +480,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       isPlaying={isPlaying}
       transportState={transportState}
       hostControl={hostControl}
-      hostLabel={Boolean(f.roomAuth && store.state?.hostUserId && store.state.hostUserId === getStoredUserId())}
+      hostLabel={Boolean(f.roomAuth && store.state?.hostUserId && store.state.hostUserId === myUserId)}
       onNext={nowPlaying ? () => nowPlayingAdvance(roomId, nowPlaying.id).catch(() => {}) : undefined}
       activeSource={activeSource}
       servicePicker={servicePicker}

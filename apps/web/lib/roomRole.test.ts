@@ -9,10 +9,11 @@ describe('roomRole', () => {
       expect(canControl({ roomAuth: false, myUserId: 'user1' })).toBe(true);
     });
 
-    it('returns true when roomAuth is on but hostUserId is empty (no host assigned yet)', () => {
-      expect(canControl({ roomAuth: true, myUserId: 'user1', hostUserId: undefined })).toBe(true);
-      expect(canControl({ roomAuth: true, myUserId: 'user1', hostUserId: '' })).toBe(true);
-      expect(canControl({ roomAuth: true, myUserId: null, hostUserId: undefined })).toBe(true);
+    it('returns false when roomAuth is on and no host is assigned, unless owner or admin', () => {
+      expect(canControl({ roomAuth: true, myUserId: 'user1', hostUserId: undefined })).toBe(false);
+      expect(canControl({ roomAuth: true, myUserId: null, hostUserId: '' })).toBe(false);
+      expect(canControl({ roomAuth: true, myUserId: 'o', ownerUserId: 'o' })).toBe(true);
+      expect(canControl({ roomAuth: true, myUserId: 'a', admins: ['a'] })).toBe(true);
     });
 
     it('returns true when roomAuth is on and I am the host', () => {

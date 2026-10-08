@@ -13,7 +13,7 @@ export interface CanControlOpts {
 
 // Derive whether the current user can control host-only room actions.
 // - roomAuth off: everyone controls (v0 behavior)
-// - roomAuth on, no host assigned: everyone controls (don't lock room until host set)
+// - roomAuth on, no host assigned: only an owner or admin controls (server fails closed)
 // - roomAuth on, I am the host, the owner or an admin: I control
 // - roomAuth on, a host is assigned and I hold none of those roles: I cannot control (listener)
 export function canControl(opts: CanControlOpts): boolean {
@@ -22,8 +22,11 @@ export function canControl(opts: CanControlOpts): boolean {
   // Feature off: everyone can control
   if (!roomAuth) return true;
 
-  // No host assigned yet: room is unlocked
-  if (!hostUserId) return true;
+  // No host assigned: the server denies everyone except an owner or admin
+  // while host assignment is on, so do not offer controls that would fail.
+  if (!hostUserId) {
+    return Boolean(myUserId && (myUserId === ownerUserId || admins?.includes(myUserId)));
+  }
 
   // Host, owner or admin controls (mirror of the server's CanControl)
   if (myUserId && (myUserId === hostUserId || myUserId === ownerUserId || admins?.includes(myUserId))) return true;

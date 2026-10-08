@@ -856,6 +856,19 @@ export async function setRoomAdmin(roomId: string, userId: string, admin: boolea
   await centrifuge.rpc('room.set_admin', { roomId, userId, admin });
 }
 
+// The owner takes the host role back on purpose (room.claim_host). Owner only.
+export async function claimHost(roomId: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('room.claim_host', { roomId });
+}
+
+// The userId the server sees for this connection (the account `sb:` id after
+// a sign-in, the anonymous sub before), read from our own presence entry. The
+// locally stored anonymous id goes stale after a rebind, so roles never use it.
+export function useMyUserId(): string | null {
+  return useStore((s) => s.members.find((m) => (m.clientIds ?? [m.clientId]).includes(s.clientId))?.userId ?? null);
+}
+
 export async function transferHost(roomId: string, userId: string) {
   if (!centrifuge) throw new Error('Not connected');
   await centrifuge.rpc('room.transfer_host', { roomId, userId });
