@@ -59,6 +59,9 @@ export interface SceneImages {
   back: Record<number, HTMLImageElement>;
   upFront: Record<number, HTMLImageElement>;
   upBack: Record<number, HTMLImageElement>;
+  // Dance frames: 28x60 on the same canvas as the arms-up frames.
+  danceFront: Record<number, HTMLImageElement>;
+  danceBack: Record<number, HTMLImageElement>;
 }
 
 const pad = (id: number) => String(id).padStart(2, '0');
@@ -82,7 +85,7 @@ export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
   ]);
   if (tiles.some((t) => !t)) throw new Error('palco: crowd art failed to load');
   const crowd = Object.fromEntries(CROWD_LAYERS.map((l, i) => [l, [tiles[i * 2]!, tiles[i * 2 + 1]!]])) as SceneImages['crowd'];
-  const out: SceneImages = { stage, sky, desk, crowd, front: {}, back: {}, upFront: {}, upBack: {} };
+  const out: SceneImages = { stage, sky, desk, crowd, front: {}, back: {}, upFront: {}, upBack: {}, danceFront: {}, danceBack: {} };
   const ids = Array.from({ length: CHARACTER_COUNT }, (_, i) => i + 1);
   await Promise.all(
     ids.flatMap((id) => [
@@ -90,6 +93,8 @@ export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
       load(`/palco/characters/${pad(id)}-back.png`).then((i) => { if (i) out.back[id] = i; }),
       load(`/palco/characters/${pad(id)}-up-front.png`).then((i) => { if (i) out.upFront[id] = i; }),
       load(`/palco/characters/${pad(id)}-up-back.png`).then((i) => { if (i) out.upBack[id] = i; }),
+      load(`/palco/characters/${pad(id)}-dance-front.png`).then((i) => { if (i) out.danceFront[id] = i; }),
+      load(`/palco/characters/${pad(id)}-dance-back.png`).then((i) => { if (i) out.danceBack[id] = i; }),
     ]),
   );
   return out;
@@ -165,6 +170,7 @@ interface CharTex {
   // Upper body (rows 0..SPLIT) and legs of each facing, plus the arms-up pairs.
   halves: Record<Facing, [Texture, Texture]>;
   arms: Record<Facing, [Texture, Texture] | null>;
+  dance: Record<Facing, [Texture, Texture] | null>;
   front: Texture | null;
 }
 
@@ -176,8 +182,12 @@ interface Person {
   slot: Slot;
   legs: Sized;
   up: Sized;
+  // The 28x60 planes: arms up (woot) or the dance frame, by texture swap.
   legsA: Sized | null;
   upA: Sized | null;
+  arms: [Texture, Texture] | null;
+  dance: [Texture, Texture] | null;
+  pose: 'idle' | 'dance' | 'arms';
   here: number;
   hereFrom: number;
   side: number;
@@ -462,6 +472,7 @@ export class PalcoScene {
         const tex = this.chars(e.characterId);
         const z = (dim ? 8 : 9) + i * 0.01;
         const tint = dim ? 0x6a6194 : 0xffffff;
+        const wide = tex.arms[FACING] ?? tex.dance[FACING];
         const fresh: Person = {
           key: e.key,
           characterId: e.characterId,
@@ -469,8 +480,11 @@ export class PalcoScene {
           // Faces the camera (plug.dj style) so you can see who is who.
           legs: this.plane(tex.halves[FACING][1], SPRITE_W, SPRITE_H - SPLIT, z, { color: tint }),
           up: this.plane(tex.halves[FACING][0], SPRITE_W, SPLIT, z + 0.005, { color: tint }),
-          legsA: tex.arms[FACING] ? this.plane(tex.arms[FACING]![1], UP_W, SPRITE_H - SPLIT, z, { color: tint }) : null,
-          upA: tex.arms[FACING] ? this.plane(tex.arms[FACING]![0], UP_W, SPLIT + UP_EXTRA, z + 0.005, { color: tint }) : null,
+          legsA: wide ? this.plane(wide[1], UP_W, SPRITE_H - SPLIT, z, { color: tint }) : null,
+          upA: wide ? this.plane(wide[0], UP_W, SPLIT + UP_EXTRA, z + 0.005, { color: tint }) : null,
+          arms: tex.arms[FACING],
+          dance: tex.dance[FACING],
+          pose: 'idle',
           here: this.motion ? 0 : 1,
           hereFrom: now,
           side: e.slot.x + SPRITE_W / 2 < this.world.W / 2 ? -1 : 1,
@@ -560,7 +574,7 @@ export class PalcoScene {
     this.confGeo.dispose();
     textures.forEach((t) => t.dispose());
     for (const t of this.charTex.values()) {
-      [...t.halves.front, ...t.halves.back, ...(t.arms.front ?? []), ...(t.arms.back ?? []), t.front].forEach((x) => x?.dispose());
+      [...t.halves.front, ...t.halves.back, ...(t.arms.front ?? []), ...(t.arms.back ?? []), ...(t.dance.front ?? []), ...(t.dance.back ?? []), t.front].forEach((x) => x?.dispose());
     }
     this.rows.forEach((r) => { textures.add(r.texA); textures.add(r.texB); });
     this.renderer.dispose();
@@ -637,6 +651,7 @@ export class PalcoScene {
     const t: CharTex = {
       halves: { front: halves(front ?? back), back: halves(back) },
       arms: { front: arms(this.imgs.upFront[id]), back: arms(this.imgs.upBack[id]) },
+      dance: { front: arms(this.imgs.danceFront[id]), back: arms(this.imgs.danceBack[id]) },
       front: front ? texFrom(crop(front, 0, 0, SPRITE_W, SPRITE_H)) : null,
     };
     this.charTex.set(id, t);
@@ -793,28 +808,41 @@ export class PalcoScene {
       if (p.here < 1) p.here = motion ? clamp01((t - p.hereFrom) / 1.2) : 1;
       const k = p.here;
       const off = Math.round((1 - k) * (p.side < 0 ? -(p.slot.x + 30) : this.world.W - p.slot.x + 30));
-      let bob = 0, sway = 0, hop = 0;
+      let sway = 0, hop = 0, dance = false;
       const since = t - p.wootAt;
       const wooting = since >= 0 && since < 0.5;
       const armsUp = since >= 0 && since < 0.5 + 60 / 100 + (motion ? 0 : 0.6);
       if (k < 1) hop = Math.floor(off / 3) % 2 ? -1 : 0;
-      else if (motion && !wooting) {
+      else if (motion && !armsUp) {
+        // Groove: the dance frame alternates with idle, half a beat each, per-person phase.
         const fb = (beat + p.phase) % 1;
-        if (p.style === 0) bob = fb < 0.5 ? 1 : 0;
-        else if (p.style === 1) { hop = fb < 0.22 ? -1 : 0; bob = fb > 0.5 && fb < 0.7 ? 1 : 0; }
-        else { bob = fb < 0.5 ? 1 : 0; sway = Math.floor((beat + p.phase) / 2) % 2; }
+        dance = fb < 0.5;
+        if (p.style === 1) hop = fb > 0.5 && fb < 0.62 ? -1 : 0;
+        else if (p.style === 2) sway = Math.floor((beat + p.phase) / 2) % 2;
       }
       const jump = motion && wooting ? -Math.round(p.wootH * Math.sin((since / 0.5) * Math.PI)) : 0;
       const x = p.slot.x + off + sway, jy = jump + hop;
-      const up = armsUp && k >= 1 && p.upA !== null && p.legsA !== null;
-      p.up.visible = p.legs.visible = !up;
-      if (p.upA) p.upA.visible = up;
-      if (p.legsA) p.legsA.visible = up;
+      const up = armsUp && k >= 1 && p.arms !== null;
+      const pose = up ? 'arms' : dance && p.dance ? 'dance' : 'idle';
+      if (pose !== p.pose && p.upA && p.legsA) {
+        const pair = pose === 'arms' ? p.arms : pose === 'dance' ? p.dance : null;
+        if (pair) {
+          (p.upA.material as MeshBasicMaterial).map = pair[0];
+          (p.legsA.material as MeshBasicMaterial).map = pair[1];
+          p.upA.material.needsUpdate = true;
+          p.legsA.material.needsUpdate = true;
+        }
+      }
+      p.pose = pose;
+      const wide = pose !== 'idle';
+      p.up.visible = p.legs.visible = !wide;
+      if (p.upA) p.upA.visible = wide;
+      if (p.legsA) p.legsA.visible = wide;
       this.put(p.legs, x, p.slot.feet - (SPRITE_H - SPLIT) + jy);
-      this.put(p.up, x, p.slot.feet - SPRITE_H + jy + bob);
+      this.put(p.up, x, p.slot.feet - SPRITE_H + jy);
       if (p.legsA) this.put(p.legsA, x - UP_SIDE, p.slot.feet - (SPRITE_H - SPLIT) + jy);
-      if (p.upA) this.put(p.upA, x - UP_SIDE, p.slot.feet - SPRITE_H - UP_EXTRA + jy + bob);
-      const [ax, ay] = this.css(x + SPRITE_W / 2, p.slot.feet - SPRITE_H + jy + bob - (up ? UP_TAG : 0));
+      if (p.upA) this.put(p.upA, x - UP_SIDE, p.slot.feet - SPRITE_H - UP_EXTRA + jy);
+      const [ax, ay] = this.css(x + SPRITE_W / 2, p.slot.feet - SPRITE_H + jy - (up ? UP_TAG : 0));
       out.people.set(p.key, { x: ax, y: ay, visible: k >= 1 && ay > 0 && ay < f.height });
     }
 
