@@ -36,6 +36,10 @@ import { serverNow } from '@/lib/playbackSync';
 import { CHARACTER_COUNT } from '@/lib/characters';
 
 const SKY_H = 540;
+// Dance moves after the round 10 dance, in cycle order, and how many beats each
+// lasts before the next one starts.
+const EXTRA_MOVES = ['ombrinho', 'passinho'] as const;
+const MOVE_BEATS = 8;
 // Arms-up frames: 28x60, 4 px margin each side and 12 rows of headroom over
 // the 20x48 sprite, bottom aligned. Drawn per facing, following the outfit.
 const UP_W = 28;
@@ -62,6 +66,9 @@ export interface SceneImages {
   // Dance frames: 28x60 on the same canvas as the arms-up frames.
   danceFront: Record<number, HTMLImageElement>;
   danceBack: Record<number, HTMLImageElement>;
+  // Brazilian dance loops (ombrinho, passinho): 4 frames of 28x60 each, front
+  // only. A move missing any frame is left out.
+  moves: Record<number, HTMLImageElement[][]>;
 }
 
 const pad = (id: number) => String(id).padStart(2, '0');
@@ -85,7 +92,7 @@ export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
   ]);
   if (tiles.some((t) => !t)) throw new Error('palco: crowd art failed to load');
   const crowd = Object.fromEntries(CROWD_LAYERS.map((l, i) => [l, [tiles[i * 2]!, tiles[i * 2 + 1]!]])) as SceneImages['crowd'];
-  const out: SceneImages = { stage, sky, desk, crowd, front: {}, back: {}, upFront: {}, upBack: {}, danceFront: {}, danceBack: {} };
+  const out: SceneImages = { stage, sky, desk, crowd, front: {}, back: {}, upFront: {}, upBack: {}, danceFront: {}, danceBack: {}, moves: {} };
   const ids = Array.from({ length: CHARACTER_COUNT }, (_, i) => i + 1);
   await Promise.all(
     ids.flatMap((id) => [
@@ -97,6 +104,16 @@ export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
       load(`/palco/characters/${pad(id)}-dance-back.png`).then((i) => { if (i) out.danceBack[id] = i; }),
     ]),
   );
+  await Promise.all(
+    ids.flatMap((id) =>
+      EXTRA_MOVES.map(async (name) => {
+        const frames = await Promise.all([1, 2, 3, 4].map((n) => load(`/palco/characters/${pad(id)}-${name}-${n}.png`)));
+        if (frames.every((f): f is HTMLImageElement => f !== null)) (out.moves[id] ??= []).push(frames);
+      }),
+    ),
+  );
+  // Promise order is not load order: keep the move order stable (ombrinho, passinho).
+  for (const id of ids) out.moves[id]?.sort((a, b) => a[0].src.localeCompare(b[0].src));
   return out;
 }
 
@@ -179,6 +196,11 @@ const BEAM_LOOK: Array<[[number, number, number], number, number]> = [
   [[0.55, 0.38, 1.0], 0.7, 0], [[0.85, 0.8, 1.0], 0.9, 1.7], [[0.85, 0.8, 1.0], 0.9, 3.1],
   [[0.55, 0.38, 1.0], 0.7, 4.4], [[0.95, 0.45, 0.85], 1.4, 0.4], [[0.95, 0.45, 0.85], 1.4, 2.2],
 ];
+const hashKey = (k: string) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < k.length; i++) h = Math.imul(h ^ k.charCodeAt(i), 0x01000193) >>> 0;
+  return h;
+};
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 interface CharTex {
@@ -186,6 +208,9 @@ interface CharTex {
   halves: Record<Facing, [Texture, Texture]>;
   arms: Record<Facing, [Texture, Texture] | null>;
   dance: Record<Facing, [Texture, Texture] | null>;
+  // Dance loops, front facing: move 0 is the round 10 dance (its frame, then
+  // idle), the rest are 4 frame loops. A null entry is the idle pose.
+  moves: Array<Array<[Texture, Texture] | null>>;
   front: Texture | null;
 }
 
@@ -201,7 +226,11 @@ interface Person {
   legsA: Sized | null;
   upA: Sized | null;
   arms: [Texture, Texture] | null;
-  dance: [Texture, Texture] | null;
+  moves: Array<Array<[Texture, Texture] | null>>;
+  // Which move the person starts on, so the crowd is not in lockstep.
+  move0: number;
+  // The pose last painted: -1 idle, -2 arms, else move * 4 + frame.
+  cur: number;
   pose: 'idle' | 'dance' | 'arms';
   here: number;
   hereFrom: number;
@@ -490,7 +519,7 @@ export class PalcoScene {
         const tex = this.chars(e.characterId);
         const z = (dim ? 8 : 9) + i * 0.01;
         const tint = dim ? 0x6a6194 : 0xffffff;
-        const wide = tex.arms[FACING] ?? tex.dance[FACING];
+        const wide = tex.arms[FACING] ?? tex.dance[FACING] ?? tex.moves[0]?.[0];
         const fresh: Person = {
           key: e.key,
           characterId: e.characterId,
@@ -501,7 +530,9 @@ export class PalcoScene {
           legsA: wide ? this.plane(wide[1], UP_W, SPRITE_H - SPLIT, z, { color: tint }) : null,
           upA: wide ? this.plane(wide[0], UP_W, SPLIT + UP_EXTRA, z + 0.005, { color: tint }) : null,
           arms: tex.arms[FACING],
-          dance: tex.dance[FACING],
+          moves: tex.moves,
+          move0: hashKey(e.key) % 3,
+          cur: -1,
           pose: 'idle',
           here: this.motion ? 0 : 1,
           hereFrom: now,
@@ -594,7 +625,7 @@ export class PalcoScene {
     this.confGeo.dispose();
     textures.forEach((t) => t.dispose());
     for (const t of this.charTex.values()) {
-      [...t.halves.front, ...t.halves.back, ...(t.arms.front ?? []), ...(t.arms.back ?? []), ...(t.dance.front ?? []), ...(t.dance.back ?? []), t.front].forEach((x) => x?.dispose());
+      [...t.halves.front, ...t.halves.back, ...(t.arms.front ?? []), ...(t.arms.back ?? []), ...(t.dance.front ?? []), ...(t.dance.back ?? []), ...t.moves.flat().flatMap((f) => f ?? []), t.front].forEach((x) => x?.dispose());
     }
     this.renderer.dispose();
     // Free the GPU context now: a world switch or a remount makes a new canvas.
@@ -671,6 +702,10 @@ export class PalcoScene {
       halves: { front: halves(front ?? back), back: halves(back) },
       arms: { front: arms(this.imgs.upFront[id]), back: arms(this.imgs.upBack[id]) },
       dance: { front: arms(this.imgs.danceFront[id]), back: arms(this.imgs.danceBack[id]) },
+      moves: [
+        [arms(this.imgs.danceFront[id]), null],
+        ...(this.imgs.moves[id] ?? []).map((frames) => frames.map((f) => arms(f))),
+      ].filter((m) => m[0] !== null),
       front: front ? texFrom(crop(front, 0, 0, SPRITE_W, SPRITE_H)) : null,
     };
     this.charTex.set(id, t);
@@ -830,24 +865,30 @@ export class PalcoScene {
       if (p.here < 1) p.here = motion ? clamp01((t - p.hereFrom) / 1.2) : 1;
       const k = p.here;
       const off = Math.round((1 - k) * (p.side < 0 ? -(p.slot.x + 30) : this.world.W - p.slot.x + 30));
-      let sway = 0, hop = 0, dance = false;
+      let sway = 0, hop = 0, frame = -1;
       const since = t - p.wootAt;
       const wooting = since >= 0 && since < 0.5;
       const armsUp = since >= 0 && since < 0.5 + 60 / 100 + (motion ? 0 : 0.6);
       if (k < 1) hop = Math.floor(off / 3) % 2 ? -1 : 0;
       else if (motion && !armsUp) {
-        // Groove: the dance frame alternates with idle, half a beat each, per-person phase.
+        // Groove: one frame per half beat on a per-person phase, and every
+        // MOVE_BEATS beats the next move (round 10 dance, ombrinho, passinho).
         const fb = (beat + p.phase) % 1;
-        dance = fb < 0.5;
+        const n = p.moves.length;
+        if (n > 0) {
+          const mv = (p.move0 + Math.floor((beat + p.phase) / MOVE_BEATS)) % n;
+          frame = mv * 4 + (Math.floor((beat + p.phase) * 2) % p.moves[mv].length);
+        }
         if (p.style === 1) hop = fb > 0.5 && fb < 0.62 ? -1 : 0;
         else if (p.style === 2) sway = Math.floor((beat + p.phase) / 2) % 2;
       }
       const jump = motion && wooting ? -Math.round(p.wootH * Math.sin((since / 0.5) * Math.PI)) : 0;
       const x = p.slot.x + off + sway, jy = jump + hop;
       const up = armsUp && k >= 1 && p.arms !== null;
-      const pose = up ? 'arms' : dance && p.dance ? 'dance' : 'idle';
-      if (pose !== p.pose && p.upA && p.legsA) {
-        const pair = pose === 'arms' ? p.arms : pose === 'dance' ? p.dance : null;
+      const pair = up ? p.arms : frame >= 0 ? p.moves[frame >> 2][frame & 3] ?? null : null;
+      const cur = up ? -2 : pair ? frame : -1;
+      const pose = up ? 'arms' : pair ? 'dance' : 'idle';
+      if (cur !== p.cur && p.upA && p.legsA) {
         if (pair) {
           (p.upA.material as MeshBasicMaterial).map = pair[0];
           (p.legsA.material as MeshBasicMaterial).map = pair[1];
@@ -856,6 +897,7 @@ export class PalcoScene {
         }
       }
       p.pose = pose;
+      p.cur = cur;
       const wide = pose !== 'idle';
       p.up.visible = p.legs.visible = !wide;
       if (p.upA) p.upA.visible = wide;
