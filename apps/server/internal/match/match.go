@@ -107,6 +107,10 @@ type YouTubeCandidate struct {
 	// Live marks a live stream or premiere (videos.list reports P0D): never a
 	// song to sync against, distinct from a failed lookup (Live false, 0 ms).
 	Live bool `json:"live,omitempty"`
+	// Blocked marks a video that cannot play in an embedded player:
+	// status.embeddable is false or the video is private. Unknown (failed
+	// lookup, field absent) is not blocked. Never picked.
+	Blocked bool `json:"blocked,omitempty"`
 }
 
 // YouTubeSearchResult wraps YouTube API response
@@ -190,6 +194,10 @@ type youtubeVideosResult struct {
 		ContentDetails struct {
 			Duration string `json:"duration"`
 		} `json:"contentDetails"`
+		Status struct {
+			Embeddable    *bool  `json:"embeddable"`
+			PrivacyStatus string `json:"privacyStatus"`
+		} `json:"status"`
 	} `json:"items"`
 }
 
@@ -206,7 +214,7 @@ func fillDurations(ctx context.Context, apiKey string, candidates []YouTubeCandi
 		ids = append(ids, c.VideoID)
 	}
 	q := url.Values{}
-	q.Set("part", "contentDetails")
+	q.Set("part", "contentDetails,status")
 	q.Set("id", strings.Join(ids, ","))
 	q.Set("key", apiKey)
 	req, err := http.NewRequestWithContext(ctx, "GET", youtubeVideosURL+"?"+q.Encode(), nil)
@@ -220,17 +228,19 @@ func fillDurations(ctx context.Context, apiKey string, candidates []YouTubeCandi
 		return
 	}
 	type dur struct {
-		ms   int64
-		live bool
+		ms      int64
+		live    bool
+		blocked bool
 	}
 	byID := make(map[string]dur, len(res.Items))
 	for _, it := range res.Items {
 		ms := parseISO8601DurationMs(it.ContentDetails.Duration)
-		byID[it.ID] = dur{ms: ms, live: it.ContentDetails.Duration != "" && ms == 0}
+		blocked := (it.Status.Embeddable != nil && !*it.Status.Embeddable) || it.Status.PrivacyStatus == "private"
+		byID[it.ID] = dur{ms: ms, live: it.ContentDetails.Duration != "" && ms == 0, blocked: blocked}
 	}
 	for i := range candidates {
 		d := byID[candidates[i].VideoID]
-		candidates[i].DurationMs, candidates[i].Live = d.ms, d.live
+		candidates[i].DurationMs, candidates[i].Live, candidates[i].Blocked = d.ms, d.live, d.blocked
 	}
 }
 
@@ -293,7 +303,8 @@ func durationOK(candidateMs, catalogueMs int64) bool {
 	return diff <= tol
 }
 
-// pickCandidate chooses the highest-confidence candidate that is not live and
+// pickCandidate chooses the highest-confidence candidate that is not live, not
+// embed-blocked (embeddable false or private) and
 // whose length fits. Tradeoff: filtering by duration can promote a weaker title
 // match (a cover or a live take of the right length) over the better-titled
 // video of the wrong length; that is intended, a wrong length breaks sync.
@@ -302,7 +313,7 @@ func pickCandidate(candidates []YouTubeCandidate, catalogueMs int64) *YouTubeCan
 		var best *YouTubeCandidate
 		for i := range candidates {
 			c := &candidates[i]
-			if c.Live || !ok(c) {
+			if c.Live || c.Blocked || !ok(c) {
 				continue
 			}
 			if best == nil || c.Confidence > best.Confidence {

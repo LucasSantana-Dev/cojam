@@ -119,3 +119,47 @@ func TestDurationOKAndParse(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveYouTubeSkipsEmbedBlocked: the best-titled video has embedding
+// disabled (error 150 in the player), so the matcher takes the next one. Also
+// covers a private video and an absent status (unknown stays pickable).
+func TestResolveYouTubeSkipsEmbedBlocked(t *testing.T) {
+	cases := []struct {
+		name, status, want string
+	}{
+		{"embeddable false", `"status":{"embeddable":false,"privacyStatus":"public"}`, "ok"},
+		{"private", `"status":{"embeddable":true,"privacyStatus":"private"}`, "ok"},
+		{"unknown status stays pickable", ``, "first"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("YOUTUBE_API_KEY", "fake-api-value")
+			resetSearchCache()
+			var part string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/search":
+					_, _ = w.Write([]byte(`{"items":[{"id":{"videoId":"first"},"snippet":{"title":"Tourner dans le vide Indila"}},{"id":{"videoId":"ok"},"snippet":{"title":"Tourner dans le vide Indila lyrics"}}]}`))
+				case "/videos":
+					part = r.URL.Query().Get("part")
+					st := ""
+					if tc.status != "" {
+						st = "," + tc.status
+					}
+					_, _ = w.Write([]byte(`{"items":[{"id":"first","contentDetails":{"duration":"PT3M2S"}` + st + `},{"id":"ok","contentDetails":{"duration":"PT3M2S"},"status":{"embeddable":true,"privacyStatus":"public"}}]}`))
+				}
+			}))
+			defer srv.Close()
+			oldS, oldV := youtubeSearchURL, youtubeVideosURL
+			youtubeSearchURL, youtubeVideosURL = srv.URL+"/search", srv.URL+"/videos"
+			defer func() { youtubeSearchURL, youtubeVideosURL = oldS, oldV }()
+			ref, err := ResolveYouTube(queue.WithDuration(context.Background(), 182_000), "Tourner dans le vide", "Indila", "")
+			if err != nil || ref == nil || ref.VideoID != tc.want {
+				t.Fatalf("ref = %+v err = %v, want %s", ref, err, tc.want)
+			}
+			if part != "contentDetails,status" {
+				t.Fatalf("videos.list part = %q", part)
+			}
+		})
+	}
+}

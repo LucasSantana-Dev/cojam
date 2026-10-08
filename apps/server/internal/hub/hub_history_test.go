@@ -173,3 +173,47 @@ func TestHistory_LegacyRoomMigratedOnLoad(t *testing.T) {
 		t.Fatalf("migrated state must be saved: %+v err=%v", saved, err)
 	}
 }
+
+// The skip_unplayable RPC is controller-only, leaves no History entry, says
+// why in chat, and is idempotent for a stale trackId.
+func TestHistory_SkipUnplayableRPC(t *testing.T) {
+	h := NewHub(nil)
+	h.chatEnabled = true
+	rolesJoin(t, h, "c-o", "owner")
+	rolesJoin(t, h, "c-b", "bob")
+	historyAdd(t, h, "one")
+	historyAdd(t, h, "two")
+	first := rolesState(t, h).Queue[0].ID
+	body := `{"roomId":"` + rolesRoom + `","trackId":"` + first + `"}`
+
+	if err := h.Authorize(newTestClient("c-b", "bob"), "now_playing.skip_unplayable", []byte(body)); err == nil {
+		t.Fatal("a plain member must not skip")
+	}
+	if err := rolesRPC(h, "now_playing.skip_unplayable", body, "c-o", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	st := rolesState(t, h)
+	if len(st.History) != 0 || len(st.Queue) != 1 || st.Queue[0].Title != "two" || st.NowPlayingID != st.Queue[0].ID {
+		t.Fatalf("queue=%+v history=%+v", st.Queue, st.History)
+	}
+	// stale id: no-op, the new now-playing track survives
+	if err := rolesRPC(h, "now_playing.skip_unplayable", body, "c-o", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if st2 := rolesState(t, h); len(st2.Queue) != 1 || st2.Version != st.Version {
+		t.Fatalf("stale skip changed state: %+v", st2)
+	}
+	room := mustRoom(t, h, rolesRoom)
+	room.mu.Lock()
+	msgs := room.chatHistory()
+	room.mu.Unlock()
+	found := false
+	for _, m := range msgs {
+		if m.Kind == ChatKindSystem && m.Text == "one pulada: o vídeo não pode tocar fora do YouTube" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing the skip chat line in %+v", msgs)
+	}
+}

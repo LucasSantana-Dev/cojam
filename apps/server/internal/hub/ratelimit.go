@@ -135,17 +135,18 @@ func (l *rateLimiter) allow(key string) bool {
 // their own bucket (queue.vote: voteMethods; transport.*: transportMethods;
 // room.kick/chat.*: chatMethods; playlist.import: fanoutMethods).
 var mutationMethods = map[string]bool{
-	"history.readd":       true,
-	"queue.add":           true,
-	"queue.remove":        true,
-	"queue.reorder":       true,
-	"now_playing.set":     true,
-	"now_playing.advance": true,
-	"radio.set":           true,
-	"room.set_public":     true,
-	"room.set_admin":      true,
-	"room.transfer_host":  true,
-	"room.claim_host":     true,
+	"history.readd":               true,
+	"queue.add":                   true,
+	"queue.remove":                true,
+	"queue.reorder":               true,
+	"now_playing.set":             true,
+	"now_playing.advance":         true,
+	"now_playing.skip_unplayable": true,
+	"radio.set":                   true,
+	"room.set_public":             true,
+	"room.set_admin":              true,
+	"room.transfer_host":          true,
+	"room.claim_host":             true,
 }
 
 // Defaults for the mutation limiter: a host curating a queue clicks in
