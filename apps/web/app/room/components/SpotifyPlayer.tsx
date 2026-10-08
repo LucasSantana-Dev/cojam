@@ -426,7 +426,7 @@ export function SpotifyPlayer({
     const track = current?.nowPlayingId
       ? current.queue.find((t) => t.id === current.nowPlayingId)
       : undefined;
-    const wanted = active ?? (track ? pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) === 'spotify' : false);
+    const wanted = active ?? (track ? pickSource(track, { spotifyAuthorized: authorized }) === 'spotify' : false);
     if (!track || !wanted) return;
     // Never start audio in a paused or stopped room (a switch to Spotify there
     // must stay silent); the effect re-runs when the room starts playing.

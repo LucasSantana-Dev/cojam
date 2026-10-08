@@ -28,7 +28,7 @@ const VISIBLE = 6;
 const ARCS = 3;
 const ARC_LAG_MS = 70; // each outer arc lags the inner one: a ripple, not a blink
 
-const PLATFORM_LABEL = { spotify: 'Spotify', apple: 'Apple Music', youtube: 'YouTube' } as const;
+const PLATFORM_LABEL = { spotify: 'Spotify', youtube: 'YouTube' } as const;
 
 interface ListenersStageProps {
   roomId: string;

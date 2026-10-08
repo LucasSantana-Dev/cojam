@@ -27,13 +27,21 @@ describe('listening service preference', () => {
     expect(m.getListeningService()).toBe('auto');
   });
 
+  // Apple Music was removed on 2026-10-08: a choice saved before that falls
+  // back to the default instead of selecting a service that no longer exists.
+  it('falls back to auto when the saved service is the removed apple', async () => {
+    window.localStorage.setItem('cojam.listeningService', 'apple');
+    const m = await load();
+    expect(m.getListeningService()).toBe('auto');
+  });
+
   it('survives blocked storage', async () => {
     const m = await load();
     const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('blocked');
     });
-    expect(() => m.setListeningService('apple')).not.toThrow();
-    expect(m.getListeningService()).toBe('apple');
+    expect(() => m.setListeningService('spotify')).not.toThrow();
+    expect(m.getListeningService()).toBe('spotify');
     spy.mockRestore();
   });
 });

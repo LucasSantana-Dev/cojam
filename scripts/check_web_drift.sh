@@ -52,7 +52,7 @@ if grep -rnE 'color-accent-2|logo-core' apps/web/app --include='*.tsx' \
   fail=1
 fi
 
-# 4. Brand logo colours (Spotify green, YouTube red, Apple Music pink) are allowed on the
+# 4. Brand logo colours (Spotify green, YouTube red) are allowed on the
 #    small service badges only: `--svc-*` may be read only inside a `.svc-badge` rule, and
 #    no component may name a brand colour outside it. Declarations are skipped.
 svc=$(awk '

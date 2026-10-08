@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -688,5 +689,35 @@ func TestAddRefillKeepsFirstRefilledTrack(t *testing.T) {
 	}
 	if len(rs.Queue) != 3 {
 		t.Errorf("expected queue length 3, got %d", len(rs.Queue))
+	}
+}
+
+// Apple Music was removed on 2026-10-08. Rooms persisted before that may still
+// carry a legacy "apple" source (and its songId); decoding must ignore it, keep
+// the other sources, and leave an apple-only track sourceless instead of failing.
+func TestRoomState_DecodesLegacyAppleSource(t *testing.T) {
+	raw := `{"roomId":"r","queue":[
+		{"id":"a","title":"T","artist":"A","sources":{"apple":{"songId":"123","confidence":1},"youtube":{"videoId":"dQw4w9WgXcQ","confidence":0.9}}},
+		{"id":"b","title":"U","artist":"B","sources":{"apple":{"songId":"456","confidence":1}}}
+	],"version":3}`
+	var rs RoomState
+	if err := json.Unmarshal([]byte(raw), &rs); err != nil {
+		t.Fatalf("legacy apple source must decode, got %v", err)
+	}
+	if len(rs.Queue) != 2 {
+		t.Fatalf("queue len = %d, want 2", len(rs.Queue))
+	}
+	if yt := rs.Queue[0].Sources.YouTube; yt == nil || yt.VideoID != "dQw4w9WgXcQ" {
+		t.Fatalf("youtube source lost next to legacy apple: %+v", rs.Queue[0].Sources)
+	}
+	if rs.Queue[1].HasSource() {
+		t.Fatalf("apple-only track must decode as sourceless, got %+v", rs.Queue[1].Sources)
+	}
+	out, err := json.Marshal(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "apple") || strings.Contains(string(out), "songId") {
+		t.Fatalf("re-encoded state still carries the legacy source: %s", out)
 	}
 }

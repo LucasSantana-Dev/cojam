@@ -78,7 +78,7 @@ interface QueuePanelProps {
   roomId: string;
   canControl: boolean;
   // The service this person listens through ("Ouvir no"); drives the "missing on your service" flag.
-  listeningOn?: 'spotify' | 'apple' | 'youtube' | null;
+  listeningOn?: 'spotify' | 'youtube' | null;
   // "+ Adicionar música" in the header toggles the inline add area at the top
   // of the list (addSlot). Omitted, the link is not rendered.
   onAdd?: () => void;
@@ -357,7 +357,6 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
   const myPlatform = listeningOn ?? members.find((m) => (m.clientIds ?? [m.clientId]).includes(myClientId))?.platform;
   const missingOnMyService = (track: TrackRef): string | null => {
     if (myPlatform === 'spotify' && !track.sources.spotify?.trackUri) return 'Spotify';
-    if (myPlatform === 'apple' && !track.sources.apple?.songId) return 'Apple Music';
     if (myPlatform === 'youtube' && !track.sources.youtube?.videoId) return 'YouTube';
     return null;
   };

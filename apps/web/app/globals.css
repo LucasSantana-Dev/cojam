@@ -3126,11 +3126,10 @@ input:focus, textarea:focus, select:focus {
 
 /* ---- service badge: the one place a brand colour is allowed ------------------
    Small round marks on avatars and in the avatar menu (Spotify green, YouTube
-   red, Apple Music pink). scripts/check_web_drift.sh rule 4 keeps --svc-* here. */
+   red). scripts/check_web_drift.sh rule 4 keeps --svc-* here. */
 .svc-badge {
   --svc-spotify: oklch(0.76 0.21 150);
   --svc-youtube: oklch(0.6 0.24 27);
-  --svc-apple: oklch(0.66 0.23 12);
   display: inline-grid;
   place-items: center;
   flex: none;
@@ -3145,7 +3144,6 @@ input:focus, textarea:focus, select:focus {
 .svc-badge[data-size="lg"] { width: 2.1rem; height: 2.1rem; }
 .svc-badge[data-svc="spotify"] { background: var(--svc-spotify); color: oklch(0.13 0.03 150); }
 .svc-badge[data-svc="youtube"] { background: var(--svc-youtube); }
-.svc-badge[data-svc="apple"] { background: var(--svc-apple); }
 
 /* ---- popover menus (avatar menu, the card's overflow) ------------------------- */
 .r4-menu[hidden], .r4-addinline[hidden], .r4-menu__services[hidden] { display: none !important; }

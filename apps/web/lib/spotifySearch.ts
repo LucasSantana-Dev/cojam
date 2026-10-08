@@ -99,7 +99,7 @@ export function mergeSearchResults(
 // user's token in parallel with the server search and merges: Spotify-playable
 // results first, server (Deezer fallback) results after. Without a Spotify
 // connection or token it is exactly the server search (which ranks by `prefer`
-// on its own). Apple has no client-side search; those users get server results.
+// on its own).
 // `tokenProvider` defaults to the stored OAuth token and is injectable for tests.
 export async function searchAllTracks(
   query: string,

@@ -2,12 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { resolveFeatures, FEATURE_ENV_VARS } from './features';
 
 describe('resolveFeatures', () => {
-  it('youtube+presence default on, spotify/apple/listenbrainz/lastfmEnrich/sync default off', () => {
+  it('youtube+presence default on, spotify/listenbrainz/lastfmEnrich/sync default off', () => {
     const f = resolveFeatures({});
     expect(f).toEqual({
       youtube: true,
       spotify: false,
-      apple: false,
       presence: true,
       trackDepth: true,
       lyrics: true,
@@ -26,7 +25,6 @@ describe('resolveFeatures', () => {
   it('reads truthy values case-insensitively', () => {
     const f = resolveFeatures({
       NEXT_PUBLIC_FEATURE_SPOTIFY: 'TRUE',
-      NEXT_PUBLIC_FEATURE_APPLE: '1',
       NEXT_PUBLIC_FEATURE_YOUTUBE: 'off',
       NEXT_PUBLIC_FEATURE_PRESENCE: 'no',
       NEXT_PUBLIC_FEATURE_LISTENBRAINZ: 'true',
@@ -36,7 +34,6 @@ describe('resolveFeatures', () => {
     expect(f).toEqual({
       youtube: false,
       spotify: true,
-      apple: true,
       presence: false,
       trackDepth: true,
       lyrics: true,
@@ -88,7 +85,7 @@ describe('resolveFeatures', () => {
 
   it('accepts on/yes as enabled', () => {
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_SPOTIFY: 'on' }).spotify).toBe(true);
-    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_APPLE: 'yes' }).apple).toBe(true);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_SYNC: 'yes' }).sync).toBe(true);
   });
 
   it('lyrics flag accepts truthy values', () => {

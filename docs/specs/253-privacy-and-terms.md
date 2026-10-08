@@ -20,8 +20,8 @@ things depend on having a published policy:
    including deletion.
 2. **ECA Digital** (Lei 15.211) adds duties for platforms accessible to minors.
    The product-side obligations are #259; the disclosure side is here.
-3. **Spotify and Apple both require a published privacy policy** as a condition
-   of API access. The Apple Music work (#207) will need one before review.
+3. **Spotify requires a published privacy policy** as a condition of API
+   access.
 
 ## 2. Data inventory, from the code
 
@@ -144,7 +144,7 @@ Shorter, and mostly about setting expectations:
   why no synchronization or public-performance licence attaches, and it is the
   distinction that separates CoJam from the products that died of licensing cost.
 - No warranty; it is a self-hosted hobby project.
-- Each user's relationship with Spotify, Apple or YouTube is governed by that
+- Each user's relationship with Spotify or YouTube is governed by that
   provider's own terms.
 
 ## 6. Implementation

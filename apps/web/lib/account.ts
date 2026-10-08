@@ -2,7 +2,7 @@
 // Everything here is a no-op (null/empty) when Supabase is not configured or the
 // user is not signed in; guests never touch this module's network paths.
 //
-// Spotify/Apple OAuth tokens stay client-side (lib/spotifyAuth.ts, MusicKit);
+// Spotify OAuth tokens stay client-side (lib/spotifyAuth.ts);
 // only the fact of the connection is persisted, never credentials.
 
 import { getSupabase } from './supabase';
@@ -94,7 +94,8 @@ export async function saveDisplayName(displayName: string): Promise<{ error: str
 
 // --- Connected services (fact of connection only, no tokens) ---
 
-export type ConnectedProvider = 'spotify' | 'apple';
+// Rows saved as 'apple' before Apple Music was removed are dropped on read.
+export type ConnectedProvider = 'spotify';
 
 export async function getConnectedServices(): Promise<ConnectedProvider[]> {
   const sb = getSupabase();
@@ -107,7 +108,7 @@ export async function getConnectedServices(): Promise<ConnectedProvider[]> {
   if (error || !data) return [];
   return data
     .map((row) => row.provider as string)
-    .filter((p): p is ConnectedProvider => p === 'spotify' || p === 'apple');
+    .filter((p): p is ConnectedProvider => p === 'spotify');
 }
 
 export async function markServiceConnected(provider: ConnectedProvider): Promise<void> {
@@ -139,14 +140,13 @@ export async function markServiceDisconnected(provider: ConnectedProvider): Prom
 // mergeProviderPrefs unions persisted connected services with live auth state so
 // search ranking is right even before local OAuth state settles (fresh browser,
 // expired sessionStorage) and on any device. Canonical order matches
-// buildProviderPrefs: spotify before apple. Unknown persisted values are dropped.
+// buildProviderPrefs. Unknown persisted values are dropped.
 export function mergeProviderPrefs(
   persisted: string[],
-  live: { spotify?: boolean; apple?: boolean },
+  live: { spotify?: boolean },
 ): string[] {
   const has = (p: ConnectedProvider) => persisted.includes(p) || live[p] === true;
   const prefs: string[] = [];
   if (has('spotify')) prefs.push('spotify');
-  if (has('apple')) prefs.push('apple');
   return prefs;
 }

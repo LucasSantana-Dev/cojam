@@ -507,7 +507,6 @@ func TestHandleRPC_PlaylistImportClientTracksValidation(t *testing.T) {
 		{"duration out of range", `"tracks":[{"title":"T","artist":"A","durationMs":99999999}]`, "duration"},
 		{"isrc too long", `"tracks":[{"title":"T","artist":"A","isrc":"` + longTitle + `"}]`, "isrc"},
 		{"youtube id too long", `"tracks":[{"title":"T","artist":"A","sources":{"youtube":{"videoId":"` + longTitle + `"}}}]`, "youtube"},
-		{"apple id too long", `"tracks":[{"title":"T","artist":"A","sources":{"apple":{"songId":"` + longTitle + `"}}}]`, "apple"},
 		{"bad spotify uri", `"tracks":[{"title":"T","artist":"A","sources":{"spotify":{"trackUri":"not-a-uri"}}}]`, "spotify"},
 	}
 
@@ -703,6 +702,25 @@ func TestHandleRPC_TrackSearchForwardsPrefer(t *testing.T) {
 	}
 }
 
+// A client built before Apple Music was removed (2026-10-08) may still send an
+// "apple" source. It is ignored, not rejected, so the add goes through.
+func TestHandleRPC_QueueAddIgnoresLegacyApple(t *testing.T) {
+	h := NewHub(nil)
+	h.Join("client1", "demo")
+	long := strings.Repeat("x", 301)
+	payload := `{"roomId":"demo","track":{"title":"T","artist":"A","sources":{"apple":{"songId":"` + long + `"}},"addedBy":"u"}}`
+	if _, err := h.HandleRPC("queue.add", []byte(payload), ""); err != nil {
+		t.Fatalf("legacy apple source must be ignored, got %v", err)
+	}
+	room := mustRoom(t, h, "demo")
+	room.mu.Lock()
+	n := len(room.State.Queue)
+	room.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("queue len = %d, want 1", n)
+	}
+}
+
 func TestHandleRPC_QueueAddValidation(t *testing.T) {
 	long := strings.Repeat("x", 301)
 
@@ -719,7 +737,6 @@ func TestHandleRPC_QueueAddValidation(t *testing.T) {
 		{"isrc too long", `{"title":"T","artist":"A","isrc":"` + long + `"}`, "isrc"},
 		{"addedBy too long", `{"title":"T","artist":"A","addedBy":"` + long + `"}`, "addedBy"},
 		{"youtube id too long", `{"title":"T","artist":"A","sources":{"youtube":{"videoId":"` + long + `"}}}`, "youtube"},
-		{"apple id too long", `{"title":"T","artist":"A","sources":{"apple":{"songId":"` + long + `"}}}`, "apple"},
 		{"bad spotify uri", `{"title":"T","artist":"A","sources":{"spotify":{"trackUri":"not-a-uri"}}}`, "spotify"},
 		{"artwork url too long", `{"title":"T","artist":"A","artworkUrl":"https://` + strings.Repeat("x", 513) + `"}`, "artwork"},
 		{"artwork url not https", `{"title":"T","artist":"A","artworkUrl":"http://img.example.com/x.jpg"}`, "artwork"},

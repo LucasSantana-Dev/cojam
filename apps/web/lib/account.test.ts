@@ -32,7 +32,7 @@ describe('mergeProviderPrefs', () => {
   });
 
   it('unions both sources without duplicates, canonical order', () => {
-    expect(mergeProviderPrefs(['apple'], { spotify: true })).toEqual(['spotify', 'apple']);
+    expect(mergeProviderPrefs(['spotify'], { spotify: false })).toEqual(['spotify']);
     expect(mergeProviderPrefs(['spotify'], { spotify: true })).toEqual(['spotify']);
   });
 

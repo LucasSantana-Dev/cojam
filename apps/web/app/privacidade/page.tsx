@@ -135,7 +135,6 @@ export default function PrivacyPage() {
         <tbody>
           <tr><td>Spotify</td><td>Autorização (OAuth) e comandos de reprodução; buscas de faixas e importação de playlists</td><td>Seu navegador e o servidor</td></tr>
           <tr><td>YouTube / Google</td><td>Reprodução de vídeo e termos de busca ou IDs de vídeo para localizar faixas e importar playlists</td><td>Seu navegador e o servidor</td></tr>
-          <tr><td>Apple Music</td><td>Quando disponível, reprodução pelo SDK no seu navegador</td><td>Seu navegador</td></tr>
           <tr><td>Deezer</td><td>Título, artista ou termos de busca; importação de playlists</td><td>Servidor</td></tr>
           <tr><td>MusicBrainz, ListenBrainz, Last.fm</td><td>Metadados da faixa (título, artista, ISRC) para enriquecimento e correspondência</td><td>Servidor</td></tr>
           <tr><td>Cloudflare</td><td>Todo o tráfego de acesso ao site, incluindo endereço IP, para TLS e túnel. <code>[[CONFIRMAR: uso de Cloudflare em produção]]</code></td><td>Rede</td></tr>
@@ -143,7 +142,7 @@ export default function PrivacyPage() {
         </tbody>
       </table>
       <p>
-        Esses serviços têm políticas próprias. Sua relação com o Spotify, o YouTube e a Apple é
+        Esses serviços têm políticas próprias. Sua relação com o Spotify e o YouTube é
         regida pelos termos deles. Não há ferramentas de análise ou rastreamento de terceiros no
         CoJam. Existe uma telemetria própria, <strong>desativada por padrão</strong>; quando
         ligada, envia contagens de eventos e erros ao próprio servidor do CoJam, sem fornecedor

@@ -37,7 +37,7 @@ export default defineConfig({
       },
     },
     {
-      // Flags on so the gated Spotify/Apple UI renders in e2e. The SDKs are never
+      // Flags on so the gated Spotify UI renders in e2e. The SDKs are never
       // called (tests don't click Connect), so the dummy client id is safe.
       // reuseExistingServer:false guarantees this env applies (a stale flagless
       // `pnpm dev` on :3000 would otherwise be reused and mask the flag) — keep
@@ -48,7 +48,6 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         NEXT_PUBLIC_FEATURE_SPOTIFY: 'on',
-        NEXT_PUBLIC_FEATURE_APPLE: 'off',
         NEXT_PUBLIC_SPOTIFY_CLIENT_ID: 'e2e-test-client-id',
         // Room auth must match the Go server above: the client fetches a
         // connection token from the Go origin before opening the websocket

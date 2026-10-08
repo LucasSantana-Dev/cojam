@@ -40,7 +40,7 @@ describe('planPlaylistImport', () => {
   it('routes non-Spotify URLs to the server regardless of auth', () => {
     expect(planPlaylistImport('https://www.youtube.com/playlist?list=PLx0sYbCqOb8TBPRdmBHs5Iftvv9TPboYG', false))
       .toEqual({ route: 'server' });
-    expect(planPlaylistImport('https://music.apple.com/us/playlist/example/pl.u-123', true))
+    expect(planPlaylistImport('https://www.deezer.com/playlist/908622995', true))
       .toEqual({ route: 'server' });
     expect(planPlaylistImport('not a url', false)).toEqual({ route: 'server' });
   });

@@ -36,7 +36,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `room.claim_host` | `{ roomId }` | `RoomState` |
 | `room.transfer_host` | `{ roomId, userId: string }` | `RoomState` |
 | `room.rebind` | `{ roomId, proof: string }` | `RoomState` |
-| `member.set_platform` | `{ roomId, platform: 'spotify' \| 'apple' \| 'youtube' }` | `{ clientId: string, platform: string }` |
+| `member.set_platform` | `{ roomId, platform: 'spotify' \| 'youtube' }` | `{ clientId: string, platform: string }` |
 | `member.platforms` | `{ roomId }` | `{ platforms: Record<clientId, platform> }` |
 | `member.set_character` | `{ roomId, characterId: integer 1..12 }` | `{ clientId: string, characterId: number }` |
 | `member.characters` | `{ roomId }` | `{ characters: Record<clientId, characterId> }` |
@@ -45,9 +45,9 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 `track.search` is a read (not membership-gated). The query is trimmed; empty
 after trim or longer than 200 chars is rejected with a UserError (code 400)
 before any upstream fanout. `prefer` lists the caller's connected
-providers (`"spotify"`, `"apple"`); results playable on those providers rank first, other
+providers (`"spotify"`); results playable on those providers rank first, other
 providers still appear below. Unknown providers are ignored; omitting `prefer` leaves the
-order unchanged. `prefer` is capped to the provider allowlist size (3); extras are
+order unchanged. `prefer` is capped to the provider allowlist size (2: `spotify`, `deezer`); extras are
 truncated.
 
 `playlist.import` accepts an optional `tracks` array (RFC-0007). When present and
@@ -328,7 +328,7 @@ line by id and never render history entries with `deleted: true`:
 { "type": "chat.delete", "messageId": "..." }
 ```
 
-Listening service ("Ouvir no"): ConnInfo is fixed per connection and a reconnect would run the host handoff, so a member changes the platform shown for them with `member.set_platform` (membership-gated, value must be spotify, apple or youtube, shares the chat rate limit). The server keeps it per connection, drops it on disconnect, and publishes on the room channel (no version guard, not `RoomState`):
+Listening service ("Ouvir no"): ConnInfo is fixed per connection and a reconnect would run the host handoff, so a member changes the platform shown for them with `member.set_platform` (membership-gated, value must be spotify or youtube, shares the chat rate limit). The server keeps it per connection, drops it on disconnect, and publishes on the room channel (no version guard, not `RoomState`):
 
 ```json
 { "type": "member.platform", "clientId": "...", "platform": "youtube" }
@@ -344,7 +344,7 @@ Audience character ("Modo palco"): each member is drawn as one of a fixed roster
 
 Clients overlay it on the presence entry with that `clientId` (the latest choice among one person's connections wins). A late joiner seeds the overlay with `member.characters` (membership-gated read, the current overrides of the room's members). A member who never chose gets a default derived from the userId (the clientId for guests without one): the FNV-1a 32 bit hash of the UTF-8 bytes, mod 12, plus 1. The server (`DefaultCharacter`) and the web client (`lib/characters.ts`) implement the same function and share one table of test vectors. The web client sends its stored choice right after the join settles (and after the rebind) and again on every change.
 
-Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated: centrifuge's native `user` field on each presence entry, no new field), never on display name: two connections that picked the same name are two distinct entries and count as two listeners. Each entry's ConnInfo is `{"name": string, "platform"?: "spotify"|"apple"|"youtube"}`: the name and playback platform the client presented at connect; the server trims the name and caps it at 40 runes, and drops unrecognized platform values, so presence only carries platforms the UI can render. Display concerns stay client-side: colliding names get a deterministic suffix ("Alice", "Alice (2)") derived from the member list (sorted by clientId), recomputed on every membership change; presence is centrifuge-level, so none of this touches `RoomState` or `Version`. Vote keys in `RoomState.votes` are `user:<userId>` (authenticated) or `client:<clientId>` (no room auth); the web client resolves a voter to a member by matching that id against the presence entry's `user` or `client`, and renders a voter who has left the room as anonymous.
+Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated: centrifuge's native `user` field on each presence entry, no new field), never on display name: two connections that picked the same name are two distinct entries and count as two listeners. Each entry's ConnInfo is `{"name": string, "platform"?: "spotify"|"youtube"}`: the name and playback platform the client presented at connect; the server trims the name and caps it at 40 runes, and drops unrecognized platform values, so presence only carries platforms the UI can render. Display concerns stay client-side: colliding names get a deterministic suffix ("Alice", "Alice (2)") derived from the member list (sorted by clientId), recomputed on every membership change; presence is centrifuge-level, so none of this touches `RoomState` or `Version`. Vote keys in `RoomState.votes` are `user:<userId>` (authenticated) or `client:<clientId>` (no room auth); the web client resolves a voter to a member by matching that id against the presence entry's `user` or `client`, and renders a voter who has left the room as anonymous.
 
 ## Accounts (Supabase Auth, behind `FEATURE_SUPABASE_AUTH`)
 
@@ -358,7 +358,7 @@ Supabase account token → anonymous room-auth token → none.
 
 Account data lives in the Supabase project, written client-direct with row-level security
 (owner-only): `public.profiles` (display name) and `public.connected_services` (the fact
-that Spotify/Apple is connected; OAuth tokens never leave the client). Persisted connected
+that Spotify is connected; OAuth tokens never leave the client). Persisted connected
 services feed the `prefer` parameter of `track.search` on any device.
 
 ## Connection token endpoint (`POST /api/connection-token`)
@@ -416,7 +416,7 @@ Fields (runtime env var in parentheses):
 - `wsUrl` (`COJAM_WS_URL`), `spotifyClientId` (`COJAM_SPOTIFY_CLIENT_ID`): always
   emitted, empty string when unset.
 - `features`: a map of feature-flag overrides, one key per flag defined in
-  `apps/web/lib/features.ts` (`youtube`, `spotify`, `apple`, `presence`,
+  `apps/web/lib/features.ts` (`youtube`, `spotify`, `presence`,
   `trackDepth`, `lyrics`, `listenBrainz`, `lastfmEnrich`, `sync`, `roomAuth`,
   `queueVoting`, `roomChat`, `publicRooms`). Each flag's runtime var is
   `COJAM_FEATURE_<SCREAMING_SNAKE>` (the mapping is the `FEATURE_ENV_VARS`
@@ -456,9 +456,8 @@ type TrackRef = {
   isrc?: string;
   sources: {           // per-platform resolution, filled by matching
     youtube?: { videoId: string; confidence: number };
-    apple?: { songId: string; confidence: number };
     spotify?: { trackUri: string; confidence: number };
-  };
+  };                   // a legacy `apple` source (Apple Music, removed 2026-10-08) on rooms persisted before that is ignored on decode
   addedBy: string;     // display name; server-stamped from the connection's connect-time name when one was recorded (client value overridden then)
   addedByUserId?: string; // authenticated userID of the adder, server-stamped
   addedAt?: number;    // unix ms when queued, server-stamped (absent on older tracks)
@@ -477,7 +476,7 @@ type HistoryEntry = {      // a track that finished or was skipped (list uses id
   durationMs?: number;      // the fields below are kept only so history.readd can copy the track
   isrc?: string;
   kind?: 'audio' | 'video';
-  sources: { youtube?: { videoId: string; confidence: number }; apple?: { songId: string; confidence: number }; spotify?: { trackUri: string; confidence: number } };
+  sources: { youtube?: { videoId: string; confidence: number }; spotify?: { trackUri: string; confidence: number } };
 };
 
 type RoomState = {

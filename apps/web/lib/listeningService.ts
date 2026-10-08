@@ -7,7 +7,9 @@ import type { ServicePreference } from './pickSource';
 
 export const LISTENING_SERVICE_KEY = 'cojam.listeningService';
 
-const VALID: readonly ServicePreference[] = ['auto', 'spotify', 'apple', 'youtube'];
+// A stored value outside this list (e.g. 'apple', saved before Apple Music was
+// removed on 2026-10-08) reads as 'auto'.
+const VALID: readonly ServicePreference[] = ['auto', 'spotify', 'youtube'];
 
 function isPreference(v: unknown): v is ServicePreference {
   return typeof v === 'string' && (VALID as readonly string[]).includes(v);

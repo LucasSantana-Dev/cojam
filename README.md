@@ -19,7 +19,7 @@
 
 ## Why CoJam
 
-- **Cross-service rooms.** One person on Spotify, one on YouTube, one on Apple Music (planned). Same queue.
+- **Cross-service rooms.** One person on Spotify, one on YouTube. Same queue.
 - **Metadata only.** The server syncs the queue and playback position. It never relays audio or video.
 - **Guest-first.** Type a name and you are in. No account, no install.
 - **Private by link.** Every room starts private: the link is the permission. Hosts can opt a room into the public directory at `/rooms`.
@@ -58,7 +58,6 @@ Cross-service offset is roughly 500 ms. Each service plays its own master record
 | Room auth tokens | Behind a flag | `FEATURE_ROOM_AUTH`, off by default |
 | Video co-watch | Behind a flag | `FEATURE_VIDEO`, off by default |
 | Member reports, host moderation | In `[Unreleased]` | See [CHANGELOG](CHANGELOG.md) |
-| Apple Music | Stubbed | MusicKit JS, needs the Apple Developer Program |
 | Screen share | Planned | [Spec](docs/specs/310-screen-share.md), private rooms only |
 
 The web app has matching `NEXT_PUBLIC_FEATURE_*` and runtime `COJAM_FEATURE_*` flags. Full list in [`docs/configuration.md`](docs/configuration.md). Other platforms (YouTube Music, Deezer, Tidal): [`docs/platforms.md`](docs/platforms.md).

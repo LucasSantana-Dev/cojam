@@ -60,7 +60,7 @@ export default function TermsPage() {
 
       <h2>6. Serviços de terceiros</h2>
       <p>
-        Spotify, YouTube, Apple Music e outros são serviços independentes. Sua relação com cada
+        Spotify, YouTube e outros são serviços independentes. Sua relação com cada
         um é regida pelos termos e políticas deles, e o CoJam não os controla nem responde por
         eles. A reprodução de vídeo usa o player do YouTube no seu navegador.
       </p>

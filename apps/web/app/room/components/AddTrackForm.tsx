@@ -28,7 +28,7 @@ export function planPlaylistImport(url: string, spotifyAuthed: boolean): Playlis
   return { route: 'server' };
 }
 
-export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { roomId: string; spotifyAuthorized?: boolean; appleAuthorized?: boolean }) {
+export function AddTrackForm({ roomId, spotifyAuthorized }: { roomId: string; spotifyAuthorized?: boolean }) {
   const f = useRuntimeFeatures();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
@@ -43,7 +43,6 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [videoId, setVideoId] = useState('');
-  const [appleSongId, setAppleSongId] = useState('');
   const [spotifyUri, setSpotifyUri] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -75,7 +74,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
     const seq = ++searchSeqRef.current;
     debounceTimerRef.current = setTimeout(async () => {
       try {
-        const results = await searchAllTracks(searchQuery, mergeProviderPrefs(connectedServices, { spotify: spotifyAuthorized, apple: appleAuthorized }));
+        const results = await searchAllTracks(searchQuery, mergeProviderPrefs(connectedServices, { spotify: spotifyAuthorized }));
         if (searchSeqRef.current === seq) {
           setSearchResults(results);
           setSearchError(null);
@@ -93,7 +92,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [searchQuery, spotifyAuthorized, appleAuthorized, connectedServices, searchRetryNonce]);
+  }, [searchQuery, spotifyAuthorized, connectedServices, searchRetryNonce]);
 
   // Retry re-fires the debounced effect for the current query via the nonce dep.
   const retrySearch = () => {
@@ -153,12 +152,11 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
         // E1 (#258): with FEATURE_VIDEO on, a YouTube link is a video track so
         // the room renders the stage layout. Off (or no link) stays audio:
         // `kind` is omitted, which every client reads as audio. Only a
-        // YouTube-only track qualifies: one that also carries a Spotify or
-        // Apple source is a song with a video alternate, not a video.
-        ...(f.video && ytId && !spUri && !appleSongId ? { kind: 'video' as const } : {}),
+        // YouTube-only track qualifies: one that also carries a Spotify
+        // source is a song with a video alternate, not a video.
+        ...(f.video && ytId && !spUri ? { kind: 'video' as const } : {}),
         sources: {
           ...(ytId ? { youtube: { videoId: ytId, confidence: 1 } } : {}),
-          ...(appleSongId ? { apple: { songId: appleSongId, confidence: 1 } } : {}),
           ...(spUri ? { spotify: { trackUri: spUri, confidence: 1 } } : {}),
         },
         addedBy: name,
@@ -166,7 +164,6 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
       setTitle('');
       setArtist('');
       setVideoId('');
-      setAppleSongId('');
       setSpotifyUri('');
     } catch (err) {
       setError(rpcErrorMessage(err, 'Não deu para adicionar esta faixa. Tente de novo.'));
@@ -278,7 +275,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
                     >
                       <div className="flex items-center gap-2 flex-1 min-w-0">
                         {result.artworkUrl && (
-                          // Artwork hosts vary by provider (Spotify, Apple, Deezer, YouTube CDNs),
+                          // Artwork hosts vary by provider (Spotify, Deezer, YouTube CDNs),
                           // so they cannot be allow-listed in images.remotePatterns; serve unoptimized.
                           <Image
                             src={result.artworkUrl}
@@ -434,17 +431,6 @@ export function AddTrackForm({ roomId, spotifyAuthorized, appleAuthorized }: { r
               aria-label="Link do YouTube ou ID do vídeo (opcional)"
               value={videoId}
               onChange={(e) => setVideoId(e.target.value)}
-              className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
-              style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-            />
-          )}
-          {f.apple && (
-            <input
-              type="text"
-              placeholder="ID da música no Apple Music (opcional)"
-              aria-label="ID da música no Apple Music (opcional)"
-              value={appleSongId}
-              onChange={(e) => setAppleSongId(e.target.value)}
               className="w-full px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150"
               style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             />

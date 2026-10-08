@@ -26,10 +26,9 @@ var ErrTrackNotFound = errors.New("track not found")
 // client-visible 400.
 var ErrVoteCapReached = errors.New("vote cap reached")
 
-// SourceRef represents a reference to a music source (YouTube or Apple Music)
+// SourceRef represents a reference to a music source (YouTube or Spotify)
 type SourceRef struct {
 	VideoID    string  `json:"videoId,omitempty"`
-	SongID     string  `json:"songId,omitempty"`
 	TrackURI   string  `json:"trackUri,omitempty"`
 	Confidence float64 `json:"confidence"`
 }
@@ -37,7 +36,6 @@ type SourceRef struct {
 // Sources represents available music sources for a track
 type Sources struct {
 	YouTube *SourceRef `json:"youtube,omitempty"`
-	Apple   *SourceRef `json:"apple,omitempty"`
 	Spotify *SourceRef `json:"spotify,omitempty"`
 }
 

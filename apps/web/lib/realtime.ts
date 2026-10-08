@@ -16,7 +16,7 @@ export type Member = {
   clientIds?: string[];
   userId?: string;
   name: string;
-  platform?: 'spotify' | 'apple' | 'youtube';
+  platform?: 'spotify' | 'youtube';
   // Order of the member.set_platform override behind `platform`, when it came from one.
   platformSeq?: number;
   // Audience character (member.set_character, 1..12) and its override order.
@@ -90,7 +90,7 @@ function roomChatEnabled(): boolean {
   return resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomChat;
 }
 
-type Platform = 'spotify' | 'apple' | 'youtube';
+type Platform = 'spotify' | 'youtube';
 
 // Monotonic order of overrides: the latest wins when one person has several connections.
 let overrideSeq = 0;
@@ -313,11 +313,11 @@ export function restoreMyVotes(roomId: string) {
 // Presence entry info is the JSON {name, platform?} we set as ConnInfo server-side.
 interface ConnInfo {
   name: string;
-  platform?: 'spotify' | 'apple' | 'youtube';
+  platform?: 'spotify' | 'youtube';
 }
 
-export function parseConnInfo(info: unknown): { name: string; platform?: 'spotify' | 'apple' | 'youtube' } {
-  const result: { name: string; platform?: 'spotify' | 'apple' | 'youtube' } = { name: 'Listener' };
+export function parseConnInfo(info: unknown): { name: string; platform?: 'spotify' | 'youtube' } {
+  const result: { name: string; platform?: 'spotify' | 'youtube' } = { name: 'Listener' };
   try {
     let parsed: unknown = info;
     if (parsed instanceof Uint8Array) {
@@ -340,7 +340,7 @@ export function parseConnInfo(info: unknown): { name: string; platform?: 'spotif
       }
       if ('platform' in obj && typeof obj.platform === 'string') {
         const p = obj.platform as string;
-        if (p === 'spotify' || p === 'apple' || p === 'youtube') {
+        if (p === 'spotify' || p === 'youtube') {
           result.platform = p;
         }
       }
@@ -356,13 +356,13 @@ let centrifuge: Centrifuge | null = null;
 // Set after a successful room.join. A later 'connected' (reconnect after a
 // drop) re-joins so the client adopts the server's authoritative state
 // instead of serving the stale pre-disconnect snapshot (B10).
-let activeRoom: { roomId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' | null } | null = null;
+let activeRoom: { roomId: string; name: string; platform?: 'spotify' | 'youtube' | null } | null = null;
 
 // The listening service this person wants shown ("Ouvir no"), per room, and the
 // one last sent on the current connection. ConnInfo is fixed per connection and
 // a reconnect would run the server's host handoff, so a change is sent with the
 // member.set_platform RPC instead. Held here until the join (and rebind) settle.
-let desiredPlatform: { roomId: string; platform: 'spotify' | 'apple' | 'youtube' } | null = null;
+let desiredPlatform: { roomId: string; platform: 'spotify' | 'youtube' } | null = null;
 let sentPlatform: string | null = null;
 // False until the join and the guest-to-account rebind settled.
 let platformReady = false;
@@ -412,7 +412,7 @@ export function resolveWsUrl(): string {
 export async function joinRoom(
   roomId: string,
   name: string,
-  platform?: 'spotify' | 'apple' | 'youtube' | null,
+  platform?: 'spotify' | 'youtube' | null,
 ) {
   const wsUrl = resolveWsUrl();
 
@@ -684,7 +684,7 @@ export async function joinRoom(
 // would run the host handoff). roomId guards against a stale call after SPA
 // navigation. Sent once the join settled and only while connected: a kicked or
 // terminally disconnected client never sends, and a reconnect re-sends it.
-export function updatePlatform(roomId: string, platform: 'spotify' | 'apple' | 'youtube'): void {
+export function updatePlatform(roomId: string, platform: 'spotify' | 'youtube'): void {
   desiredPlatform = { roomId, platform };
   if (platformTimer) clearTimeout(platformTimer);
   platformTimer = setTimeout(() => {
@@ -1055,12 +1055,11 @@ export type TrackDepth = {
 
 // buildProviderPrefs maps the caller's connected playback services to the provider
 // list the server uses to rank track.search results (playable-on-your-service first).
-// Canonical order matches pickSource: spotify before apple. Deezer is never listed:
+// Spotify is the only connectable service. Deezer is never listed:
 // it is the anonymous fallback, not a connectable service.
-export function buildProviderPrefs({ spotify, apple }: { spotify?: boolean; apple?: boolean }): string[] {
+export function buildProviderPrefs({ spotify }: { spotify?: boolean }): string[] {
   const prefs: string[] = [];
   if (spotify) prefs.push('spotify');
-  if (apple) prefs.push('apple');
   return prefs;
 }
 

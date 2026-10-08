@@ -142,9 +142,9 @@ describe('searchAllTracks', () => {
   it('delegates to the server search when spotify is not preferred', async () => {
     const srv = [candidate({ title: 'D1', artist: 'A' })];
     searchTracksMock.mockResolvedValue(srv);
-    const results = await searchAllTracks('q', ['apple']);
+    const results = await searchAllTracks('q', ['deezer']);
     expect(results).toEqual(srv);
-    expect(searchTracksMock).toHaveBeenCalledWith('q', ['apple']);
+    expect(searchTracksMock).toHaveBeenCalledWith('q', ['deezer']);
   });
 
   it('merges client-side spotify results ahead of server results when spotify is connected', async () => {

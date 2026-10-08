@@ -13,7 +13,7 @@ The idea: "O que acha de criar um modo palco onde tivesse uma ilustração em pi
 Constraints:
 
 - The YouTube API terms need the embedded player visible, at least 200x200 px, and never covered or hidden while audio plays.
-- Listeners are on different services (YouTube, Spotify, Apple Music); only the YouTube source has a video.
+- Listeners are on different services (YouTube, Spotify); only the YouTube source has a video.
 - CoJam stays metadata only: no audio or video is rehosted.
 - The mark (headphone plus sine wave), the violet and green rules and PT-BR copy stay fixed ([`DESIGN.md`](../../DESIGN.md)).
 

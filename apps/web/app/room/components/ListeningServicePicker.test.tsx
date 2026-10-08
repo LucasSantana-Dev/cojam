@@ -7,9 +7,7 @@ function setup(over: Partial<ListeningServicePickerProps> = {}) {
     preference: 'auto',
     onChange: vi.fn(),
     spotifyEnabled: true,
-    appleEnabled: false,
     spotifyConnected: true,
-    appleConnected: false,
     onConnectSpotify: vi.fn(),
     variant: 'list',
     ...over,
@@ -29,18 +27,7 @@ describe('ListeningServicePicker', () => {
   it('renders only the services available to this person', () => {
     setup({ spotifyEnabled: false });
     expect(screen.queryByRole('button', { name: /Spotify/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Apple Music' })).toBeNull();
     expect(screen.getByRole('button', { name: 'YouTube' })).toBeInTheDocument();
-  });
-
-  it('shows Apple Music only when enabled and connected', () => {
-    setup({ appleEnabled: true, appleConnected: false });
-    expect(screen.queryByRole('button', { name: 'Apple Music' })).toBeNull();
-  });
-
-  it('shows Apple Music when enabled and connected', () => {
-    setup({ appleEnabled: true, appleConnected: true });
-    expect(screen.getByRole('button', { name: 'Apple Music' })).toBeInTheDocument();
   });
 
   it('selects a service on click', () => {

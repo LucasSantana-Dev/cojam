@@ -15,7 +15,7 @@ import (
 
 // validPlatform mirrors the values presenceConnInfo accepts.
 func validPlatform(p string) bool {
-	return p == "spotify" || p == "apple" || p == "youtube"
+	return p == "spotify" || p == "youtube"
 }
 
 // platformStore holds clientID -> platform overrides. Zero value is ready.
@@ -48,13 +48,13 @@ func (s *platformStore) get(clientID string) (string, bool) {
 
 // memberSetPlatform handles member.set_platform: the caller must be a member of
 // the room (Authorize enforces it at the transport; re-checked here for the
-// transport-independent path) and the platform one of spotify|apple|youtube.
+// transport-independent path) and the platform one of spotify|youtube.
 func (h *Hub) memberSetPlatform(roomID, platform, clientID string) (json.RawMessage, error) {
 	if clientID == "" || !h.IsMember(clientID, roomID) {
 		return nil, userErrorf("not a member of this room")
 	}
 	if !validPlatform(platform) {
-		return nil, userErrorf("platform must be spotify, apple or youtube")
+		return nil, userErrorf("platform must be spotify or youtube")
 	}
 	h.platforms.set(clientID, platform)
 	if err := h.publishPlatform(roomID, clientID, platform); err != nil {

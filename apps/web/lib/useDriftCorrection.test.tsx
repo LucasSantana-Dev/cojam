@@ -566,7 +566,7 @@ describe('useDriftCorrection when the queue has ended', () => {
 
   // The server leaves the transport "playing" at 0 when the last track ends
   // and nothing follows (radio still fetching, or off). The player still holds
-  // the finished track (Spotify or Apple; YouTube unmounts): resuming and seeking it to 0 replays the same song.
+  // the finished track (Spotify; YouTube unmounts): resuming and seeking it to 0 replays the same song.
   it('does not replay the finished track while nothing is now-playing', async () => {
     const player = makePlayer();
     useStore.getState().setState({

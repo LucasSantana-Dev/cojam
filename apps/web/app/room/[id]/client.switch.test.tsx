@@ -70,7 +70,6 @@ vi.mock('../components/YouTubePlayer', () => ({
     return null;
   },
 }));
-vi.mock('../components/ApplePlayer', () => ({ ApplePlayer: () => null }));
 
 const track: TrackRef = {
   id: 't1',

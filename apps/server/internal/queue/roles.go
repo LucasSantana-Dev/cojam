@@ -60,7 +60,7 @@ func (rs *RoomState) SetAdmin(userID string, admin bool) (changed bool, full boo
 
 // HasSource reports whether the track carries any playable source.
 func (t *TrackRef) HasSource() bool {
-	return t.Sources.YouTube != nil || t.Sources.Spotify != nil || t.Sources.Apple != nil
+	return t.Sources.YouTube != nil || t.Sources.Spotify != nil
 }
 
 // Track returns the queued track with the given ID, or nil.

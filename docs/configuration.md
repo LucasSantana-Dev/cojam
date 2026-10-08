@@ -9,7 +9,6 @@ Build-time, in `apps/web/.env.local`:
 ```bash
 NEXT_PUBLIC_FEATURE_YOUTUBE=true       # default true
 NEXT_PUBLIC_FEATURE_SPOTIFY=false      # default false
-NEXT_PUBLIC_FEATURE_APPLE=false        # default false
 NEXT_PUBLIC_FEATURE_PRESENCE=true      # default true
 NEXT_PUBLIC_SPOTIFY_CLIENT_ID=<id>     # Spotify PKCE (Web Playback)
 NEXT_PUBLIC_WS_URL=ws://localhost:8080/connection/websocket
@@ -36,7 +35,7 @@ Source of truth: `apps/web/lib/features.ts`. Each has a `NEXT_PUBLIC_FEATURE_<NA
 | Flag | Default |
 | --- | --- |
 | `YOUTUBE`, `PRESENCE`, `TRACK_DEPTH`, `LYRICS` | on |
-| `SPOTIFY`, `APPLE`, `LISTENBRAINZ`, `LASTFM_ENRICH`, `SYNC`, `ROOM_AUTH`, `QUEUE_VOTING`, `ROOM_CHAT`, `PUBLIC_ROOMS`, `TELEMETRY`, `VIDEO` | off |
+| `SPOTIFY`, `LISTENBRAINZ`, `LASTFM_ENRICH`, `SYNC`, `ROOM_AUTH`, `QUEUE_VOTING`, `ROOM_CHAT`, `PUBLIC_ROOMS`, `TELEMETRY`, `VIDEO` | off |
 
 `VIDEO` is its own flag, not `SYNC`: video co-watch carries a ToS exposure and must switch off without disabling audio drift correction.
 
@@ -54,9 +53,6 @@ REPORT_RETENTION_DAYS=0                # delete reports and moderation actions o
 YOUTUBE_API_KEY=<key>                  # YouTube matching
 SPOTIFY_CLIENT_ID=<id>                 # Spotify matching (client credentials)
 SPOTIFY_CLIENT_SECRET=<secret>
-APPLE_TEAM_ID=<team>                   # Apple MusicKit token (when enabled)
-APPLE_KEY_ID=<id>
-APPLE_PRIVATE_KEY_PATH=/path/to/key
 SPOTIFY_TOKEN_KEY=<base64 32 bytes>    # seals stored Spotify refresh tokens
 ```
 
