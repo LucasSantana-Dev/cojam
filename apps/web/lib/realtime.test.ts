@@ -4,7 +4,7 @@
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
-  chatUnavailableNotice, updatePlatform,
+  chatUnavailableNotice, updatePlatform, updateCharacter,
 } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
 
@@ -1076,5 +1076,84 @@ describe('listening platform (member.set_platform)', () => {
     expect(useStore.getState().members[0].platform).toBe('youtube');
     useStore.getState().setPlatformOverride('a1', 'apple');
     expect(useStore.getState().members[0].platform).toBe('apple');
+  });
+});
+
+describe('audience character (member.set_character)', () => {
+  beforeEach(() => {
+    centrifugeMock.MockCentrifuge.instances = [];
+    authMocks.accountToken = null;
+    runtimeEnvMocks.env = undefined;
+    useStore.setState({
+      state: null, connected: false, reconnecting: false, chat: [], kicked: false, clientId: '',
+      connections: [], members: [], characterOverrides: {}, characterSeqs: {},
+    });
+  });
+
+  let n = 0;
+  let room = '';
+  const joined = async () => {
+    const roomId = (room = `char-${++n}`);
+    const joinPromise = joinRoom(roomId, 'Alice', 'youtube');
+    await vi.waitFor(() => expect(centrifugeMock.MockCentrifuge.instances.length).toBeGreaterThan(0));
+    const instances = centrifugeMock.MockCentrifuge.instances;
+    const instance = instances[instances.length - 1];
+    instance.emit('connected', { client: 'c-me' });
+    await joinPromise;
+    await new Promise((r) => setTimeout(r, 0));
+    return instance;
+  };
+  const flush = () => new Promise((r) => setTimeout(r, 460)); // past the 400 ms debounce
+  const sets = (i: { rpcCalls: Array<{ method: string; payload: unknown }> }) =>
+    i.rpcCalls.filter((c) => c.method === 'member.set_character');
+
+  it('sends the id over the RPC without reconnecting, and shows it on our own entry', async () => {
+    const instance = await joined();
+    updateCharacter(room, 7);
+    await flush();
+    expect(sets(instance)).toEqual([{ method: 'member.set_character', payload: { roomId: room, characterId: 7 } }]);
+    expect(instance.disconnectCalls).toBe(0);
+    expect(instance.connectCalls).toBe(1);
+    expect(useStore.getState().characterOverrides['c-me']).toBe(7);
+  });
+
+  it('does not resend an unchanged id and sends a change', async () => {
+    const instance = await joined();
+    updateCharacter(room, 3);
+    await flush();
+    updateCharacter(room, 3);
+    await flush();
+    expect(sets(instance)).toHaveLength(1);
+    updateCharacter(room, 4);
+    await flush();
+    expect(sets(instance)).toHaveLength(2);
+  });
+
+  it('ignores out of range ids and calls for another room', async () => {
+    const instance = await joined();
+    updateCharacter(room, 0);
+    updateCharacter(room, 13);
+    updateCharacter('other-room', 5);
+    await flush();
+    expect(sets(instance)).toHaveLength(0);
+  });
+
+  it('overlays on presence: the latest choice of a person wins, a seed never beats a live event', () => {
+    const s = useStore.getState();
+    s.setMembers([
+      { clientId: 'c1', userId: 'u1', name: 'Bia' },
+      { clientId: 'c2', userId: 'u1', name: 'Bia' },
+      { clientId: 'c3', userId: 'u3', name: 'Caio' },
+    ]);
+    s.setCharacterOverride('c1', 3);
+    s.setCharacterOverride('c2', 8);
+    expect(useStore.getState().members.find((m) => m.userId === 'u1')?.characterId).toBe(8);
+    expect(useStore.getState().members.find((m) => m.userId === 'u3')?.characterId).toBeUndefined();
+    s.setCharacterOverrides({ c1: 11, c3: 5 });
+    const st = useStore.getState();
+    expect(st.characterOverrides.c1).toBe(3); // live value kept over the seed
+    expect(st.members.find((m) => m.userId === 'u3')?.characterId).toBe(5);
+    s.removeMember('c3');
+    expect(useStore.getState().characterOverrides.c3).toBeUndefined();
   });
 });

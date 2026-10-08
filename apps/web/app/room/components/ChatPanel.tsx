@@ -6,6 +6,8 @@ import { useStore, sendChat, deleteChatMessage, rpcErrorMessage, getClockOffsetM
 import { fileReport } from '@/lib/report';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { avatarGradient } from '@/lib/avatar';
+import { memberCharacter, defaultCharacterId } from '@/lib/characters';
+import { CharacterAvatar } from './CharacterAvatar';
 import { EmojiIcon } from '@/app/components/icons';
 import { ptSystemText } from '@/lib/chatSystemText';
 
@@ -38,6 +40,12 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   const connected = useStore((s) => s.connected);
   const name = useStore((s) => s.name);
   const hostUserId = useStore((s) => s.state?.hostUserId);
+  const members = useStore((s) => s.members);
+  // A line's author may have left: the default from the same id still gives a stable face.
+  const characterOf = (m: { userId?: string; name: string }) => {
+    const who = members.find((x) => (m.userId ? x.userId === m.userId : x.name === m.name));
+    return who ? memberCharacter(who) : defaultCharacterId(m.userId || m.name);
+  };
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -203,7 +211,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                 style={{ background: avatarGradient(m.userId || m.name) }}
                 aria-hidden
               >
-                {m.name.charAt(0).toUpperCase()}
+                <CharacterAvatar characterId={characterOf(m)} initial={m.name.charAt(0).toUpperCase()} half />
               </span>
               <div className="chat-msg__body">
                 <div className="chat-msg__who">

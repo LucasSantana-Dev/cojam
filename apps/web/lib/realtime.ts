@@ -6,7 +6,8 @@ import { computeNameSuffixes } from './nameSuffix';
 import { fetchConnectionToken, getLastTokenFetchError, getStoredProofToken, clearStoredIdentity } from './auth';
 import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
-import type { ChatDeletePub, ChatMessage, ChatMessagePub, MemberPlatformPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
+import { isCharacterId } from './characters';
+import type { ChatDeletePub, ChatMessage, ChatMessagePub, MemberPlatformPub, MemberCharacterPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = {
   clientId: string;
@@ -18,6 +19,10 @@ export type Member = {
   platform?: 'spotify' | 'apple' | 'youtube';
   // Order of the member.set_platform override behind `platform`, when it came from one.
   platformSeq?: number;
+  // Audience character (member.set_character, 1..12) and its override order.
+  // Absent until the person chose one: callers show memberCharacter(member).
+  characterId?: number;
+  characterSeq?: number;
 };
 
 // One person = one listener. Presence is per connection (new clientId on every
@@ -49,6 +54,7 @@ export function collapseMembers(connections: Member[]): Member[] {
       // smallest clientId that has a ConnInfo platform.
       platform: sorted.filter((m) => m.platformSeq !== undefined).sort((x, y) => y.platformSeq! - x.platformSeq!)[0]?.platform
         ?? sorted.find((m) => m.platform)?.platform,
+      characterId: sorted.filter((m) => m.characterSeq !== undefined).sort((x, y) => y.characterSeq! - x.characterSeq!)[0]?.characterId,
       clientIds: sorted.flatMap((m) => m.clientIds ?? [m.clientId]),
     };
   });
@@ -89,9 +95,21 @@ type Platform = 'spotify' | 'apple' | 'youtube';
 // Monotonic order of overrides: the latest wins when one person has several connections.
 let overrideSeq = 0;
 
-function derivePresence(connections: Member[], overrides: Record<string, Platform> = {}, seqs: Record<string, number> = {}) {
-  // member.set_platform overrides win over the connect-time ConnInfo platform.
-  const withOverrides = connections.map((c) => (overrides[c.clientId] ? { ...c, platform: overrides[c.clientId], platformSeq: seqs[c.clientId] ?? 0 } : c));
+function derivePresence(
+  connections: Member[],
+  overrides: Record<string, Platform> = {},
+  seqs: Record<string, number> = {},
+  characters: Record<string, number> = {},
+  characterSeqs: Record<string, number> = {},
+) {
+  // member.set_platform overrides win over the connect-time ConnInfo platform;
+  // member.set_character is an overlay only (ConnInfo carries no character).
+  const withOverrides = connections.map((c) => {
+    let m = c;
+    if (overrides[c.clientId]) m = { ...m, platform: overrides[c.clientId], platformSeq: seqs[c.clientId] ?? 0 };
+    if (characters[c.clientId]) m = { ...m, characterId: characters[c.clientId], characterSeq: characterSeqs[c.clientId] ?? 0 };
+    return m;
+  });
   const members = collapseMembers(withOverrides);
   return { members, nameSuffixes: computeNameSuffixes(members) };
 }
@@ -110,6 +128,9 @@ export interface AppStore {
   // clientId -> platform set through member.set_platform (overlay on presence).
   platformOverrides: Record<string, Platform>;
   platformSeqs: Record<string, number>;
+  // clientId -> character set through member.set_character (overlay on presence).
+  characterOverrides: Record<string, number>;
+  characterSeqs: Record<string, number>;
   // Collision suffixes for duplicate display names (#170), recomputed on every
   // membership change so PresenceBar and the fused chip cannot disagree.
   nameSuffixes: Record<string, string>;
@@ -143,6 +164,8 @@ export interface AppStore {
   setMembers: (members: Member[]) => void;
   setPlatformOverride: (clientId: string, platform: Platform) => void;
   setPlatformOverrides: (overrides: Record<string, Platform>) => void;
+  setCharacterOverride: (clientId: string, characterId: number) => void;
+  setCharacterOverrides: (overrides: Record<string, number>) => void;
   setConnectedServices: (services: string[]) => void;
   setSignedIn: (signedIn: boolean) => void;
   setRebindNotice: (notice: string | null) => void;
@@ -165,6 +188,8 @@ export const useStore = create<AppStore>((set) => ({
   connections: [],
   platformOverrides: {},
   platformSeqs: {},
+  characterOverrides: {},
+  characterSeqs: {},
   nameSuffixes: {},
   connectedServices: [],
   kicked: false,
@@ -182,17 +207,28 @@ export const useStore = create<AppStore>((set) => ({
   setKicked: (kicked) => set({ kicked }),
   setMembers: (connections) => set((s) => ({
     connections,
-    ...derivePresence(connections, s.platformOverrides, s.platformSeqs),
+    ...derivePresence(connections, s.platformOverrides, s.platformSeqs, s.characterOverrides, s.characterSeqs),
   })),
   setPlatformOverride: (clientId, platform) => set((s) => {
     const platformOverrides = { ...s.platformOverrides, [clientId]: platform };
     const platformSeqs = { ...s.platformSeqs, [clientId]: ++overrideSeq };
-    return { platformOverrides, platformSeqs, ...derivePresence(s.connections, platformOverrides, platformSeqs) };
+    return { platformOverrides, platformSeqs, ...derivePresence(s.connections, platformOverrides, platformSeqs, s.characterOverrides, s.characterSeqs) };
   }),
   setPlatformOverrides: (overrides) => set((s) => {
     // A seed may arrive after newer live events: live values win.
     const platformOverrides = { ...overrides, ...s.platformOverrides };
-    return { platformOverrides, ...derivePresence(s.connections, platformOverrides, s.platformSeqs) };
+    return { platformOverrides, ...derivePresence(s.connections, platformOverrides, s.platformSeqs, s.characterOverrides, s.characterSeqs) };
+  }),
+  setCharacterOverride: (clientId, characterId) => set((s) => {
+    const characterOverrides = { ...s.characterOverrides, [clientId]: characterId };
+    const characterSeqs = { ...s.characterSeqs, [clientId]: ++overrideSeq };
+    return { characterOverrides, characterSeqs, ...derivePresence(s.connections, s.platformOverrides, s.platformSeqs, characterOverrides, characterSeqs) };
+  }),
+  setCharacterOverrides: (overrides) => set((s) => {
+    // A seed may arrive after newer live events: live values win. Seeded entries
+    // get a seq of 0 so any live choice of the same person outranks them.
+    const characterOverrides = { ...overrides, ...s.characterOverrides };
+    return { characterOverrides, ...derivePresence(s.connections, s.platformOverrides, s.platformSeqs, characterOverrides, s.characterSeqs) };
   }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
   setSignedIn: (signedIn) => set({ signedIn }),
@@ -211,7 +247,7 @@ export const useStore = create<AppStore>((set) => ({
   addMember: (m) => set((s) => {
     if (s.connections.some((x) => x.clientId === m.clientId)) return s;
     const connections = [...s.connections, m];
-    return { connections, ...derivePresence(connections, s.platformOverrides, s.platformSeqs) };
+    return { connections, ...derivePresence(connections, s.platformOverrides, s.platformSeqs, s.characterOverrides, s.characterSeqs) };
   }),
   removeMember: (clientId) => set((s) => {
     const connections = s.connections.filter((x) => x.clientId !== clientId);
@@ -219,7 +255,11 @@ export const useStore = create<AppStore>((set) => ({
     delete platformOverrides[clientId];
     const platformSeqs = { ...s.platformSeqs };
     delete platformSeqs[clientId];
-    return { connections, platformOverrides, platformSeqs, ...derivePresence(connections, platformOverrides, platformSeqs) };
+    const characterOverrides = { ...s.characterOverrides };
+    delete characterOverrides[clientId];
+    const characterSeqs = { ...s.characterSeqs };
+    delete characterSeqs[clientId];
+    return { connections, platformOverrides, platformSeqs, characterOverrides, characterSeqs, ...derivePresence(connections, platformOverrides, platformSeqs, characterOverrides, characterSeqs) };
   }),
   setChat: (messages) => set({ chat: messages }),
   // Chat has no version guard (it is not RoomState): dedupe by id so live
@@ -330,6 +370,14 @@ let platformReady = false;
 const PLATFORM_DEBOUNCE_MS = 500;
 let platformTimer: ReturnType<typeof setTimeout> | null = null;
 
+// The audience character this person wants shown, and the one last sent on the
+// current connection. Same shape as the platform: it never reconnects, is held
+// until the join (and rebind) settle, and a reconnect re-sends it.
+let desiredCharacter: { roomId: string; characterId: number } | null = null;
+let sentCharacter: number | null = null;
+const CHARACTER_DEBOUNCE_MS = 400;
+let characterTimer: ReturnType<typeof setTimeout> | null = null;
+
 // joinRoom rejects if 'connected' never fires (unreachable server, rejected
 // token with retry loop): without this the join UI hung forever (B11).
 const JOIN_TIMEOUT_MS = 10_000;
@@ -374,9 +422,13 @@ export async function joinRoom(
   if (desiredPlatform && desiredPlatform.roomId !== roomId) desiredPlatform = null;
   sentPlatform = null;
   platformReady = false;
-  useStore.setState({ platformOverrides: {}, platformSeqs: {} });
+  sentCharacter = null;
+  useStore.setState({ platformOverrides: {}, platformSeqs: {}, characterOverrides: {}, characterSeqs: {} });
   if (platformTimer) clearTimeout(platformTimer);
   platformTimer = null;
+  if (desiredCharacter && desiredCharacter.roomId !== roomId) desiredCharacter = null;
+  if (characterTimer) clearTimeout(characterTimer);
+  characterTimer = null;
 
   // A fresh joinRoom is a new room intent: clear the previous activeRoom so
   // the reconnect resync below cannot re-join (and adopt the state of) a
@@ -436,11 +488,13 @@ export async function joinRoom(
       const rejoin = activeRoom;
       // A new connection is a new clientId with no platform override.
       sentPlatform = null;
+      sentCharacter = null;
       centrifuge!.rpc('room.join', rejoin).then((res) => {
         if (res.data) {
           useStore.getState().setState(res.data as RoomState);
         }
         applyDesiredPlatform(rejoin.roomId);
+        applyDesiredCharacter(rejoin.roomId);
       }).catch(() => {
         /* stay on stale state; the next publication heals */
       });
@@ -482,7 +536,7 @@ export async function joinRoom(
   const sub = centrifuge.newSubscription(`room:${roomId}`);
 
   sub.on('publication', (ctx) => {
-    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub | MemberPlatformPub;
+    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub | MemberPlatformPub | MemberCharacterPub;
     if (pub.type === 'room.state') {
       store.setState(pub.state);
       // Rebind completion rule (#172): the proof token is discarded only when
@@ -500,6 +554,8 @@ export async function joinRoom(
       store.removeChatMessage(pub.messageId);
     } else if (pub.type === 'member.platform') {
       store.setPlatformOverride(pub.clientId, pub.platform);
+    } else if (pub.type === 'member.character') {
+      if (isCharacterId(pub.characterId)) store.setCharacterOverride(pub.clientId, pub.characterId);
     }
   });
 
@@ -521,6 +577,13 @@ export async function joinRoom(
         const map = (r.data as { platforms?: Record<string, Platform> } | null)?.platforms;
         if (map) useStore.getState().setPlatformOverrides(map);
       }).catch(() => { /* the overlay is cosmetic; presence ConnInfo still shows */ });
+      centrifuge?.rpc('member.characters', { roomId }).then((r) => {
+        const map = (r.data as { characters?: Record<string, number> } | null)?.characters;
+        if (!map) return;
+        const valid: Record<string, number> = {};
+        for (const [id, c] of Object.entries(map)) if (isCharacterId(c)) valid[id] = c;
+        useStore.getState().setCharacterOverrides(valid);
+      }).catch(() => { /* the default character still shows */ });
     }).catch(() => { /* presence unavailable — leave list empty */ });
   });
   sub.on('join', (ctx) => {
@@ -597,6 +660,7 @@ export async function joinRoom(
     .finally(() => {
       platformReady = true;
       applyDesiredPlatform(roomId);
+      applyDesiredCharacter(roomId);
     });
 
   // Seed chat history for late joiners (F8): the server ring holds the last
@@ -643,6 +707,36 @@ function applyDesiredPlatform(roomId: string): void {
   conn.rpc('member.set_platform', { roomId, platform: want.platform }).catch(() => {
     // Not delivered: allow a later attempt (next change or reconnect).
     if (sentPlatform === want.platform) sentPlatform = null;
+  });
+}
+
+// updateCharacter records the audience character this person picked and tells
+// the room with member.set_character. Like updatePlatform it never reconnects
+// and is sent once the join settled; call it with the stored choice after the
+// join and again on every change. Invalid ids are ignored.
+export function updateCharacter(roomId: string, characterId: number): void {
+  if (!isCharacterId(characterId)) return;
+  desiredCharacter = { roomId, characterId };
+  if (characterTimer) clearTimeout(characterTimer);
+  characterTimer = setTimeout(() => {
+    characterTimer = null;
+    applyDesiredCharacter(roomId);
+  }, CHARACTER_DEBOUNCE_MS);
+}
+
+function applyDesiredCharacter(roomId: string): void {
+  const want = desiredCharacter;
+  if (!want || want.roomId !== roomId) return;
+  if (!platformReady || !centrifuge || !activeRoom || activeRoom.roomId !== roomId) return;
+  const st = useStore.getState();
+  if (st.kicked || !st.connected) return;
+  if (sentCharacter === want.characterId) return;
+  const conn = centrifuge;
+  sentCharacter = want.characterId;
+  // Show it on our own entry right away; the room event confirms it.
+  if (st.clientId) st.setCharacterOverride(st.clientId, want.characterId);
+  conn.rpc('member.set_character', { roomId, characterId: want.characterId }).catch(() => {
+    if (sentCharacter === want.characterId) sentCharacter = null;
   });
 }
 

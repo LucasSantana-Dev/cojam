@@ -13,7 +13,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { avatarGradient } from '@/lib/avatar';
 import { saveGuestName, NAME_KEY } from '@/lib/guestName';
-import { ChevronDownIcon, ChevronRightIcon, LogoutIcon, PencilIcon, SwapIcon, CheckIcon } from '@/app/components/icons';
+import { ChevronDownIcon, ChevronRightIcon, LogoutIcon, PencilIcon, SwapIcon, CheckIcon, UserCircleIcon } from '@/app/components/icons';
+import { CharacterAvatar } from './CharacterAvatar';
+import { CharacterPicker } from './CharacterPicker';
 import { ServiceBadge } from '@/app/components/ServiceBadge';
 import { YourDataId } from '@/app/components/YourDataId';
 import type { Source } from '@/lib/pickSource';
@@ -26,6 +28,9 @@ interface AvatarMenuProps {
   name: string;
   // Seed of the avatar colour (the same one the listener stage uses).
   seed: string;
+  // The character this person is shown with, and the change handler.
+  characterId: number;
+  onCharacterChange: (id: number) => void;
   // The service this person listens through, track-independent.
   platform: Source | null;
   // That service has a connected account (Spotify / Apple Music).
@@ -41,10 +46,11 @@ interface AvatarMenuProps {
   connectors: ReactNode;
 }
 
-export function AvatarMenu({ roomId, name, seed, platform, serviceConnected, guest, accountsEnabled, picker, roomItems, connectors }: AvatarMenuProps) {
+export function AvatarMenu({ roomId, name, seed, characterId, onCharacterChange, platform, serviceConnected, guest, accountsEnabled, picker, roomItems, connectors }: AvatarMenuProps) {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [services, setServices] = useState(false);
+  const [chars, setChars] = useState(false);
   const [draft, setDraft] = useState(name);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -104,7 +110,7 @@ export function AvatarMenu({ roomId, name, seed, platform, serviceConnected, gue
         onClick={() => setOpen((o) => !o)}
         style={{ background: avatarGradient(seed) }}
       >
-        <span aria-hidden="true">{initial}</span>
+        <CharacterAvatar characterId={characterId} initial={initial} half />
         {platform && (
           <span className="r4-me__dot" aria-hidden="true">
             <ServiceBadge source={platform} size="sm" />
@@ -115,7 +121,7 @@ export function AvatarMenu({ roomId, name, seed, platform, serviceConnected, gue
       <div id={`r4-avatar-menu-${roomId}`} className="r4-menu r4-menu--end r4-menu--user" hidden={!open}>
         <div className="r4-menu__head">
           <span className="r4-menu__av" style={{ background: avatarGradient(seed) }} aria-hidden="true">
-            {initial}
+            <CharacterAvatar characterId={characterId} initial={initial} />
             {platform && (
               <span className="r4-menu__avdot">
                 <ServiceBadge source={platform} size="md" />
@@ -158,6 +164,17 @@ export function AvatarMenu({ roomId, name, seed, platform, serviceConnected, gue
               </button>
             </form>
           )}
+
+          <button type="button" className="r4-menu__item" aria-expanded={chars} onClick={() => setChars((v) => !v)}>
+            <UserCircleIcon size={18} />
+            <span>Trocar personagem</span>
+            <span className="r4-menu__chev" aria-hidden="true">
+              {chars ? <ChevronDownIcon size={18} /> : <ChevronRightIcon size={18} />}
+            </span>
+          </button>
+          <div className="r4-menu__chars" hidden={!chars}>
+            <CharacterPicker value={characterId} onChange={onCharacterChange} idPrefix="menu-char" as="h3" />
+          </div>
 
           <button type="button" className="r4-menu__item" aria-expanded={services} onClick={() => setServices((v) => !v)}>
             <SwapIcon size={18} />
