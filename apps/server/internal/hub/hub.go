@@ -236,6 +236,7 @@ type Hub struct {
 	store           store.Store
 	node            *centrifuge.Node
 	publishFn       func(roomID string, state json.RawMessage) error // test seam; nil = publish via node
+	wootPublishFn   func(roomID string, payload []byte) error        // test seam for reaction.woot; nil = node
 	logger          *slog.Logger
 	moderationAudit ModerationAudit
 	metrics         *obs.Metrics
@@ -417,6 +418,7 @@ var mutatingMethods = map[string]bool{
 	"member.platforms":            true,
 	"member.set_character":        true,
 	"member.characters":           true,
+	"reaction.woot":               true,
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
 }
@@ -457,6 +459,7 @@ var knownMethods = map[string]bool{
 	"member.platforms":            true,
 	"member.set_character":        true,
 	"member.characters":           true,
+	"reaction.woot":               true,
 	"sync.ping":                   true,
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
@@ -2563,6 +2566,18 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, fmt.Errorf("member.characters: roomId required")
 		}
 		return h.memberCharacters(req.RoomID)
+
+	case "reaction.woot":
+		var req struct {
+			RoomID string `json:"roomId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("reaction.woot: roomId required")
+		}
+		return h.reactionWoot(req.RoomID, clientID)
 
 	case "sync.ping":
 		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})

@@ -165,3 +165,11 @@ export type MemberCharacterPub = {
   clientId: string;
   characterId: CharacterId;
 };
+
+// ReactionWootPub: a member pressed Curtir on the playing track (reaction.woot).
+// Ephemeral room broadcast: not RoomState, never stored, no version guard. Only
+// the connection is named; clients resolve it to a member through presence.
+export type ReactionWootPub = {
+  type: 'reaction.woot';
+  clientId: string;
+};

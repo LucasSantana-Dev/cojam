@@ -40,6 +40,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `member.platforms` | `{ roomId }` | `{ platforms: Record<clientId, platform> }` |
 | `member.set_character` | `{ roomId, characterId: integer 1..12 }` | `{ clientId: string, characterId: number }` |
 | `member.characters` | `{ roomId }` | `{ characters: Record<clientId, characterId> }` |
+| `reaction.woot` | `{ roomId }` | `{ clientId: string }` |
 | `sync.ping` | `{}` | `{ serverNowMs: number }` |
 
 `track.search` is a read (not membership-gated). The query is trimmed; empty
@@ -344,6 +345,14 @@ Audience character ("Modo palco"): each member is drawn as one of a fixed roster
 
 Clients overlay it on the presence entry with that `clientId` (the latest choice among one person's connections wins). A late joiner seeds the overlay with `member.characters` (membership-gated read, the current overrides of the room's members). A member who never chose gets a default derived from the userId (the clientId for guests without one): the FNV-1a 32 bit hash of the UTF-8 bytes, mod 12, plus 1. The server (`DefaultCharacter`) and the web client (`lib/characters.ts`) implement the same function and share one table of test vectors. The web client sends its stored choice right after the join settles (and after the rebind) and again on every change.
 
+Reactions ("Modo palco"): `reaction.woot` is the Curtir button on the playing track. It is ephemeral: nothing is stored, it is not `RoomState` (no version bump, no persistence) and a late joiner never sees past reactions. It is membership-gated and shares the chat rate limit (one person cannot flood the room). The server publishes on the room channel, naming the connection only (clients resolve it to a member through presence):
+
+```json
+{ "type": "reaction.woot", "clientId": "..." }
+```
+
+Every member receives it, the sender included. The web client draws that member's character jumping with arms up (static under reduced motion). Upvotes on queued tracks (`queue.vote`) are shown the same way, derived from the `RoomState.votes` diff, so they need no event of their own.
+
 Presence: centrifuge native presence on the channel (join/leave events + presence query), no custom messages. Entries are keyed per connection (clientId, plus userId when authenticated: centrifuge's native `user` field on each presence entry, no new field), never on display name: two connections that picked the same name are two distinct entries and count as two listeners. Each entry's ConnInfo is `{"name": string, "platform"?: "spotify"|"apple"|"youtube"}`: the name and playback platform the client presented at connect; the server trims the name and caps it at 40 runes, and drops unrecognized platform values, so presence only carries platforms the UI can render. Display concerns stay client-side: colliding names get a deterministic suffix ("Alice", "Alice (2)") derived from the member list (sorted by clientId), recomputed on every membership change; presence is centrifuge-level, so none of this touches `RoomState` or `Version`. Vote keys in `RoomState.votes` are `user:<userId>` (authenticated) or `client:<clientId>` (no room auth); the web client resolves a voter to a member by matching that id against the presence entry's `user` or `client`, and renders a voter who has left the room as anonymous.
 
 ## Accounts (Supabase Auth, behind `FEATURE_SUPABASE_AUTH`)
@@ -529,7 +538,7 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`history.readd`, `queue.clear`, `queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `now_playing.skip_unplayable`, `playlist.import`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`, `room.claim_host`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms` / `member.set_character` / `member.characters`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`history.readd`, `queue.clear`, `queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `now_playing.skip_unplayable`, `playlist.import`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`, `room.claim_host`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms` / `member.set_character` / `member.characters` / `reaction.woot`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 ### Room ids and room creation
 
