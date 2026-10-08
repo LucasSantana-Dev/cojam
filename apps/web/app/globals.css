@@ -1522,6 +1522,9 @@ input:focus, textarea:focus, select:focus {
   filter: blur(30px);
 }
 .room > * { position: relative; z-index: 1; }
+/* Legal footer (#253) stacks under <main>, so the phone tab bar (fixed, inside
+   main) is never covered by it. */
+.room > .room-footer { z-index: 0; }
 
 /* Frosted glass card — thin gradient-lit border, layered depth. */
 .panel {
@@ -2316,6 +2319,9 @@ input:focus, textarea:focus, select:focus {
   }
   .room-main {
     padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+  .room-footer {
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
   }
   .audio-tabs {
     position: fixed;

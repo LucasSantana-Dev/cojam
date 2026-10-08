@@ -769,7 +769,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         )}
       </main>
 
-      <footer className="text-xs text-center px-4 pb-6" style={{ color: 'var(--color-text-muted)' }}>
+      <footer className="room-footer text-xs text-center px-4 pb-6" style={{ color: 'var(--color-text-muted)' }}>
         <Link href="/privacidade" className="underline">Privacidade</Link>
         {' · '}
         <Link href="/termos" className="underline">Termos</Link>
