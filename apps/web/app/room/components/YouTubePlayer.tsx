@@ -15,6 +15,7 @@ interface YTPlayerInstance {
   getCurrentTime(): number;
   getDuration(): number;
   getPlayerState?(): number;
+  getVideoData?(): { video_id?: string };
   loadVideoById(videoId: string | { videoId: string; startSeconds?: number }): void;
   setVolume?(volume: number): void;
 }
@@ -130,6 +131,14 @@ class YouTubePlayerAdapter implements IPlayer {
       return Number.isFinite(seconds) ? secondsToMs(seconds) : 0;
     } catch {
       return 0;
+    }
+  }
+
+  getLoadedVideoId(): string | null {
+    try {
+      return this.ytPlayer.getVideoData?.().video_id ?? null;
+    } catch {
+      return null;
     }
   }
 

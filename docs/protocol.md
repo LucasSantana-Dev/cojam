@@ -22,7 +22,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `radio.set` | `{ roomId, enabled: boolean }` | `RoomState` |
 | `room.set_public` | `{ roomId, public: boolean, name?: string }` | `RoomState` |
 | `room.list` | `{}` | `{ rooms: PublicRoomSummary[] }` |
-| `transport.play` | `{ roomId, trackId?: string, positionMs: number }` | `RoomState` |
+| `transport.play` | `{ roomId, trackId?: string, positionMs?: number }` | `RoomState` |
 | `transport.pause` | `{ roomId, positionMs: number }` | `RoomState` |
 | `transport.seek` | `{ roomId, positionMs: number }` | `RoomState` |
 | `chat.send` | `{ roomId, text: string }` (a `name` field is ignored) | `{ message: ChatMessage }` |
@@ -136,7 +136,10 @@ type PublicRoomSummary = {
 
 `transport.play` / `transport.pause` / `transport.seek` exist only when
 `FEATURE_SYNC` is on; otherwise the server replies `ErrorMethodNotFound`.
-`positionMs` is clamped to `>= 0`. `transport.play` optionally switches
+`positionMs` is clamped to `>= 0`. On `transport.play` it is optional: when
+omitted (and no `trackId` switches the track) the server resumes from the paused
+`positionMs`, so pause then play continues instead of restarting.
+`transport.play` optionally switches
 `nowPlayingId` first. All three stamp `transport.updatedAtServerMs` server-side
 and publish the full `RoomState`. `sync.ping` is a read returning the server
 clock (unix ms) for client offset estimation.

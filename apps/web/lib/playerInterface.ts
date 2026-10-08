@@ -41,6 +41,13 @@ export interface IPlayer {
    */
   isPlaying?(): boolean;
 
+  /**
+   * Optional: the provider's id for the media it currently has loaded (YouTube
+   * video id), or null when unknown. Lets callers reject reads (duration) that
+   * still belong to the previously loaded media.
+   */
+  getLoadedVideoId?(): string | null;
+
   /** Optional: true when the provider is paused (e.g. autoplay was blocked). */
   isPaused?(): boolean;
 
