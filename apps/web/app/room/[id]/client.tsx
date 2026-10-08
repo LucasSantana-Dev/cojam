@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, joinRoom, nowPlayingAdvance, getClockOffsetMs } from '@/lib/realtime';
+import { useStore, joinRoom, nowPlayingAdvance, getClockOffsetMs, updatePlatform } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
@@ -14,7 +14,9 @@ import { NAME_KEY } from '@/lib/guestName';
 
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
 const noopSubscribe = () => () => {};
-import { pickSource } from '@/lib/pickSource';
+import { resolveSource, listeningPlatform } from '@/lib/pickSource';
+import { useListeningService, setListeningService } from '@/lib/listeningService';
+import { beginAuth } from '@/lib/spotifyAuth';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { canControl } from '@/lib/roomRole';
 import { getStoredUserId } from '@/lib/auth';
@@ -36,6 +38,9 @@ import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
 import { EnrichmentPanel } from '../components/EnrichmentPanel';
 import { NowPlayingCard } from '../components/NowPlayingCard';
+import { VolumeControl } from '../components/VolumeControl';
+import { useApplyVolume } from '@/lib/volume';
+import { ListeningServicePicker } from '../components/ListeningServicePicker';
 import { Stage } from '../components/Stage';
 import { LogoMark } from '@/app/components/Logo';
 import type { IPlayer } from '@/lib/playerInterface';
@@ -66,6 +71,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [trackDepthOpen, setTrackDepthOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
+  // The Spotify and Apple adapters outlive a switch to another service: keep
+  // them so switching back hands drift correction the right player again.
+  const spotifyAdapterRef = useRef<IPlayer | null>(null);
+  const appleAdapterRef = useRef<IPlayer | null>(null);
   // Per-user playback failure: id of the now-playing track this client's
   // provider failed to play, reported by the player adapters. Local-only;
   // never touches transport state or other members.
@@ -123,9 +132,32 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const nowPlaying = store.state?.nowPlayingId
     ? store.state.queue.find((t) => t.id === store.state!.nowPlayingId)
     : undefined;
-  const activeSource = nowPlaying
-    ? pickSource(nowPlaying, { appleAuthorized, spotifyAuthorized })
-    : null;
+  // "Ouvir no": the person's service choice. An explicit choice wins when it
+  // can play this track; otherwise the auto order applies and fellBack says so.
+  const preference = useListeningService();
+  const pickOpts = { appleAuthorized, spotifyAuthorized, preference };
+  const resolved = nowPlaying ? resolveSource(nowPlaying, pickOpts) : { source: null, fellBack: false, reason: null };
+  const activeSource = resolved.source;
+  // The presence badge: the service this person listens through, track-independent.
+  const platform = listeningPlatform(pickOpts);
+  // Keep the badge in step with the choice (and with Spotify/Apple finishing
+  // their authorization after the join): reconnects with fresh ConnInfo only on
+  // an actual change.
+  // doJoin reads it through a ref so a late authorization never re-triggers the
+  // auto-rejoin effect (that would join twice).
+  const activeSourceRef = useRef(activeSource);
+  useEffect(() => {
+    activeSourceRef.current = activeSource;
+  }, [activeSource]);
+  const platformRef = useRef(platform);
+  useEffect(() => {
+    platformRef.current = platform;
+  }, [platform]);
+  // Tell the room which service we listen through. Sent after the join settles
+  // and again on a change; it never reconnects, so the host keeps the role.
+  useEffect(() => {
+    if (joined) updatePlatform(roomId, platform);
+  }, [joined, roomId, platform]);
   // isUnavailable() is exactly "pickSource() found nothing for this client"
   const trackUnavailable = Boolean(nowPlaying) && activeSource === null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
@@ -172,9 +204,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       setLoading(true);
       setJoinError('');
       try {
-        // Compute initial platform from the current active source if available
-        const initialPlatform = activeSource;
-        await joinRoom(roomId, name, initialPlatform);
+        await joinRoom(roomId, name, platformRef.current);
         sessionStorage.setItem(NAME_KEY, name);
         setJoined(true);
       } catch (error) {
@@ -186,7 +216,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         setLoading(false);
       }
     },
-    [roomId, activeSource],
+    [roomId],
   );
 
   const handleJoin = (e: React.FormEvent) => {
@@ -202,6 +232,27 @@ export function RoomClient({ roomId }: { roomId: string }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sync of external sessionStorage state into a connection side effect (join) on mount, not a render-driven state update
     if (saved) doJoin(saved);
   }, [joined, doJoin]);
+
+  // "Ouvir no" switched (or the track changed service) between players that are
+  // already alive: point drift correction and auto-advance at the new one. The
+  // YouTube player announces itself on mount, and its unmount (cleanup runs
+  // before this effect) clears the old one. The new player then seeks to the
+  // synced position through the drift correction below.
+  useEffect(() => {
+    // A source whose player has not announced itself yet leaves no active
+    // player (null), never the previous service's one; it is set when it does.
+    if (activeSource === 'spotify') setActivePlayer(spotifyAdapterRef.current);
+    else if (activeSource === 'apple') setActivePlayer(appleAdapterRef.current);
+    else if (activeSource === 'youtube') {
+      // YouTube announces itself on mount; just drop a Spotify/Apple one.
+      setActivePlayer((p) => (p && (p === spotifyAdapterRef.current || p === appleAdapterRef.current) ? null : p));
+    }
+  }, [activeSource]);
+
+  // Local volume: applied to whichever player is active, and again whenever it
+  // changes (mount, "Ouvir no" switch), so a new player never starts at its own
+  // default level. Never sent to the server.
+  useApplyVolume(activePlayer);
 
   // U4: Drift correction loop (gated by the sync feature flag). The hook keys
   // off the meaningful transport fields, not publication object identity (#177).
@@ -347,8 +398,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <SpotifyPlayer
               authorized={spotifyAuthorized}
               onAuthorized={setSpotifyAuthorized}
-              onPlayerReady={(player) => activeSource === 'spotify' && setActivePlayer(player)}
-              onPlayerGone={() => activeSource === 'spotify' && setActivePlayer(null)}
+              active={activeSource === 'spotify'}
+              onPlayerReady={(player) => {
+                spotifyAdapterRef.current = player;
+                if (activeSourceRef.current === 'spotify') setActivePlayer(player);
+              }}
+              onPlayerGone={() => {
+                spotifyAdapterRef.current = null;
+                if (activeSourceRef.current === 'spotify') setActivePlayer(null);
+              }}
               onPlayError={setPlayFailedId}
             />
           )}
@@ -356,8 +414,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
             <ApplePlayer
               authorized={appleAuthorized}
               onAuthorized={setAppleAuthorized}
-              onPlayerReady={(player) => activeSource === 'apple' && setActivePlayer(player)}
-              onPlayerGone={() => activeSource === 'apple' && setActivePlayer(null)}
+              active={activeSource === 'apple'}
+              onPlayerReady={(player) => {
+                appleAdapterRef.current = player;
+                if (activeSourceRef.current === 'apple') setActivePlayer(player);
+              }}
+              onPlayerGone={() => {
+                appleAdapterRef.current = null;
+                if (activeSourceRef.current === 'apple') setActivePlayer(null);
+              }}
               onPlayError={setPlayFailedId}
             />
           )}
@@ -379,6 +444,22 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   const radioOn = store.state?.radioEnabled ?? false;
 
+  const fallbackWanted = preference !== 'auto' && resolved.fellBack ? preference : null;
+  const servicePicker = (
+    <ListeningServicePicker
+      preference={preference}
+      onChange={setListeningService}
+      spotifyEnabled={f.spotify}
+      appleEnabled={f.apple}
+      spotifyConnected={spotifyAuthorized}
+      appleConnected={appleAuthorized}
+      onConnectSpotify={() => {
+        beginAuth(window.location.pathname).catch((e) => console.error('Spotify connect failed:', e));
+      }}
+      fallback={nowPlaying && fallbackWanted && resolved.reason ? { wanted: fallbackWanted, playing: activeSource, reason: resolved.reason } : null}
+    />
+  );
+
   const heroPanel = (
     <NowPlayingCard
       roomId={roomId}
@@ -392,6 +473,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
       hostControl={hostControl}
       hostLabel={Boolean(f.roomAuth && store.state?.hostUserId && hostControl)}
       activeSource={activeSource}
+      servicePicker={servicePicker}
+      volumeControl={<VolumeControl />}
       activePlayer={activePlayer}
       roomAgeS={roomAgeS}
       radioOn={radioOn}
@@ -424,7 +507,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   const queuePanels = (
     <>
-      <QueuePanel roomId={roomId} canControl={hostControl} onAdd={goToAdd} />
+      <QueuePanel roomId={roomId} canControl={hostControl} onAdd={goToAdd} listeningOn={platform} />
       <ActivityRail />
     </>
   );

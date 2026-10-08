@@ -369,6 +369,7 @@ type Hub struct {
 	clientUserID   map[string]string // clientID -> userID
 	clientName     map[string]string // clientID -> connect-time display name
 	clientIP       map[string]string // clientID -> client IP of the websocket upgrade
+	platforms      platformStore     // clientID -> listening service set by member.set_platform
 
 	// rebindSecret verifies the anonymous connection JWT presented to
 	// room.rebind as proof of guest ownership (#172); rebindBurns records
@@ -401,6 +402,8 @@ var mutatingMethods = map[string]bool{
 	"chat.send":           true,
 	"chat.history":        true,
 	"chat.delete":         true,
+	"member.set_platform": true,
+	"member.platforms":    true,
 }
 
 // knownMethods is the dispatch set. RPC method names are client-supplied, so
@@ -431,6 +434,8 @@ var knownMethods = map[string]bool{
 	"chat.delete":         true,
 	"room.kick":           true,
 	"room.rebind":         true,
+	"member.set_platform": true,
+	"member.platforms":    true,
 	"sync.ping":           true,
 }
 
@@ -837,6 +842,7 @@ func (h *Hub) RemoveClientUserID(clientID string) {
 	delete(h.clientUserID, clientID)
 	delete(h.clientName, clientID)
 	delete(h.clientIP, clientID)
+	h.platforms.remove(clientID)
 }
 
 // recordJoinTime stamps when an authenticated userID joined a room, for
@@ -2294,6 +2300,31 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		// C): the old guest identity is read from the signature-verified
 		// proof token, never from client input.
 		return h.roomRebind(req.RoomID, req.Proof, clientID, userID)
+
+	case "member.set_platform":
+		var req struct {
+			RoomID   string `json:"roomId"`
+			Platform string `json:"platform"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("member.set_platform: roomId required")
+		}
+		return h.memberSetPlatform(req.RoomID, req.Platform, clientID)
+
+	case "member.platforms":
+		var req struct {
+			RoomID string `json:"roomId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("member.platforms: roomId required")
+		}
+		return h.memberPlatforms(req.RoomID)
 
 	case "sync.ping":
 		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})
