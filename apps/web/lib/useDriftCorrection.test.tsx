@@ -163,6 +163,54 @@ describe('useDriftCorrection (#177)', () => {
       unmount();
     });
 
+    it('backs off when every seek leaves the player behind again (slow rebuffer chase)', async () => {
+      const player = makePlayer();
+      // The player never catches up: each seek costs a rebuffer longer than the threshold.
+      player.getCurrentPositionMs.mockResolvedValue(0);
+      useStore.getState().setState(
+        roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 20_000 }),
+      );
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      const stamps: number[] = [];
+      player.seekToMs.mockImplementation(async () => {
+        stamps.push(Date.now());
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      // A fixed 3 s cooldown re-seeked every 4.5 s (13 times a minute).
+      expect(stamps.length).toBeLessThanOrEqual(5);
+      const gaps = stamps.slice(1).map((v, i) => v - stamps[i]);
+      for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeGreaterThan(gaps[i - 1]);
+      unmount();
+    });
+
+    it('resets the backoff once drift is back in range', async () => {
+      const player = makePlayer();
+      let lag = true;
+      useStore.getState().setState(
+        roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 20_000 }),
+      );
+      const start = Date.now();
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      player.getCurrentPositionMs.mockImplementation(async () => (lag ? 0 : Date.now() - start + 20_000));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000); // one corrective seek at 4.5 s
+      });
+      expect(player.seekToMs).toHaveBeenCalledTimes(2);
+      lag = false;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20_000); // in sync: no further seeks, counter resets
+      });
+      expect(player.seekToMs).toHaveBeenCalledTimes(2);
+      lag = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4500); // back to the base 3 s cooldown
+      });
+      expect(player.seekToMs).toHaveBeenCalledTimes(3);
+      unmount();
+    });
+
     it('corrects once the offset lands when the position was unknown at start', async () => {
       const player = makePlayer();
       player.getCurrentPositionMs.mockResolvedValue(0);

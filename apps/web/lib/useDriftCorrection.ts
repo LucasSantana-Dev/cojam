@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore, requestClockRemeasure, nowPlayingAdvance } from './realtime';
-import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, isPastEnd, DRIFT_THRESHOLD_MS, SEEK_COOLDOWN_MS, serverNow } from './playbackSync';
+import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, isPastEnd, DRIFT_THRESHOLD_MS, seekCooldownMs, serverNow } from './playbackSync';
 import type { IPlayer } from './playerInterface';
 
 // U4: Drift correction loop (gated by the sync feature flag).
@@ -57,6 +57,8 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     if (!syncEnabled || !activePlayer || !transport) return;
 
     let lastSeekAt = 0;
+    // Corrective seeks in a row without drift settling (see seekCooldownMs).
+    let consecutiveSeeks = 0;
     let resumeTried = false;
     // Handle state transitions: play/pause/stop
     if (transport.state === 'playing') {
@@ -126,14 +128,17 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         return;
       }
       // Let the last seek settle before judging drift again.
-      if (Date.now() - lastSeekAt < SEEK_COOLDOWN_MS) return;
+      if (Date.now() - lastSeekAt < seekCooldownMs(consecutiveSeeks)) return;
       const expected = computeExpectedPosition(current, now);
 
       activePlayer.getCurrentPositionMs()
         .then((actual) => {
           const drift = actual - expected;
-          if (shouldCorrect(drift, DRIFT_THRESHOLD_MS)) {
+          if (!shouldCorrect(drift, DRIFT_THRESHOLD_MS)) {
+            consecutiveSeeks = 0;
+          } else {
             lastSeekAt = Date.now();
+            consecutiveSeeks++;
             activePlayer.seekToMs(expected).catch((err) => {
               console.warn('Drift correction seek failed:', err);
             });

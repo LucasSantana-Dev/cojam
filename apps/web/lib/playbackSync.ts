@@ -72,6 +72,18 @@ export function isExpectedPositionKnown(
 export const SEEK_COOLDOWN_MS = 3000;
 
 /**
+ * Cooldown after the nth consecutive corrective seek (0 = first). A seek flushes
+ * the player's buffer; on a slow connection or a busy tab the rebuffer alone
+ * costs more than DRIFT_THRESHOLD_MS, so the player is "behind" again after
+ * every seek and a fixed cooldown seeks forever (a ~4.5 s stutter loop, seen on
+ * one listener while the others played fine). Doubling the wait (3, 6, 12, 24 s,
+ * capped) lets the stream settle; the count resets once drift is back in range.
+ */
+export function seekCooldownMs(consecutiveSeeks: number): number {
+  return SEEK_COOLDOWN_MS * 2 ** Math.min(Math.max(consecutiveSeeks, 0), 3);
+}
+
+/**
  * How far past a track's duration the expected position may run before the
  * transport is treated as stale. A live room reaches the end and advances
  * within about a second, so this only trips when nobody advanced (host gone,
