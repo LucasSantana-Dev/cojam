@@ -284,12 +284,12 @@ describe('useDriftCorrection past the end of the track', () => {
     vi.useRealTimers();
   });
 
-  it('never seeks past the end and advances once when the user can control', () => {
+  it('never seeks past the end and advances once when the user can control', async () => {
     const player = makePlayer();
     seed(1, STALE);
     const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
-    act(() => {
-      vi.advanceTimersByTime(10_000); // several drift ticks
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000); // several drift ticks
     });
     expect(player.seekToMs).not.toHaveBeenCalled();
     expect(advanceMock).toHaveBeenCalledTimes(1);
@@ -297,12 +297,13 @@ describe('useDriftCorrection past the end of the track', () => {
     unmount();
   });
 
-  it('does not double-advance on a re-publication of the same stale transport', () => {
+  it('does not double-advance on a re-publication of the same stale transport', async () => {
     const player = makePlayer();
     seed(1, STALE);
     const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
-    act(() => {
+    await act(async () => {
       seed(2, { ...STALE, positionMs: 1 });
+      await vi.advanceTimersByTimeAsync(100);
     });
     expect(advanceMock).toHaveBeenCalledTimes(1);
     unmount();
@@ -333,5 +334,64 @@ describe('useDriftCorrection past the end of the track', () => {
     expect(unknown.seekToMs).toHaveBeenCalledTimes(1);
     expect(advanceMock).not.toHaveBeenCalled();
     b.unmount();
+  });
+
+  it('does not play or seek a listener whose transport is already past the end', () => {
+    const player = makePlayer();
+    seed(1, STALE);
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, false));
+    expect(player.play).not.toHaveBeenCalled();
+    expect(player.seekToMs).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('trusts the longer of the catalogue and the player duration (music video longer than the entry)', async () => {
+    const player = makePlayer();
+    player.getDurationMs.mockResolvedValue(270_000); // 4:30 video, 3:43 catalogue entry
+    seed(1, { state: 'playing', positionMs: 0, updatedAtServerMs: NOW - 240_000 }); // 4:00 in
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(advanceMock).not.toHaveBeenCalled();
+    expect(player.seekToMs).toHaveBeenCalled();
+    unmount();
+  });
+
+  it('falls back to the player duration for a track with none and stops the ENDED loop', async () => {
+    const player = makePlayer();
+    player.getDurationMs.mockResolvedValue(149_000); // 2:29, no catalogue duration
+    player.getCurrentPositionMs.mockResolvedValue(149_000);
+    seed(1, { state: 'playing', positionMs: 0, updatedAtServerMs: NOW - 100_000 }, 0);
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, false));
+    player.seekToMs.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000); // learns 149 s while 'playing'
+    });
+    vi.setSystemTime(NOW + 60_000); // room never moved: expected is now 160 s, past 149 s + grace
+    player.seekToMs.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(player.seekToMs).not.toHaveBeenCalled();
+    expect(advanceMock).not.toHaveBeenCalled(); // a listener only waits
+    unmount();
+  });
+
+  it('a controller advances a track with no catalogue duration once the player says it ended', async () => {
+    const player = makePlayer();
+    player.getDurationMs.mockResolvedValue(149_000);
+    seed(1, { state: 'playing', positionMs: 0, updatedAtServerMs: NOW - 100_000 }, 0);
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    vi.setSystemTime(NOW + 60_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(advanceMock).toHaveBeenCalledTimes(1);
+    expect(advanceMock).toHaveBeenCalledWith('r1', 't1');
+    unmount();
   });
 });
