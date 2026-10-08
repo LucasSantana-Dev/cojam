@@ -113,6 +113,6 @@ describe('PublicRoomToggle', () => {
 
     fireEvent.click(screen.getByRole('checkbox'));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('not the host');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Você não tem permissão para fazer isso.');
   });
 });

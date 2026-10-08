@@ -7,6 +7,7 @@ import { fileReport } from '@/lib/report';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { avatarGradient } from '@/lib/avatar';
 import { EmojiIcon } from '@/app/components/icons';
+import { ptSystemText } from '@/lib/chatSystemText';
 
 // A short, fixed set: a full picker is out of scope, this covers a room's reactions.
 const EMOJIS = ['😂', '😍', '🔥', '👏', '🎶', '❤️', '🙌', '😎', '🥹', '👍', '🤘', '💜'];
@@ -189,7 +190,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
               // Server announcements (#205): no avatar/identity, muted so track
               // changes and join/leave read as room events, not chat.
               <div key={m.id} data-testid="chat-system-message" className="chat-sys" title={chatTime(m.sentAtServerMs)}>
-                <p className="chat-sys__text">{m.text}</p>
+                <p className="chat-sys__text">{ptSystemText(m.text)}</p>
               </div>
             ) : (
             <div
