@@ -94,9 +94,6 @@ func (rs *RoomState) ReAddFromHistory(historyID, addedBy, addedByUserID string) 
 			DurationMs: h.DurationMs, ISRC: h.ISRC, Kind: h.Kind, Sources: h.Sources,
 			AddedBy: addedBy, AddedByUserID: addedByUserID,
 		}
-		if t.AddedBy == "" {
-			t.AddedBy = h.AddedBy
-		}
 		return rs.Add(t), nil
 	}
 	return nil, fmt.Errorf("%w: %s", ErrHistoryNotFound, historyID)
@@ -126,7 +123,8 @@ func (rs *RoomState) MigrateLegacy() bool {
 		return false
 	}
 	played := rs.Queue[:idx]
-	migrated := make([]HistoryEntry, 0, len(played)+len(rs.History))
+	// Capacity is capped: the lengths come from persisted jsonb.
+	migrated := make([]HistoryEntry, 0, MaxHistory+1)
 	for i := len(played) - 1; i >= 0; i-- {
 		delete(rs.Votes, played[i].ID)
 		migrated = append(migrated, historyFromTrack(played[i], 0))
@@ -137,6 +135,9 @@ func (rs *RoomState) MigrateLegacy() bool {
 	}
 	rs.History = migrated
 	rs.Queue = append([]TrackRef{}, rs.Queue[idx:]...)
+	// Open tabs only accept a strictly newer version, so the migrated state
+	// must carry a bump (the caller saves it).
+	rs.Version++
 	return true
 }
 
@@ -155,4 +156,37 @@ func (rs *RoomState) switchTo(id string) {
 	if id != "" {
 		rs.moveToFront(id)
 	}
+}
+
+// RefillSeed returns a copy of the last played track (History[0]) for the
+// radio refill, or nil when nothing has been played. A copy, because the
+// refill reads it after the room lock is released.
+func (rs *RoomState) RefillSeed() *TrackRef {
+	if len(rs.History) == 0 {
+		return nil
+	}
+	return &TrackRef{Title: rs.History[0].Title, Artist: rs.History[0].Artist}
+}
+
+// SkipUnplayed drops the playing track without recording it in History and
+// moves on to the next one. It is the sourceless auto skip: a track that never
+// played must not show up as played or evict real plays from the cap. Same
+// idempotency as AdvanceAfter.
+func (rs *RoomState) SkipUnplayed(afterID string) error {
+	if rs.NowPlayingID != afterID {
+		return nil
+	}
+	if rs.Track(afterID) == nil {
+		return fmt.Errorf("track not found: %s", afterID)
+	}
+	for i, t := range rs.Queue {
+		if t.ID == afterID {
+			rs.Queue = append(rs.Queue[:i], rs.Queue[i+1:]...)
+			break
+		}
+	}
+	delete(rs.Votes, afterID)
+	rs.switchTo(rs.nextUpcoming())
+	rs.Version++
+	return nil
 }

@@ -644,12 +644,10 @@ func TestPruneVoter(t *testing.T) {
 // back and replay the whole history.
 func TestAddToDrainedRoomStartsNewTrack(t *testing.T) {
 	rs := &RoomState{
-		RoomID: "room1",
-		Queue: []TrackRef{
-			{ID: "t1", Title: "Played 1", AddedBy: "u1", Sources: Sources{}},
-			{ID: "t2", Title: "Played 2", AddedBy: "u1", Sources: Sources{}},
-		},
-		NowPlayingID: "", // drained: both entries are history
+		RoomID:       "room1",
+		Queue:        []TrackRef{},
+		History:      []HistoryEntry{{ID: "t2", Title: "Played 2"}, {ID: "t1", Title: "Played 1"}},
+		NowPlayingID: "", // drained: played tracks live in History
 		Version:      3,
 	}
 
@@ -661,6 +659,9 @@ func TestAddToDrainedRoomStartsNewTrack(t *testing.T) {
 	if rs.Version != 4 {
 		t.Errorf("expected version 4, got %d", rs.Version)
 	}
+	if len(rs.Queue) != 1 || rs.Queue[0].ID != added.ID {
+		t.Errorf("queue must hold only the new track, got %v", queueTitles(rs))
+	}
 }
 
 // TestAddRefillKeepsFirstRefilledTrack pins the radio-refill shape of #175:
@@ -668,10 +669,9 @@ func TestAddToDrainedRoomStartsNewTrack(t *testing.T) {
 // one sets NowPlayingID, the rest just queue up behind it.
 func TestAddRefillKeepsFirstRefilledTrack(t *testing.T) {
 	rs := &RoomState{
-		RoomID: "room1",
-		Queue: []TrackRef{
-			{ID: "t1", Title: "Played", AddedBy: "u1", Sources: Sources{}},
-		},
+		RoomID:       "room1",
+		Queue:        []TrackRef{},
+		History:      []HistoryEntry{{ID: "t1", Title: "Played"}},
 		NowPlayingID: "",
 		Version:      2,
 	}
@@ -686,7 +686,7 @@ func TestAddRefillKeepsFirstRefilledTrack(t *testing.T) {
 	if rs.Version != 5 {
 		t.Errorf("expected version 5, got %d", rs.Version)
 	}
-	if len(rs.Queue) != 4 {
-		t.Errorf("expected queue length 4, got %d", len(rs.Queue))
+	if len(rs.Queue) != 3 {
+		t.Errorf("expected queue length 3, got %d", len(rs.Queue))
 	}
 }

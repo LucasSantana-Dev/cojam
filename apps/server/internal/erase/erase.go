@@ -5,8 +5,8 @@
 // Where a person's identifiers live (grep-verified, #318):
 //
 //   - spotify_tokens.sub: sealed Spotify refresh token, keyed by sub. Deleted.
-//   - rooms.state (jsonb): queue[].addedByUserId (sub) and queue[].addedBy
-//     (display name), votes ("user:<sub>", "client:<clientId>"), hostUserId
+//   - rooms.state (jsonb): queue[].addedByUserId and history[].addedByUserId
+//     (sub), queue[].addedBy and history[].addedBy (display name), votes ("user:<sub>", "client:<clientId>"), hostUserId
 //     (sub). Rewritten in place.
 //   - reports.reporter_sub (sub of whoever filed it): anonymized.
 //   - reports.subject_id (client id for member reports, message id for

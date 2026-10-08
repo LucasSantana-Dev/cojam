@@ -62,8 +62,9 @@ func TestHubPersistenceAcrossRestart(t *testing.T) {
 	}
 
 	// Verify hub1 state before restart
-	if len(state1.Queue) != 2 {
-		t.Fatalf("hub1 queue length is %d, want 2", len(state1.Queue))
+	// Setting track 2 retires track 1 (the outgoing track) to History.
+	if len(state1.Queue) != 1 || len(state1.History) != 1 || state1.History[0].ID != track1ID {
+		t.Fatalf("hub1 queue=%d history=%d, want 1 and 1 (track1)", len(state1.Queue), len(state1.History))
 	}
 	if state1.NowPlayingID != track2ID {
 		t.Fatalf("hub1 NowPlayingID is %s, want %s", state1.NowPlayingID, track2ID)
@@ -82,16 +83,11 @@ func TestHubPersistenceAcrossRestart(t *testing.T) {
 	state2 := room2.State
 
 	// Verify persistence: same queue length and content
-	if len(state2.Queue) != 2 {
-		t.Fatalf("hub2 queue length is %d, want 2", len(state2.Queue))
+	if len(state2.Queue) != 1 || state2.Queue[0].ID != track2ID {
+		t.Fatalf("hub2 queue = %+v, want only track2", state2.Queue)
 	}
-
-	// Verify order is preserved
-	if state2.Queue[0].ID != track1ID {
-		t.Fatalf("hub2 queue[0] ID is %s, want %s", state2.Queue[0].ID, track1ID)
-	}
-	if state2.Queue[1].ID != track2ID {
-		t.Fatalf("hub2 queue[1] ID is %s, want %s", state2.Queue[1].ID, track2ID)
+	if len(state2.History) != 1 || state2.History[0].ID != track1ID {
+		t.Fatalf("hub2 history = %+v, want track1", state2.History)
 	}
 
 	// Verify now_playing persisted

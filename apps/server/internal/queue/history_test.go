@@ -206,6 +206,10 @@ func TestHistory_ReAddCreatesNewEntryAndKeepsHistory(t *testing.T) {
 	if rs.NowPlayingID == added.ID {
 		t.Fatal("re-add must not hijack now playing")
 	}
+	anon, err := rs.ReAddFromHistory(oldID, "", "")
+	if err != nil || anon.AddedBy != "" {
+		t.Fatalf("an empty adder must stay empty, never the original adder: %+v err=%v", anon, err)
+	}
 	if _, err := rs.ReAddFromHistory("nope", "", ""); err == nil {
 		t.Fatal("unknown history id must fail")
 	}
@@ -291,5 +295,48 @@ func TestHistory_JSONShape(t *testing.T) {
 		if _, ok := h[k]; !ok {
 			t.Fatalf("history entry missing %s", k)
 		}
+	}
+}
+
+func TestHistory_RefillSeedIsLastPlayedCopy(t *testing.T) {
+	rs := roomWith("a", "b")
+	if rs.RefillSeed() != nil {
+		t.Fatal("no seed before anything played")
+	}
+	_ = rs.AdvanceAfter(rs.NowPlayingID)
+	seed := rs.RefillSeed()
+	if seed == nil || seed.Title != "a" || seed.Artist != "A" {
+		t.Fatalf("seed=%+v", seed)
+	}
+	seed.Title = "mutated"
+	if rs.History[0].Title != "a" {
+		t.Fatal("seed must be a copy")
+	}
+}
+
+func TestHistory_SkipUnplayedLeavesNoTrace(t *testing.T) {
+	rs := roomWith("a", "b")
+	_, _ = rs.ToggleVote(rs.Queue[0].ID, "voter-1")
+	gone := rs.NowPlayingID
+	if err := rs.SkipUnplayed(gone); err != nil {
+		t.Fatal(err)
+	}
+	if len(rs.History) != 0 || rs.Track(gone) != nil || rs.Queue[0].ID != rs.NowPlayingID {
+		t.Fatalf("queue=%v history=%v", queueTitles(rs), historyTitles(rs))
+	}
+	if _, ok := rs.Votes[gone]; ok {
+		t.Fatal("votes must go")
+	}
+	v := rs.Version
+	if err := rs.SkipUnplayed(gone); err != nil || rs.Version != v {
+		t.Fatal("stale call must be a no-op")
+	}
+}
+
+func TestMigrateLegacy_BumpsVersion(t *testing.T) {
+	rs := &RoomState{RoomID: "r", Queue: []TrackRef{{ID: "1"}, {ID: "2"}}, NowPlayingID: "2", Version: 4}
+	rs.MigrateLegacy()
+	if rs.Version != 5 {
+		t.Fatalf("version %d", rs.Version)
 	}
 }

@@ -66,8 +66,11 @@ func TestHistory_ReAddRPC_ControllersOnlyNewIDKeepsHistory(t *testing.T) {
 	}
 }
 
-func TestHistory_AutoSkipSourcelessGoesToHistory(t *testing.T) {
+// A sourceless track skipped by the auto skip never played: it must not enter
+// History (it would show as played and evict real plays); chat says why.
+func TestHistory_AutoSkipSourcelessIsDroppedNotRecorded(t *testing.T) {
 	h := NewHub(nil)
+	h.chatEnabled = true
 	rolesJoin(t, h, "c-o", "owner")
 	historyAdd(t, h, "one")
 	historyAdd(t, h, "two")
@@ -77,8 +80,36 @@ func TestHistory_AutoSkipSourcelessGoesToHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := rolesState(t, h)
-	if len(st.History) != 1 || st.History[0].Title != "one" || len(st.Queue) != 1 {
-		t.Fatalf("queue=%d history=%+v", len(st.Queue), st.History)
+	if len(st.History) != 0 || len(st.Queue) != 1 || st.Queue[0].Title != "two" || st.NowPlayingID != st.Queue[0].ID {
+		t.Fatalf("queue=%+v history=%+v", st.Queue, st.History)
+	}
+	room := mustRoom(t, h, rolesRoom)
+	room.mu.Lock()
+	msgs := room.chatHistory()
+	room.mu.Unlock()
+	found := false
+	for _, m := range msgs {
+		if m.Kind == ChatKindSystem && m.Text == "one não está disponível no seu serviço e foi pulada" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing the skipped-track chat line in %+v", msgs)
+	}
+}
+
+// A track that played and was then skipped by a person does go to History.
+func TestHistory_ManualAdvanceRecordsPlayedTrack(t *testing.T) {
+	h := NewHub(nil)
+	rolesJoin(t, h, "c-o", "owner")
+	historyAdd(t, h, "one")
+	historyAdd(t, h, "two")
+	first := rolesState(t, h).Queue[0].ID
+	if err := rolesRPC(h, "now_playing.advance", `{"roomId":"`+rolesRoom+`","afterId":"`+first+`"}`, "c-o", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if st := rolesState(t, h); len(st.History) != 1 || st.History[0].Title != "one" {
+		t.Fatalf("history=%+v", st.History)
 	}
 }
 
@@ -133,5 +164,12 @@ func TestHistory_LegacyRoomMigratedOnLoad(t *testing.T) {
 	}
 	if got.NowPlayingID != "cur" {
 		t.Fatalf("nowPlayingId changed: %s", got.NowPlayingID)
+	}
+	if got.Version != 10 {
+		t.Fatalf("version = %d, want 10 (bumped so open tabs accept it)", got.Version)
+	}
+	saved, err := mem.Load(context.Background(), "OLD1")
+	if err != nil || saved.Version != 10 || len(saved.History) != 2 || len(saved.Queue) != 2 {
+		t.Fatalf("migrated state must be saved: %+v err=%v", saved, err)
 	}
 }

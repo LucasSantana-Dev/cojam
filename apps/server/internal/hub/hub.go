@@ -1215,8 +1215,13 @@ func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 
 	// Rooms persisted before History existed kept played tracks in Queue;
 	// move them out so a vote or a reorder can never bring them back.
-	if state != nil && state.MigrateLegacy() && h.logger != nil {
-		h.logger.Info("room_history_migrated", "room_id", roomID, "history", len(state.History), "queue", len(state.Queue))
+	if state != nil && state.MigrateLegacy() {
+		if h.logger != nil {
+			h.logger.Info("room_history_migrated", "room_id", roomID, "history", len(state.History), "queue", len(state.Queue))
+		}
+		if err := h.store.Save(ctx, state); err != nil && h.logger != nil {
+			h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+		}
 	}
 
 	// If not found, create fresh
@@ -2533,21 +2538,34 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 	// Capture the newly playing track for the chat announcement (#205).
 	var announced *queue.TrackRef
 
+	// The sourceless auto skip drops a track that never played: it does not
+	// enter History, and chat says why it vanished.
+	var skipped *queue.TrackRef
+
 	res, err := mutate(roomID, func(s *queue.RoomState) error {
 		// Store old NowPlayingID to detect if advance actually changed state
 		oldNowPlayingID := s.NowPlayingID
 
-		if err := s.AdvanceAfter(afterID); err != nil {
-			return err
+		if withSkipCheck {
+			if err := s.AdvanceAfter(afterID); err != nil {
+				return err
+			}
+		} else {
+			if s.NowPlayingID == afterID {
+				if t := s.Track(afterID); t != nil {
+					cp := *t
+					skipped = &cp
+				}
+			}
+			if err := s.SkipUnplayed(afterID); err != nil {
+				return err
+			}
 		}
 
 		// Detect if advance actually changed state and queue is now empty
-		if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" && len(s.History) > 0 {
-			// Queue ran dry; seed from the track that just finished
-			// (History[0]). Copy the values: refillRadio reads the seed after
-			// unlock, when the state may have moved on.
-			seed := queue.TrackRef{Title: s.History[0].Title, Artist: s.History[0].Artist}
-			refillSeed = &seed
+		if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" {
+			// Queue ran dry; seed from the last played track (History[0]).
+			refillSeed = s.RefillSeed()
 		}
 
 		// A real advance to a next track (not the idempotent no-op, not
@@ -2569,6 +2587,10 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 	// After successful mutate, trigger refill if needed (async, outside the lock)
 	if err == nil && refillSeed != nil && h.similar != nil && h.refillAllowed(roomID) {
 		go h.refillRadio(roomID, refillSeed)
+	}
+
+	if err == nil && skipped != nil {
+		h.publishSystemChat(roomID, fmt.Sprintf("%s não está disponível no seu serviço e foi pulada", skipped.Title))
 	}
 
 	// The system message rides chat, not RoomState: no Version bump, no
