@@ -43,6 +43,9 @@ export function useVisualSync(player: IPlayer | null): void {
       return t ? { state: t.state, positionMs: t.positionMs, updatedAtServerMs: t.updatedAtServerMs } : undefined;
     }),
   );
+  // A track change makes the muted player autoplay on loadVideoById, even in a
+  // paused room; the id in the deps re-syncs at once instead of at the next tick.
+  const nowPlayingId = useStore((s) => s.state?.nowPlayingId);
   useEffect(() => {
     if (!player) return;
     const step = () => {
@@ -53,5 +56,5 @@ export function useVisualSync(player: IPlayer | null): void {
     step();
     const id = setInterval(step, VISUAL_TICK_MS);
     return () => clearInterval(id);
-  }, [player, transport]);
+  }, [player, transport, nowPlayingId]);
 }

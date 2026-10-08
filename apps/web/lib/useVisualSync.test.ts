@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { visualSyncStep, VISUAL_DRIFT_MS } from './useVisualSync';
+import { renderHook, act } from '@testing-library/react';
+import { visualSyncStep, useVisualSync, VISUAL_DRIFT_MS } from './useVisualSync';
+import { useStore } from './realtime';
 import type { IPlayer } from './playerInterface';
 
 function fakePlayer(playing: boolean, posMs: number) {
@@ -44,5 +46,23 @@ describe('visualSyncStep (muted palco video for Spotify listeners)', () => {
     expect(await visualSyncStep(p, { state: 'paused', positionMs: 0, updatedAtServerMs: NOW }, NOW)).toBeNull();
     expect(p.play).not.toHaveBeenCalled();
     expect(p.pause).not.toHaveBeenCalled();
+  });
+});
+
+describe('useVisualSync track change', () => {
+  it('re-syncs at once when the track changes, without waiting for the tick', async () => {
+    const paused = { state: 'paused' as const, positionMs: 0, updatedAtServerMs: Date.now() };
+    const base = { roomId: 'R', queue: [], radioEnabled: false, version: 1, transport: paused, votes: {} };
+    useStore.setState({ state: { ...base, nowPlayingId: 't1' } as never });
+    const player = fakePlayer(false, 0);
+    renderHook(() => useVisualSync(player));
+    await act(async () => {});
+    expect(player.pause).not.toHaveBeenCalled();
+    // The new track autoplays on loadVideoById: the next step must pause it now.
+    player.isPlaying = () => true;
+    await act(async () => {
+      useStore.setState({ state: { ...base, nowPlayingId: 't2' } as never });
+    });
+    expect(player.pause).toHaveBeenCalledTimes(1);
   });
 });
