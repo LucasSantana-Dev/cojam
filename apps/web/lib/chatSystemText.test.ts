@@ -6,7 +6,7 @@ describe('ptSystemText', () => {
     expect(ptSystemText('Luk joined')).toBe('Luk entrou');
     expect(ptSystemText('Luk left')).toBe('Luk saiu');
     expect(ptSystemText('Someone joined')).toBe('Alguém entrou');
-    expect(ptSystemText('Now playing: Pétala — Djavan')).toBe('Tocando agora: Pétala, de Djavan');
+    expect(ptSystemText('Now playing: Pétala \u2014 Djavan')).toBe('Tocando agora: Pétala, de Djavan');
   });
   it('keeps Portuguese lines as they are', () => {
     expect(ptSystemText('Luk entrou')).toBe('Luk entrou');
