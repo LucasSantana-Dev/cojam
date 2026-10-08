@@ -147,11 +147,11 @@ describe('useDriftCorrection (#177)', () => {
       const { unmount } = renderHook(() => useDriftCorrection(player, true));
       expect(player.seekToMs).toHaveBeenCalledTimes(1); // initial sync seek
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(3000); // ticks at 1.5 s and 3.0 s
+        await vi.advanceTimersByTimeAsync(2000); // tick at 1.5 s, inside the cooldown
       });
       expect(player.seekToMs).toHaveBeenCalledTimes(1);
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(1500); // past 3 s cooldown
+        await vi.advanceTimersByTimeAsync(2500); // tick at 4.5 s, cooldown over
       });
       expect(player.seekToMs).toHaveBeenCalledTimes(2);
       unmount();
