@@ -386,3 +386,36 @@ func TestRadioRefillSeedIsCopied(t *testing.T) {
 		t.Fatal("refill provider was never called")
 	}
 }
+
+// radioAvailable is a server capability: false without a similar-tracks
+// provider, true with one, and never persisted into the stored room.
+func TestRadioAvailableCapability(t *testing.T) {
+	h := NewHub(nil)
+	res, _ := h.HandleRPC("room.join", []byte(`{"roomId":"cap-a","name":"u1"}`), "")
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(res, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if string(raw["radioAvailable"]) != "false" {
+		t.Fatalf("radioAvailable must be present and false without a provider, got %s", raw["radioAvailable"])
+	}
+
+	h.WithSimilarProvider(func(ctx context.Context, artist, title string, limit int) ([]queue.TrackRef, error) {
+		return nil, nil
+	})
+	res, _ = h.HandleRPC("radio.set", []byte(`{"roomId":"cap-a","enabled":true}`), "")
+	st := &queue.RoomState{}
+	_ = json.Unmarshal(res, st)
+	if !st.RadioAvailable {
+		t.Fatal("radioAvailable should be true once a similar provider is wired")
+	}
+
+	// The persisted copy must not carry the capability.
+	saved, err := h.store.Load(context.Background(), "cap-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.RadioAvailable {
+		t.Fatal("radioAvailable must not be persisted")
+	}
+}

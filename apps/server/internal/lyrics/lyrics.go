@@ -2,7 +2,9 @@ package lyrics
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -11,6 +13,10 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 )
+
+// lyricsCacheMax bounds the in-memory lyrics cache; the oldest entry is
+// evicted first.
+const lyricsCacheMax = 1024
 
 var (
 	// LRCLIB endpoints (package-level for testability).
@@ -37,7 +43,8 @@ type Lyrics struct {
 type lrclibResponse struct {
 	SyncedLyrics string `json:"syncedLyrics"`
 	PlainLyrics  string `json:"plainLyrics"`
-	Duration     int    `json:"duration"`
+	// Duration is deliberately not decoded: LRCLIB returns it as a float
+	// (179.0) and an int field made every response fail to decode.
 }
 
 // parseLRCTimestamp parses a single LRC timestamp line like "[00:12.34] text"
@@ -118,11 +125,17 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 	// /api/get returns 404 on a duration mismatch (common for queue tracks). Treat
 	// any error as a miss and fall through to /api/search, do NOT early-return.
 	var resp lrclibResponse
+	var getErr error // non-404 /get failure; makes a later empty search inconclusive
 	if err := httpx.DoJSON(req, &resp); err == nil {
 		applyLRCResponse(result, resp)
 		if len(result.Synced) > 0 || result.Plain != "" {
 			return result, nil
 		}
+	} else if !isNotFound(err) {
+		// A 404 is the normal duration-mismatch miss; anything else (decode
+		// failure, 5xx, timeout) is worth a log before falling through.
+		slog.Warn("lyrics_get_failed", "artist", artist, "title", title, "err", err.Error())
+		getErr = err
 	}
 
 	// /api/get missed (usually a duration mismatch on queue tracks). Fall back to
@@ -138,7 +151,15 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 
 	var hits []lrclibResponse
 	if err := httpx.DoJSON(sreq, &hits); err != nil {
-		return result, nil
+		if isNotFound(err) {
+			if getErr != nil {
+				return result, fmt.Errorf("lrclib get: %w", getErr)
+			}
+			return result, nil
+		}
+		// Surface the failure so callers do not cache it as "no lyrics". The
+		// hub logs the returned error once.
+		return result, fmt.Errorf("lrclib search: %w", err)
 	}
 	// Prefer the first hit with synced lyrics; else the first with plain.
 	var chosen *lrclibResponse
@@ -153,8 +174,16 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 	}
 	if chosen != nil {
 		applyLRCResponse(result, *chosen)
+	} else if getErr != nil {
+		// /get failed (not a 404) and /search found nothing: inconclusive.
+		return result, fmt.Errorf("lrclib get: %w", getErr)
 	}
 	return result, nil
+}
+
+func isNotFound(err error) bool {
+	var se *httpx.StatusError
+	return errors.As(err, &se) && se.Code == http.StatusNotFound
 }
 
 // applyLRCResponse fills result.Synced/Plain from a raw LRCLIB response.
@@ -175,10 +204,12 @@ func applyLRCResponse(result *Lyrics, resp lrclibResponse) {
 
 // NewCachedLyricsFetcher returns a thread-safe in-memory cached fetcher.
 // Cache key is normalized (artist|title|album|duration) to catch repeated queries.
-// Caches nil results too: avoids re-querying dead tracks.
+// Caches genuine misses (empty result, nil error) to avoid re-querying dead
+// tracks, but never a failed fetch: an outage must not poison the cache.
 func NewCachedLyricsFetcher(inner func(ctx context.Context, artist, title, album string, durationMs int) (*Lyrics, error)) func(context.Context, string, string, string, int) (*Lyrics, error) {
 	var mu sync.Mutex
 	cache := make(map[string]*Lyrics)
+	var order []string
 
 	return func(ctx context.Context, artist, title, album string, durationMs int) (*Lyrics, error) {
 		// Normalize cache key: lowercase, pipe-separated
@@ -199,6 +230,13 @@ func NewCachedLyricsFetcher(inner func(ctx context.Context, artist, title, album
 
 		// Cache the result (including nil or empty) for next time
 		mu.Lock()
+		if _, exists := cache[key]; !exists {
+			if len(cache) >= lyricsCacheMax && len(order) > 0 {
+				delete(cache, order[0])
+				order = order[1:]
+			}
+			order = append(order, key)
+		}
 		cache[key] = result
 		mu.Unlock()
 

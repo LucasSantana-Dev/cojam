@@ -33,6 +33,12 @@ var Client = &http.Client{
 // so a giant (or hostile) response cannot exhaust server memory.
 const MaxResponseBytes int64 = 10 << 20 // 10 MiB
 
+// StatusError is returned by DoJSON for a non-2xx response, so callers can
+// tell a genuine miss (404) from an outage without parsing the message.
+type StatusError struct{ Code int }
+
+func (e *StatusError) Error() string { return fmt.Sprintf("upstream status %d", e.Code) }
+
 // DoJSON sends an HTTP request using Client.Do and decodes the response body
 // as JSON into v. On any error, returns an error without leaking the response body.
 // Status codes outside the 2xx range return a generic error without exposing the body.
@@ -46,7 +52,7 @@ func DoJSON(req *http.Request, v any) error {
 	if resp.StatusCode/100 != 2 {
 		// Drain body to avoid leaks; don't include body in error message
 		io.Copy(io.Discard, io.LimitReader(resp.Body, MaxResponseBytes))
-		return fmt.Errorf("upstream status %d", resp.StatusCode)
+		return &StatusError{Code: resp.StatusCode}
 	}
 
 	return json.NewDecoder(io.LimitReader(resp.Body, MaxResponseBytes)).Decode(v)
