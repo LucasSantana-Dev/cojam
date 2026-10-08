@@ -51,7 +51,7 @@ const BUBBLE_MS = 4500;
 // Emotes: pop, float about EMOTE_FLOAT native px, blink out at EMOTE_MS.
 const EMOTE_MS = 1500;
 const EMOTE_FLOAT = 10;
-const EMOTE_COOLDOWN_MS = 600; // the server allows one per 600 ms per connection
+const EMOTE_COOLDOWN_MS = 700; // the server allows one per 600 ms per connection; 100 ms margin for network jitter
 const EMOTE_LABEL: Record<Emote, string> = {
   amei: 'Amei', fogo: 'Fogo', rindo: 'Rindo', palmas: 'Palmas', uau: 'Uau', cantando: 'Cantando',
 };
