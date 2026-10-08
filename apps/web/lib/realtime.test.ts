@@ -4,7 +4,7 @@
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
-  chatUnavailableNotice,
+  chatUnavailableNotice, updatePlatform,
 } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
 
@@ -45,7 +45,11 @@ const centrifugeMock = vi.hoisted(() => {
       this.subscriptions.push(sub);
       return sub;
     }
-    connect() { /* no-op: tests emit 'connected' manually */ }
+    connectCalls = 0;
+    disconnectCalls = 0;
+    connect() { this.connectCalls++; /* tests emit 'connected' manually */ }
+    disconnect() { this.disconnectCalls++; }
+    setData() { /* ConnInfo is fixed per connection */ }
     rpc(method: string, payload: unknown) {
       this.rpcCalls.push({ method, payload });
       if (method === 'sync.ping') return Promise.resolve({ data: { serverNowMs: 0 } });
@@ -921,5 +925,148 @@ describe('chatUnavailableNotice (ADR-0006)', () => {
 
   it('does not render as a deleted tombstone', () => {
     expect(chatUnavailableNotice('ROOM123').deleted).toBeUndefined();
+  });
+});
+
+
+describe('listening platform (member.set_platform)', () => {
+  beforeEach(() => {
+    centrifugeMock.MockCentrifuge.instances = [];
+    authMocks.accountToken = null;
+    runtimeEnvMocks.env = undefined;
+    useStore.setState({
+      state: null, connected: false, reconnecting: false, chat: [], kicked: false, clientId: '',
+      connections: [], members: [], platformOverrides: {},
+    });
+  });
+
+  let n = 0;
+  let room = '';
+  const joined = async () => {
+    // a fresh room per test: the wanted platform is module state kept per room
+    const roomId = (room = `plat-${++n}`);
+    const joinPromise = joinRoom(roomId, 'Alice', 'youtube');
+    await vi.waitFor(() => expect(centrifugeMock.MockCentrifuge.instances.length).toBeGreaterThan(0));
+    const instances = centrifugeMock.MockCentrifuge.instances;
+    const instance = instances[instances.length - 1];
+    instance.emit('connected', { client: 'c-me' });
+    await joinPromise;
+    // let the (immediately settled) rebind step mark the platform ready
+    await new Promise((r) => setTimeout(r, 0));
+    return instance;
+  };
+  const flush = () => new Promise((r) => setTimeout(r, 560)); // past the 500 ms debounce
+  const sets = (i: { rpcCalls: Array<{ method: string; payload: unknown }> }) =>
+    i.rpcCalls.filter((c) => c.method === 'member.set_platform');
+
+  it('sends the platform over the RPC and never reconnects (a reconnect would hand the host role away)', async () => {
+    const instance = await joined();
+    updatePlatform(room, 'spotify');
+    await flush();
+    expect(sets(instance)).toEqual([{ method: 'member.set_platform', payload: { roomId: room, platform: 'spotify' } }]);
+    expect(instance.disconnectCalls).toBe(0);
+    expect(instance.connectCalls).toBe(1);
+    // our own entry reflects it at once
+    expect(useStore.getState().platformOverrides['c-me']).toBe('spotify');
+  });
+
+  it('does not resend an unchanged platform', async () => {
+    const instance = await joined();
+    updatePlatform(room, 'spotify');
+    await flush();
+    updatePlatform(room, 'spotify');
+    await flush();
+    expect(sets(instance)).toHaveLength(1);
+    updatePlatform(room, 'youtube');
+    await flush();
+    expect(sets(instance)).toHaveLength(2);
+  });
+
+  it('never sends once kicked or while disconnected', async () => {
+    const instance = await joined();
+    instance.emit('disconnected', { code: DISCONNECT_CODE_KICKED, reason: 'removed by host' });
+    updatePlatform(room, 'spotify');
+    await flush();
+    expect(sets(instance)).toHaveLength(0);
+    expect(instance.connectCalls).toBe(1);
+  });
+
+  it('ignores a stale call for another room', async () => {
+    const instance = await joined();
+    updatePlatform('other-room', 'spotify');
+    await flush();
+    expect(sets(instance)).toHaveLength(0);
+  });
+
+  it('re-sends after a reconnect (a new connection has no override)', async () => {
+    const instance = await joined();
+    updatePlatform(room, 'spotify');
+    await flush();
+    instance.emit('connected', { client: 'c-me2' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sets(instance)).toHaveLength(2);
+  });
+
+  it('a member.platform event overlays the presence entry; leavers drop their override', async () => {
+    const instance = await joined();
+    useStore.getState().setMembers([
+      { clientId: 'c-a', name: 'Ana', platform: 'spotify' },
+      { clientId: 'c-b', name: 'Bia' },
+    ]);
+    const sub = instance.subscriptions[0];
+    (sub.handlers['publication'] ?? []).forEach((cb) => cb({ data: { type: 'member.platform', clientId: 'c-a', platform: 'youtube' } }));
+    const byName = () => Object.fromEntries(useStore.getState().members.map((m) => [m.name, m.platform]));
+    expect(byName()).toEqual({ Ana: 'youtube', Bia: undefined });
+    useStore.getState().removeMember('c-a');
+    expect(useStore.getState().platformOverrides['c-a']).toBeUndefined();
+  });
+
+  it('seeds the overlay for late joiners with member.platforms', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    await vi.waitFor(() => expect(centrifugeMock.MockCentrifuge.instances.length).toBeGreaterThan(0));
+    const instance = centrifugeMock.MockCentrifuge.instances.at(-1)!;
+    const rpc = instance.rpc.bind(instance);
+    instance.rpc = (method: string, payload: unknown) =>
+      method === 'member.platforms' ? Promise.resolve({ data: { platforms: { 'c-a': 'apple' } } }) : rpc(method, payload);
+    instance.emit('connected', { client: 'c-me' });
+    await joinPromise;
+    instance.subscriptions[0].presence = () => Promise.resolve({
+      clients: { 'c-a': { client: 'c-a', user: '', connInfo: new TextEncoder().encode(JSON.stringify({ name: 'Ana', platform: 'spotify' })) } },
+    });
+    (instance.subscriptions[0].handlers['subscribed'] ?? []).forEach((cb) => cb());
+    await vi.waitFor(() => expect(useStore.getState().members[0]?.platform).toBe('apple'));
+  });
+
+  it('debounces: rapid toggles send only the latest value', async () => {
+    const instance = await joined();
+    updatePlatform(room, 'spotify');
+    updatePlatform(room, 'youtube');
+    updatePlatform(room, 'spotify');
+    updatePlatform(room, 'youtube');
+    expect(sets(instance)).toHaveLength(0);
+    await flush();
+    expect(sets(instance)).toEqual([{ method: 'member.set_platform', payload: { roomId: room, platform: 'youtube' } }]);
+  });
+
+  it('a live event that arrived before the seed response wins over the seed', async () => {
+    const instance = await joined();
+    useStore.getState().setMembers([{ clientId: 'c-a', name: 'Ana' }]);
+    (instance.subscriptions[0].handlers['publication'] ?? []).forEach((cb) => cb({ data: { type: 'member.platform', clientId: 'c-a', platform: 'youtube' } }));
+    useStore.getState().setPlatformOverrides({ 'c-a': 'apple', 'c-z': 'spotify' });
+    expect(useStore.getState().platformOverrides['c-a']).toBe('youtube');
+    expect(useStore.getState().platformOverrides['c-z']).toBe('spotify');
+  });
+
+  it('one person with several connections shows the latest override, not the ConnInfo one', async () => {
+    await joined();
+    useStore.getState().setMembers([
+      { clientId: 'a1', userId: 'u1', name: 'Ana', platform: 'spotify' },
+      { clientId: 'b9', userId: 'u1', name: 'Ana' },
+    ]);
+    expect(useStore.getState().members[0].platform).toBe('spotify');
+    useStore.getState().setPlatformOverride('b9', 'youtube');
+    expect(useStore.getState().members[0].platform).toBe('youtube');
+    useStore.getState().setPlatformOverride('a1', 'apple');
+    expect(useStore.getState().members[0].platform).toBe('apple');
   });
 });

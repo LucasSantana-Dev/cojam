@@ -16,6 +16,7 @@ interface YTPlayerInstance {
   getDuration(): number;
   getPlayerState?(): number;
   loadVideoById(videoId: string | { videoId: string; startSeconds?: number }): void;
+  setVolume?(volume: number): void;
 }
 
 interface YTGlobal {
@@ -102,6 +103,14 @@ class YouTubePlayerAdapter implements IPlayer {
     this.ytPlayer.pauseVideo();
   }
 
+  setVolume(level: number): void {
+    try {
+      this.ytPlayer.setVolume?.(Math.round(level * 100));
+    } catch {
+      /* player not ready yet; applied again when it announces itself */
+    }
+  }
+
   async seekToMs(positionMs: number): Promise<void> {
     this.ytPlayer.seekTo(msToSeconds(positionMs), true);
   }
@@ -126,6 +135,15 @@ class YouTubePlayerAdapter implements IPlayer {
 
   canSeek(): boolean {
     return true;
+  }
+
+  // YT.PlayerState.PAUSED === 2
+  isPaused(): boolean {
+    try {
+      return this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() === 2 : false;
+    } catch {
+      return false;
+    }
   }
 
   // YT.PlayerState.PLAYING === 1. Without getPlayerState assume playing.

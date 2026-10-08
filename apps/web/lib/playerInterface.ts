@@ -41,6 +41,9 @@ export interface IPlayer {
    */
   isPlaying?(): boolean;
 
+  /** Optional: true when the provider is paused (e.g. autoplay was blocked). */
+  isPaused?(): boolean;
+
   /**
    * Register a callback fired when the current track ends.
    */
@@ -51,4 +54,9 @@ export interface IPlayer {
    * Implementations may debounce or throttle these callbacks for efficiency.
    */
   onPositionChanged(cb: (positionMs: number) => void): void;
+
+  /**
+   * Set the local output level, 0 (silent) to 1 (full). Local only; never synced.
+   */
+  setVolume?(level: number): void;
 }

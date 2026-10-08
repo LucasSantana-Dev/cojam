@@ -39,4 +39,18 @@ describe('YourDataId', () => {
     expect(writeText).toHaveBeenCalledWith('guestid123');
     expect(await screen.findByRole('button', { name: 'Código copiado' })).toBeInTheDocument();
   });
+
+  it('inline: explains there is nothing to erase when no id is stored', () => {
+    render(<YourDataId inline />);
+    expect(screen.getByText(/não guarda um código/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copiar código' })).not.toBeInTheDocument();
+  });
+
+  it('inline: shows the id and copy button without the details wrapper', async () => {
+    window.localStorage.setItem('cojam_uid', 'guestid123');
+    const { container } = render(<YourDataId inline />);
+    expect(await screen.findByText('guestid123')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copiar código' })).toBeInTheDocument();
+    expect(container.querySelector('details')).toBeNull();
+  });
 });

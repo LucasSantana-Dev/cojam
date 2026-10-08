@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useStore, measureClockOffsetWithRetry } from './realtime';
+import { useStore, requestClockRemeasure } from './realtime';
 import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, DRIFT_THRESHOLD_MS, SEEK_COOLDOWN_MS, serverNow } from './playbackSync';
 import type { IPlayer } from './playerInterface';
 
@@ -26,6 +26,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     if (!syncEnabled || !activePlayer || !transport) return;
 
     let lastSeekAt = 0;
+    let resumeTried = false;
     // Handle state transitions: play/pause/stop
     if (transport.state === 'playing') {
       activePlayer.play().catch((err) => {
@@ -33,19 +34,20 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
       });
       // Seek to expected position to sync with server
       const now = serverNow();
-      if (!isExpectedPositionKnown(transport, now)) {
-        // Clock offset is wrong: never seek to a clamped 0. Re-measure instead.
-        measureClockOffsetWithRetry();
-        return;
+      if (isExpectedPositionKnown(transport, now)) {
+        const expected = computeExpectedPosition(transport, now);
+        lastSeekAt = Date.now();
+        activePlayer.seekToMs(expected).catch((err) => {
+          if (activePlayer.canSeek()) {
+            console.warn('Failed to seek to expected position:', err);
+          }
+          // If !canSeek (e.g. Spotify free tier), silently continue
+        });
+      } else {
+        // Clock offset is wrong: never seek to a clamped 0. Skip only this
+        // initial seek; the interval below corrects once the offset lands.
+        requestClockRemeasure();
       }
-      const expected = computeExpectedPosition(transport, now);
-      lastSeekAt = Date.now();
-      activePlayer.seekToMs(expected).catch((err) => {
-        if (activePlayer.canSeek()) {
-          console.warn('Failed to seek to expected position:', err);
-        }
-        // If !canSeek (e.g. Spotify free tier), silently continue
-      });
     } else if (transport.state === 'paused') {
       activePlayer.pause().catch((err) => {
         console.warn('Failed to pause:', err);
@@ -76,11 +78,19 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
 
       const now = serverNow();
       if (!isExpectedPositionKnown(current, now)) {
-        measureClockOffsetWithRetry();
+        requestClockRemeasure();
         return;
       }
       // Cued/buffering/unstarted reads are unreliable (getCurrentTime() is 0).
-      if (activePlayer.isPlaying && !activePlayer.isPlaying()) return;
+      if (activePlayer.isPlaying && !activePlayer.isPlaying()) {
+        // Paused while the room plays (e.g. autoplay blocked): try play() once
+        // per transport change, never in a loop.
+        if (!resumeTried && activePlayer.isPaused?.()) {
+          resumeTried = true;
+          activePlayer.play().catch(() => {});
+        }
+        return;
+      }
       // Let the last seek settle before judging drift again.
       if (Date.now() - lastSeekAt < SEEK_COOLDOWN_MS) return;
       const expected = computeExpectedPosition(current, now);

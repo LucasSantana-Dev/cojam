@@ -30,6 +30,7 @@ export interface SpotifySDKPlayer {
   connect(): Promise<boolean>;
   getCurrentState(): Promise<SpotifyPlaybackState | null>;
   pause?(): Promise<void>;
+  setVolume?(volume: number): Promise<void>;
   addListener(event: 'ready', cb: (data: { device_id: string }) => void): boolean;
   addListener(event: 'player_state_changed', cb: (state: SpotifyPlaybackState | null) => void): boolean;
   addListener(event: string, cb: () => void): boolean;
@@ -106,6 +107,17 @@ class SpotifyPlayerAdapter implements IPlayer {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}` },
     });
+  }
+
+  setVolume(level: number): void {
+    void this.player.setVolume?.(level)?.catch?.(() => {});
+  }
+
+  // Pause only this browser's SDK device. pause() goes through the Web API and
+  // pauses whatever device the account is playing on, which is wrong when the
+  // person just switched away from Spotify to listen elsewhere.
+  async pauseLocal(): Promise<void> {
+    await this.player.pause?.();
   }
 
   async pause(): Promise<void> {
@@ -224,8 +236,14 @@ export function SpotifyPlayer({
   onPlayerReady,
   onPlayerGone,
   onPlayError,
+  active,
 }: {
   authorized: boolean;
+  // Whether Spotify is the service that plays the now-playing track for this
+  // client (the "Ouvir no" choice resolved by pickSource). Omitted: derived
+  // from authorization alone, the auto behaviour. When it turns false the SDK
+  // is paused so it never plays under another service.
+  active?: boolean;
   onAuthorized: (v: boolean) => void;
   onPlayerReady?: (player: IPlayer) => void;
   onPlayerGone?: () => void;
@@ -243,6 +261,10 @@ export function SpotifyPlayer({
     ? state.queue.find((t) => t.id === state.nowPlayingId)
     : undefined;
   const spotifyUri = nowPlaying?.sources.spotify?.trackUri;
+  // Re-runs the load effect when the room starts playing (a load skipped while paused).
+  const roomPlaying = state?.transport?.state === 'playing';
+  // The uri this SDK device was last told to load.
+  const loadedUriRef = useRef<string | null>(null);
   // Callbacks arrive as fresh inline arrows every render; keep them in refs so
   // the init effect identity stays stable. Otherwise the cleanup below ran on
   // every parent render, disposing the adapter right after ready.
@@ -338,6 +360,7 @@ export function SpotifyPlayer({
       // setStatus('ready') with an unchanged value is a React no-op and the
       // load effect below would never re-fire for the new device.
       deviceId.current = null;
+      loadedUriRef.current = null;
       setStatus('idle');
       if (playerRef.current) {
         playerRef.current.dispose();
@@ -361,15 +384,34 @@ export function SpotifyPlayer({
     const track = current?.nowPlayingId
       ? current.queue.find((t) => t.id === current.nowPlayingId)
       : undefined;
-    if (!track || pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) !== 'spotify') return;
+    const wanted = active ?? (track ? pickSource(track, { appleAuthorized: false, spotifyAuthorized: authorized }) === 'spotify' : false);
+    if (!track || !wanted) return;
+    // Never start audio in a paused or stopped room (a switch to Spotify there
+    // must stay silent); the effect re-runs when the room starts playing.
+    const ts = current?.transport?.state;
+    if (ts && ts !== 'playing') return;
+    // Load each uri on the device once: a pause/play cycle resumes through the
+    // drift-corrected transport instead of restarting the track.
+    if (loadedUriRef.current === spotifyUri) return;
+    loadedUriRef.current = spotifyUri;
     playerRef.current?.setExpected(spotifyUri);
     playUri(deviceId.current, spotifyUri)
       .then(() => onPlayErrorRef.current?.(null))
       .catch((e) => {
+        loadedUriRef.current = null;
         console.error('Spotify play failed:', e);
         onPlayErrorRef.current?.(track.id);
       });
-  }, [authorized, status, spotifyUri]);
+  }, [authorized, status, spotifyUri, active, roomPlaying]);
+
+  // Switched to another service mid-track: stop the SDK. The new player takes
+  // the synced position through the existing drift correction.
+  useEffect(() => {
+    if (active !== false || status !== 'ready') return;
+    loadedUriRef.current = null;
+    playerRef.current?.setExpected(null);
+    playerRef.current?.pauseLocal().catch(() => {});
+  }, [active, status]);
 
   if (!clientId) return null;
   const connect = () => {
@@ -420,7 +462,7 @@ export function SpotifyPlayer({
   }
 
   const playingHere =
-    nowPlaying && pickSource(nowPlaying, { appleAuthorized: false, spotifyAuthorized: true }) === 'spotify';
+    nowPlaying && (active ?? pickSource(nowPlaying, { appleAuthorized: false, spotifyAuthorized: true }) === 'spotify');
   return (
     <div className="text-sm inline-flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-accent)' }} />

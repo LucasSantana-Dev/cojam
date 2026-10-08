@@ -6,7 +6,7 @@ import { computeNameSuffixes } from './nameSuffix';
 import { fetchConnectionToken, getLastTokenFetchError, getStoredProofToken, clearStoredIdentity } from './auth';
 import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
-import type { ChatDeletePub, ChatMessage, ChatMessagePub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
+import type { ChatDeletePub, ChatMessage, ChatMessagePub, MemberPlatformPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = {
   clientId: string;
@@ -16,6 +16,8 @@ export type Member = {
   userId?: string;
   name: string;
   platform?: 'spotify' | 'apple' | 'youtube';
+  // Order of the member.set_platform override behind `platform`, when it came from one.
+  platformSeq?: number;
 };
 
 // One person = one listener. Presence is per connection (new clientId on every
@@ -43,7 +45,10 @@ export function collapseMembers(connections: Member[]): Member[] {
     const rep = sorted[0];
     return {
       ...rep,
-      platform: sorted.find((m) => m.platform)?.platform,
+      // The latest override among the person's connections wins; else the
+      // smallest clientId that has a ConnInfo platform.
+      platform: sorted.filter((m) => m.platformSeq !== undefined).sort((x, y) => y.platformSeq! - x.platformSeq!)[0]?.platform
+        ?? sorted.find((m) => m.platform)?.platform,
       clientIds: sorted.flatMap((m) => m.clientIds ?? [m.clientId]),
     };
   });
@@ -79,8 +84,15 @@ function roomChatEnabled(): boolean {
   return resolveRuntimeFeatures(features, getRuntimeEnv()?.features).roomChat;
 }
 
-function derivePresence(connections: Member[]) {
-  const members = collapseMembers(connections);
+type Platform = 'spotify' | 'apple' | 'youtube';
+
+// Monotonic order of overrides: the latest wins when one person has several connections.
+let overrideSeq = 0;
+
+function derivePresence(connections: Member[], overrides: Record<string, Platform> = {}, seqs: Record<string, number> = {}) {
+  // member.set_platform overrides win over the connect-time ConnInfo platform.
+  const withOverrides = connections.map((c) => (overrides[c.clientId] ? { ...c, platform: overrides[c.clientId], platformSeq: seqs[c.clientId] ?? 0 } : c));
+  const members = collapseMembers(withOverrides);
   return { members, nameSuffixes: computeNameSuffixes(members) };
 }
 
@@ -95,6 +107,9 @@ export interface AppStore {
   // Deduped by person (collapseMembers); `connections` is the raw per-client list.
   members: Member[];
   connections: Member[];
+  // clientId -> platform set through member.set_platform (overlay on presence).
+  platformOverrides: Record<string, Platform>;
+  platformSeqs: Record<string, number>;
   // Collision suffixes for duplicate display names (#170), recomputed on every
   // membership change so PresenceBar and the fused chip cannot disagree.
   nameSuffixes: Record<string, string>;
@@ -126,6 +141,8 @@ export interface AppStore {
   setClientId: (clientId: string) => void;
   setKicked: (kicked: boolean) => void;
   setMembers: (members: Member[]) => void;
+  setPlatformOverride: (clientId: string, platform: Platform) => void;
+  setPlatformOverrides: (overrides: Record<string, Platform>) => void;
   setConnectedServices: (services: string[]) => void;
   setSignedIn: (signedIn: boolean) => void;
   setRebindNotice: (notice: string | null) => void;
@@ -146,6 +163,8 @@ export const useStore = create<AppStore>((set) => ({
   clientId: '',
   members: [],
   connections: [],
+  platformOverrides: {},
+  platformSeqs: {},
   nameSuffixes: {},
   connectedServices: [],
   kicked: false,
@@ -161,9 +180,19 @@ export const useStore = create<AppStore>((set) => ({
   setReconnecting: (reconnecting) => set({ reconnecting }),
   setClientId: (clientId) => set({ clientId }),
   setKicked: (kicked) => set({ kicked }),
-  setMembers: (connections) => set({
+  setMembers: (connections) => set((s) => ({
     connections,
-    ...derivePresence(connections),
+    ...derivePresence(connections, s.platformOverrides, s.platformSeqs),
+  })),
+  setPlatformOverride: (clientId, platform) => set((s) => {
+    const platformOverrides = { ...s.platformOverrides, [clientId]: platform };
+    const platformSeqs = { ...s.platformSeqs, [clientId]: ++overrideSeq };
+    return { platformOverrides, platformSeqs, ...derivePresence(s.connections, platformOverrides, platformSeqs) };
+  }),
+  setPlatformOverrides: (overrides) => set((s) => {
+    // A seed may arrive after newer live events: live values win.
+    const platformOverrides = { ...overrides, ...s.platformOverrides };
+    return { platformOverrides, ...derivePresence(s.connections, platformOverrides, s.platformSeqs) };
   }),
   setConnectedServices: (connectedServices) => set({ connectedServices }),
   setSignedIn: (signedIn) => set({ signedIn }),
@@ -182,11 +211,15 @@ export const useStore = create<AppStore>((set) => ({
   addMember: (m) => set((s) => {
     if (s.connections.some((x) => x.clientId === m.clientId)) return s;
     const connections = [...s.connections, m];
-    return { connections, ...derivePresence(connections) };
+    return { connections, ...derivePresence(connections, s.platformOverrides, s.platformSeqs) };
   }),
   removeMember: (clientId) => set((s) => {
     const connections = s.connections.filter((x) => x.clientId !== clientId);
-    return { connections, ...derivePresence(connections) };
+    const platformOverrides = { ...s.platformOverrides };
+    delete platformOverrides[clientId];
+    const platformSeqs = { ...s.platformSeqs };
+    delete platformSeqs[clientId];
+    return { connections, platformOverrides, platformSeqs, ...derivePresence(connections, platformOverrides, platformSeqs) };
   }),
   setChat: (messages) => set({ chat: messages }),
   // Chat has no version guard (it is not RoomState): dedupe by id so live
@@ -285,6 +318,18 @@ let centrifuge: Centrifuge | null = null;
 // instead of serving the stale pre-disconnect snapshot (B10).
 let activeRoom: { roomId: string; name: string; platform?: 'spotify' | 'apple' | 'youtube' | null } | null = null;
 
+// The listening service this person wants shown ("Ouvir no"), per room, and the
+// one last sent on the current connection. ConnInfo is fixed per connection and
+// a reconnect would run the server's host handoff, so a change is sent with the
+// member.set_platform RPC instead. Held here until the join (and rebind) settle.
+let desiredPlatform: { roomId: string; platform: 'spotify' | 'apple' | 'youtube' } | null = null;
+let sentPlatform: string | null = null;
+// False until the join and the guest-to-account rebind settled.
+let platformReady = false;
+// Debounce: toggling the service must not drain the member RPC budget.
+const PLATFORM_DEBOUNCE_MS = 500;
+let platformTimer: ReturnType<typeof setTimeout> | null = null;
+
 // joinRoom rejects if 'connected' never fires (unreachable server, rejected
 // token with retry loop): without this the join UI hung forever (B11).
 const JOIN_TIMEOUT_MS = 10_000;
@@ -325,12 +370,20 @@ export async function joinRoom(
 
   const connInfo: ConnInfo = { name };
   if (platform) connInfo.platform = platform;
+  // A fresh join is a new intent: nothing from a previous room carries over.
+  if (desiredPlatform && desiredPlatform.roomId !== roomId) desiredPlatform = null;
+  sentPlatform = null;
+  platformReady = false;
+  useStore.setState({ platformOverrides: {}, platformSeqs: {} });
+  if (platformTimer) clearTimeout(platformTimer);
+  platformTimer = null;
 
   // A fresh joinRoom is a new room intent: clear the previous activeRoom so
   // the reconnect resync below cannot re-join (and adopt the state of) a
   // room the user has navigated away from. Set again after this join's
   // room.join succeeds.
   activeRoom = null;
+  cancelClockMeasure();
 
   const token = await resolveConnectionToken();
 
@@ -372,6 +425,8 @@ export async function joinRoom(
     // The server-assigned client id (self-identification in presence, #181).
     store.setClientId((ctx as { client?: string } | undefined)?.client ?? '');
     // Re-measure clock offset on reconnect (fire-and-forget, non-fatal on error)
+    cancelClockMeasure();
+    clockOffsetMeasured = false;
     measureClockOffsetWithRetry();
     // Reconnect resync (B10): on the FIRST connect activeRoom is still null
     // (set only after the initial room.join below), so this fires only on
@@ -379,10 +434,13 @@ export async function joinRoom(
     // missed while disconnected. room.join is idempotent server-side.
     if (activeRoom) {
       const rejoin = activeRoom;
+      // A new connection is a new clientId with no platform override.
+      sentPlatform = null;
       centrifuge!.rpc('room.join', rejoin).then((res) => {
         if (res.data) {
           useStore.getState().setState(res.data as RoomState);
         }
+        applyDesiredPlatform(rejoin.roomId);
       }).catch(() => {
         /* stay on stale state; the next publication heals */
       });
@@ -411,6 +469,7 @@ export async function joinRoom(
   });
 
   centrifuge.on('disconnected', (ctx) => {
+    cancelClockMeasure();
     store.setConnected(false);
     store.setReconnecting(false);
     // room.kick (#181): the server closed this connection with the terminal
@@ -423,7 +482,7 @@ export async function joinRoom(
   const sub = centrifuge.newSubscription(`room:${roomId}`);
 
   sub.on('publication', (ctx) => {
-    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub;
+    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub | MemberPlatformPub;
     if (pub.type === 'room.state') {
       store.setState(pub.state);
       // Rebind completion rule (#172): the proof token is discarded only when
@@ -439,6 +498,8 @@ export async function joinRoom(
     } else if (pub.type === 'chat.delete') {
       // Host tombstone (#181): every client drops the line by id.
       store.removeChatMessage(pub.messageId);
+    } else if (pub.type === 'member.platform') {
+      store.setPlatformOverride(pub.clientId, pub.platform);
     }
   });
 
@@ -455,6 +516,11 @@ export async function joinRoom(
         };
       });
       store.setMembers(members);
+      // Seed the platform overlay for people who changed it before we joined.
+      centrifuge?.rpc('member.platforms', { roomId }).then((r) => {
+        const map = (r.data as { platforms?: Record<string, Platform> } | null)?.platforms;
+        if (map) useStore.getState().setPlatformOverrides(map);
+      }).catch(() => { /* the overlay is cosmetic; presence ConnInfo still shows */ });
     }).catch(() => { /* presence unavailable — leave list empty */ });
   });
   sub.on('join', (ctx) => {
@@ -524,7 +590,14 @@ export async function joinRoom(
   // Guest-to-account upgrade (#172): a signed-in member holding an unconsumed
   // guest proof token attempts the rebind on every room join. Fire-and-forget:
   // join succeeds and the room works whether or not the rebind lands.
-  attemptRebind(roomId).catch(() => { /* rebind is best-effort */ });
+  // The platform goes out only once the rebind settled: it acts on this
+  // connection's identity, which the rebind may have just changed.
+  attemptRebind(roomId)
+    .catch(() => { /* rebind is best-effort */ })
+    .finally(() => {
+      platformReady = true;
+      applyDesiredPlatform(roomId);
+    });
 
   // Seed chat history for late joiners (F8): the server ring holds the last
   // 50 messages, older ones are gone by design.
@@ -540,6 +613,37 @@ export async function joinRoom(
   measureClockOffsetWithRetry();
 
   return sub;
+}
+
+// updatePlatform records the service this person listens through ("Ouvir no")
+// and tells the room with member.set_platform. It never reconnects (a reconnect
+// would run the host handoff). roomId guards against a stale call after SPA
+// navigation. Sent once the join settled and only while connected: a kicked or
+// terminally disconnected client never sends, and a reconnect re-sends it.
+export function updatePlatform(roomId: string, platform: 'spotify' | 'apple' | 'youtube'): void {
+  desiredPlatform = { roomId, platform };
+  if (platformTimer) clearTimeout(platformTimer);
+  platformTimer = setTimeout(() => {
+    platformTimer = null;
+    applyDesiredPlatform(roomId);
+  }, PLATFORM_DEBOUNCE_MS);
+}
+
+function applyDesiredPlatform(roomId: string): void {
+  const want = desiredPlatform;
+  if (!want || want.roomId !== roomId) return;
+  if (!platformReady || !centrifuge || !activeRoom || activeRoom.roomId !== roomId) return;
+  const st = useStore.getState();
+  if (st.kicked || !st.connected) return;
+  if (sentPlatform === want.platform) return;
+  const conn = centrifuge;
+  sentPlatform = want.platform;
+  // Show it on our own entry right away; the room event confirms it.
+  if (st.clientId) st.setPlatformOverride(st.clientId, want.platform);
+  conn.rpc('member.set_platform', { roomId, platform: want.platform }).catch(() => {
+    // Not delivered: allow a later attempt (next change or reconnect).
+    if (sentPlatform === want.platform) sentPlatform = null;
+  });
 }
 
 // retryConnection (#187): recovery path after a terminal disconnect (e.g. a
@@ -872,33 +976,61 @@ export async function measureClockOffset(samples = 5): Promise<{ offsetMs: numbe
 
 let clockOffsetMeasured = false;
 let clockMeasureInFlight = false;
+let clockRetryTimer: ReturnType<typeof setTimeout> | null = null;
+// Bumped by cancelClockMeasure so an in-flight measure from a previous
+// room/connection cannot schedule retries or overwrite newer state.
+let clockMeasureGen = 0;
+let lastClockRequestAt = 0;
 const CLOCK_RETRY_DELAYS_MS = [1000, 3000, 10_000, 30_000];
+export const CLOCK_REMEASURE_MIN_GAP_MS = 30_000;
 
 export function hasMeasuredClockOffset(): boolean {
   return clockOffsetMeasured;
+}
+
+// Stop pending retries (new join, disconnect). Keeps the last offset: it is
+// still the best estimate until a fresh measurement lands.
+export function cancelClockMeasure(): void {
+  clockMeasureGen++;
+  if (clockRetryTimer) clearTimeout(clockRetryTimer);
+  clockRetryTimer = null;
+  clockMeasureInFlight = false;
 }
 
 // Fire-and-forget measure that retries on failure. A single failed attempt used
 // to leave the offset at 0 forever, so a client whose wall clock ran behind the
 // server computed a negative elapsed time, clamped the expected position to 0
 // and drift-seeked to 0 every 1.5 s (the YouTube 2 s loop).
-export function measureClockOffsetWithRetry(attempt = 0): void {
+export function measureClockOffsetWithRetry(attempt = 0, gen = clockMeasureGen): void {
   if (attempt === 0) {
     if (clockMeasureInFlight) return;
     clockMeasureInFlight = true;
   }
   measureClockOffset().then(
     () => {
-      clockMeasureInFlight = false;
+      if (gen === clockMeasureGen) clockMeasureInFlight = false;
     },
     () => {
+      if (gen !== clockMeasureGen) return;
       if (attempt >= CLOCK_RETRY_DELAYS_MS.length) {
         clockMeasureInFlight = false;
         return;
       }
-      setTimeout(() => measureClockOffsetWithRetry(attempt + 1), CLOCK_RETRY_DELAYS_MS[attempt]);
+      clockRetryTimer = setTimeout(() => {
+        clockRetryTimer = null;
+        measureClockOffsetWithRetry(attempt + 1, gen);
+      }, CLOCK_RETRY_DELAYS_MS[attempt]);
     },
   );
+}
+
+// Throttled re-measure for callers that notice a bad offset (drift ticks):
+// at most one chain per 30 s so a dead sync.ping is not hammered.
+export function requestClockRemeasure(): void {
+  const now = Date.now();
+  if (now - lastClockRequestAt < CLOCK_REMEASURE_MIN_GAP_MS) return;
+  lastClockRequestAt = now;
+  measureClockOffsetWithRetry();
 }
 
 export function getClockOffsetMs(): number {

@@ -17,6 +17,7 @@ interface MusicKitInstance {
   isAuthorized: boolean;
   currentPlaybackTime: number;
   currentPlaybackDuration: number;
+  volume?: number;
 }
 
 interface MusicKitGlobal {
@@ -73,6 +74,10 @@ class ApplePlayerAdapter implements IPlayer {
 
   async pause(): Promise<void> {
     await this.music.pause();
+  }
+
+  setVolume(level: number): void {
+    this.music.volume = level;
   }
 
   async seekToMs(positionMs: number): Promise<void> {
@@ -132,8 +137,13 @@ export function ApplePlayer({
   onPlayerReady,
   onPlayerGone,
   onPlayError,
+  active,
 }: {
   authorized: boolean;
+  // Whether Apple Music is the service that plays the now-playing track for
+  // this client ("Ouvir no" choice resolved by pickSource). Omitted: derived
+  // from authorization alone. Turning false pauses MusicKit.
+  active?: boolean;
   onAuthorized: (v: boolean) => void;
   onPlayerReady?: (player: IPlayer) => void;
   onPlayerGone?: () => void;
@@ -143,6 +153,8 @@ export function ApplePlayer({
 }) {
   const musicRef = useRef<MusicKitInstance | null>(null);
   const adapterRef = useRef<ApplePlayerAdapter | null>(null);
+  // The song MusicKit was last told to queue.
+  const loadedSongRef = useRef<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'unconfigured' | 'ready' | 'error'>('idle');
   const f = useRuntimeFeatures();
   const state = useStore((s) => s.state);
@@ -199,19 +211,33 @@ export function ApplePlayer({
   useEffect(() => {
     const music = musicRef.current;
     if (!music || !authorized || !nowPlaying) return;
-    if (pickSource(nowPlaying, { appleAuthorized: authorized, spotifyAuthorized: false }) !== 'apple') return;
+    const wanted = active ?? pickSource(nowPlaying, { appleAuthorized: authorized, spotifyAuthorized: false }) === 'apple';
+    if (!wanted) return;
+    // Never start audio in a paused or stopped room; re-runs when it plays.
+    const ts = state?.transport?.state;
+    if (ts && ts !== 'playing') return;
     const songId = nowPlaying.sources.apple!.songId!;
+    if (loadedSongRef.current === songId) return;
+    loadedSongRef.current = songId;
     (async () => {
       try {
         await music.setQueue({ songs: [songId] });
         await music.play();
         onPlayErrorRef.current?.(null);
       } catch (e) {
+        loadedSongRef.current = null;
         console.error('Apple playback failed:', e);
         onPlayErrorRef.current?.(nowPlaying.id);
       }
     })();
-  }, [authorized, nowPlaying]);
+  }, [authorized, nowPlaying, active, state?.transport?.state]);
+
+  // Switched to another service mid-track: stop MusicKit.
+  useEffect(() => {
+    if (active !== false) return;
+    loadedSongRef.current = null;
+    adapterRef.current?.pause().catch(() => {});
+  }, [active]);
 
   if (status === 'unconfigured' || status === 'idle') return null;
   if (status === 'error') {
@@ -250,7 +276,7 @@ export function ApplePlayer({
       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-info)' }} />
       <span>
         Apple Music conectado
-        {nowPlaying && pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple' && (
+        {nowPlaying && (active ?? pickSource(nowPlaying, { appleAuthorized: true, spotifyAuthorized: false }) === 'apple') && (
           <span style={{ color: 'var(--color-info)' }}> playing &quot;{nowPlaying.title}&quot;</span>
         )}
       </span>

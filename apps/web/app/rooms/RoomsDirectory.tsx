@@ -8,7 +8,8 @@ import { subscribePublicRooms } from '@/lib/publicRooms';
 import { AGE_GATE_COPY_PT, useAgeGatedJoin } from '@/app/components/useAgeGatedJoin';
 import { useReportDialog } from '@/app/components/useReportDialog';
 import { LiveCounter } from '@/app/components/LiveCounter';
-import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
+import { R4Brand, R4Footer } from '@/app/components/R4Shell';
+import { MusicNoteIcon } from '@/app/components/icons';
 
 type SortKey = 'people' | 'recent';
 
@@ -36,6 +37,10 @@ export function filterAndSortRooms(
     return primary !== 0 ? primary : a.roomId.localeCompare(b.roomId);
   });
 }
+
+// "AO VIVO" only for a room that reported activity in the last 5 minutes;
+// anything older shows its age instead of claiming to be live.
+const LIVE_WINDOW_MS = 5 * 60_000;
 
 function activeLabel(lastActiveMs: number, now: number): string {
   // Server and client clocks can disagree; never show a negative age.
@@ -77,103 +82,119 @@ export function RoomsDirectory() {
   const visible = useMemo(() => filterAndSortRooms(rooms, query, sort), [rooms, query, sort]);
 
   return (
-    <SintoniaScreen>
-    <main id="main" className="rooms-page">
-      <header className="rooms-page__head">
-        <div>
-          <h1 className="rooms-page__title">Salas públicas</h1>
-          <p className="rooms-page__sub">Salas abertas tocando agora. Entre em uma e ouça junto.</p>
-          <LiveCounter />
-        </div>
-        <Link href="/" className="sx-link">&larr; Início</Link>
+    <div className="r4s">
+      <header className="r4s-bar r4s-bar--rooms">
+        <R4Brand />
       </header>
-      <SineLine className="sx-wave--wide" />
-
-      {!features.publicRooms ? (
-        <p className="rooms-page__empty sx-glass" role="status">
-          O diretório de salas públicas não está disponível neste servidor.
-        </p>
-      ) : (
-        <>
-          <div className="rooms-page__toolbar">
-            <input
-              type="search"
-              aria-label="Buscar salas"
-              placeholder="Buscar por nome"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="rooms-page__search"
-            />
-            <label className="rooms-page__sort">
-              <span>Ordenar</span>
-              <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-                <option value="people">Mais pessoas</option>
-                <option value="recent">Mais recentes</option>
-              </select>
-            </label>
+      <main id="main" className="r4s-main">
+        <div className="r4s-rooms-head">
+          <div className="r4s-rooms-head__row">
+            <h1 className="r4s-h1">Salas ao vivo</h1>
+            <LiveCounter className="r4s-pill" />
           </div>
+          <p className="r4s-lede">Salas abertas tocando agora. Entre em uma e ouça junto.</p>
+        </div>
 
-          {!loaded ? (
-            <p className="rooms-page__empty sx-glass" role="status">Carregando salas...</p>
-          ) : rooms.length === 0 ? (
-            <p className="rooms-page__empty sx-glass" role="status">
-              Nenhuma sala pública no ar agora. Crie uma e ative a opção Public.
-            </p>
-          ) : visible.length === 0 ? (
-            <p className="rooms-page__empty sx-glass" role="status">Nenhuma sala encontrada para essa busca.</p>
-          ) : (
-            <div className="live-rooms__grid">
-              {visible.map((room) => (
-                <div key={room.roomId} className="live-room-wrap">
-                <Link
-                  href={`/room/${room.roomId}`}
-                  className="live-room-card"
-                  onClick={(e) => onCardClick(e, room.roomId)}
-                >
-                  <span className="live-room-card__top">
-                    <span className="live-room-card__name">{room.name || room.roomId}</span>
-                    <span className="sx-kind">{room.kind === 'video' ? 'Vídeo' : 'Áudio'}</span>
-                  </span>
-                  <span className="live-room-card__track">
-                    {room.nowPlaying ? (
-                      <>
-                        <span className="live-room-card__title">{room.nowPlaying.title}</span>
-                        <span className="live-room-card__artist">{room.nowPlaying.artist}</span>
-                      </>
-                    ) : (
-                      <span className="live-room-card__artist">Nada tocando ainda</span>
-                    )}
-                  </span>
-                  <span className="live-room-card__bottom">
-                    <span className="live-room-card__count">
-                      {room.memberCount} ouvindo
-                    </span>
-                    <span className="live-room-card__artist live-room-card__when">
-                      {activeLabel(room.lastActiveMs, now) === 'ativa agora' && <span className="room-card__dot" aria-hidden="true" />}
-                      {activeLabel(room.lastActiveMs, now)}
-                    </span>
-                  </span>
-                </Link>
-                {/* A sibling of the link, not a child: a button inside an anchor is
-                    invalid and would also navigate. */}
-                <button
-                  type="button"
-                  className="live-room-report"
-                  aria-label={`Denunciar sala ${room.name || room.roomId}`}
-                  onClick={() => report.open({ roomId: room.roomId, kind: 'room' })}
-                >
-                  Denunciar
-                </button>
-                </div>
-              ))}
+        {!features.publicRooms ? (
+          <p className="r4s-note" role="status">
+            O diretório de salas públicas não está disponível neste servidor.
+          </p>
+        ) : (
+          <>
+            <div className="r4s-toolbar">
+              <input
+                type="search"
+                aria-label="Buscar salas"
+                placeholder="Buscar por nome"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="r4s-search"
+              />
+              <label className="r4s-sort">
+                <span>Ordenar por</span>
+                <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+                  <option value="people">Mais pessoas</option>
+                  <option value="recent">Mais recentes</option>
+                </select>
+              </label>
             </div>
-          )}
-        </>
-      )}
 
-      {gate}
-      {report.dialog}
-    </main>
-    </SintoniaScreen>
+            {!loaded ? (
+              <p className="r4s-note" role="status">Carregando salas...</p>
+            ) : rooms.length === 0 ? (
+              <p className="r4s-note" role="status">
+                Nenhuma sala pública no ar agora. Crie uma e ative a opção Pública.
+              </p>
+            ) : visible.length === 0 ? (
+              <p className="r4s-note" role="status">Nenhuma sala encontrada para essa busca.</p>
+            ) : (
+              <div className="r4s-rooms">
+                {visible.map((room) => {
+                  const live = now - room.lastActiveMs <= LIVE_WINDOW_MS && room.memberCount > 0;
+                  return (
+                    <div key={room.roomId} className="r4s-room-wrap">
+                      <Link
+                        href={`/room/${room.roomId}`}
+                        className="r4s-room"
+                        aria-label={`Entrar na sala ${room.name || room.roomId}`}
+                        onClick={(e) => onCardClick(e, room.roomId)}
+                      >
+                        <span className="r4s-room__top">
+                          <span className="r4s-room__name">{room.name || room.roomId}</span>
+                          {live && (
+                            <span className="r4-live r4s-room__live">
+                              <span className="r4-live__dot" aria-hidden />
+                              AO VIVO
+                            </span>
+                          )}
+                          {room.kind === 'video' && <span className="r4s-chip">Vídeo</span>}
+                        </span>
+                        <span className="r4s-room__main">
+                          <span className="r4s-room__cover" aria-hidden>
+                            <MusicNoteIcon size={28} />
+                          </span>
+                          <span className="r4s-room__track">
+                            {room.nowPlaying ? (
+                              <>
+                                <span className="r4s-room__kicker">Tocando agora</span>
+                                <span className="r4s-room__title">{room.nowPlaying.title}</span>
+                                <span className="r4s-room__artist">{room.nowPlaying.artist}</span>
+                              </>
+                            ) : (
+                              <span className="r4s-room__artist">Nada tocando ainda</span>
+                            )}
+                          </span>
+                        </span>
+                        <span className="r4s-room__bottom">
+                          <span className="r4s-room__count">
+                            <span>{room.memberCount} ouvindo</span>
+                            {!live && <span className="r4s-room__when">{activeLabel(room.lastActiveMs, now)}</span>}
+                          </span>
+                          <span className="r4s-btn r4s-btn--sm" aria-hidden>Entrar</span>
+                        </span>
+                      </Link>
+                      {/* A sibling of the link, not a child: a button inside an anchor is
+                          invalid and would also navigate. */}
+                      <button
+                        type="button"
+                        className="live-room-report"
+                        aria-label={`Denunciar sala ${room.name || room.roomId}`}
+                        onClick={() => report.open({ roomId: room.roomId, kind: 'room' })}
+                      >
+                        Denunciar
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {gate}
+        {report.dialog}
+      </main>
+      <R4Footer />
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useState } from 'react';
-import { render, waitFor, screen } from '@testing-library/react';
+import { render, waitFor, screen, act } from '@testing-library/react';
 import { SpotifyPlayer } from './SpotifyPlayer';
 import { useStore } from '@/lib/realtime';
 import { checkAccount } from '@/lib/spotifyAccount';
@@ -18,7 +18,10 @@ vi.mock('@/lib/spotifyAccount', () => ({
   checkAccount: vi.fn(async () => 'premium'),
 }));
 
+const sdkPause = vi.fn(async () => {});
+
 class FakeSpotifySDKPlayer {
+  pause = sdkPause;
   addListener(event: string, cb: (data: { device_id: string }) => void) {
     if (event === 'ready') queueMicrotask(() => cb({ device_id: 'dev1' }));
     return true;
@@ -225,5 +228,51 @@ describe('SpotifyPlayer end of track', () => {
     });
     expect(ended).toHaveBeenCalledTimes(1);
     expect(pauseSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('SpotifyPlayer switching service', () => {
+  const calls = (fetchMock: ReturnType<typeof vi.fn>, part: string) =>
+    fetchMock.mock.calls.filter((c) => String(c[0]).includes(part));
+
+  beforeEach(() => {
+    sdkPause.mockClear();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    (window as { Spotify?: unknown }).Spotify = { Player: FakeSpotifySDKPlayer };
+    window.__COJAM_ENV__ = { spotifyClientId: 'test-client' };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    delete (window as { Spotify?: unknown }).Spotify;
+    delete window.__COJAM_ENV__;
+    useStore.setState({ state: undefined });
+  });
+
+  it('a paused room stays silent when switching to Spotify, then plays once the room plays', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 204 }) as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    useStore.setState({ state: { ...roomState, transport: { state: 'paused', positionMs: 5000, updatedAtServerMs: 1 } } as RoomState });
+    render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} active={true} />);
+    await screen.findByText(/Spotify conectado/);
+    await waitFor(() => expect(screen.getByText(/Spotify conectado$/)).toBeTruthy());
+    expect(calls(fetchMock, '/me/player/play')).toHaveLength(0);
+    act(() => {
+      useStore.setState({ state: { ...roomState, version: 2, transport: { state: 'playing', positionMs: 5000, updatedAtServerMs: 2 } } as RoomState });
+    });
+    await waitFor(() => expect(calls(fetchMock, '/me/player/play')).toHaveLength(1));
+  });
+
+  it('switching away pauses this SDK device only, not the account through the Web API', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 204 }) as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    useStore.setState({ state: { ...roomState, transport: { state: 'playing', positionMs: 0, updatedAtServerMs: 1 } } as RoomState });
+    const { rerender } = render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} active={true} />);
+    await waitFor(() => expect(calls(fetchMock, '/me/player/play')).toHaveLength(1));
+    rerender(<SpotifyPlayer authorized={true} onAuthorized={() => {}} active={false} />);
+    await waitFor(() => expect(sdkPause).toHaveBeenCalled());
+    expect(calls(fetchMock, '/me/player/pause')).toHaveLength(0);
   });
 });
