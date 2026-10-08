@@ -972,3 +972,61 @@ func TestNewCachedMatcher_ExpiredEntryReResolves(t *testing.T) {
 		t.Fatalf("expected every expired lookup to re-resolve (3 calls), got %d", calls)
 	}
 }
+
+func TestResolveYouTubeRejectsHourLongLoop(t *testing.T) {
+	t.Setenv("YOUTUBE_API_KEY", "test-key")
+	var videoCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/search":
+			_, _ = w.Write([]byte(`{"items":[
+				{"id":{"videoId":"loop"},"snippet":{"title":"Tourner dans le vide Indila"}},
+				{"id":{"videoId":"song"},"snippet":{"title":"Tourner dans le vide Indila"}}]}`))
+		case "/videos":
+			videoCalls++
+			_, _ = w.Write([]byte(`{"items":[
+				{"id":"loop","contentDetails":{"duration":"PT1H3M49S"}},
+				{"id":"song","contentDetails":{"duration":"PT3M2S"}}]}`))
+		}
+	}))
+	defer srv.Close()
+	oldS, oldV := youtubeSearchURL, youtubeVideosURL
+	youtubeSearchURL, youtubeVideosURL = srv.URL+"/search", srv.URL+"/videos"
+	defer func() { youtubeSearchURL, youtubeVideosURL = oldS, oldV }()
+
+	// Known catalogue length (2:49): the hour-long loop is out, the 3:02 song wins.
+	ref, err := ResolveYouTube(queue.WithDuration(context.Background(), 169_000), "Tourner dans le vide", "Indila", "")
+	if err != nil || ref == nil || ref.VideoID != "song" {
+		t.Fatalf("ref = %+v err = %v, want the 3:02 video", ref, err)
+	}
+	// Unknown catalogue length: still no 63 min video, the song stays.
+	ref, _ = ResolveYouTube(context.Background(), "Tourner dans le vide", "Indila", "")
+	if ref == nil || ref.VideoID != "song" {
+		t.Fatalf("unknown duration: ref = %+v, want song", ref)
+	}
+	if videoCalls != 2 {
+		t.Fatalf("videos.list calls = %d, want one batched call per search", videoCalls)
+	}
+}
+
+func TestDurationOK(t *testing.T) {
+	cases := []struct {
+		cand, cat int64
+		want      bool
+	}{
+		{0, 169_000, true},          // unknown candidate duration is kept
+		{182_000, 169_000, true},    // 3:02 vs 2:49
+		{3_829_000, 169_000, false}, // 63:49 loop
+		{30_000, 169_000, false},    // 30 s teaser
+		{20 * 60_000, 0, false},     // unknown catalogue, over 15 min
+		{4 * 60_000, 0, true},
+	}
+	for _, c := range cases {
+		if got := durationOK(c.cand, c.cat); got != c.want {
+			t.Errorf("durationOK(%d,%d) = %v, want %v", c.cand, c.cat, got, c.want)
+		}
+	}
+	if parseISO8601DurationMs("PT1H3M49S") != 3_829_000 || parseISO8601DurationMs("P0D") != 0 {
+		t.Error("iso8601 parse")
+	}
+}

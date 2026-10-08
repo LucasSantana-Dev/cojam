@@ -2477,7 +2477,7 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certa
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ref, err := h.matcher(ctx, track.Title, track.Artist, track.ISRC)
+	ref, err := h.matcher(queue.WithDuration(ctx, track.DurationMs), track.Title, track.Artist, track.ISRC)
 	if err != nil || ref == nil {
 		if h.logger != nil {
 			h.logger.Info("match_miss", "room_id", roomID, "track_id", trackID, "err", fmt.Sprint(err))

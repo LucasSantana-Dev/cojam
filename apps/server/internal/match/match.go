@@ -24,6 +24,10 @@ var (
 
 	// MusicBrainz base URL (package-level for testability)
 	musicbrainzURL = "https://musicbrainz.org/ws/2"
+
+	// YouTube Data API endpoints (package-level for testability)
+	youtubeSearchURL = "https://www.googleapis.com/youtube/v3/search"
+	youtubeVideosURL = "https://www.googleapis.com/youtube/v3/videos"
 )
 
 // MusicBrainzRecording represents a recording from MusicBrainz API
@@ -97,6 +101,9 @@ type YouTubeCandidate struct {
 	VideoID    string  `json:"videoId"`
 	Title      string  `json:"title"`
 	Confidence float64 `json:"confidence"`
+	// DurationMs is the video's real length from videos.list contentDetails;
+	// 0 when unknown (the lookup failed or the video is live).
+	DurationMs int64 `json:"durationMs,omitempty"`
 }
 
 // YouTubeSearchResult wraps YouTube API response
@@ -126,7 +133,7 @@ func YouTubeSearch(query string) ([]YouTubeCandidate, error) {
 	q.Set("key", apiKey)
 	q.Set("part", "snippet")
 
-	searchURL := "https://www.googleapis.com/youtube/v3/search?" + q.Encode()
+	searchURL := youtubeSearchURL + "?" + q.Encode()
 
 	req, err := http.NewRequest("GET", searchURL, nil)
 	if err != nil {
@@ -152,7 +159,107 @@ func YouTubeSearch(query string) ([]YouTubeCandidate, error) {
 		})
 	}
 
+	fillDurations(apiKey, candidates)
 	return candidates, nil
+}
+
+// youtubeVideosResult is the videos.list contentDetails response.
+type youtubeVideosResult struct {
+	Items []struct {
+		ID             string `json:"id"`
+		ContentDetails struct {
+			Duration string `json:"duration"`
+		} `json:"contentDetails"`
+	} `json:"items"`
+}
+
+// fillDurations sets DurationMs on the candidates with ONE batched videos.list
+// call (1 quota unit for all of them; search.list does not carry durations).
+// Best effort: on any failure the durations stay 0 (unknown) and the caller
+// falls back to title confidence alone.
+func fillDurations(apiKey string, candidates []YouTubeCandidate) {
+	if len(candidates) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		ids = append(ids, c.VideoID)
+	}
+	q := url.Values{}
+	q.Set("part", "contentDetails")
+	q.Set("id", strings.Join(ids, ","))
+	q.Set("key", apiKey)
+	req, err := http.NewRequest("GET", youtubeVideosURL+"?"+q.Encode(), nil)
+	if err != nil {
+		return
+	}
+	var res youtubeVideosResult
+	if err := httpx.DoJSON(req, &res); err != nil {
+		slog.Warn("youtube_duration_lookup_failed", "err", err.Error())
+		return
+	}
+	byID := make(map[string]int64, len(res.Items))
+	for _, it := range res.Items {
+		byID[it.ID] = parseISO8601DurationMs(it.ContentDetails.Duration)
+	}
+	for i := range candidates {
+		candidates[i].DurationMs = byID[candidates[i].VideoID]
+	}
+}
+
+// parseISO8601DurationMs parses the YouTube "PT1H2M3S" form (also "P0D" for
+// live streams). Returns 0 for anything it cannot read.
+func parseISO8601DurationMs(s string) int64 {
+	if !strings.HasPrefix(s, "PT") {
+		return 0
+	}
+	var total int64
+	num := int64(0)
+	for _, r := range s[2:] {
+		switch {
+		case r >= '0' && r <= '9':
+			num = num*10 + int64(r-'0')
+		case r == 'H':
+			total, num = total+num*3600, 0
+		case r == 'M':
+			total, num = total+num*60, 0
+		case r == 'S':
+			total, num = total+num, 0
+		default:
+			return 0
+		}
+	}
+	return total * 1000
+}
+
+// Duration bounds for picking a video (ms). A search hit by title alone can be
+// an hour-long loop or compilation: with a known catalogue duration the video
+// must be within +-35% or 90 s of it (whichever is wider); with none, a video
+// over maxUnknownDurationMs is not a song.
+const (
+	durationToleranceFrac = 0.35
+	durationToleranceMs   = 90_000
+	maxUnknownDurationMs  = 15 * 60 * 1000
+)
+
+// durationOK reports whether a candidate's length is plausible for the track.
+// A candidate whose duration is unknown (0) is not rejected.
+func durationOK(candidateMs, catalogueMs int64) bool {
+	if candidateMs <= 0 {
+		return true
+	}
+	if catalogueMs <= 0 {
+		return candidateMs <= maxUnknownDurationMs
+	}
+	tol := int64(float64(catalogueMs) * durationToleranceFrac)
+	if tol < durationToleranceMs {
+		tol = durationToleranceMs
+	}
+	diff := candidateMs - catalogueMs
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= tol
 }
 
 // calculateConfidence calculates token overlap confidence (0..1)
@@ -187,8 +294,12 @@ func ResolveYouTube(ctx context.Context, title, artist, isrc string) (*queue.Sou
 	if err != nil {
 		return nil, err
 	}
+	catalogueMs := queue.DurationFrom(ctx)
 	var best *YouTubeCandidate
 	for i := range candidates {
+		if !durationOK(candidates[i].DurationMs, catalogueMs) {
+			continue
+		}
 		if best == nil || candidates[i].Confidence > best.Confidence {
 			best = &candidates[i]
 		}
@@ -278,7 +389,7 @@ func NewCachedMatcher(inner hub.Matcher, onEvent func(hit bool)) hub.Matcher {
 	cache := newMatchCache()
 
 	return func(ctx context.Context, title, artist, isrc string) (*queue.SourceRef, error) {
-		key := strings.ToLower(title + "|" + artist + "|" + isrc)
+		key := strings.ToLower(title+"|"+artist+"|"+isrc) + fmt.Sprintf("|%d", queue.DurationFrom(ctx)/1000)
 
 		if val, hit := cache.get(key); hit {
 			onEvent(true)

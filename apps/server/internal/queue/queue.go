@@ -366,7 +366,10 @@ func (rs *RoomState) AdvanceAfter(afterID string) error {
 // track is not the video's (the match can be a longer music video), so a
 // joiner reconnecting 5 s past a 3:48 catalogue entry must not skip a 4:30
 // video that is still playing. Only a transport that ran this far past the
-// catalogue end is treated as abandoned.
+// catalogue end is treated as abandoned. The server cannot know the real video
+// length (only the player can), so a video more than 30 s longer than its
+// catalogue entry can still be cut on a late join; the matcher keeps matched
+// videos close to the catalogue length to make that rare.
 const EndedGraceMs = 30_000
 
 // AdvanceIfEnded moves playback past the now-playing track when a playing
