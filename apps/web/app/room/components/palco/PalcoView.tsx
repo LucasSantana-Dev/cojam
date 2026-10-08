@@ -10,7 +10,10 @@
 // Loaded with next/dynamic (ssr: false) from the room client, so three.js and
 // this file stay out of the round 4 bundle.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useStore, onWoot, sendWoot } from '@/lib/realtime';
+import { useStore, onWoot, sendWoot, transportPlay, transportPause, nowPlayingAdvance } from '@/lib/realtime';
+import { SkipNextIcon } from '@/app/components/icons';
+import { playPauseLabel } from '../TransportUI';
+import type { IPlayer } from '@/lib/playerInterface';
 import { memberLabel } from '@/lib/nameSuffix';
 import { memberCharacter } from '@/lib/characters';
 import { useMotion } from '@/lib/motionFlags';
@@ -34,6 +37,13 @@ interface PalcoViewProps {
   // A YouTube player (the room's own) is on the screen; otherwise the cover art shows.
   hasPlayer: boolean;
   artwork: string | null;
+  // HUD controls, so nobody leaves the stage to use them: the room's local
+  // volume and "Ouvir no" picker (passed in as built by the room), and the
+  // host transport (pause or play, skip), shown only to who can control.
+  canControl?: boolean;
+  activePlayer?: IPlayer | null;
+  volume?: ReactNode;
+  servicePicker?: ReactNode;
 }
 
 const BUBBLE_MS = 4500;
@@ -55,7 +65,37 @@ interface Bubble {
   text: string;
 }
 
-export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork }: PalcoViewProps) {
+// Host transport for the HUD: the same RPCs and gates as the round 4 TransportUI.
+function PalcoTransport({ roomId, activePlayer, nowPlayingId, playing }: { roomId: string; activePlayer: IPlayer | null; nowPlayingId: string | undefined; playing: boolean }) {
+  const label = playPauseLabel(playing ? 'playing' : 'paused');
+  const playPause = async () => {
+    try {
+      if (playing) await transportPause(roomId, activePlayer ? await activePlayer.getCurrentPositionMs() : 0);
+      else await transportPlay(roomId);
+    } catch (err) {
+      console.error('Transport control error:', err);
+    }
+  };
+  const skip = () => {
+    if (nowPlayingId) nowPlayingAdvance(roomId, nowPlayingId).catch((err) => console.error('Skip error:', err));
+  };
+  return (
+    <>
+      <button type="button" className="palco__ctrl" onClick={playPause} disabled={!activePlayer} aria-label={label} title={label}>
+        {playing ? (
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
+        ) : (
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+        )}
+      </button>
+      <button type="button" className="palco__ctrl" onClick={skip} disabled={!nowPlayingId} aria-label="Próxima faixa" title="Próxima faixa">
+        <SkipNextIcon size={22} />
+      </button>
+    </>
+  );
+}
+
+export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork, canControl = false, activePlayer = null, volume, servicePicker }: PalcoViewProps) {
   const state = useStore((s) => s.state);
   const members = useStore((s) => s.members);
   const clientId = useStore((s) => s.clientId);
@@ -454,6 +494,13 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork 
               Movimento
             </button>
           </div>
+          {(canControl || volume || servicePicker) && (
+            <div className="palco__ctrls" role="group" aria-label="Controles da música">
+              {canControl && <PalcoTransport roomId={roomId} activePlayer={activePlayer} nowPlayingId={nowPlayingId} playing={transport?.state === 'playing'} />}
+              {volume}
+              {servicePicker}
+            </div>
+          )}
           <div className="palco__tabs" role="tablist" aria-label="Painéis do palco" onKeyDown={onTabKey}>
             {tabs.map(([id, label]) => (
               <button

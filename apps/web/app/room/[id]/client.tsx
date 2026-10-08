@@ -720,7 +720,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
               className="r4-palco-toggle"
               aria-pressed={palco}
               aria-label="Modo palco"
-              title="Modo palco. Por enquanto, pausar e pular ficam na visão normal."
               onClick={() => setPalcoView(!palco)}
             >
               <span className="r4-palco-toggle__long" aria-hidden="true">Modo palco</span>
@@ -764,6 +763,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
             queueCount={store.state?.queue.filter((t) => t.id !== store.state?.nowPlayingId).length ?? 0}
             hasPlayer={videoMode || Boolean(youtubeAudio) || fixtureYt}
             artwork={artwork}
+            canControl={hostControl}
+            activePlayer={activePlayer}
+            volume={<VolumeControl />}
+            servicePicker={servicePicker}
           />
         )}
         {/* Switching between a video and an audio track changes layouts and remounts

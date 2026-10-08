@@ -9,6 +9,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 const FIXTURE = '/room/SALABIA?fixture=room&yt=1';
 const SHOTS = process.env.PALCO_SHOTS_DIR;
+const SHOT_PREFIX = process.env.PALCO_SHOT_PREFIX ?? 'palco';
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -102,11 +103,37 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
           // The Next dev indicator is not part of the page.
           await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
           const name = typeof tab === 'string' ? tab.toLowerCase() : 'fila';
-          await page.screenshot({ path: `${SHOTS}/palco-${vp.width}x${vp.height}-${name}.png` });
+          await page.screenshot({ path: `${SHOTS}/${SHOT_PREFIX}-${vp.width}x${vp.height}-${name}.png` });
         }
       }
       // Never two copies of the queue or the chat.
       await expect(page.getByTestId('queue-panel')).toHaveCount(0);
+    });
+
+    test('the HUD carries volume, Ouvir no and the host transport, 44 px targets, inside the view', async ({ page }) => {
+      await openPalco(page);
+      const hud = page.getByTestId('palco-hud');
+      const ctrls = hud.getByRole('group', { name: 'Controles da música' });
+      await expect(ctrls).toBeVisible();
+      await expect(ctrls.getByRole('slider', { name: 'Volume' })).toBeVisible();
+      await expect(ctrls.getByRole('button', { name: 'Silenciar' })).toBeVisible();
+      // The fixture room has no auth: everyone controls, so the transport shows.
+      await expect(ctrls.getByRole('button', { name: /^(Pausar|Tocar)$/ })).toBeVisible();
+      await expect(ctrls.getByRole('button', { name: 'Próxima faixa' })).toBeVisible();
+      if (process.env.NEXT_PUBLIC_FEATURE_SPOTIFY === 'on') await expect(ctrls.getByRole('group', { name: 'Ouvir no' })).toBeVisible();
+      const vpw = page.viewportSize()!;
+      const player = await playerBox(page);
+      for (const b of await hud.getByRole('button').all()) {
+        if (!(await b.isVisible())) continue;
+        const r = (await b.boundingBox())!;
+        const name = (await b.getAttribute('aria-label')) ?? (await b.textContent());
+        expect(r.height, `${name} height`).toBeGreaterThanOrEqual(44);
+        expect(r.width, `${name} width`).toBeGreaterThanOrEqual(44);
+        expect(r.x + r.width, `${name} inside`).toBeLessThanOrEqual(vpw.width);
+        expect(overlaps(r, player), `${name} off the player`).toBe(false);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      await expectPlayerClear(page);
     });
 
     test('the view is remembered and the player is never remounted by the switch', async ({ page }) => {
