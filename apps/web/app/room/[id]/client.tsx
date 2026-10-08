@@ -58,7 +58,12 @@ import dynamic from 'next/dynamic';
 import { usePalcoView, setPalcoView } from '@/lib/palcoView';
 
 // Modo palco: client-only chunk (three.js), never in the round 4 bundle.
-const PalcoView = dynamic(() => import('../components/palco/PalcoView'), { ssr: false });
+// While the chunk (three.js) loads, a plain stage-coloured block holds the
+// space, so the room never flashes an empty area.
+const PalcoView = dynamic(() => import('../components/palco/PalcoView'), {
+  ssr: false,
+  loading: () => <section className="palco palco--loading" aria-hidden="true" data-testid="palco-loading" />,
+});
 
 type VideoPanelTab = 'playing' | 'queue' | 'chat';
 // One side drawer at a time: opening one closes the other.
@@ -715,6 +720,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
               className="r4-palco-toggle"
               aria-pressed={palco}
               aria-label="Modo palco"
+              title="Modo palco. Por enquanto, pausar e pular ficam na visão normal."
               onClick={() => setPalcoView(!palco)}
             >
               <span className="r4-palco-toggle__long" aria-hidden="true">Modo palco</span>
