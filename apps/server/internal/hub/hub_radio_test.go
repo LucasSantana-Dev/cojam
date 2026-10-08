@@ -419,3 +419,58 @@ func TestRadioAvailableCapability(t *testing.T) {
 		t.Fatal("radioAvailable must not be persisted")
 	}
 }
+
+func TestRadioTrackKey(t *testing.T) {
+	cases := [][2]string{
+		{"Song", "Song"},
+		{"Song - 2011 Remaster", "Song"},
+		{"Song (Live at X)", "Song"},
+		{"Song (Remastered 2009) - Live", "Song"},
+	}
+	for _, c := range cases {
+		if got := radioTrackKey("Artist", c[0]); got != "artist|"+"song" {
+			t.Errorf("radioTrackKey(%q) = %q", c[0], got)
+		}
+	}
+}
+
+// TestRadioRefillSkipsPlayedAndQueued: Last.fm can return the seed's remaster
+// or tracks already in History; the refill must append only fresh ones.
+func TestRadioRefillSkipsPlayedAndQueued(t *testing.T) {
+	h := NewHub(nil)
+	var gotLimit int32
+	h.WithSimilarProvider(func(ctx context.Context, artist, title string, limit int) ([]queue.TrackRef, error) {
+		atomic.StoreInt32(&gotLimit, int32(limit))
+		return []queue.TrackRef{
+			{Title: "Seed Song - 2011 Remaster", Artist: "Seed Artist"},
+			{Title: "Played Before", Artist: "Other"},
+			{Title: "Fresh 1", Artist: "F"},
+			{Title: "fresh 1 (Live)", Artist: "f"},
+			{Title: "Fresh 2", Artist: "F"},
+		}, nil
+	})
+	h.HandleRPC("room.join", []byte(`{"roomId":"dedup","name":"u1"}`), "")
+	room := mustRoom(t, h, "dedup")
+	room.mu.Lock()
+	room.State.RadioEnabled = true
+	room.State.History = []queue.HistoryEntry{
+		{ID: "h1", Title: "Seed Song", Artist: "Seed Artist"},
+		{ID: "h2", Title: "Played Before", Artist: "Other"},
+	}
+	room.mu.Unlock()
+
+	h.refillRadio("dedup", &queue.TrackRef{Title: "Seed Song", Artist: "Seed Artist"})
+
+	if got := atomic.LoadInt32(&gotLimit); got != radioCandidates {
+		t.Errorf("limit = %d, want %d", got, radioCandidates)
+	}
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	var titles []string
+	for _, q := range room.State.Queue {
+		titles = append(titles, q.Title)
+	}
+	if len(titles) != 2 || titles[0] != "Fresh 1" || titles[1] != "Fresh 2" {
+		t.Errorf("queue = %v, want [Fresh 1 Fresh 2]", titles)
+	}
+}
