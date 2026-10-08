@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, getClockOffsetMs, updatePlatform } from '@/lib/realtime';
+import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, getClockOffsetMs, updatePlatform, isPermissionDeniedError } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
@@ -277,7 +277,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
     advanceSubscribedRef.current = activePlayer;
     activePlayer.onEnded(() => {
       const id = useStore.getState().state?.nowPlayingId;
-      if (id) nowPlayingAdvance(roomId, id);
+      if (id) {
+        nowPlayingAdvance(roomId, id).catch((err) => {
+          if (!isPermissionDeniedError(err)) console.warn('[player] advance at track end failed:', err);
+        });
+      }
     });
   }, [activePlayer, roomId]);
 
