@@ -2871,6 +2871,34 @@ func (h *Hub) enrichSpotify(roomID, trackID string, track queue.TrackRef) (certa
 	return true
 }
 
+const (
+	// radioRefillCount is how many radio tracks one refill appends.
+	radioRefillCount = 5
+	// radioCandidates is how many similar tracks are requested to fill it.
+	radioCandidates = 15
+)
+
+var (
+	radioBracketRe = regexp.MustCompile(`\s*[(\[][^)\]]*[)\]]\s*$`)
+	radioSuffixRe  = regexp.MustCompile(`\s+-\s+[^-]*(remaster|live|version)[^-]*$`)
+)
+
+// radioTrackKey is the dedup key for radio candidates: lowercase
+// "artist|title" with a trailing "(...)" / "[...]" group and a trailing
+// " - ...remaster|live|version" suffix removed, so a remaster of the seed is
+// the same track.
+func radioTrackKey(artist, title string) string {
+	t := strings.ToLower(strings.TrimSpace(title))
+	for {
+		n := strings.TrimSpace(radioSuffixRe.ReplaceAllString(radioBracketRe.ReplaceAllString(t, ""), ""))
+		if n == t || n == "" {
+			break
+		}
+		t = n
+	}
+	return strings.ToLower(strings.TrimSpace(artist)) + "|" + t
+}
+
 // refillRadio fetches similar tracks and appends them to the queue when it runs dry.
 // Idempotent: re-checks that queue is still empty before appending (so a duplicate
 // refill from concurrent advances is a no-op).
@@ -2885,7 +2913,9 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	similar, err := h.similar(ctx, seed.Artist, seed.Title, 5)
+	// Ask for more than radioRefillCount: candidates already played or queued
+	// are dropped below, so a short list could leave nothing to append.
+	similar, err := h.similar(ctx, seed.Artist, seed.Title, radioCandidates)
 	if err != nil {
 		if h.logger != nil {
 			h.logger.Error("radio_fetch_failed", "room_id", roomID, "track", seed.Title, "artist", seed.Artist, "err", err.Error())
@@ -2907,11 +2937,26 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 			return nil // Radio was disabled
 		}
 
-		// Append up to N similar tracks without exceeding MaxQueueSize
+		// Never refill with something the room already played or has queued
+		// (the seed, History, Queue), compared by normalized artist and title.
+		seen := map[string]bool{radioTrackKey(seed.Artist, seed.Title): true}
+		for _, e := range s.History {
+			seen[radioTrackKey(e.Artist, e.Title)] = true
+		}
+		for _, q := range s.Queue {
+			seen[radioTrackKey(q.Artist, q.Title)] = true
+		}
+
+		// Append up to radioRefillCount fresh similar tracks without exceeding MaxQueueSize
 		for _, track := range similar {
-			if len(s.Queue) >= queue.MaxQueueSize {
+			if len(s.Queue) >= queue.MaxQueueSize || len(appended) >= radioRefillCount {
 				break
 			}
+			key := radioTrackKey(track.Artist, track.Title)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			track.AddedBy = "radio"
 			added := s.Add(track)
 			h.enrichBookkeeping(added)
