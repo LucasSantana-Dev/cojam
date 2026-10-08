@@ -16,6 +16,8 @@ Read this before touching any UI. It is the committed source for the identity: t
 
 **Signature: the sine wave.** The N3 mark knocks a sine wave out of its green disc. The same wave, as one thin white line, links the listener avatars in the room stage and the landing phone (`ListenersWave.tsx`) and between landing sections (`SectionWave.tsx`). It is the only connection element in the product.
 
+**The room is different (decision 12, round 4).** The live room is a polished desktop app: a near-black page lit by soft violet ambient light, three columns of solid dark panels, anchored on `.claude/design/refs/r4-mockup-1-approved.png` (owner: "1 definitivamente"). The cover colour is not its ground. Everything below about the sintonia ground, glass and cover-colour surfaces applies to the landing and every other screen; the room section ("The room") says what differs. Moving the other screens to the room's ground is an open follow-up, not decided.
+
 **Fixed base (do not reopen without the owner):** the N3 mark, violet actions, green for LIVE only, Bricolage Grotesque plus Instrument Sans, PT-BR voice.
 
 **Exclusions (each was rejected by the owner or by a critic):**
@@ -29,7 +31,7 @@ Read this before touching any UI. It is the committed source for the identity: t
 
 Source of truth: the block comment "Cor da faixa: sintonia" in `apps/web/app/globals.css`.
 
-1. **One ground.** One fixed ground behind everything, the same component (`GroundStack.tsx`) on landing, room and every other screen. It uses two colours of the cover (the dominant one and its nearest neighbour, at most about 60 degrees apart, `groundPair` in `lib/trackColor.ts`) drifting over 36 s and 48 s under one scrim level.
+1. **One ground.** One fixed ground behind everything, the same component (`GroundStack.tsx`) on landing and every other screen (the live room has its own, see "The room"). It uses two colours of the cover (the dominant one and its nearest neighbour, at most about 60 degrees apart, `groundPair` in `lib/trackColor.ts`) drifting over 36 s and 48 s under one scrim level.
 2. **Colour roles.** Cover palette is ground only. Violet is actions only. White is text. Green is LIVE only.
 3. **One connection element.** The logo's sine wave, linking listener avatars, breathing on the shared beat clock (`lib/beatClock.ts`, 100 bpm, aligned by the synced room clock) while playing. Flat when paused.
 4. **One surface.** Glass: black at 34%, 16% white hairline, 0.9rem radius, no blur.
@@ -45,7 +47,7 @@ Source of truth: the block comment "Cor da faixa: sintonia" in `apps/web/app/glo
 | LIVE | Green `--color-accent-2` and `--logo-core-*` | Only the LIVE pill, eq bars and live dots. `scripts/check_web_drift.sh` fails green outside its `LIVE_SELECTORS` allowlist and in components. |
 | Success | `--color-status-ok`, violet hue | Not green: success is not LIVE. |
 
-**Exception (owner approved, #325):** the pinned now-playing queue row (`.fq-row.is-pinned`) may use the cover tint as a surface, and `.fq-pick` ("Escolha dos ouvintes") uses `--tint-pale` as text. Nothing else.
+**Exceptions (owner approved, #325):** on the landing and the other sintonia screens, nothing outside the ground uses the cover palette. In the room (round 4) the one exception is the now-playing cover's own halo (`.r4-cover__halo`, the same image blurred behind itself, as in the anchor). The room's queue row for the playing track is a violet-tinted surface, not a cover-tinted one. Nothing else.
 
 Off-palette Tailwind colour utilities (orange, amber, teal, and so on) in `apps/web/app/**/*.tsx` also fail the drift guard.
 
@@ -81,13 +83,25 @@ From `:root` in `apps/web/app/globals.css`. Use the token, never a literal.
 - Body: Instrument Sans (`--font-body`).
 - Both load through `next/font/google` in `apps/web/app/layout.tsx`. No third webfont.
 
+## The room (round 4)
+
+Code: `apps/web/app/room/[id]/client.tsx`, `NowPlayingCard.tsx`, `ListenersStage.tsx`, `QueuePanel.tsx`, `ChatPanel.tsx`, `TransportUI.tsx`, and the block "Sala, round 4" at the end of `globals.css` (every selector is scoped by `.room[data-room="r4"]` or an `r4-` / `fq-` / `chat-` / `tp` class).
+
+- **Ground:** `--r4-bg` near-black (`oklch(0.105 0.014 292)`) with three static violet radial lights (strongest top right and at the bottom) on `.room[data-room="r4"]::before`. No `GroundStack`, no cover colour, no drift.
+- **Surface:** solid dark panel (`--r4-panel`), 1px hairline (`--r4-line`), `--r4-radius` 1rem, no blur, no shadow. The now-playing card alone carries a violet border glow. Panels hold type tokens remapped for the room (`--color-text-secondary` white at 0.78, muted at 0.66, both above 4.5:1 on the panel).
+- **Layout:** header (N3 mark, "CoJam", divider, room name, AO VIVO pill, "N ouvindo junto", Convidar pill, own avatar), then three columns from 72rem: now playing and "Ouvindo agora" | "A seguir" queue and the add form | "Chat da Sala". Between 48rem and 72rem two columns (queue and chat stacked in the second). Under 48rem one column with the Tocando / Fila / Chat / Adicionar tabs, 44px targets.
+- **Violet** is actions, focus and the vote state only: Convidar, the play button, "+ Adicionar música", thumb vote, send, host crown and "em sintonia" text. Fills that carry white text use `--r4-violet-fill` (white on it measures above 4.5:1).
+- **Green** is AO VIVO only (`.r4-live`, in `LIVE_SELECTORS` of `scripts/check_web_drift.sh`). Service badges are monochrome white glyphs. Avatars are the initials avatars (`lib/avatar`), since guests have no photos.
+- **Motion at rest:** one thing moves, the three sound-wave arcs above each listener avatar (and the glyph between neighbours), on the shared beat clock (`lib/beatClock`, rAF only while playing, on screen, tab visible). Static under reduced motion, paused, or alone. The queue and chat rows, the cover flight on a track change and the chat spring-in move only on events.
+- **Not built because the product lacks it:** shuffle, repeat, previous and next buttons, the emoji picker in the chat input, real photos on avatars.
+
 ## Surfaces
 
-One treatment, in the room and on the landing: `--glass` fill, `--glass-line` 1px hairline, `--glass-radius`, `backdrop-filter: none`. On sintonia screens the page tokens are remapped (`.room[data-tint="room"][data-bg="sintonia"]`, `.landing[data-bg="sintonia"]`, `.sx`) so existing components pick up the glass without per-component overrides.
+One treatment on the landing and the other screens (the room has its own, above): `--glass` fill, `--glass-line` 1px hairline, `--glass-radius`, `backdrop-filter: none`. On sintonia screens the page tokens are remapped (`.room[data-tint="room"][data-bg="sintonia"]`, `.landing[data-bg="sintonia"]`, `.sx`) so existing components pick up the glass without per-component overrides.
 
 ## Motion
 
-- **Budget: at most 2 moving things at rest**, ground drift and wave breathing. Everything else moves only on a user or scroll event.
+- **Budget: at most 2 moving things at rest**, ground drift and wave breathing on the landing and sintonia screens; in the room only the listener arcs. Everything else moves only on a user or scroll event.
 - **Moments:** `ScrollStory.tsx` (pinned "Como funciona", GSAP ScrollTrigger, the only pinned section), `SectionWave.tsx` and `ListenersWave.tsx` (the wave), the cover flip into the stage on a track change (`useCoverFlight`, and the ground wash opening from `.np-cover`).
 - **Loops** are CSS transform only, and pause when the tab is hidden or the ground is off screen.
 - **Reduced motion** (`lib/motionFlags.ts`, `useMotion`): no scroll story (steps render as a grid), no flip, no drift (one static ground frame), no tint fade. The wave stays visible, already drawn. Server render and first client render are the static baseline; motion enhances after hydration.
@@ -110,7 +124,7 @@ PT-BR everywhere a user can see it: room, join errors, relative times, /account,
 
 ## Add a new surface
 
-1. Render inside `SintoniaScreen` (non-room screens) or under `.landing` / `.room` with `data-bg="sintonia"`. Do not paint your own page background.
+1. Render inside `SintoniaScreen` (non-room screens) or under `.landing` with `data-bg="sintonia"`. Do not paint your own page background. Room panels follow "The room" instead.
 2. Use the glass tokens for panels. No blur, no extra shadows beyond what exists.
 3. Text is white. Actions are `--color-accent`. Do not use green unless it is a LIVE indicator, and then add its selector to `LIVE_SELECTORS` in `scripts/check_web_drift.sh`.
 4. Do not use the cover palette anywhere except the ground (one exception: see Colour roles).
