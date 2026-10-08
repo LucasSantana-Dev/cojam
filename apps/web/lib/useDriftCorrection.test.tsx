@@ -213,25 +213,46 @@ describe('useDriftCorrection (#177)', () => {
       unmount();
     });
 
-    it('a large new jump at the backoff cap is corrected at the base wait', async () => {
-      const { player, seeks, setLag } = chase();
+    it('keeps backing off under a persistent 10 s lag (a big offset is not a new jump)', async () => {
+      const player = makePlayer();
+      const stamp = Date.now() - 30_000;
+      player.getCurrentPositionMs.mockImplementation(async () => Date.now() - stamp - 10_000);
+      useStore.getState().setState(roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: stamp }));
+      const seeks: number[] = [];
+      player.seekToMs.mockImplementation(async () => {
+        seeks.push(Date.now());
+      });
       const { unmount } = renderHook(() => useDriftCorrection(player, true));
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(60_000); // backoff at its cap
+        await vi.advanceTimersByTimeAsync(90_000);
+      });
+      const gaps = seeks.slice(1).map((v, i) => v - seeks[i]);
+      expect(gaps.length).toBeGreaterThanOrEqual(4);
+      for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeGreaterThanOrEqual(gaps[i - 1]);
+      expect(gaps[gaps.length - 1]).toBeGreaterThan(gaps[0]);
+      unmount();
+    });
+
+    it('resets the backoff when the offset itself jumps (a seek by the host)', async () => {
+      const player = makePlayer();
+      const stamp = Date.now() - 30_000;
+      let extra = 3000;
+      player.getCurrentPositionMs.mockImplementation(async () => Date.now() - stamp - extra);
+      useStore.getState().setState(roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: stamp }));
+      const seeks: number[] = [];
+      player.seekToMs.mockImplementation(async () => {
+        seeks.push(Date.now());
+      });
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(40_000); // backoff grown
       });
       const before = seeks.length;
-      // The host seeks the room 60 s ahead: drift jumps far over the rebuffer scale.
-      act(() => {
-        useStore.getState().setState(
-          roomState(2, { state: 'playing', positionMs: 100_000, updatedAtServerMs: Date.now() }),
-        );
-      });
-      setLag(false);
-      player.getCurrentPositionMs.mockImplementation(async () => 0);
+      extra = 15_000; // lag jumps by 12 s between two measurements
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(5000);
+        await vi.advanceTimersByTimeAsync(8000);
       });
-      expect(seeks.length).toBeGreaterThan(before + 1); // initial sync + a drift correction inside 5 s
+      expect(seeks.length).toBeGreaterThan(before); // corrected promptly despite the grown wait
       unmount();
     });
 
@@ -326,8 +347,12 @@ describe('useDriftCorrection past the end of the track', () => {
     seed(1, STALE);
     const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
     await act(async () => {
-      seed(2, { ...STALE, positionMs: 1 });
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(3000); // the first advance has fired
+    });
+    expect(advanceMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      seed(2, { ...STALE, positionMs: 1 }); // same stale transport republished, inside the retry window
+      await vi.advanceTimersByTimeAsync(5000);
     });
     expect(advanceMock).toHaveBeenCalledTimes(1);
     unmount();
@@ -360,12 +385,21 @@ describe('useDriftCorrection past the end of the track', () => {
     b.unmount();
   });
 
-  it('does not play or seek a listener whose transport is already past the end', () => {
+  it('never seeks a listener whose transport is already past the end, and stops playing once decided', async () => {
     const player = makePlayer();
+    player.getDurationMs.mockResolvedValue(0);
     seed(1, STALE);
     const { unmount } = renderHook(() => useDriftCorrection(player, true, false));
-    expect(player.play).not.toHaveBeenCalled();
     expect(player.seekToMs).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000); // hold (10 s after PLAYING) is over
+    });
+    player.play.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(player.seekToMs).not.toHaveBeenCalled();
+    expect(player.play).not.toHaveBeenCalled();
     unmount();
   });
 
@@ -468,6 +502,50 @@ describe('useDriftCorrection past the end of the track', () => {
       await vi.advanceTimersByTimeAsync(12_000);
     });
     expect(advanceMock).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  // A YouTube-like sequence: isPlaying false while autoplay is blocked or the
+  // first buffer loads, then true; the duration is 0 until metadata arrives.
+  it('does not advance while autoplay is blocked, and resumes play() instead', async () => {
+    const player = { ...makePlayer(), isPlaying: vi.fn(() => false), isPaused: vi.fn(() => true) };
+    player.getDurationMs.mockResolvedValue(270_000);
+    seed(1, { state: 'playing', positionMs: 0, updatedAtServerMs: NOW - 230_000 }); // 3:50 into a 4:30 video, entry says 3:43
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000); // longer than the 10 s hold
+    });
+    expect(advanceMock).not.toHaveBeenCalled();
+    expect(player.play.mock.calls.length).toBeGreaterThanOrEqual(2); // initial + the one resume
+    expect(player.seekToMs).not.toHaveBeenCalled();
+    // The user finally allows playback: PLAYING, duration known, not cut short.
+    player.isPlaying.mockReturnValue(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+    expect(advanceMock).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('starts the hold clock only after the first PLAYING, however long the buffer took', async () => {
+    const player = { ...makePlayer(), isPlaying: vi.fn(() => false), isPaused: vi.fn(() => false) };
+    player.getDurationMs.mockResolvedValue(0); // metadata not there yet
+    seed(1, { state: 'playing', positionMs: 0, updatedAtServerMs: NOW - 230_000 });
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000); // buffering for 20 s
+    });
+    expect(advanceMock).not.toHaveBeenCalled();
+    player.isPlaying.mockReturnValue(true); // PLAYING, duration still 0 for a moment
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(advanceMock).not.toHaveBeenCalled(); // inside the 10 s hold from first PLAYING
+    player.getDurationMs.mockResolvedValue(270_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(advanceMock).not.toHaveBeenCalled(); // learned 4:30, 4:00 in
     unmount();
   });
 });

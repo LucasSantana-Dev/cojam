@@ -25,7 +25,8 @@ const ADVANCE_RETRY_MS = 10_000;
 const PAST_END_CONFIRM_MS = 10_000;
 // A player duration beyond this multiple of the catalogue entry is not trusted.
 const MAX_PLAYER_DURATION_FACTOR = 3;
-// Drift this far off is a real jump, not a rebuffer: it resets the seek backoff.
+// A drift that moves this far between two measurements is a real jump, not a
+// rebuffer: it resets the seek backoff.
 const BACKOFF_RESET_DRIFT_MS = 8000;
 
 export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: boolean, canAdvance = false) {
@@ -48,8 +49,15 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
   // longer music video, and radio refills, pasted links and video tracks carry
   // none, so the end is max(catalogue, player) and unknown means never past.
   const playerDurationRef = useRef<{ id: string; ms: number } | null>(null);
-  // When a catalogue-only past-end verdict started being held, per track.
+  // The hold on a catalogue-only past-end verdict: its clock starts only once
+  // the player first reaches PLAYING for the track (autoplay blocked or a long
+  // first buffer must not count), per track.
   const holdRef = useRef<{ id: string; at: number } | null>(null);
+  // True while the last handlePastEnd call is only holding (not decided): the
+  // caller must still let a paused player resume, but never seek.
+  const holdingRef = useRef(false);
+  // Track id the player has been seen PLAYING for.
+  const playedRef = useRef<string | null>(null);
 
   // Reads the player's duration into playerDurationRef, only while it PLAYS.
   const learnDuration = useCallback(() => {
@@ -57,6 +65,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     if (activePlayer.isPlaying && !activePlayer.isPlaying()) return;
     const id = useStore.getState().state?.nowPlayingId;
     if (!id) return;
+    playedRef.current = id;
     activePlayer
       .getDurationMs()
       .then((ms) => {
@@ -70,6 +79,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
   const handlePastEnd = useCallback((current: { state: 'playing' | 'paused' | 'stopped'; positionMs: number; updatedAtServerMs: number }, now: number): boolean => {
     const st = useStore.getState().state;
     const id = st?.nowPlayingId;
+    holdingRef.current = false;
     if (!st || !id) return false;
     learnDuration();
     const catalogueMs = st.queue.find((t) => t.id === id)?.durationMs ?? 0;
@@ -87,8 +97,17 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     // its length yet (metadata still loading): hold, no seek, no advance, until
     // it does, bounded so a stale room whose player never starts still moves.
     if (activePlayer && playerMs === 0) {
+      // Not PLAYING yet (autoplay blocked, long first buffer): keep holding, the
+      // server's AdvanceIfEnded covers a truly stale room.
+      if (playedRef.current !== id) {
+        holdingRef.current = true;
+        return true;
+      }
       const hold = holdRef.current && holdRef.current.id === id ? holdRef.current : (holdRef.current = { id, at: Date.now() });
-      if (Date.now() - hold.at < PAST_END_CONFIRM_MS) return true;
+      if (Date.now() - hold.at < PAST_END_CONFIRM_MS) {
+        holdingRef.current = true;
+        return true;
+      }
     }
     const last = advancedRef.current;
     if (canAdvanceRef.current && (!last || last.id !== id || Date.now() - last.at > ADVANCE_RETRY_MS)) {
@@ -106,14 +125,23 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     let lastSeekAt = 0;
     // Corrective seeks in a row without drift settling (see seekCooldownMs).
     let consecutiveSeeks = 0;
+    // Previous measured drift: only a CHANGE of the offset resets the backoff, a
+    // persistent large offset keeps backing off.
+    let lastDrift = 0;
     let resumeTried = false;
     // Handle state transitions: play/pause/stop
     if (transport.state === 'playing') {
       // Same store snapshot for the transport and the now-playing id.
       const now = serverNow();
       if (handlePastEnd(useStore.getState().state?.transport ?? transport, now)) {
-        // Past the end: neither play nor seek (see the header comment); a
-        // listener waits for the room to move.
+        // Past the end: no seek (see the header comment); a listener waits for
+        // the room to move. While only holding for the player's own duration
+        // the player must still start, or it never reports one.
+        if (holdingRef.current) {
+          activePlayer.play().catch((err) => {
+            console.warn('Failed to play:', err);
+          });
+        }
       } else if (isExpectedPositionKnown(transport, now)) {
         activePlayer.play().catch((err) => {
           console.warn('Failed to play:', err);
@@ -167,7 +195,8 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         requestClockRemeasure();
         return;
       }
-      if (handlePastEnd(current, now)) return;
+      const pastEnd = handlePastEnd(current, now);
+      if (pastEnd && !holdingRef.current) return;
       // Cued/buffering/unstarted reads are unreliable (getCurrentTime() is 0).
       if (activePlayer.isPlaying && !activePlayer.isPlaying()) {
         // Paused while the room plays (e.g. autoplay blocked): try play() once
@@ -178,17 +207,20 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         }
         return;
       }
+      if (pastEnd) return; // holding for the player's duration: resume above, never seek
       const expected = computeExpectedPosition(current, now);
 
       activePlayer.getCurrentPositionMs()
         .then((actual) => {
           const drift = actual - expected;
+          const previousDrift = lastDrift;
+          lastDrift = drift;
           if (!shouldCorrect(drift, DRIFT_THRESHOLD_MS)) {
             consecutiveSeeks = 0;
           } else {
             // Drift is measured every tick; only the SEEK waits for the last one
             // to settle. A large new jump is not a rebuffer: back to the base wait.
-            if (Math.abs(drift) > BACKOFF_RESET_DRIFT_MS) consecutiveSeeks = 0;
+            if (Math.abs(drift - previousDrift) > BACKOFF_RESET_DRIFT_MS) consecutiveSeeks = 0;
             if (Date.now() - lastSeekAt < seekCooldownMs(consecutiveSeeks)) return;
             lastSeekAt = Date.now();
             consecutiveSeeks++;
