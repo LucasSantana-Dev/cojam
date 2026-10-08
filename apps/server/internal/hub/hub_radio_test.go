@@ -120,7 +120,7 @@ func TestRadioAutoRefillOnAdvance(t *testing.T) {
 	}
 
 	// #175: refill into a drained room must start the FIRST refilled track
-	// (Queue[2] here, after the 2 played entries), not track 1 of history.
+	// (Queue[0]: the 2 played entries live in History), not track 1 of history.
 	room := mustRoom(t, h, "radio-test")
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -128,12 +128,12 @@ func TestRadioAutoRefillOnAdvance(t *testing.T) {
 		queueLen := len(room.State.Queue)
 		nowPlaying := room.State.NowPlayingID
 		firstRefilledID := ""
-		if queueLen >= 3 {
-			firstRefilledID = room.State.Queue[2].ID
+		if queueLen >= 1 {
+			firstRefilledID = room.State.Queue[0].ID
 		}
 		room.mu.Unlock()
 
-		if queueLen == 5 {
+		if queueLen == 3 {
 			if nowPlaying != firstRefilledID {
 				t.Fatalf("refill should start first refilled track %s, got %s", firstRefilledID, nowPlaying)
 			}
@@ -185,7 +185,7 @@ func TestQueueAddIntoDrainedRoomStartsNewTrack(t *testing.T) {
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
 
-	newID := st.Queue[2].ID
+	newID := st.Queue[0].ID
 	if st.NowPlayingID != newID {
 		t.Fatalf("queue.add into drained room should start the new track %s, got %s", newID, st.NowPlayingID)
 	}
@@ -361,7 +361,7 @@ func TestRadioRefillSeedIsCopied(t *testing.T) {
 	}
 
 	// Play through both tracks. The first advance starts t2; the second runs
-	// the queue dry, capturing Queue[len-1] (t2) as the refill seed and
+	// the queue dry, capturing History[0] (t2) as the refill seed and
 	// spawning the refill goroutine (parked under GOMAXPROCS(1)).
 	if _, err := h.HandleRPC("now_playing.advance", []byte(`{"roomId":"seed-test","afterId":"`+t1ID+`"}`), ""); err != nil {
 		t.Fatalf("advance t1: %v", err)
@@ -370,11 +370,11 @@ func TestRadioRefillSeedIsCopied(t *testing.T) {
 		t.Fatalf("advance t2: %v", err)
 	}
 
-	// Rewrite the seed's backing-array slot before the refill goroutine reads
-	// it: moving t2 to the front shifts t1 into slot 1 in place. A
-	// pointer-into-slice seed now reads t1; a copied seed still reads t2.
-	if _, err := h.HandleRPC("queue.reorder", []byte(`{"roomId":"seed-test","trackId":"`+t2ID+`","toIndex":0}`), ""); err != nil {
-		t.Fatalf("reorder: %v", err)
+	// Mutate the room before the refill goroutine reads the seed: a new
+	// track starts playing and the state moves on. The seed was copied out
+	// of History[0] at advance time, so it must still read t2.
+	if _, err := h.HandleRPC("queue.add", []byte(`{"roomId":"seed-test","track":{"title":"Intruder","artist":"X","sources":{},"addedBy":"u1"}}`), ""); err != nil {
+		t.Fatalf("add: %v", err)
 	}
 
 	select {

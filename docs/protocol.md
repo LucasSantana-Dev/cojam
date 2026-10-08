@@ -11,6 +11,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `queue.remove` | `{ roomId, trackId: string }` | `RoomState` |
 | `queue.reorder` | `{ roomId, trackId: string, toIndex: number }` | `RoomState` |
 | `queue.vote` | `{ roomId, trackId: string }` | `RoomState` |
+| `history.readd` | `{ roomId, trackId: string }` (a `history[].id`) | `RoomState` |
 | `now_playing.set` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
 | `track.search` | `{ query: string, prefer?: string[] }` | `SearchResult[]` |
@@ -95,7 +96,7 @@ type LastfmEnrich = {        // source: "lastfm" (FEATURE_LASTFM_ENRICH + LASTFM
 whether the server can refill at all; the toggle only stores intent. When the queue runs dry on
 `now_playing.advance` with radio on, the server refills the queue asynchronously
 from a similar-tracks provider (Last.fm, `FEATURE_RADIO` + `LASTFM_API_KEY`)
-seeded by the last queued track. The refill fanout is deliberately not
+seeded by the last played track (`history[0]`). The refill fanout is deliberately not
 rate-limited: it fires at most once per advance that actually empties the queue
 (the refill re-checks state and no-ops otherwise), and the trigger RPC is
 host-only, so per-caller spam cannot multiply upstream calls.
@@ -262,6 +263,7 @@ still enforced.
 | `room.join`, `sync.ping`, reads | any caller |
 | `now_playing.set` / `now_playing.advance` | host, owner or admin |
 | `queue.reorder` | host, owner or admin |
+| `history.readd` | host, owner or admin |
 | `queue.remove` | host, owner, admin, or the member who queued the track (`addedByUserId`) |
 | `radio.set`, `playlist.import` | host, owner or admin |
 | `room.set_public` | host or owner (not admins) |
@@ -448,10 +450,25 @@ type TrackRef = {
   kind?: 'audio' | 'video'; // render as audio or video (#258); absent = audio. Unknown values rejected at add.
 };
 
+type HistoryEntry = {      // a track that finished or was skipped (list uses id, title, artist, artworkUrl, playedAt, addedBy)
+  id: string;               // the id the track had in the queue
+  title: string;
+  artist: string;
+  artworkUrl?: string;
+  addedBy: string;
+  addedByUserId?: string;
+  playedAt?: number;        // unix ms when it left now-playing, server-stamped (absent on entries migrated from the old shape)
+  durationMs?: number;      // the fields below are kept only so history.readd can copy the track
+  isrc?: string;
+  kind?: 'audio' | 'video';
+  sources: { youtube?: { videoId: string; confidence: number }; apple?: { songId: string; confidence: number }; spotify?: { trackUri: string; confidence: number } };
+};
+
 type RoomState = {
   roomId: string;
-  queue: TrackRef[];        // ordered; head = now playing
+  queue: TrackRef[];        // ordered; head = now playing, the rest upcoming. Played tracks are not here.
   nowPlayingId?: string;    // queue entry id
+  history?: HistoryEntry[]; // played or skipped tracks, newest first, capped at 50; absent when empty. Votes and reorders never touch it.
   hostUserId?: string;      // userID of the room host (RFC-0005; empty when room auth is off)
   ownerUserId?: string;     // room creator: always reclaims host on join, cannot be kicked or demoted (absent on older rooms)
   admins?: string[];        // userIDs with full queue and transport control, set by room.set_admin
@@ -487,12 +504,14 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Method Details
 
-- **`queue.reorder`**: Move a queued track to a new position. Index is clamped to `[0, len-1]`. Idempotent: re-ordering to the same position is a no-op. Does not change `nowPlayingId`.
-- **`now_playing.advance`**: Advance to the next track after the one specified by `afterId`. IDEMPOTENT: if `nowPlayingId != afterId`, it's a no-op (another client already advanced). If `afterId` is the last track in the queue, clears `nowPlayingId` (queue finished). Used by clients to auto-advance when the current track ends.
+- **History**: every path that changes `nowPlayingId` (`now_playing.advance`, `now_playing.set`, `queue.remove` of the playing track) moves the outgoing track out of `queue` into the front of `history` (capped at 50, oldest dropped) and keeps the new playing track at `queue[0]`. The sourceless auto skip is the exception: a track that never played is dropped from the queue without entering `history`, and a system chat line says why. Votes on a track are dropped when it moves to history. A played track therefore cannot come back through a vote, a reorder or a play jump. Rooms persisted before `history` existed (played tracks sitting before `nowPlayingId`, or the whole queue when nothing plays) are migrated on load: those tracks move to `history` in played order (newest first), with no `playedAt`.
+- **`history.readd`**: Queue a played track again. The server copies the history entry (title, artist, sources and so on; nothing is taken from the client) to the end of `queue` as a **new** entry with a new `id`, attributed to the caller. The history entry stays and the old queue id is never resurrected. Unknown `trackId` is a user error. Subject to the queue size cap. Host, owner or admin only.
+- **`queue.reorder`**: Move a queued track to a new position. Index is clamped to `[0, len-1]`, except that the playing track stays at index 0: it cannot be moved and an index below 1 clamps to 1 while something plays. Idempotent: re-ordering to the same position is a no-op. Does not change `nowPlayingId`.
+- **`now_playing.advance`**: Advance to the next track after the one specified by `afterId`. IDEMPOTENT: if `nowPlayingId != afterId`, it's a no-op (another client already advanced). The finished track moves to `history`. If nothing is left in the queue, clears `nowPlayingId` (queue finished). Used by clients to auto-advance when the current track ends.
 
 ## Authorization
 
-Mutating RPCs (`queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`, `room.claim_host`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`history.readd`, `queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `playlist.import`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`, `room.claim_host`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 ### Room ids and room creation
 
@@ -500,7 +519,7 @@ A room id must match `^[0-9A-Z]{1,12}$`: the 12 uppercase base36 chars the web g
 
 `room.join` draws from a per-caller rate limit (10 burst, one token per 2s). Creating a room draws from a separate budget (10 burst, one token per minute; `ROOM_CREATE_RATE_BURST` overrides the burst), charged both per caller and per client IP (the IP of the websocket upgrade, resolved like the HTTP limiters: IPv4 per address, IPv6 per /64); a creation is denied when either bucket is empty, and a denial charges neither. It is charged only when the target room exists neither in memory nor in the store, so joining an existing room never spends it. Both reject with a code-400 UserError. The caller key is the same as the other per-caller limits (`user:<userID>`, else `client:<clientID>`).
 
-State-fanout mutations (`queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`) share one per-caller bucket (20 burst, one token per second), since every accepted call republishes the full `RoomState`. `queue.vote`, `transport.*`, the chat and moderation RPCs, and `playlist.import` keep their own buckets.
+State-fanout mutations (`history.readd`, `queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`) share one per-caller bucket (20 burst, one token per second), since every accepted call republishes the full `RoomState`. `queue.vote`, `transport.*`, the chat and moderation RPCs, and `playlist.import` keep their own buckets.
 
 ### Trust model (#180)
 

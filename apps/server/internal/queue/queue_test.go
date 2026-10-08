@@ -92,10 +92,10 @@ func TestRemoveCurrentWithQueuedSuccessorThenAdd(t *testing.T) {
 	rs := &RoomState{
 		RoomID: "room1",
 		Queue: []TrackRef{
-			{ID: "played", Title: "Old", AddedBy: "u1", Sources: Sources{}},
 			{ID: "current", Title: "Now", AddedBy: "u1", Sources: Sources{}},
 			{ID: "queued", Title: "Next", AddedBy: "u1", Sources: Sources{}},
 		},
+		History:      []HistoryEntry{{ID: "played", Title: "Old"}},
 		NowPlayingID: "current",
 		Version:      1,
 	}
@@ -105,6 +105,9 @@ func TestRemoveCurrentWithQueuedSuccessorThenAdd(t *testing.T) {
 	}
 	if rs.NowPlayingID != "queued" {
 		t.Fatalf("expected advance to queued, got %q", rs.NowPlayingID)
+	}
+	if len(rs.History) != 2 || rs.History[0].ID != "current" {
+		t.Fatalf("removed now-playing track must head History, got %+v", rs.History)
 	}
 
 	added := rs.Add(TrackRef{Title: "New", AddedBy: "u2", Sources: Sources{}})
@@ -212,9 +215,9 @@ func TestAdvanceAfterToLastTrack(t *testing.T) {
 	rs := &RoomState{
 		RoomID: "room1",
 		Queue: []TrackRef{
-			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
 			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
 		},
+		History:      []HistoryEntry{{ID: "t1"}},
 		NowPlayingID: "t2",
 		Version:      1,
 	}
@@ -268,15 +271,16 @@ func TestMove(t *testing.T) {
 		Version:      1,
 	}
 
+	// Index 0 belongs to the playing track: the move clamps to 1.
 	err := rs.Move("t3", 0)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if rs.Queue[0].ID != "t3" {
-		t.Errorf("expected t3 at index 0, got %s", rs.Queue[0].ID)
+	if rs.Queue[0].ID != "t1" {
+		t.Errorf("playing track must stay at index 0, got %s", rs.Queue[0].ID)
 	}
-	if rs.Queue[1].ID != "t1" {
-		t.Errorf("expected t1 at index 1, got %s", rs.Queue[1].ID)
+	if rs.Queue[1].ID != "t3" {
+		t.Errorf("expected t3 at index 1, got %s", rs.Queue[1].ID)
 	}
 	if rs.Queue[2].ID != "t2" {
 		t.Errorf("expected t2 at index 2, got %s", rs.Queue[2].ID)
@@ -296,17 +300,18 @@ func TestMoveClampsToEnd(t *testing.T) {
 		Queue: []TrackRef{
 			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
 			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
+			{ID: "t3", Title: "Song 3", AddedBy: "u3", Sources: Sources{}},
 		},
 		NowPlayingID: "t1",
 		Version:      1,
 	}
 
-	err := rs.Move("t1", 999)
+	err := rs.Move("t2", 999)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if rs.Queue[1].ID != "t1" {
-		t.Errorf("expected t1 at end (index 1), got %s", rs.Queue[1].ID)
+	if rs.Queue[2].ID != "t2" {
+		t.Errorf("expected t2 at end (index 2), got %s", rs.Queue[2].ID)
 	}
 }
 
@@ -317,7 +322,7 @@ func TestMoveClampsToStart(t *testing.T) {
 			{ID: "t1", Title: "Song 1", AddedBy: "u1", Sources: Sources{}},
 			{ID: "t2", Title: "Song 2", AddedBy: "u2", Sources: Sources{}},
 		},
-		NowPlayingID: "t2",
+		NowPlayingID: "t1",
 		Version:      1,
 	}
 
@@ -325,8 +330,8 @@ func TestMoveClampsToStart(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if rs.Queue[0].ID != "t2" {
-		t.Errorf("expected t2 at start (index 0), got %s", rs.Queue[0].ID)
+	if rs.Queue[0].ID != "t1" || rs.Queue[1].ID != "t2" {
+		t.Errorf("playing track must keep the head, got %s,%s", rs.Queue[0].ID, rs.Queue[1].ID)
 	}
 }
 
@@ -639,12 +644,10 @@ func TestPruneVoter(t *testing.T) {
 // back and replay the whole history.
 func TestAddToDrainedRoomStartsNewTrack(t *testing.T) {
 	rs := &RoomState{
-		RoomID: "room1",
-		Queue: []TrackRef{
-			{ID: "t1", Title: "Played 1", AddedBy: "u1", Sources: Sources{}},
-			{ID: "t2", Title: "Played 2", AddedBy: "u1", Sources: Sources{}},
-		},
-		NowPlayingID: "", // drained: both entries are history
+		RoomID:       "room1",
+		Queue:        []TrackRef{},
+		History:      []HistoryEntry{{ID: "t2", Title: "Played 2"}, {ID: "t1", Title: "Played 1"}},
+		NowPlayingID: "", // drained: played tracks live in History
 		Version:      3,
 	}
 
@@ -656,6 +659,9 @@ func TestAddToDrainedRoomStartsNewTrack(t *testing.T) {
 	if rs.Version != 4 {
 		t.Errorf("expected version 4, got %d", rs.Version)
 	}
+	if len(rs.Queue) != 1 || rs.Queue[0].ID != added.ID {
+		t.Errorf("queue must hold only the new track, got %v", queueTitles(rs))
+	}
 }
 
 // TestAddRefillKeepsFirstRefilledTrack pins the radio-refill shape of #175:
@@ -663,10 +669,9 @@ func TestAddToDrainedRoomStartsNewTrack(t *testing.T) {
 // one sets NowPlayingID, the rest just queue up behind it.
 func TestAddRefillKeepsFirstRefilledTrack(t *testing.T) {
 	rs := &RoomState{
-		RoomID: "room1",
-		Queue: []TrackRef{
-			{ID: "t1", Title: "Played", AddedBy: "u1", Sources: Sources{}},
-		},
+		RoomID:       "room1",
+		Queue:        []TrackRef{},
+		History:      []HistoryEntry{{ID: "t1", Title: "Played"}},
 		NowPlayingID: "",
 		Version:      2,
 	}
@@ -681,7 +686,7 @@ func TestAddRefillKeepsFirstRefilledTrack(t *testing.T) {
 	if rs.Version != 5 {
 		t.Errorf("expected version 5, got %d", rs.Version)
 	}
-	if len(rs.Queue) != 4 {
-		t.Errorf("expected queue length 4, got %d", len(rs.Queue))
+	if len(rs.Queue) != 3 {
+		t.Errorf("expected queue length 3, got %d", len(rs.Queue))
 	}
 }

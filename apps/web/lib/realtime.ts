@@ -683,6 +683,7 @@ let rebindWaiter: { roomId: string; userId: string; resolve: (confirmed: boolean
 function stateShowsIdentity(state: RoomState, userId: string): boolean {
   if (state.hostUserId === userId) return true;
   if (state.queue.some((t) => t.addedByUserId === userId)) return true;
+  if ((state.history ?? []).some((t) => t.addedByUserId === userId)) return true;
   const voterKey = `user:${userId}`;
   return Object.values(state.votes ?? {}).some((voters) => voters.includes(voterKey));
 }
@@ -816,6 +817,14 @@ export async function nowPlayingSet(roomId: string, trackId: string) {
 export async function nowPlayingAdvance(roomId: string, afterId: string) {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('now_playing.advance', { roomId, afterId });
+}
+
+// history.readd: queues a played track again at the end as a new entry.
+// Controllers only (host, owner, admin); the server copies the track from
+// history, so the old entry is never resurrected.
+export async function historyReadd(roomId: string, trackId: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('history.readd', { roomId, trackId });
 }
 
 export async function queueReorder(roomId: string, trackId: string, toIndex: number) {

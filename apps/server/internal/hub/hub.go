@@ -395,6 +395,7 @@ var mutatingMethods = map[string]bool{
 	"queue.remove":        true,
 	"queue.reorder":       true,
 	"queue.vote":          true,
+	"history.readd":       true,
 	"now_playing.set":     true,
 	"now_playing.advance": true,
 	"playlist.import":     true,
@@ -426,6 +427,7 @@ var knownMethods = map[string]bool{
 	"now_playing.advance": true,
 	"queue.reorder":       true,
 	"queue.vote":          true,
+	"history.readd":       true,
 	"track.search":        true,
 	"track.depth":         true,
 	"track.lyrics":        true,
@@ -466,6 +468,7 @@ func metricMethod(method string) string {
 // allowed for members. queue.remove has one exception: the track's adder
 // (TrackRef.AddedByUserID) may remove it (B16), enforced in Authorize.
 var controlMethods = map[string]bool{
+	"history.readd":       true,
 	"now_playing.set":     true,
 	"now_playing.advance": true,
 	"queue.reorder":       true,
@@ -1210,6 +1213,17 @@ func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 		return nil, userErrorf("could not load the room, please retry")
 	}
 
+	// Rooms persisted before History existed kept played tracks in Queue;
+	// move them out so a vote or a reorder can never bring them back.
+	if state != nil && state.MigrateLegacy() {
+		if h.logger != nil {
+			h.logger.Info("room_history_migrated", "room_id", roomID, "history", len(state.History), "queue", len(state.Queue))
+		}
+		if err := h.store.Save(ctx, state); err != nil && h.logger != nil {
+			h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+		}
+	}
+
 	// If not found, create fresh
 	if state == nil {
 		if !create {
@@ -1755,6 +1769,35 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		}
 		if err == nil && h.spotifyMatcher != nil && req.Track.Sources.Spotify == nil {
 			h.launchTrackEnrich(req.RoomID, addedID, func() bool { return h.enrichSpotify(req.RoomID, addedID, req.Track) })
+		}
+		return res, err
+
+	case "history.readd":
+		var req struct {
+			RoomID  string `json:"roomId"`
+			TrackID string `json:"trackId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("history.readd: roomId required")
+		}
+		var added queue.TrackRef
+		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			if len(s.Queue) >= queue.MaxQueueSize {
+				return userErrorf("queue is full (max %d)", queue.MaxQueueSize)
+			}
+			tr, err := s.ReAddFromHistory(req.TrackID, h.displayName(clientID), userID)
+			if err != nil {
+				return mapQueueErr(err)
+			}
+			added = *tr
+			h.enrichBookkeeping(tr)
+			return nil
+		})
+		if err == nil && added.ID != "" {
+			h.relaunchEnrich(req.RoomID, added)
 		}
 		return res, err
 
@@ -2514,11 +2557,10 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certa
 // s.Queue would race with later queue mutations. Kept in one place so the
 // queue-history change only has to re-point the seed source.
 func radioSeedAfterEmptied(s *queue.RoomState) *queue.TrackRef {
-	if s.NowPlayingID != "" || !s.RadioEnabled || len(s.Queue) == 0 {
+	if s.NowPlayingID != "" || !s.RadioEnabled {
 		return nil
 	}
-	seed := s.Queue[len(s.Queue)-1]
-	return &seed
+	return s.RefillSeed()
 }
 
 // advanceAfter moves playback past afterID (idempotent) and runs the side
@@ -2536,22 +2578,34 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 	// Capture the newly playing track for the chat announcement (#205).
 	var announced *queue.TrackRef
 
+	// The sourceless auto skip drops a track that never played: it does not
+	// enter History, and chat says why it vanished.
+	var skipped *queue.TrackRef
+
 	res, err := mutate(roomID, func(s *queue.RoomState) error {
 		// Store old NowPlayingID to detect if advance actually changed state
 		oldNowPlayingID := s.NowPlayingID
 
-		if err := s.AdvanceAfter(afterID); err != nil {
-			return err
+		if withSkipCheck {
+			if err := s.AdvanceAfter(afterID); err != nil {
+				return err
+			}
+		} else {
+			if s.NowPlayingID == afterID {
+				if t := s.Track(afterID); t != nil {
+					cp := *t
+					skipped = &cp
+				}
+			}
+			if err := s.SkipUnplayed(afterID); err != nil {
+				return err
+			}
 		}
 
 		// Detect if advance actually changed state and queue is now empty
-		if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" && len(s.Queue) > 0 {
-			// Queue ran dry; capture the last track as seed for refill.
-			// Copy the value: a pointer into s.Queue would race with
-			// concurrent queue mutations (Move rewrites elements, Add can
-			// reallocate) once refillRadio reads it after unlock.
-			seed := s.Queue[len(s.Queue)-1]
-			refillSeed = &seed
+		if s.NowPlayingID != oldNowPlayingID && s.RadioEnabled && s.NowPlayingID == "" {
+			// Queue ran dry; seed from the last played track (History[0]).
+			refillSeed = radioSeedAfterEmptied(s)
 		}
 
 		// A real advance to a next track (not the idempotent no-op, not
@@ -2573,6 +2627,10 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 	// After successful mutate, trigger refill if needed (async, outside the lock)
 	if err == nil && refillSeed != nil && h.similar != nil && h.refillAllowed(roomID) {
 		go h.refillRadio(roomID, refillSeed)
+	}
+
+	if err == nil && skipped != nil {
+		h.publishSystemChat(roomID, fmt.Sprintf("%s não está disponível no seu serviço e foi pulada", skipped.Title))
 	}
 
 	// The system message rides chat, not RoomState: no Version bump, no

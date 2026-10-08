@@ -16,7 +16,7 @@ async function join(page: Page, roomId: string, name: string) {
   await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
-async function addTrack(page: Page, title: string, artist: string, videoId?: string) {
+async function addTrack(page: Page, title: string, artist: string, videoId = 'jNQXAC9IVRw') {
   await openAdd(page);
   await page.getByPlaceholder('Título').fill(title);
   await page.getByPlaceholder('Artista').fill(artist);
@@ -72,6 +72,7 @@ test('queue reorder syncs to both clients', async ({ browser }) => {
   await join(lucas, roomId, 'Lucas');
   await join(ana, roomId, 'Ana');
 
+  await addTrack(lucas, 'Opener', 'Z-Zero'); // plays now; the list holds only upcoming tracks
   await addTrack(lucas, 'Alpha', 'A-One');
   await addTrack(lucas, 'Beta', 'B-Two');
 
