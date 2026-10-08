@@ -10,7 +10,7 @@ vi.mock('@/lib/realtime', () => ({ setRadio: vi.fn() }));
 
 const track = { id: 't1', title: 'Song', artist: 'Band', addedBy: 'Ana' } as unknown as TrackRef;
 
-function renderCard(state: 'ok' | 'unavailable' | 'failed') {
+function renderCard(state: 'ok' | 'unavailable' | 'failed', extra: { hostControl?: boolean; onNext?: () => void } = {}) {
   return render(
     <NowPlayingCard
       roomId="r"
@@ -21,7 +21,8 @@ function renderCard(state: 'ok' | 'unavailable' | 'failed') {
       onCoverError={() => {}}
       isPlaying={false}
       transportState="paused"
-      hostControl={false}
+      hostControl={extra.hostControl ?? false}
+      onNext={extra.onNext}
       hostLabel={false}
       activeSource={null}
       activePlayer={null}
@@ -39,5 +40,19 @@ describe('NowPlayingCard radio switch', () => {
     renderCard(state);
     expect(screen.getByRole('checkbox')).toBeInTheDocument();
     expect(screen.getByText('Rádio')).toBeInTheDocument();
+  });
+});
+
+describe('NowPlayingCard unavailable track', () => {
+  it('offers Próxima to anyone with control, so a dead track never sticks', () => {
+    const onNext = vi.fn();
+    renderCard('unavailable', { hostControl: true, onNext });
+    screen.getByRole('button', { name: 'Próxima' }).click();
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides Próxima from plain listeners', () => {
+    renderCard('unavailable', { hostControl: false, onNext: () => {} });
+    expect(screen.queryByRole('button', { name: 'Próxima' })).not.toBeInTheDocument();
   });
 });

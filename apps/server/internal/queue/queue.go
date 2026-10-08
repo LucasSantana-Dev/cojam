@@ -70,6 +70,16 @@ type TrackRef struct {
 	// Kind selects audio or video rendering (#258). Empty means audio, so
 	// existing queues and older clients keep working unchanged.
 	Kind string `json:"kind,omitempty"`
+
+	// EnrichPending counts source lookups still in flight for this track and
+	// EnrichUncertain records that one failed with an error (not a clean
+	// miss). Server-only bookkeeping for the sourceless auto skip: never
+	// serialized, so never persisted or published (see roles.go).
+	EnrichPending   int  `json:"-"`
+	EnrichUncertain bool `json:"-"`
+	// EnrichChecked is true once a lookup ran in this process and cleanly
+	// missed (or no matcher exists at all). Unknown after a restart.
+	EnrichChecked bool `json:"-"`
 }
 
 // Track kinds (#258). Empty is treated as KindAudio.
@@ -91,7 +101,13 @@ type RoomState struct {
 	Queue        []TrackRef `json:"queue"`
 	NowPlayingID string     `json:"nowPlayingId,omitempty"`
 	HostUserID   string     `json:"hostUserId,omitempty"`
-	RadioEnabled bool       `json:"radioEnabled"`
+	// OwnerUserID is the room creator. It always reclaims host on (re)join
+	// and cannot be demoted or kicked. Empty on rooms that predate it.
+	OwnerUserID string `json:"ownerUserId,omitempty"`
+	// Admins are userIDs granted full queue and transport control by the
+	// host or owner. See roles.go.
+	Admins       []string `json:"admins,omitempty"`
+	RadioEnabled bool     `json:"radioEnabled"`
 	// RadioAvailable reports whether this server can actually refill a radio
 	// queue (FEATURE_RADIO on and a similar-tracks provider configured). It is
 	// a server capability, not room state: the hub stamps it on every outbound

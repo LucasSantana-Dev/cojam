@@ -3439,6 +3439,19 @@ input:focus, textarea:focus, select:focus {
   .r4-ls__svc { font-size: 0.75rem; }
 }
 
+.r4-ls__chip { margin-left: 0.35rem; padding: 0 0.45rem; font-size: 0.75rem; }
+.r4-ls__roles { position: relative; display: flex; flex-direction: column; align-items: center; }
+.r4-ls__roles-btn, .r4-ls__menu-btn { min-height: 2.75rem; min-width: 2.75rem; }
+.r4-ls__menu { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.35rem; margin-top: 0.25rem; border-radius: 0.7rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); }
+.r4-ls__menu-err { margin: 0; font-size: 0.8125rem; color: var(--color-status-error); max-width: 14rem; }
+.r4-ls__scrim { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 1rem; background: oklch(0 0 0 / 0.6); }
+.r4-ls__dialog { max-width: 26rem; width: 100%; padding: 1.25rem; border-radius: 1rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); display: flex; flex-direction: column; gap: 0.75rem; }
+.r4-ls__dialog-text { margin: 0; color: var(--color-text-secondary); }
+.r4-ls__dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+.r4-ls__dialog-btn { min-height: 2.75rem; }
+.r4-ls__claim { min-height: 2.75rem; }
+.r4-next { min-height: 2.75rem; padding: 0 1.1rem; }
+
 /* ---- queue ----------------------------------------------------------------- */
 .room[data-room="r4"] .fq { display: flex; flex-direction: column; min-width: 0; }
 .room[data-room="r4"] .fq-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0; margin-inline: -0.5rem; max-height: none; overflow-y: auto; scrollbar-width: thin; scrollbar-color: oklch(1 0 0 / 0.28) transparent; }

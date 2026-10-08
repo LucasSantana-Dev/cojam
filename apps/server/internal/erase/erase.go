@@ -103,11 +103,13 @@ type RoomChanges struct {
 	QueueEntries int
 	Votes        int
 	HostCleared  bool
+	// RoleCleared is true when the person was the room owner or an admin.
+	RoleCleared bool
 }
 
 // Changed reports whether the room was modified.
 func (c RoomChanges) Changed() bool {
-	return c.QueueEntries > 0 || c.Votes > 0 || c.HostCleared
+	return c.QueueEntries > 0 || c.Votes > 0 || c.HostCleared || c.RoleCleared
 }
 
 // ScrubRoom removes the person from one room state and bumps Version once if
@@ -120,7 +122,7 @@ func ScrubRoom(s *queue.RoomState, req Request) RoomChanges {
 		voterKeys["client:"+c] = true
 	}
 
-	present := s.HostUserID == req.Sub
+	present := s.HostUserID == req.Sub || s.OwnerUserID == req.Sub || s.IsAdmin(req.Sub)
 	for _, t := range s.Queue {
 		if t.AddedByUserID == req.Sub {
 			present = true
@@ -138,6 +140,17 @@ func ScrubRoom(s *queue.RoomState, req Request) RoomChanges {
 	if s.HostUserID == req.Sub {
 		s.HostUserID = ""
 		ch.HostCleared = true
+	}
+	if s.OwnerUserID == req.Sub {
+		s.OwnerUserID = ""
+		ch.RoleCleared = true
+	}
+	for {
+		changed, _ := s.SetAdmin(req.Sub, false) // every occurrence goes
+		if !changed {
+			break
+		}
+		ch.RoleCleared = true
 	}
 	for i := range s.Queue {
 		t := &s.Queue[i]

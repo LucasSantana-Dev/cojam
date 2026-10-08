@@ -12,7 +12,8 @@
 // member can report another member, the host can remove one. The server
 // re-checks both.
 import { useEffect, useRef, useState } from 'react';
-import { useStore, kickMember, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
+import { useStore, useMyUserId, claimHost, kickMember, setRoomAdmin, transferHost, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
+import { useDialogFocus } from './useDialogFocus';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { memberLabel } from '@/lib/nameSuffix';
 import { platformIcon } from '@/app/components/icons';
@@ -29,9 +30,12 @@ const PLATFORM_LABEL = { spotify: 'Spotify', apple: 'Apple Music', youtube: 'You
 
 interface ListenersStageProps {
   roomId: string;
-  // Host moderation affordance (#181): the host sees a remove control per
-  // member (never on themselves).
-  canControl?: boolean;
+  // Host moderation affordance (#181): the host or owner sees a remove control
+  // per member (never on themselves) and the role menu. Admins do not.
+  canModerate?: boolean;
+  // Server-stamped admin ids and room owner; admins get a chip by the name.
+  admins?: readonly string[];
+  ownerUserId?: string;
   // Transport is playing: the arcs breathe.
   running: boolean;
   // Server-stamped host id (room auth); the host gets a crown by the name.
@@ -64,7 +68,40 @@ function WaveGlyph() {
   );
 }
 
-export function ListenersStage({ roomId, canControl = false, running, hostUserId }: ListenersStageProps) {
+type RoleMember = { userId?: string; name: string };
+
+// Confirm dialog for handing the host role to someone else. The owner (or the
+// new host) can take it back, so the copy says it is recoverable.
+function TransferDialog({ target, onCancel, onConfirm, busy }: { target: RoleMember; onCancel: () => void; onConfirm: () => void; busy: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useDialogFocus(true, onCancel, ref);
+  return (
+    <div className="r4-ls__scrim">
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="r4-transfer-h" className="r4-ls__dialog">
+        <h3 id="r4-transfer-h" className="r4-h2">Passar o anfitrião para {target.name}?</h3>
+        <p className="r4-ls__dialog-text">
+          {target.name} passa a ser o anfitrião da sala. O dono da sala pode retomar o posto a qualquer momento.
+        </p>
+        <div className="r4-ls__dialog-actions">
+          <button type="button" className="r4-ghost r4-ls__dialog-btn" onClick={onCancel}>
+            Cancelar
+          </button>
+          <button type="button" className="btn-primary r4-ls__dialog-btn" onClick={onConfirm} disabled={busy}>
+            Passar anfitrião
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ListenersStage({ roomId, canModerate = false, running, hostUserId, admins, ownerUserId }: ListenersStageProps) {
+  const canControl = canModerate;
+  const myUserId = useMyUserId();
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [transferTo, setTransferTo] = useState<RoleMember | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [roleError, setRoleError] = useState<string | null>(null);
   const f = useRuntimeFeatures();
   const report = useReportDialog();
   const members = useStore((s) => s.members);
@@ -139,12 +176,36 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
     });
   };
 
+  const runRole = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setRoleError(null);
+    try {
+      await fn();
+      setMenuFor(null);
+      setTransferTo(null);
+    } catch (e) {
+      setRoleError(rpcErrorMessage(e, 'Não foi possível mudar o papel.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const tuned = running && !alone;
 
   return (
     <section className="r4-card r4-listeners" aria-labelledby="r4-listeners-h">
       <header className="r4-listeners__head">
         <h2 id="r4-listeners-h" className="r4-h2">Ouvindo agora</h2>
+        {Boolean(myUserId && ownerUserId === myUserId && hostUserId && hostUserId !== myUserId) && (
+          <button
+            type="button"
+            className="r4-ghost r4-ls__claim"
+            disabled={busy}
+            onClick={() => runRole(() => claimHost(roomId))}
+          >
+            Retomar anfitrião
+          </button>
+        )}
         <span className="r4-listeners__count">
           {members.length === 1 ? '1 ouvindo' : `${members.length} ouvindo`}
         </span>
@@ -156,6 +217,10 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
           const Icon = member.platform ? platformIcon[member.platform] : null;
           const isHost = Boolean(hostUserId && member.userId && member.userId === hostUserId);
           const mine = (member.clientIds ?? [member.clientId]).includes(myClientId);
+          const isAdmin = Boolean(member.userId && admins?.includes(member.userId));
+          const isOwner = Boolean(ownerUserId && member.userId === ownerUserId);
+          const manageable = canControl && !mine && Boolean(member.userId) && !isOwner && member.userId !== myUserId;
+          const menuKey = member.userId ?? member.clientId;
           return (
             <div key={member.userId ?? member.clientId} className="r4-ls__item">
               {i > 0 && (
@@ -186,7 +251,49 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
                     </span>
                   )}
                   <span className="r4-ls__name-text">{label}</span>
+                  {isAdmin && <span className="r4-chip r4-ls__chip">admin</span>}
                 </div>
+                {manageable && (
+                  <div className="r4-ls__roles">
+                    <button
+                      type="button"
+                      className="r4-ghost r4-ls__roles-btn"
+                      aria-expanded={menuFor === menuKey}
+                      aria-label={`Papéis de ${label}`}
+                      onClick={() => {
+                        setRoleError(null);
+                        setMenuFor((cur) => (cur === menuKey ? null : menuKey));
+                      }}
+                    >
+                      Papéis
+                    </button>
+                    {menuFor === menuKey && (
+                      <div className="r4-ls__menu" role="group" aria-label={`Ações para ${label}`}>
+                        <button
+                          type="button"
+                          className="r4-ghost r4-ls__menu-btn"
+                          disabled={busy}
+                          onClick={() => runRole(() => setRoomAdmin(roomId, member.userId!, !isAdmin))}
+                        >
+                          {isAdmin ? 'Remover admin' : 'Tornar admin'}
+                        </button>
+                        <button
+                          type="button"
+                          className="r4-ghost r4-ls__menu-btn"
+                          disabled={busy || member.userId === hostUserId}
+                          onClick={() => setTransferTo({ userId: member.userId, name: label })}
+                        >
+                          Passar anfitrião
+                        </button>
+                        {roleError && (
+                          <p role="alert" className="r4-ls__menu-err">
+                            {roleError}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {member.platform && <div className="r4-ls__svc">({PLATFORM_LABEL[member.platform]})</div>}
                 <span className="r4-ls__tools">
                   {!mine && (
@@ -201,7 +308,7 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
                       <span aria-hidden="true">⚑</span>
                     </button>
                   )}
-                  {canControl && !mine && (
+                  {canControl && !mine && !isOwner && (
                     <button
                       type="button"
                       onClick={() => handleKick(member)}
@@ -241,6 +348,14 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
         )}
       </div>
       {report.dialog}
+      {transferTo && (
+        <TransferDialog
+          target={transferTo}
+          busy={busy}
+          onCancel={() => setTransferTo(null)}
+          onConfirm={() => runRole(() => transferHost(roomId, transferTo.userId!))}
+        />
+      )}
     </section>
   );
 }
