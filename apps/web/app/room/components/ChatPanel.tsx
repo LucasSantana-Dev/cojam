@@ -41,11 +41,14 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   const [sending, setSending] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const emojiBtnRef = useRef<HTMLButtonElement>(null);
   // Esc closes the emoji picker.
   useEffect(() => {
     if (!emojiOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setEmojiOpen(false);
+      if (e.key !== 'Escape') return;
+      setEmojiOpen(false);
+      emojiBtnRef.current?.focus();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -258,6 +261,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
         />
         <div className="chat-emoji">
           <button
+            ref={emojiBtnRef}
             type="button"
             className="chat-form__emoji"
             aria-label="Inserir emoji"

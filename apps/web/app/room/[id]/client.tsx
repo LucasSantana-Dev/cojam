@@ -263,6 +263,28 @@ export function RoomClient({ roomId }: { roomId: string }) {
     }
   }, [activeSource]);
 
+  // Below 1024px the drawers are bottom sheets. While one is open, measure where
+  // the player (the cover slot, or the video stage) ends and hand it to the CSS,
+  // so the sheet starts below it and never covers the player.
+  useEffect(() => {
+    if (!drawer) return;
+    const root = document.documentElement;
+    const measure = () => {
+      const el = document.getElementById('youtube-player');
+      const holder = el?.closest<HTMLElement>('.stage, .r4-cover') ?? el;
+      const bottom = holder ? Math.max(0, Math.ceil(holder.getBoundingClientRect().bottom)) : 0;
+      root.style.setProperty('--r4-player-bottom', bottom > 0 ? `${bottom + 8}px` : '0px');
+    };
+    measure();
+    window.addEventListener('scroll', measure, { passive: true });
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure);
+      window.removeEventListener('resize', measure);
+      root.style.removeProperty('--r4-player-bottom');
+    };
+  }, [drawer]);
+
   // Local volume: applied to whichever player is active, and again whenever it
   // changes (mount, "Ouvir no" switch), so a new player never starts at its own
   // default level. Never sent to the server.
@@ -559,7 +581,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       onOpenDepth={() => setDrawer('depth')}
       onOpenLyrics={() => setDrawer('lyrics')}
       onOpenEnrichment={() => setDrawer('enrichment')}
-      media={fixtureYt ? <div className="r4-fixture-yt" /> : youtubeAudio}
+      media={fixtureYt ? <div id="youtube-player" className="r4-fixture-yt" /> : youtubeAudio}
     />
   );
 

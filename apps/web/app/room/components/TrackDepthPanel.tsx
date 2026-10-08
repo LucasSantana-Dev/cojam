@@ -20,7 +20,7 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
   const [data, setData] = useState<TrackDepth | null>(null);
   const [retry, setRetry] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(open, onClose, containerRef);
+  useDialogFocus(open, onClose, containerRef, { trap: false });
 
   // Panel stays mounted while closed; reset loaded data when the open/track
   // key changes (docs-sanctioned state adjustment during render).
@@ -81,7 +81,6 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
         }}
         ref={containerRef}
         role="dialog"
-        aria-modal="true"
         aria-label={`Detalhes de ${track.title}`}
       >
         {/* Header */}
