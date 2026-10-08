@@ -89,6 +89,8 @@ The roster is the design baseline. Final art may be redrawn on the fixed grid; t
 
 Question: for a listener on Spotify or Apple Music, either (A) a muted synced YouTube video on the screen, or (B) the cover art. Owner answer: "A".
 
+Update 2026-10-08: Apple Music was removed from the product (#374). The decision now applies to Spotify listeners.
+
 - Everyone in modo palco sees the YouTube video on the screen, muted and synced, while each person listens on their own service. YouTube listeners hear it from that same player.
 - Non-YouTube listeners get a muted YouTube player synced to the room transport, with drift correction relaxed (visuals only, not audio).
 - If there is no YouTube match for the track, the screen falls back to the cover art.
