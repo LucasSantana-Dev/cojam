@@ -92,6 +92,7 @@ Self-host runbooks are local-only by repo convention. The one rule to know: the 
 
 - [`docs/configuration.md`](docs/configuration.md): env vars for web and server
 - [`docs/development.md`](docs/development.md): testing, project layout, deploying, observability
+- [`DESIGN.md`](DESIGN.md): design language (sintonia), tokens, motion rules; decisions in [`docs/design/`](docs/design/identity-decisions.md)
 - [`docs/platforms.md`](docs/platforms.md): platform support matrix
 - [`docs/protocol.md`](docs/protocol.md): wire protocol
 - [`docs/specs/`](docs/specs/README.md): feature specs
