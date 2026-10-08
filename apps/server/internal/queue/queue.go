@@ -92,6 +92,12 @@ type RoomState struct {
 	NowPlayingID string          `json:"nowPlayingId,omitempty"`
 	HostUserID   string          `json:"hostUserId,omitempty"`
 	RadioEnabled bool            `json:"radioEnabled"`
+	// RadioAvailable reports whether this server can actually refill a radio
+	// queue (FEATURE_RADIO on and a similar-tracks provider configured). It is
+	// a server capability, not room state: the hub stamps it on every outbound
+	// state and it is never persisted. Clients use it to hide or disable the
+	// radio toggle.
+	RadioAvailable bool `json:"radioAvailable"`
 	Version      int64           `json:"version"`
 	Transport    *TransportState `json:"transport,omitempty"`
 	// CreatedAt is the server clock (unix ms) at room creation, stamped by the

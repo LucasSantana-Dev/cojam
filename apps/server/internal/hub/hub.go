@@ -1352,7 +1352,11 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 		}
 	}
 	changed := room.State.Version != versionBefore
-	data, err := json.Marshal(room.State)
+	// Stamp server capabilities on a shallow copy so the shared state (and what
+	// gets persisted below) never carries them.
+	outbound := *room.State
+	outbound.RadioAvailable = h.similar != nil
+	data, err := json.Marshal(&outbound)
 	room.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -1367,6 +1371,7 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 				h.logger.Error("store_marshal_failed", "room_id", roomID, "err", err.Error())
 			}
 		} else {
+			stateCopy.RadioAvailable = false // capability, not persisted state
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := h.store.Save(ctx, &stateCopy); err != nil {
