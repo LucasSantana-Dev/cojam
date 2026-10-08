@@ -32,6 +32,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   const chat = useStore((s) => s.chat);
   const connected = useStore((s) => s.connected);
   const name = useStore((s) => s.name);
+  const hostUserId = useStore((s) => s.state?.hostUserId);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -141,21 +142,19 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   };
 
   return (
-    <div className="panel chat-panel p-6 space-y-4 h-fit mt-6">
-      <div>
-        <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          Chat
-        </h3>
-      </div>
+    <div className="panel chat-panel r4-card">
+      <header className="r4-qhead">
+        <h3 className="r4-h2">Chat da Sala</h3>
+      </header>
 
       {actionError && (
-        <p role="alert" aria-live="polite" className="text-sm" style={{ color: 'var(--color-status-error)' }}>
+        <p role="alert" aria-live="polite" className="text-sm" style={{ color: 'var(--color-status-error-soft)' }}>
           {actionError}
         </p>
       )}
 
       {chat.length === 0 ? (
-        <div className="py-8 text-center">
+        <div className="chat-empty">
           <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
             Nenhuma mensagem ainda. Diga oi.
           </p>
@@ -166,40 +165,42 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
           )}
         </div>
       ) : (
-        <div ref={listRef} onScroll={handleScroll} className="space-y-3 chat-scroll overflow-y-auto pr-2" aria-live="polite">
+        <div ref={listRef} onScroll={handleScroll} className="chat-scroll" aria-live="polite">
           {chat.map((m) => (
             m.kind === 'system' ? (
-              // Server announcements (#205): no avatar/identity, mono + muted
-              // so track changes and join/leave read as room events, not chat.
-              <div key={m.id} data-testid="chat-system-message" className="flex items-baseline gap-2">
-                <p className="flex-1 min-w-0 font-mono text-xs break-words" style={{ color: 'var(--color-text-muted)' }}>
-                  {m.text}
-                </p>
-                <span className="font-mono text-xs flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                  {chatTime(m.sentAtServerMs)}
-                </span>
+              // Server announcements (#205): no avatar/identity, muted so track
+              // changes and join/leave read as room events, not chat.
+              <div key={m.id} data-testid="chat-system-message" className="chat-sys">
+                <p className="chat-sys__text">{m.text}</p>
+                <span className="chat-sys__time">{chatTime(m.sentAtServerMs)}</span>
               </div>
             ) : (
-            <div key={m.id} data-testid="chat-message" className="flex items-start gap-2 group">
+            <div
+              key={m.id}
+              data-testid="chat-message"
+              className={`chat-msg group${m.userId && m.userId === hostUserId ? ' chat-msg--host' : ''}`}
+            >
               <span
-                className="avatar-chip flex-shrink-0"
+                className="chat-msg__av avatar-chip"
                 style={{ background: avatarGradient(m.userId || m.name) }}
                 aria-hidden
               >
                 {m.name.charAt(0).toUpperCase()}
               </span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-xs font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
-                    {m.name}
-                  </span>
-                  <span className="text-xs flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                    {chatTime(m.sentAtServerMs)}
-                  </span>
+              <div className="chat-msg__body">
+                <div className="chat-msg__who">
+                  <span className="chat-msg__name">{m.name}</span>
+                  {m.userId && m.userId === hostUserId && (
+                    <span className="chat-host">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                        <path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5L3 8z" />
+                      </svg>
+                      anfitrião
+                    </span>
+                  )}
+                  <span className="chat-msg__time">{chatTime(m.sentAtServerMs)}</span>
                 </div>
-                <p className="text-sm break-words" style={{ color: 'var(--color-text-primary)' }}>
-                  {m.text}
-                </p>
+                <p className="chat-msg__text">{m.text}</p>
               </div>
               <button
                 type="button"
@@ -207,8 +208,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                 disabled={reportedIds.has(m.id)}
                 title={reportedIds.has(m.id) ? 'Denunciada' : 'Denunciar mensagem'}
                 aria-label={reportedIds.has(m.id) ? `Mensagem de ${m.name} denunciada` : `Denunciar mensagem de ${m.name}`}
-                className="flex-shrink-0 px-1 text-sm leading-none rounded transition-all duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:brightness-125 focus:outline-none disabled:opacity-40"
-                style={{ color: 'var(--color-text-muted)' }}
+                className="chat-msg__act"
               >
                 {reportedIds.has(m.id) ? '✓' : '⚑'}
               </button>
@@ -219,8 +219,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
                   disabled={deletingIds.has(m.id)}
                   title="Apagar mensagem (anfitrião)"
                   aria-label={`Apagar mensagem de ${m.name}`}
-                  className="flex-shrink-0 px-1 text-sm leading-none rounded transition-all duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:brightness-125 focus:outline-none disabled:opacity-30"
-                  style={{ color: 'var(--color-text-muted)' }}
+                  className="chat-msg__act"
                 >
                   ×
                 </button>
@@ -231,26 +230,27 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
         </div>
       )}
 
-      <form onSubmit={handleSend} className="flex gap-2">
+      <form onSubmit={handleSend} className="chat-form">
         <input
           type="text"
-          placeholder={connected ? 'Mensagem' : 'Reconecte para enviar mensagens'}
+          placeholder={connected ? 'Conversar com a sala...' : 'Reconecte para enviar mensagens'}
           aria-label="Mensagem"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={MAX_CHAT_TEXT_LEN}
           disabled={!connected}
-          className="flex-1 min-w-0 px-4 py-2 text-sm rounded-lg focus:outline-none transition-all duration-150 disabled:opacity-50"
-          style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+          className="chat-form__input"
         />
         <button
           type="submit"
           disabled={!connected || !draft.trim() || sending}
           title={connected ? 'Enviar' : 'Reconecte para enviar mensagens'}
-          className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-150 hover:brightness-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none"
-          style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-surface-0)' }}
+          aria-label="Enviar"
+          className="chat-form__send"
         >
-          Enviar
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12 2-12 2z" />
+          </svg>
         </button>
       </form>
     </div>

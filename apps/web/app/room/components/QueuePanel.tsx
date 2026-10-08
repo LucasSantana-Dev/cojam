@@ -12,18 +12,10 @@ import {
   ArrowDownIcon,
   TrashIcon,
   MusicNoteIcon,
+  PlusIcon,
 } from '@/app/components/icons';
 import { avatarGradient } from '@/lib/avatar';
 import { memberLabel } from '@/lib/nameSuffix';
-
-// Deezer-style total duration: "1 hr 23 min" / "42 min" / "< 1 min".
-function formatTotal(ms: number): string {
-  const totalMin = Math.round(ms / 60000);
-  if (totalMin < 1) return '< 1 min';
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return h > 0 ? `${h} h ${m.toString().padStart(2, '0')} min` : `${m} min`;
-}
 
 // queueArtwork resolves the row thumb: the stored artwork URL first (search
 // adds + Spotify playlist imports carry it), then a derived YouTube thumb
@@ -37,10 +29,10 @@ export function queueArtwork(track: TrackRef): string | null {
 
 const VOTER_STACK_MAX = 3;
 
-function ChevronUp() {
+function ThumbUp() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 15l7-7 7 7" />
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+      <path d="M2 10.5h4V21H2V10.5zm6 .5 4.1-8c1.2 0 2.3.9 2.3 2.2l-.1.7L13.6 9H20c1.1 0 2 .9 2 2 0 .3-.1.5-.2.8l-2.6 6.3c-.3.8-1.1 1.4-2 1.4H8V11z" />
     </svg>
   );
 }
@@ -48,9 +40,12 @@ function ChevronUp() {
 interface QueuePanelProps {
   roomId: string;
   canControl: boolean;
+  // "+ Adicionar música" in the header: the room takes the viewer to the add
+  // form (the phone switches to its tab). Omitted, the link is not rendered.
+  onAdd?: () => void;
 }
 
-export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
+export function QueuePanel({ roomId, canControl, onAdd }: QueuePanelProps) {
   const state = useStore((s) => s.state);
   const queue = state?.queue ?? [];
   const nowPlayingId = state?.nowPlayingId;
@@ -238,18 +233,6 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
     return name.charAt(0).toUpperCase();
   };
 
-  // Aggregate header (R2). Duration only when every row reports one, so the
-  // total is never silently partial. `!= null`: 0ms is known metadata.
-  const totalDurationMs = queue.reduce((sum, t) => sum + (t.durationMs ?? 0), 0);
-  const allDurationsKnown = queue.length > 0 && queue.every((t) => t.durationMs != null);
-  const contributors = new Set(queue.map((t) => t.addedBy)).size;
-  const isPlaying = state?.transport?.state === 'playing';
-  const aggregate = [
-    `${queue.length} ${queue.length === 1 ? 'faixa' : 'faixas'}`,
-    allDurationsKnown ? formatTotal(totalDurationMs) : null,
-    `${contributors} ${contributors === 1 ? 'colaborador' : 'colaboradores'}`,
-  ].filter(Boolean).join(' · ');
-
   // Listeners' pick (F4): the queued track with the most votes, excluding now
   // playing. Pure render-side derivation: a reorder SUGGESTION only, the host
   // keeps full control of the actual order via queue.reorder.
@@ -324,32 +307,40 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
         className={`fq-row${isNow ? ' is-now' : ''}${pinned ? ' is-pinned' : ''}${isRemoving ? ' removing' : ''} group`}
       >
         <div className="fq-main">
-          <span
-            className="fq-av"
-            role="img"
-            aria-label={`Adicionada por ${requesterName}`}
-            title={`Adicionada por ${requesterName}`}
-            style={{ background: avatarGradient(requester ? requester.clientId || requester.name : track.addedBy) }}
-          >
-            {getInitial(track.addedBy)}
-          </span>
           <div className="fq-art">
             {art ? (
-              <Image src={art} alt="" width={pinned ? 56 : 44} height={pinned ? 56 : 44} unoptimized />
+              <Image src={art} alt="" width={56} height={56} unoptimized />
             ) : (
-              <span className="fq-art__fallback" aria-hidden="true"><MusicNoteIcon size={16} /></span>
-            )}
-            {isNow && isPlaying && (
-              <span className="queue-thumb-eq" aria-hidden="true"><span /><span /><span /></span>
+              <span className="fq-art__fallback" aria-hidden="true"><MusicNoteIcon size={18} /></span>
             )}
           </div>
           <div className="fq-text">
-            <span className="fq-kicker">
-              {isNow ? 'Tocando agora · ' : ''}
-              {requesterName} pediu
-            </span>
             <div data-testid="queue-title" className="fq-title">{track.title}</div>
             <div className="fq-artist">{track.artist}</div>
+            <div className="fq-meta">
+              {isNow && <span className="fq-chip fq-chip--now">Tocando agora</span>}
+              <span className="fq-chip" title={`Adicionada por ${requesterName}`}>
+                <i
+                  className="fq-chip__dot"
+                  aria-hidden="true"
+                  style={{ background: avatarGradient(requester ? requester.clientId || requester.name : track.addedBy) }}
+                />
+                {requesterName} pediu
+              </span>
+              {voters.length > 0 && (
+                <span className="fq-stack" aria-hidden="true">
+                  {voters.slice(0, VOTER_STACK_MAX).map((key) => {
+                    const m = memberByVoteKey.get(key);
+                    return (
+                      <i key={key} className={m ? undefined : 'fq-stack__anon'} style={m ? { background: avatarGradient(m.clientId || m.name) } : undefined}>
+                        {m ? getInitial(m.name) : '?'}
+                      </i>
+                    );
+                  })}
+                  {count > VOTER_STACK_MAX && <i className="fq-stack__more">+{count - VOTER_STACK_MAX}</i>}
+                </span>
+              )}
+            </div>
             {missing && (
               <span className="fq-missing" role="img" aria-label={`Sem versão no ${missing}`} title={`Sem versão no ${missing}`}>
                 Sem versão no {missing}
@@ -362,33 +353,25 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
             )}
           </div>
           {queueVotingEnabled && (
-            <button
-              type="button"
-              onClick={() => handleVote(track.id)}
-              disabled={!connected || isRemoving}
-              aria-label="Votar"
-              aria-pressed={voted}
-              aria-describedby={votersLabel ? nameId : undefined}
-              title={isRemoving ? pendingTitle : votersLabel || (voted ? 'Remover seu voto' : 'Votar nesta faixa')}
-              className="fq-vote"
-              data-voted={voted}
-            >
-              <span className="fq-stack" aria-hidden="true">
-                {voters.slice(0, VOTER_STACK_MAX).map((key) => {
-                  const m = memberByVoteKey.get(key);
-                  return (
-                    <i key={key} className={m ? undefined : 'fq-stack__anon'} style={m ? { background: avatarGradient(m.clientId || m.name) } : undefined}>
-                      {m ? getInitial(m.name) : '?'}
-                    </i>
-                  );
-                })}
-                {count > VOTER_STACK_MAX && <i className="fq-stack__more">+{count - VOTER_STACK_MAX}</i>}
-                {count === 0 && <i className="fq-stack__empty" />}
+            <div className="fq-votecol" data-voted={voted}>
+              <button
+                type="button"
+                onClick={() => handleVote(track.id)}
+                disabled={!connected || isRemoving}
+                aria-label="Votar"
+                aria-pressed={voted}
+                aria-describedby={votersLabel ? nameId : undefined}
+                title={isRemoving ? pendingTitle : votersLabel || (voted ? 'Remover seu voto' : 'Votar nesta faixa')}
+                className="fq-vote"
+                data-voted={voted}
+              >
+                <ThumbUp />
+                {votersLabel && <span id={nameId} className="sr-only">{votersLabel}</span>}
+              </button>
+              <span className="fq-pill" data-has={count > 0}>
+                <span data-testid="vote-count">{count}</span>{count === 1 ? ' voto' : ' votos'}
               </span>
-              <ChevronUp />
-              <span data-testid="vote-count" className="fq-vote__n">{count}</span>
-              {votersLabel && <span id={nameId} className="sr-only">{votersLabel}</span>}
-            </button>
+            </div>
           )}
           {/* Phone and touch: opens the secondary actions on their own line so
               44px targets fit a 390px row (#289). */}
@@ -450,16 +433,24 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
   // The current track is pinned on top with CSS `order`, so the DOM keeps the
   // real queue order (reorder buttons, tab order and tests agree with it).
   const hasNow = queue.some((t) => t.id === nowPlayingId);
+  const upcoming = queue.length - (hasNow ? 1 : 0);
 
   return (
     // Not sticky itself: the side column (client.tsx) already pins the whole
     // rail. A second sticky here slid this panel over the Activity rail, which
     // shares its parent, whenever the page scrolled.
-    <div data-testid="queue-panel" className="panel fq p-6 space-y-4 h-fit">
-      <div>
-        <h3 className="fq-h">Fila</h3>
-        {queue.length > 0 && <p className="fq-agg">{aggregate}</p>}
-      </div>
+    <div data-testid="queue-panel" className="panel fq r4-card">
+      <header className="r4-qhead">
+        <h3 className="r4-h2">
+          A seguir <span className="r4-h2__n">({upcoming})</span>
+        </h3>
+        {onAdd && (
+          <button type="button" onClick={onAdd} className="r4-link">
+            <PlusIcon size={16} />
+            Adicionar música
+          </button>
+        )}
+      </header>
 
       {actionError && (
         <p role="alert" aria-live="polite" className="text-sm" style={{ color: 'var(--color-status-error)' }}>
@@ -481,9 +472,8 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
         </div>
       ) : (
         <div className="fq-list">
-          {/* Outside role="list" so the list holds only listitems; display:contents
-              on the list keeps the sub-heading in the same flex order as the rows. */}
-          {hasNow && queue.length > 1 && <p className="fq-sub">A seguir</p>}
+          {/* display:contents on the list keeps the pinned row first in the flex
+              order while the DOM keeps the real queue order. */}
           <div ref={listRef} role="list" aria-label="Faixas na fila" className="fq-items">
             {queue.map((t, i) => renderRow(t, i, hasNow && t.id === nowPlayingId))}
           </div>

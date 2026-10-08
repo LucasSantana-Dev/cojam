@@ -84,7 +84,7 @@ describe('ChatPanel', () => {
     expect(rpcMocks.sendChat).not.toHaveBeenCalled();
   });
 
-  it('renders system messages distinctly: mono, muted, no avatar or name', () => {
+  it('renders system messages distinctly: muted italic line, no avatar or name', () => {
     const systemMsg: ChatMessage = {
       ...msg('s1', 'Now playing: Song Two - B', ''),
       kind: 'system',
@@ -94,8 +94,8 @@ describe('ChatPanel', () => {
 
     const row = screen.getByTestId('chat-system-message');
     expect(row).toHaveTextContent('Now playing: Song Two - B');
-    // Mono font marks the row as a room event, not a member's line.
-    expect(row.querySelector('.font-mono')).not.toBeNull();
+    // The muted italic line marks the row as a room event, not a member's line.
+    expect(row.querySelector('.chat-sys__text')).not.toBeNull();
     // No avatar chip and no sender-name header for system rows.
     expect(row.querySelector('.avatar-chip')).toBeNull();
     // User rows keep the regular rendering alongside.
@@ -148,7 +148,7 @@ describe('ChatPanel', () => {
 // stubbed per test to give the near-bottom math real numbers.
 describe('ChatPanel auto-scroll (#189)', () => {
   const scrollList = (container: HTMLElement) =>
-    container.querySelector('.overflow-y-auto') as HTMLElement;
+    container.querySelector('.chat-scroll') as HTMLElement;
 
   const stubMetrics = (el: HTMLElement, scrollHeight: number, clientHeight: number) => {
     Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });

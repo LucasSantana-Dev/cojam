@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, joinRoom, setRadio, nowPlayingAdvance, getClockOffsetMs } from '@/lib/realtime';
+import { useStore, joinRoom, nowPlayingAdvance, getClockOffsetMs } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { avatarGradient } from '@/lib/avatar';
@@ -14,7 +14,7 @@ import { NAME_KEY } from '@/lib/guestName';
 
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
 const noopSubscribe = () => () => {};
-import { pickSource, isUnavailable } from '@/lib/pickSource';
+import { pickSource } from '@/lib/pickSource';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { canControl } from '@/lib/roomRole';
 import { getStoredUserId } from '@/lib/auth';
@@ -27,8 +27,7 @@ import { QueuePanel } from '../components/QueuePanel';
 import { ActivityRail } from '../components/ActivityRail';
 import { ChatPanel } from '../components/ChatPanel';
 import { AddTrackForm } from '../components/AddTrackForm';
-import { PresenceBar } from '../components/PresenceBar';
-import { PresenceMeta } from '../components/PresenceMeta';
+import { ListenersStage } from '../components/ListenersStage';
 import { ShareRoomButton } from '../components/ShareRoomButton';
 import { ReportRoomButton } from '../components/ReportRoomButton';
 import { PublicRoomToggle } from '../components/PublicRoomToggle';
@@ -36,16 +35,12 @@ import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
 import { LyricsPanel } from '../components/LyricsPanel';
 import { EnrichmentPanel } from '../components/EnrichmentPanel';
-import { UnavailableTrack } from '../components/UnavailableTrack';
-import { PlayFailedTrack } from '../components/PlayFailedTrack';
-import { TransportUI } from '../components/TransportUI';
+import { NowPlayingCard } from '../components/NowPlayingCard';
 import { Stage } from '../components/Stage';
-import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
 import { LogoMark } from '@/app/components/Logo';
 import type { IPlayer } from '@/lib/playerInterface';
 import { useTrackColors } from '@/lib/useTrackColor';
 import { tintStyle, groundPair } from '@/lib/trackColor';
-import { ListenersWave } from '@/app/components/ListenersWave';
 import { queueArtwork } from '../components/QueuePanel';
 import { useMotion } from '@/lib/motionFlags';
 import { useCoverFlight } from '@/lib/useCoverFlight';
@@ -54,11 +49,11 @@ import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 
 type VideoPanelTab = 'playing' | 'queue' | 'chat' | 'add';
 
-// mm:ss for the shared room-age clock on the now-playing card.
-function formatElapsed(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+// The host-set room label, trimmed. A module-level helper: calling .trim() on a
+// store-derived value inside the component makes the React Compiler treat the
+// store (and the join callback that reads activeSource) as mutated.
+function cleanLabel(label: string | undefined): string {
+  return label ? label.trim() : '';
 }
 
 export function RoomClient({ roomId }: { roomId: string }) {
@@ -131,13 +126,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const activeSource = nowPlaying
     ? pickSource(nowPlaying, { appleAuthorized, spotifyAuthorized })
     : null;
+  // isUnavailable() is exactly "pickSource() found nothing for this client"
+  const trackUnavailable = Boolean(nowPlaying) && activeSource === null;
   const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
 
-  // "Cor da faixa" (#325): the room takes its ground colour from the cover that
-  // is playing. The CSS crossfades --tint-l/c/h, so a track change is a colour
-  // glide, not a swap. Idle violet when nothing plays.
+  // The cover of the playing track. Its colours only tint the pre-join ground
+  // (idle violet while no room state exists); once joined nothing reads them, so
+  // the extraction is skipped.
   const artwork = nowPlaying ? queueArtwork(nowPlaying) : null;
-  const { tint, palette } = useTrackColors(artwork);
+  const { tint, palette } = useTrackColors(joined ? null : artwork);
   const [coverFail, setCoverFail] = useState<{ url: string | null; level: number }>({ url: null, level: 0 });
   const coverLevel = coverFail.url === artwork ? coverFail.level : 0;
   const motion = useMotion();
@@ -165,8 +162,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     hostUserId: store.state?.hostUserId,
   });
 
-  // Presence snapshot for the fused now-playing chip lives in PresenceMeta,
-  // which reads the store directly (per-connection members, no name dedupe).
+  // Listener presence is rendered by ListenersStage, which reads the store
+  // directly (per-connection members, name suffix on duplicates).
   const transportState = store.state?.transport?.state;
   const isPlaying = transportState === 'playing';
 
@@ -225,11 +222,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }, [activePlayer, roomId]);
 
   if (!joined) {
-    // Same ground component and surface as the room (sintonia, #325). Before
+    // Pre-join screen on the same ground component as the room (#325). Before
     // joining the client holds no room state (the room channel is only
     // subscribed by joinRoom), so this is the idle ground: no cover, no member
-    // list. The ground sits at the same tree position as in the joined room, so
-    // it is not remounted when the visitor enters: the colour carries over.
+    // list.
     const initial = (nameInput.trim() || 'G').charAt(0).toUpperCase();
     return (
       <div
@@ -239,7 +235,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         data-has-track="false"
         style={{ color: 'var(--color-text-primary)', ...tintStyle(tint) }}
       >
-        <GroundStack spec={{ palette: groundPair(tint, palette) }} animate={motion.ground} originSelector={motion.flip ? '.np-cover' : undefined} />
+        <GroundStack spec={{ palette: groundPair(tint, palette) }} animate={motion.ground} originSelector={motion.flip ? '.r4-cover' : undefined} />
         <main id="main" className="join-main">
           <form onSubmit={handleJoin} className="join-form panel">
             <div className="join-brand">
@@ -344,320 +340,190 @@ export function RoomClient({ roomId }: { roomId: string }) {
   ];
 
   const playerPanel = (
-            <div className="panel player-panel p-6 space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {f.spotify && (
-                  <SpotifyPlayer
-                    authorized={spotifyAuthorized}
-                    onAuthorized={setSpotifyAuthorized}
-                    onPlayerReady={(player) => activeSource === 'spotify' && setActivePlayer(player)}
-                    onPlayerGone={() => activeSource === 'spotify' && setActivePlayer(null)}
-                    onPlayError={setPlayFailedId}
-                  />
-                )}
-                {f.apple && (
-                  <ApplePlayer
-                    authorized={appleAuthorized}
-                    onAuthorized={setAppleAuthorized}
-                    onPlayerReady={(player) => activeSource === 'apple' && setActivePlayer(player)}
-                    onPlayerGone={() => activeSource === 'apple' && setActivePlayer(null)}
-                    onPlayError={setPlayFailedId}
-                  />
-                )}
-              </div>
+    <div className="r4-player">
+      {(f.spotify || f.apple) && (
+        <div className="r4-player__connect">
+          {f.spotify && (
+            <SpotifyPlayer
+              authorized={spotifyAuthorized}
+              onAuthorized={setSpotifyAuthorized}
+              onPlayerReady={(player) => activeSource === 'spotify' && setActivePlayer(player)}
+              onPlayerGone={() => activeSource === 'spotify' && setActivePlayer(null)}
+              onPlayError={setPlayFailedId}
+            />
+          )}
+          {f.apple && (
+            <ApplePlayer
+              authorized={appleAuthorized}
+              onAuthorized={setAppleAuthorized}
+              onPlayerReady={(player) => activeSource === 'apple' && setActivePlayer(player)}
+              onPlayerGone={() => activeSource === 'apple' && setActivePlayer(null)}
+              onPlayError={setPlayFailedId}
+            />
+          )}
+        </div>
+      )}
 
-              {!videoMode && f.youtube && activeSource === 'youtube' && (
-                <div className="pt-4" style={{ borderTop: '1px solid var(--color-border)' }}>
-                  <YouTubePlayer
-                    roomId={roomId}
-                    onPlayerReady={setActivePlayer}
-                    onPlayerGone={() => setActivePlayer(null)}
-                    onPlayError={setPlayFailedId}
-                  />
-                </div>
-              )}
-            </div>
+      {!videoMode && f.youtube && activeSource === 'youtube' && (
+        <div className="r4-player__yt">
+          <YouTubePlayer
+            roomId={roomId}
+            onPlayerReady={setActivePlayer}
+            onPlayerGone={() => setActivePlayer(null)}
+            onPlayError={setPlayFailedId}
+          />
+        </div>
+      )}
+    </div>
   );
 
-  const heroPanel = (
-            <div className={`panel now-playing np-stage p-6 space-y-4${nowPlaying && isPlaying ? ' is-live' : ''}`}>
-              {/* Header row: section label anchors the left, Radio control the right,
-                  so the toggle never floats alone above an empty panel. Eq + accent
-                  render only while actually playing; paused/stopped say so (R6). */}
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  {nowPlaying && isPlaying && (
-                    <span className="eq" aria-hidden>
-                      <span /><span /><span /><span />
-                    </span>
-                  )}
-                  <span
-                    className="text-xs font-medium uppercase tracking-wider"
-                    style={{
-                      color: nowPlaying && isPlaying ? 'var(--color-accent)' : 'var(--color-text-muted)',
-                      letterSpacing: '0.15em',
-                    }}
-                  >
-                    {!nowPlaying || isPlaying
-                      ? 'Tocando agora'
-                      : transportState === 'stopped'
-                        ? 'Parado'
-                        : 'Pausado'}
-                  </span>
-                  {f.roomAuth && store.state?.hostUserId && hostControl && (
-                    <span className="host-chip">Anfitrião</span>
-                  )}
-                </div>
-                <label className="radio-control cursor-pointer" title="Toca músicas parecidas quando a fila acaba">
-                  <input
-                    type="checkbox"
-                    checked={store.state?.radioEnabled ?? false}
-                    onChange={(e) => setRadio(roomId, e.target.checked)}
-                    className="sr-only"
-                  />
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Rádio</span>
-                  <div
-                    className="radio-toggle relative w-8 h-4 rounded-full transition-colors duration-150"
-                    style={{
-                      background: (store.state?.radioEnabled ?? false) ? 'var(--color-accent)' : 'var(--color-surface-3)',
-                    }}
-                  >
-                    <div
-                      className="radio-toggle-thumb absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white"
-                      style={{
-                        transform: (store.state?.radioEnabled ?? false) ? 'translateX(100%)' : 'translateX(0)',
-                      }}
-                    />
-                  </div>
-                </label>
-              </div>
-              {nowPlaying && isUnavailable(nowPlaying, { appleAuthorized, spotifyAuthorized }) ? (
-                <UnavailableTrack />
-              ) : nowPlaying && playFailedId === nowPlaying.id ? (
-                <PlayFailedTrack />
-              ) : nowPlaying ? (
-                <>
-                  <div className="np-stage__row">
-                  <div className="np-cover" aria-hidden>
-                    {artwork && coverLevel < 2 ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- cover colour is read from this exact image; crossOrigin keeps the canvas untainted
-                      <img
-                        key={`${artwork}|${coverLevel}`}
-                        src={artwork}
-                        alt=""
-                        crossOrigin={coverLevel === 0 ? 'anonymous' : undefined}
-                        className="np-cover__img"
-                        // CORS load failed: show the plain (non-CORS) image, the ground stays idle; if that fails too, the placeholder
-                        onError={() => setCoverFail({ url: artwork, level: coverLevel + 1 })}
-                      />
-                    ) : (
-                      <span className="np-cover__fallback">{nowPlaying.title.charAt(0).toUpperCase()}</span>
-                    )}
-                  </div>
-                  <div className="np-stage__text">
-                  <div className="np-head flex items-start justify-between gap-4">
-                    <div key={nowPlaying.id} className="flex-1 min-w-0 track-change-enter">
-                      <h2 className="np-title text-2xl font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
-                        {nowPlaying.title}
-                      </h2>
-                      <p className="text-sm mt-1 truncate" style={{ color: 'var(--color-text-secondary)' }}>
-                        {nowPlaying.artist}
-                      </p>
-                      {/* Fused presence + provenance (R7 + R1): the room's social
-                          state lives on the player, not siloed in the header. */}
-                      <div className="np-meta">
-                        <PresenceMeta />
-                        <span>adicionada por {nowPlaying.addedBy}</span>
-                        {roomAgeS !== null && (
-                          <span className="np-timer">na sala há {formatElapsed(roomAgeS)}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {activeSource === 'youtube' && (
-                        <span className="badge-source badge-youtube inline-flex items-center gap-1">
-                          <YouTubeIcon size={14} />
-                          YouTube
-                        </span>
-                      )}
-                      {activeSource === 'spotify' && (
-                        <span className="badge-source badge-spotify inline-flex items-center gap-1">
-                          <SpotifyIcon size={14} />
-                          Spotify
-                        </span>
-                      )}
-                      {activeSource === 'apple' && (
-                        <span className="badge-source badge-apple inline-flex items-center gap-1">
-                          <AppleMusicIcon size={14} />
-                          Apple
-                        </span>
-                      )}
-                      {f.trackDepth && nowPlaying && (
-                        <button
-                          onClick={() => setTrackDepthOpen(true)}
-                          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
-                          style={{
-                            background: 'var(--color-surface-2)',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-text-primary)',
-                          }}
-                          title="Ver detalhes da faixa no MusicBrainz"
-                        >
-                          Detalhes
-                        </button>
-                      )}
-                      {f.lyrics && nowPlaying && (
-                        <button
-                          onClick={() => setLyricsOpen(true)}
-                          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
-                          style={{
-                            background: 'var(--color-surface-2)',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-text-primary)',
-                          }}
-                          title="Ver a letra desta faixa"
-                        >
-                          Letra
-                        </button>
-                      )}
-                      {(f.listenBrainz || f.lastfmEnrich) && nowPlaying && (
-                        <button
-                          onClick={() => setEnrichmentOpen(true)}
-                          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none"
-                          style={{
-                            background: 'var(--color-surface-2)',
-                            border: '1px solid var(--color-border)',
-                            color: 'var(--color-text-primary)',
-                          }}
-                          title="Ver dados extras do ListenBrainz e do Last.fm"
-                        >
-                          Mais
-                        </button>
-                      )}
-                    </div>
-                  </div>
+  const radioOn = store.state?.radioEnabled ?? false;
 
-                  {f.sync && (
-                    <div className="np-transport" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
-                      <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl} />
-                    </div>
-                  )}
-                  {store.members.length > 0 && (
-                    <ListenersWave
-                      members={store.members.map((m) => ({ id: m.clientId, name: m.name }))}
-                      running={isPlaying}
-                      animate={motion.ground}
-                      getOffsetMs={getClockOffsetMs}
-                      className="np-wave"
-                    />
-                  )}
-                  </div>
-                  </div>
-                </>
-              ) : (
-                <div className="hero-empty">
-                  <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>Nada tocando ainda</p>
-                  <p className="text-sm mt-2" style={{ color: 'var(--color-text-secondary)' }}>
-                    Adicione uma faixa abaixo para começar a sessão.
-                  </p>
-                </div>
-              )}
-            </div>
+  const heroPanel = (
+    <NowPlayingCard
+      roomId={roomId}
+      track={nowPlaying}
+      state={trackUnavailable ? 'unavailable' : nowPlaying && playFailedId === nowPlaying.id ? 'failed' : 'ok'}
+      artwork={artwork}
+      coverLevel={coverLevel}
+      onCoverError={() => setCoverFail({ url: artwork, level: coverLevel + 1 })}
+      isPlaying={isPlaying}
+      transportState={transportState}
+      hostControl={hostControl}
+      hostLabel={Boolean(f.roomAuth && store.state?.hostUserId && hostControl)}
+      activeSource={activeSource}
+      activePlayer={activePlayer}
+      roomAgeS={roomAgeS}
+      radioOn={radioOn}
+      onOpenDepth={() => setTrackDepthOpen(true)}
+      onOpenLyrics={() => setLyricsOpen(true)}
+      onOpenEnrichment={() => setEnrichmentOpen(true)}
+    />
+  );
+
+  const listenersStage = (
+    <ListenersStage roomId={roomId} canControl={hostControl} running={isPlaying} hostUserId={store.state?.hostUserId} />
   );
 
   const addTrackForm = (
     <AddTrackForm roomId={roomId} spotifyAuthorized={spotifyAuthorized} appleAuthorized={appleAuthorized} />
   );
 
+  // "+ Adicionar música" in the queue header: the phone switches to its Add tab,
+  // every width scrolls the add form into view and focuses its search field.
+  const goToAdd = () => {
+    setPanelTab('add');
+    requestAnimationFrame(() => {
+      const panel = document.getElementById('video-panel-add');
+      if (!panel) return;
+      const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      panel.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+      panel.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+    });
+  };
+
   const queuePanels = (
     <>
-      <QueuePanel roomId={roomId} canControl={hostControl} />
+      <QueuePanel roomId={roomId} canControl={hostControl} onAdd={goToAdd} />
       <ActivityRail />
     </>
   );
   const chatPanel = f.roomChat ? <ChatPanel roomId={roomId} canControl={hostControl} /> : null;
 
+  const roomName = cleanLabel(store.state?.name);
+  const listeners = store.members.length;
+  const tabs = (extra: string) => (
+    <div className={`video-tabs ${extra}`.trim()} role="tablist" aria-label="Painéis da sala">
+      {videoTabs.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          id={`video-tab-${id}`}
+          aria-selected={panelTab === id}
+          aria-controls={`video-panel-${id}`}
+          className="video-tab"
+          onClick={() => setPanelTab(id)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div
-      className="room min-h-screen"
-      data-tint="room"
-      data-bg="sintonia"
+      className="room r4 min-h-screen"
+      data-room="r4"
       data-has-track={nowPlaying ? 'true' : 'false'}
-      style={{ color: 'var(--color-text-primary)', ...tintStyle(tint) }}
+      style={{ color: 'var(--color-text-primary)' }}
     >
-      <GroundStack spec={{ palette: groundPair(tint, palette) }} animate={motion.ground} originSelector={motion.flip ? '.np-cover' : undefined} />
       <StatusBanner />
       {/* Rebind soft notice (#172): proof verification failed (secret rotation
           or expiry), so guest contributions could not be linked. The room and
           the sign-in keep working; only the attribution handoff is lost. The
           live region stays mounted (empty when there is no notice) so screen
           readers announce the text when it appears. */}
-      <p role="status" className="text-xs text-center px-4 py-2" style={{ color: 'var(--color-text-muted)' }}>
+      <p role="status" className="text-xs text-center px-4" style={{ color: 'var(--color-text-muted)' }}>
         {store.rebindNotice}
       </p>
-      <header className="room-header">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-4">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 md:gap-y-3">
-            <div className="space-y-1 min-w-0">
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold inline-flex items-center gap-2">
-                  {/* Flows only while (re)connecting: colors moving = syncing. */}
-                  <LogoMark size={20} animated={store.reconnecting || !store.connected} /> CoJam
+      <header className="room-header r4-header">
+        <div className="r4-header__inner">
+          <div className="r4-brand">
+            <span className="r4-brand__logo">
+              {/* Flows only while (re)connecting: colors moving = syncing. */}
+              <LogoMark size={48} animated={store.reconnecting || !store.connected} />
+              <span className="r4-brand__word">CoJam</span>
+            </span>
+            <span className="r4-divider" aria-hidden="true" />
+            <div className="r4-title">
+              <div className="r4-title__row">
+                <h1 className="r4-title__name">
+                  {roomName ? roomName : (<>Sala <span className="r4-title__code">{roomId}</span></>)}
                 </h1>
-                <ReportRoomButton roomId={roomId} variant="icon" />
+                {nowPlaying && isPlaying && (
+                  <span className="r4-live">
+                    <span className="r4-live__dot" aria-hidden="true" />
+                    AO VIVO
+                  </span>
+                )}
+                {listeners > 0 && (
+                  <span className="r4-count">{listeners === 1 ? '1 ouvindo' : `${listeners} ouvindo junto`}</span>
+                )}
               </div>
-              <p className="text-sm flex items-center gap-2 flex-wrap" style={{ color: 'var(--color-text-secondary)' }}>
-                <span>Sala</span>
-                <span className="room-code-chip">{roomId}</span>
-                <span aria-hidden style={{ opacity: 0.5 }}>·</span>
+              <p className="r4-title__sub">
+                {roomName && <span className="room-code-chip">{roomId}</span>}
                 <span className="truncate" data-testid="room-me">você é {store.name}</span>
                 {accountsEnabled && !store.signedIn && <span className="guest-chip">Convidado</span>}
+                {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
+                {hostControl && f.publicRooms && <PublicRoomToggle roomId={roomId} />}
               </p>
             </div>
-            <div className="room-header-controls flex items-center gap-2 md:gap-3 flex-wrap">
-              <PresenceBar roomId={roomId} canControl={hostControl} />
-              <ShareRoomButton />
-              <ReportRoomButton roomId={roomId} variant="text" />
-              {/* Directory opt-in is host-only (the server enforces it); non-hosts see nothing. */}
-              {hostControl && f.publicRooms && <PublicRoomToggle roomId={roomId} />}
-              {accountsEnabled && (
-                <Link
-                  href="/account"
-                  className="text-sm underline"
-                  style={{ color: 'var(--color-text-secondary)' }}
-                >
-                  Conta
-                </Link>
-              )}
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
-                <div
-                  className="connection-dot"
-                  data-state={store.reconnecting ? 'reconnecting' : store.connected ? 'connected' : 'lost'}
-                  style={{
-                    backgroundColor: store.reconnecting
-                      ? 'var(--color-status-warn)'
-                      : store.connected
-                        ? 'var(--color-accent)'
-                        : 'var(--color-status-error)',
-                    animation: (store.reconnecting || store.connected)
-                      ? 'pulse-breath 1s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-                      : 'none',
-                  }}
-                />
-                <span className="text-xs font-medium sr-only md:not-sr-only" style={{ color: 'var(--color-text-secondary)' }}>
-                  {store.reconnecting
-                    ? 'Reconectando...'
-                    : store.connected
-                      ? 'Conectado'
-                      : 'Desconectado'}
-                </span>
-              </div>
-            </div>
+          </div>
+          <div className="r4-actions">
+            {(store.reconnecting || !store.connected) && (
+              <span className="r4-conn" data-state={store.reconnecting ? 'reconnecting' : 'lost'}>
+                <span className="connection-dot" data-state={store.reconnecting ? 'reconnecting' : 'lost'} />
+                <span className="r4-conn__text">{store.reconnecting ? 'Reconectando...' : 'Desconectado'}</span>
+              </span>
+            )}
+            <ReportRoomButton roomId={roomId} variant="icon" />
+            <ReportRoomButton roomId={roomId} variant="text" />
+            <ShareRoomButton />
+            {accountsEnabled ? (
+              <Link href="/account" className="r4-me" aria-label={`Conta de ${store.name}`} title="Conta" style={{ background: avatarGradient(store.clientId || store.name) }}>
+                {store.name.charAt(0).toUpperCase()}
+              </Link>
+            ) : (
+              <span className="r4-me" title={store.name} style={{ background: avatarGradient(store.clientId || store.name) }} aria-hidden="true">
+                {store.name.charAt(0).toUpperCase()}
+              </span>
+            )}
           </div>
         </div>
       </header>
 
-      <main id="main" className="room-main max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-8">
+      <main id="main" className="room-main r4-main">
         {/* Switching between a video and an audio track changes layouts and remounts
             the YouTube player once (accepted: tracks rarely alternate mid-session). */}
         {videoMode ? (
@@ -684,35 +550,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
               />
             </Stage>
 
-            <div className="video-tabs" role="tablist" aria-label="Painéis da sala">
-              {videoTabs.map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  id={`video-tab-${id}`}
-                  aria-selected={panelTab === id}
-                  aria-controls={`video-panel-${id}`}
-                  className="video-tab"
-                  onClick={() => setPanelTab(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            {tabs('')}
 
-            <div data-testid="video-main-column" className="video-main space-y-6">
+            <div data-testid="video-main-column" className="video-main r4-stack">
               {(f.spotify || f.apple) && playerPanel}
-              <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel" data-active={panelTab === 'playing'}>
+              <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel r4-stack" data-active={panelTab === 'playing'}>
                 {heroPanel}
+                {listenersStage}
               </div>
               <div id="video-panel-add" role="tabpanel" aria-labelledby="video-tab-add" className="video-panel" data-active={panelTab === 'add'}>
                 {addTrackForm}
               </div>
             </div>
 
-            <div data-testid="video-side-column" className="video-side">
-              <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel" data-active={panelTab === 'queue'}>
+            <div data-testid="video-side-column" className="video-side r4-stack">
+              <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel r4-stack" data-active={panelTab === 'queue'}>
                 {queuePanels}
               </div>
               {chatPanel && (
@@ -724,47 +576,35 @@ export function RoomClient({ roomId }: { roomId: string }) {
           </div>
         ) : (
           <>
-          <div className="audio-room grid grid-cols-1 md:grid-cols-5 lg:grid-cols-3 gap-4 md:gap-8" data-testid="audio-room" data-tab={panelTab}>
-          <div data-testid="room-main-column" className="md:col-span-3 lg:col-span-2 space-y-6 room-arrival" style={{ ['--i' as string]: 0 }}>
-            {/* Below 768px the same Playing / Queue / Chat / Add tabs as the video
-                room (#258) decide which panel shows; md and up shows every panel. */}
-            <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel video-panel-keep space-y-6" data-active={panelTab === 'playing'}>
-              {queueEmpty && <OnboardingCard />}
-              {playerPanel}
-              {heroPanel}
-            </div>
-            <div id="video-panel-add" role="tabpanel" aria-labelledby="video-tab-add" className="video-panel" data-active={panelTab === 'add'}>
-              {addTrackForm}
-            </div>
-          </div>
-
-          <div data-testid="room-side-column" className="md:col-span-2 lg:col-span-1 room-arrival md:sticky md:top-24 md:self-start" style={{ ['--i' as string]: 1 }}>
-            <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel" data-active={panelTab === 'queue'}>
-              {queuePanels}
-            </div>
-            {chatPanel && (
-              <div id="video-panel-chat" role="tabpanel" aria-labelledby="video-tab-chat" className="video-panel" data-active={panelTab === 'chat'}>
-                {chatPanel}
+            <div className="audio-room r4-grid grid grid-cols-1 md:grid-cols-5" data-testid="audio-room" data-tab={panelTab}>
+              <div data-testid="room-main-column" className="r4-main-col md:col-span-3 room-arrival" style={{ ['--i' as string]: 0 }}>
+                {/* Below 768px the same Playing / Queue / Chat / Add tabs as the video
+                    room (#258) decide which panel shows; md and up shows every panel. */}
+                <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel video-panel-keep r4-stack" data-active={panelTab === 'playing'}>
+                  {queueEmpty && <OnboardingCard />}
+                  <div className="r4-stage r4-stack">
+                    {heroPanel}
+                    {listenersStage}
+                  </div>
+                  {playerPanel}
+                </div>
               </div>
-            )}
-          </div>
-        </div>
-          <div className="video-tabs audio-tabs" role="tablist" aria-label="Painéis da sala">
-            {videoTabs.map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                id={`video-tab-${id}`}
-                aria-selected={panelTab === id}
-                aria-controls={`video-panel-${id}`}
-                className="video-tab"
-                onClick={() => setPanelTab(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+
+              <div data-testid="room-side-column" className="r4-side md:col-span-2 room-arrival" style={{ ['--i' as string]: 1 }}>
+                <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel r4-queue-col r4-stack" data-active={panelTab === 'queue'}>
+                  {queuePanels}
+                </div>
+                <div id="video-panel-add" role="tabpanel" aria-labelledby="video-tab-add" className="video-panel r4-add-col" data-active={panelTab === 'add'}>
+                  {addTrackForm}
+                </div>
+                {chatPanel && (
+                  <div id="video-panel-chat" role="tabpanel" aria-labelledby="video-tab-chat" className="video-panel r4-chat-col" data-active={panelTab === 'chat'}>
+                    {chatPanel}
+                  </div>
+                )}
+              </div>
+            </div>
+            {tabs('audio-tabs')}
           </>
         )}
       </main>
