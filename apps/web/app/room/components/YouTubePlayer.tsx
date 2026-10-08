@@ -146,10 +146,10 @@ class YouTubePlayerAdapter implements IPlayer {
     }
   }
 
-  // YT.PlayerState.PLAYING === 1. Without getPlayerState assume playing.
+  // YT.PlayerState.PLAYING === 1. Without getPlayerState it is not playing.
   isPlaying(): boolean {
     try {
-      return this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() === 1 : true;
+      return this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() === 1 : false;
     } catch {
       return false;
     }
