@@ -308,6 +308,11 @@ type Hub struct {
 	// #181) share the bucket.
 	chatLimiter *rateLimiter
 
+	// reactionLimiter rate-limits the modo palco reactions per caller
+	// (reactionMethods). Its own bucket: mashing Curtir must never leave the
+	// caller rate limited on chat.send.
+	reactionLimiter *rateLimiter
+
 	// listLimiter rate-limits the room.list directory read per caller. It is
 	// an unauthenticated read that landing visitors poll, so it gets its own
 	// bucket (no third-party fanout, hence not in fanoutMethods).
@@ -602,6 +607,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		fanoutLimiter:     newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
 		voteLimiter:       newRateLimiter(voteBurst, voteRefill, time.Now),
 		chatLimiter:       newRateLimiter(chatBurst, chatRefill, time.Now),
+		reactionLimiter:   newRateLimiter(reactionBurst, reactionRefill, time.Now),
 		transportLimiter:  newRateLimiter(transportBurst, transportRefill, time.Now),
 		heartbeatEvery:    videoHeartbeatEvery,
 		heartbeats:        make(map[string]chan struct{}),
@@ -1565,6 +1571,9 @@ func (h *Hub) checkRateLimits(method, rlKey string) error {
 	}
 	if err == nil {
 		err = h.checkChatLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.checkReactionLimit(method, rlKey)
 	}
 	if err == nil {
 		err = h.checkTransportLimit(method, rlKey)

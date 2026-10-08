@@ -345,7 +345,7 @@ Audience character ("Modo palco"): each member is drawn as one of a fixed roster
 
 Clients overlay it on the presence entry with that `clientId` (the latest choice among one person's connections wins). A late joiner seeds the overlay with `member.characters` (membership-gated read, the current overrides of the room's members). A member who never chose gets a default derived from the userId (the clientId for guests without one): the FNV-1a 32 bit hash of the UTF-8 bytes, mod 12, plus 1. The server (`DefaultCharacter`) and the web client (`lib/characters.ts`) implement the same function and share one table of test vectors. The web client sends its stored choice right after the join settles (and after the rebind) and again on every change.
 
-Reactions ("Modo palco"): `reaction.woot` is the Curtir button on the playing track. It is ephemeral: nothing is stored, it is not `RoomState` (no version bump, no persistence) and a late joiner never sees past reactions. It is membership-gated and shares the chat rate limit (one person cannot flood the room). The server publishes on the room channel, naming the connection only (clients resolve it to a member through presence):
+Reactions ("Modo palco"): `reaction.woot` is the Curtir button on the playing track. It is ephemeral: nothing is stored, it is not `RoomState` (no version bump, no persistence) and a late joiner never sees past reactions. It is membership-gated and has its own per-caller rate limit (burst 4, one more per second), separate from chat, so pressing Curtir never rate limits chat.send. The server publishes on the room channel, naming the connection only (clients resolve it to a member through presence):
 
 ```json
 { "type": "reaction.woot", "clientId": "..." }

@@ -109,8 +109,8 @@ func TestReactionWoot_BroadcastsOnRoomChannelOnly(t *testing.T) {
 }
 
 func TestReactionWoot_RegisteredAndRateLimited(t *testing.T) {
-	if !chatMethods["reaction.woot"] {
-		t.Fatal("reaction.woot must draw from the chat limiter")
+	if !reactionMethods["reaction.woot"] || chatMethods["reaction.woot"] {
+		t.Fatal("reaction.woot must draw from the reaction limiter, not the chat bucket")
 	}
 	if !knownMethods["reaction.woot"] {
 		t.Fatal("reaction.woot must be in knownMethods (bounded metric labels)")
@@ -120,7 +120,7 @@ func TestReactionWoot_RegisteredAndRateLimited(t *testing.T) {
 	log := &wootLog{}
 	h.wootPublishFn = log.record
 	clock := &fakeClock{now: time.Now()}
-	h.chatLimiter = newRateLimiter(2, time.Hour, clock.Now)
+	h.reactionLimiter = newRateLimiter(2, time.Hour, clock.Now)
 	for i := 0; i < 2; i++ {
 		if _, err := h.handleRPC("reaction.woot", wootReq("R"), "c1", ""); err != nil {
 			t.Fatalf("woot %d within burst: %v", i+1, err)
@@ -133,5 +133,24 @@ func TestReactionWoot_RegisteredAndRateLimited(t *testing.T) {
 	}
 	if len(log.pubs) != 2 {
 		t.Fatalf("published %d events, want 2 (the limited call must not publish)", len(log.pubs))
+	}
+}
+
+// Mashing Curtir must not spend the chat budget (critic, part 2).
+func TestReactionWoot_DoesNotDrainChatBucket(t *testing.T) {
+	h := NewHub(nil)
+	h.Join("c1", "R")
+	log := &wootLog{}
+	h.wootPublishFn = log.record
+	clock := &fakeClock{now: time.Now()}
+	h.chatLimiter = newRateLimiter(1, time.Hour, clock.Now)
+	h.reactionLimiter = newRateLimiter(100, time.Hour, clock.Now)
+	for i := 0; i < 10; i++ {
+		if _, err := h.handleRPC("reaction.woot", wootReq("R"), "c1", ""); err != nil {
+			t.Fatalf("woot %d: %v", i+1, err)
+		}
+	}
+	if !h.chatLimiter.allow(rateLimitKey("c1", "")) {
+		t.Fatal("ten woots spent the caller's chat token")
 	}
 }
