@@ -150,6 +150,7 @@ Hard rule from the YouTube API terms (see the record, section "YouTube ToS const
 - **Nothing overlaps its rectangle, ever.** Not chat bubbles, placards, heads or sprites, beams or light effects, name tags (including the enlarged tags of the close camera variation), drawers, scrims or toasts.
 - Bubbles, boards and effects are laid out **outside** the rectangle. The layout reserves it; it does not rely on z-order.
 - Bezel and glow decoration sit outside the embed's box.
+- **Non-YouTube listeners (owner: "A", 2026-10-08):** the screen shows the same YouTube video as a muted player synced to the room transport (drift correction relaxed, visuals only); their own service plays the sound. The same rules apply to it: at least 200x200, never covered. No YouTube match for the track: the screen shows the cover art.
 - Several mockups broke this (bubbles over the video in variation 01, placards in 05, tags in 04). They are tone references, not layout references, for those parts.
 - A layout PR states where the player sits at 390 and 1440 with each drawer and tab open, with screenshots taken with YouTube as the active source. A fixture without a player hides the violation.
 

@@ -85,6 +85,16 @@ Owner on `r5-palco-roster-v2.png`: "aprovado". Twelve characters, one per call, 
 
 The roster is the design baseline. Final art may be redrawn on the fixed grid; the 12 identities, and the front and back match, stay.
 
+### 8. Spotify and Apple Music listeners: the muted video (decided 2026-10-08)
+
+Question: for a listener on Spotify or Apple Music, either (A) a muted synced YouTube video on the screen, or (B) the cover art. Owner answer: "A".
+
+- Everyone in modo palco sees the YouTube video on the screen, muted and synced, while each person listens on their own service. YouTube listeners hear it from that same player.
+- Non-YouTube listeners get a muted YouTube player synced to the room transport, with drift correction relaxed (visuals only, not audio).
+- If there is no YouTube match for the track, the screen falls back to the cover art.
+- The ToS rules still apply to the muted player: at least 200x200 and never covered.
+- Cost: two players run per Spotify listener (their service plus the muted video). CPU and battery cost on phones; revisit if measured as heavy.
+
 ## Consequences
 
 ### Protocol
@@ -111,18 +121,9 @@ The roster is the design baseline. Final art may be redrawn on the fixed grid; t
 - The audience row has a size limit that is not decided yet (compress, wrap or scroll).
 - The AI mockups are tone references. Pixel art in the build will differ from them.
 
-## Open question (pending owner input)
-
-**Spotify and Apple Music listeners in modo palco.** The stage screen is the YouTube video, but a listener on Spotify or Apple Music may have no YouTube source for the playing track. Two options:
-
-- **A. Muted synced YouTube video on the screen.** The listener sees the stage video while their own service plays the sound. Needs a YouTube source for the track and playback kept in sync. It stays a visible, real embed, but muted video next to audio from another service needs a ToS check.
-- **B. The cover art on the screen.** Simple and metadata only, but the stage loses the video, and the cover is not the YouTube player, so the "video on the stage" idea is only for YouTube listeners.
-
-Status: not decided. Do not build the Spotify and Apple path until the owner picks. YouTube listeners are unaffected.
-
 ## Revisit when
 
-- The owner picks A or B above.
+- The muted player (decision 8) measures as heavy on phones, or a ToS reading says muted video beside another service's audio is not allowed.
 - A ToS reading says the stage layout (frame, bezel, effects around the embed) counts as covering or altering the player.
 - The roster of 12 is not enough in use (people ask for the same missing look), or repeats confuse who is who in the audience.
 - Rooms regularly pass the audience row's limit.
