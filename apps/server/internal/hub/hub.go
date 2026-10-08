@@ -391,68 +391,70 @@ type Hub struct {
 // room.join enrolls (see Authorize); reads and unknown methods fall through
 // to dispatch.
 var mutatingMethods = map[string]bool{
-	"queue.add":           true,
-	"queue.remove":        true,
-	"queue.reorder":       true,
-	"queue.vote":          true,
-	"history.readd":       true,
-	"queue.clear":         true,
-	"now_playing.set":     true,
-	"now_playing.advance": true,
-	"playlist.import":     true,
-	"radio.set":           true,
-	"room.set_public":     true,
-	"room.set_admin":      true,
-	"room.transfer_host":  true,
-	"room.claim_host":     true,
-	"room.kick":           true,
-	"room.rebind":         true,
-	"transport.play":      true,
-	"transport.pause":     true,
-	"transport.seek":      true,
-	"chat.send":           true,
-	"chat.history":        true,
-	"chat.delete":         true,
-	"member.set_platform": true,
-	"member.platforms":    true,
+	"queue.add":                   true,
+	"queue.remove":                true,
+	"queue.reorder":               true,
+	"queue.vote":                  true,
+	"history.readd":               true,
+	"now_playing.set":             true,
+	"now_playing.advance":         true,
+	"now_playing.skip_unplayable": true,
+	"playlist.import":             true,
+	"radio.set":                   true,
+	"room.set_public":             true,
+	"room.set_admin":              true,
+	"room.transfer_host":          true,
+	"room.claim_host":             true,
+	"room.kick":                   true,
+	"room.rebind":                 true,
+	"transport.play":              true,
+	"transport.pause":             true,
+	"transport.seek":              true,
+	"chat.send":                   true,
+	"chat.history":                true,
+	"chat.delete":                 true,
+	"member.set_platform":         true,
+	"member.platforms":            true,
+	"queue.clear":                 true,
 }
 
 // knownMethods is the dispatch set. RPC method names are client-supplied, so
 // metrics and logs label anything outside it as "unknown" (metricMethod):
 // echoing the raw name would let a client mint unbounded time series.
 var knownMethods = map[string]bool{
-	"room.join":           true,
-	"queue.add":           true,
-	"queue.remove":        true,
-	"now_playing.set":     true,
-	"now_playing.advance": true,
-	"queue.reorder":       true,
-	"queue.vote":          true,
-	"history.readd":       true,
-	"queue.clear":         true,
-	"track.search":        true,
-	"track.depth":         true,
-	"track.lyrics":        true,
-	"track.listenbrainz":  true,
-	"track.lastfm":        true,
-	"playlist.import":     true,
-	"radio.set":           true,
-	"room.set_public":     true,
-	"room.list":           true,
-	"transport.play":      true,
-	"transport.pause":     true,
-	"transport.seek":      true,
-	"chat.send":           true,
-	"chat.history":        true,
-	"chat.delete":         true,
-	"room.kick":           true,
-	"room.set_admin":      true,
-	"room.transfer_host":  true,
-	"room.claim_host":     true,
-	"room.rebind":         true,
-	"member.set_platform": true,
-	"member.platforms":    true,
-	"sync.ping":           true,
+	"room.join":                   true,
+	"queue.add":                   true,
+	"queue.remove":                true,
+	"now_playing.set":             true,
+	"now_playing.advance":         true,
+	"now_playing.skip_unplayable": true,
+	"queue.reorder":               true,
+	"queue.vote":                  true,
+	"history.readd":               true,
+	"track.search":                true,
+	"track.depth":                 true,
+	"track.lyrics":                true,
+	"track.listenbrainz":          true,
+	"track.lastfm":                true,
+	"playlist.import":             true,
+	"radio.set":                   true,
+	"room.set_public":             true,
+	"room.list":                   true,
+	"transport.play":              true,
+	"transport.pause":             true,
+	"transport.seek":              true,
+	"chat.send":                   true,
+	"chat.history":                true,
+	"chat.delete":                 true,
+	"room.kick":                   true,
+	"room.set_admin":              true,
+	"room.transfer_host":          true,
+	"room.claim_host":             true,
+	"room.rebind":                 true,
+	"member.set_platform":         true,
+	"member.platforms":            true,
+	"sync.ping":                   true,
+	"queue.clear":                 true,
 }
 
 // metricMethod is the bounded label for method: itself when known, else
@@ -470,17 +472,18 @@ func metricMethod(method string) string {
 // allowed for members. queue.remove has one exception: the track's adder
 // (TrackRef.AddedByUserID) may remove it (B16), enforced in Authorize.
 var controlMethods = map[string]bool{
-	"history.readd":       true,
-	"queue.clear":         true,
-	"now_playing.set":     true,
-	"now_playing.advance": true,
-	"queue.reorder":       true,
-	"queue.remove":        true,
-	"radio.set":           true,
-	"playlist.import":     true,
-	"transport.play":      true,
-	"transport.pause":     true,
-	"transport.seek":      true,
+	"history.readd":               true,
+	"now_playing.set":             true,
+	"now_playing.advance":         true,
+	"now_playing.skip_unplayable": true,
+	"queue.reorder":               true,
+	"queue.remove":                true,
+	"radio.set":                   true,
+	"playlist.import":             true,
+	"transport.play":              true,
+	"transport.pause":             true,
+	"transport.seek":              true,
+	"queue.clear":                 true,
 }
 
 // hostOnlyMethods are gated on the host or the owner, not on admins:
@@ -1861,6 +1864,28 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 
 		return h.advanceAfter(req.RoomID, req.AfterID, true)
 
+	case "now_playing.skip_unplayable":
+		// A controller's client reports that the playing track's only source
+		// fails to embed (YouTube error 100/101/150). Same path as the
+		// sourceless auto skip: no History entry, a chat line says why.
+		// Idempotent: a stale trackId is a no-op.
+		var req struct {
+			RoomID  string `json:"roomId"`
+			TrackID string `json:"trackId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("now_playing.skip_unplayable: roomId required")
+		}
+		if req.TrackID == "" {
+			return nil, fmt.Errorf("now_playing.skip_unplayable: trackId required")
+		}
+		return h.advanceAfterWith(req.RoomID, req.TrackID, false, func(title string) string {
+			return fmt.Sprintf("%s pulada: o vídeo não pode tocar fora do YouTube", title)
+		})
+
 	case "queue.reorder":
 		var req struct {
 			RoomID  string `json:"roomId"`
@@ -2590,6 +2615,17 @@ func radioSeedAfterEmptied(s *queue.RoomState) *queue.TrackRef {
 // now-playing chat line. withSkipCheck is false for the sourceless auto skip,
 // which loops itself.
 func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.RawMessage, error) {
+	return h.advanceAfterWith(roomID, afterID, withSkipCheck, nil)
+}
+
+// advanceAfterWith is advanceAfter with the skip chat line overridable
+// (skipLine nil keeps the sourceless wording).
+func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipLine func(title string) string) (json.RawMessage, error) {
+	if skipLine == nil {
+		skipLine = func(title string) string {
+			return fmt.Sprintf("%s não está disponível no seu serviço e foi pulada", title)
+		}
+	}
 	mutate := h.mutate
 	if !withSkipCheck {
 		mutate = h.mutateNoSkip
@@ -2652,7 +2688,7 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 	}
 
 	if err == nil && skipped != nil {
-		h.publishSystemChat(roomID, fmt.Sprintf("%s não está disponível no seu serviço e foi pulada", skipped.Title))
+		h.publishSystemChat(roomID, skipLine(skipped.Title))
 	}
 
 	// The system message rides chat, not RoomState: no Version bump, no

@@ -14,6 +14,7 @@ import (
 var hostOnlyProbes = []struct{ method, data string }{
 	{"now_playing.set", `{"roomId":"HOSTGATE1","trackId":"t1"}`},
 	{"now_playing.advance", `{"roomId":"HOSTGATE1","afterId":"t1"}`},
+	{"now_playing.skip_unplayable", `{"roomId":"HOSTGATE1","trackId":"t1"}`},
 	{"queue.reorder", `{"roomId":"HOSTGATE1","trackId":"t1","toIndex":0}`},
 	{"queue.remove", `{"roomId":"HOSTGATE1","trackId":"t1"}`},
 	{"radio.set", `{"roomId":"HOSTGATE1","enabled":true}`},

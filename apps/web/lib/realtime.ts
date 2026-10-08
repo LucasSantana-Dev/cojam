@@ -819,6 +819,14 @@ export async function nowPlayingAdvance(roomId: string, afterId: string) {
   await centrifuge.rpc('now_playing.advance', { roomId, afterId });
 }
 
+// now_playing.skip_unplayable: a controller's client reports that the playing
+// track's embed is blocked (YouTube 100/101/150). The server drops it without
+// a History entry, says why in chat, and plays the next. Idempotent per id.
+export async function nowPlayingSkipUnplayable(roomId: string, trackId: string) {
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
+  await centrifuge.rpc('now_playing.skip_unplayable', { roomId, trackId });
+}
+
 // history.readd: queues a played track again at the end as a new entry.
 // Controllers only (host, owner, admin); the server copies the track from
 // history, so the old entry is never resurrected.

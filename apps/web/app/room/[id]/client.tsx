@@ -18,6 +18,7 @@ import { useListeningService, setListeningService } from '@/lib/listeningService
 import { beginAuth } from '@/lib/spotifyAuth';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { canControl } from '@/lib/roomRole';
+import { useSkipUnplayable } from '@/lib/useSkipUnplayable';
 import { getAccountSession, getConnectedServices, getDisplayName, markServiceConnected } from '@/lib/account';
 import { supabaseEnabled } from '@/lib/supabase';
 import { YouTubePlayer } from '../components/YouTubePlayer';
@@ -188,6 +189,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
     ownerUserId: store.state?.ownerUserId,
     admins: store.state?.admins,
   });
+  // YouTube-only: a blocked embed (error 100/101/150) marks the card failed
+  // for everyone, and a controller's client also skips the track after a delay.
+  const reportSkipUnplayable = useSkipUnplayable(roomId, nowPlaying?.id, hostControl);
+  const onYoutubePlayError = useCallback(
+    (trackId: string | null) => {
+      setPlayFailedId(trackId);
+      reportSkipUnplayable(trackId);
+    },
+    [reportSkipUnplayable],
+  );
   // Moderation and role management are host or owner only (not admins).
   const moderate = canControl({
     roomAuth: f.roomAuth,
@@ -547,7 +558,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         fill
         onPlayerReady={setActivePlayer}
         onPlayerGone={() => setActivePlayer(null)}
-        onPlayError={setPlayFailedId}
+        onPlayError={onYoutubePlayError}
       />
     ) : null;
 
@@ -750,7 +761,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 fill
                 onPlayerReady={setActivePlayer}
                 onPlayerGone={() => setActivePlayer(null)}
-                onPlayError={setPlayFailedId}
+                onPlayError={onYoutubePlayError}
               />
             </Stage>
 
