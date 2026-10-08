@@ -51,6 +51,8 @@ var chatMethods = map[string]bool{
 	"member.set_platform": true,
 	// Same for the audience character ("Modo palco").
 	"member.set_character": true,
+	// Curtir in modo palco: a room broadcast, so the same budget.
+	"reaction.woot": true,
 }
 
 // ChatKindSystem marks a server-generated announcement (track change, member
