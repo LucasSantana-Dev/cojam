@@ -55,8 +55,12 @@ export function TransportUI({ roomId, activePlayer, canControl, trailing }: Tran
   useEffect(() => {
     if (!activePlayer || !nowPlayingId || metaDuration > 0) return;
     let cancelled = false;
-    const poll = () =>
-      activePlayer
+    // YouTube getDuration() returns the previous video's length right after a
+    // load; only trust it once the player reports PLAYING for this video.
+    // Players without isPlaying (no state to check) are trusted as before.
+    const poll = () => {
+      if (activePlayer.isPlaying && !activePlayer.isPlaying()) return;
+      return activePlayer
         .getDurationMs()
         .then((d) => {
           if (cancelled || !Number.isFinite(d) || d <= 0) return;
@@ -64,6 +68,7 @@ export function TransportUI({ roomId, activePlayer, canControl, trailing }: Tran
           clearInterval(timer); // known: stop polling (timer is initialised before any poll resolves)
         })
         .catch(() => {});
+    };
     const timer = setInterval(poll, 1000);
     poll();
     return () => {
