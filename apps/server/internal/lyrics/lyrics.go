@@ -14,6 +14,10 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 )
 
+// lyricsCacheMax bounds the in-memory lyrics cache; the oldest entry is
+// evicted first.
+const lyricsCacheMax = 1024
+
 var (
 	// LRCLIB endpoints (package-level for testability).
 	// /api/get needs a close duration match; /api/search does not, so it is the
@@ -121,6 +125,7 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 	// /api/get returns 404 on a duration mismatch (common for queue tracks). Treat
 	// any error as a miss and fall through to /api/search, do NOT early-return.
 	var resp lrclibResponse
+	var getErr error // non-404 /get failure; makes a later empty search inconclusive
 	if err := httpx.DoJSON(req, &resp); err == nil {
 		applyLRCResponse(result, resp)
 		if len(result.Synced) > 0 || result.Plain != "" {
@@ -130,6 +135,7 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 		// A 404 is the normal duration-mismatch miss; anything else (decode
 		// failure, 5xx, timeout) is worth a log before falling through.
 		slog.Warn("lyrics_get_failed", "artist", artist, "title", title, "err", err.Error())
+		getErr = err
 	}
 
 	// /api/get missed (usually a duration mismatch on queue tracks). Fall back to
@@ -146,10 +152,13 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 	var hits []lrclibResponse
 	if err := httpx.DoJSON(sreq, &hits); err != nil {
 		if isNotFound(err) {
+			if getErr != nil {
+				return result, fmt.Errorf("lrclib get: %w", getErr)
+			}
 			return result, nil
 		}
-		// Surface the failure so callers do not cache it as "no lyrics".
-		slog.Warn("lyrics_search_failed", "artist", artist, "title", title, "err", err.Error())
+		// Surface the failure so callers do not cache it as "no lyrics". The
+		// hub logs the returned error once.
 		return result, fmt.Errorf("lrclib search: %w", err)
 	}
 	// Prefer the first hit with synced lyrics; else the first with plain.
@@ -165,6 +174,9 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 	}
 	if chosen != nil {
 		applyLRCResponse(result, *chosen)
+	} else if getErr != nil {
+		// /get failed (not a 404) and /search found nothing: inconclusive.
+		return result, fmt.Errorf("lrclib get: %w", getErr)
 	}
 	return result, nil
 }
@@ -197,6 +209,7 @@ func applyLRCResponse(result *Lyrics, resp lrclibResponse) {
 func NewCachedLyricsFetcher(inner func(ctx context.Context, artist, title, album string, durationMs int) (*Lyrics, error)) func(context.Context, string, string, string, int) (*Lyrics, error) {
 	var mu sync.Mutex
 	cache := make(map[string]*Lyrics)
+	var order []string
 
 	return func(ctx context.Context, artist, title, album string, durationMs int) (*Lyrics, error) {
 		// Normalize cache key: lowercase, pipe-separated
@@ -217,6 +230,13 @@ func NewCachedLyricsFetcher(inner func(ctx context.Context, artist, title, album
 
 		// Cache the result (including nil or empty) for next time
 		mu.Lock()
+		if _, exists := cache[key]; !exists {
+			if len(cache) >= lyricsCacheMax && len(order) > 0 {
+				delete(cache, order[0])
+				order = order[1:]
+			}
+			order = append(order, key)
+		}
 		cache[key] = result
 		mu.Unlock()
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -120,6 +121,7 @@ func mbServer(t *testing.T, search, isrc, lookup string) (*mbStub, func()) {
 	mbMinInterval = time.Millisecond
 	depthCacheMu.Lock()
 	depthCache = map[string]*TrackDepth{}
+	depthOrder = nil
 	depthCacheMu.Unlock()
 	return st, func() {
 		srv.Close()
@@ -255,6 +257,7 @@ func TestTrackDepth_UpstreamErrorReturnedNotCached(t *testing.T) {
 	musicbrainzURL, mbMinInterval = srv.URL, time.Millisecond
 	depthCacheMu.Lock()
 	depthCache = map[string]*TrackDepth{}
+	depthOrder = nil
 	depthCacheMu.Unlock()
 
 	if _, err := FetchTrackDepth(context.Background(), "", "T", "A"); err == nil {
@@ -274,7 +277,12 @@ func TestRecordingQuery(t *testing.T) {
 		{"Song - Live at Wembley", "Artist", `recording:"Song - Live at Wembley" AND artist:"Artist"`},
 		{`Say "Hi" \ now`, "AC/DC", `recording:"Say \"Hi\" \\ now" AND artist:"AC/DC"`},
 		{"Song", "Milo J feat. Other", `recording:"Song" AND artist:"Milo J"`},
-		{"Song", "A, B", `recording:"Song" AND artist:"A"`},
+		{"Song", "Earth, Wind & Fire", `recording:"Song" AND artist:"Earth, Wind & Fire"`},
+		{"Song", "Simon & Garfunkel", `recording:"Song" AND artist:"Simon & Garfunkel"`},
+		{"Song", "Tyler, The Creator", `recording:"Song" AND artist:"Tyler, The Creator"`},
+		{"Song", "Mumford & Sons", `recording:"Song" AND artist:"Mumford & Sons"`},
+		{"Song", "Milo J (feat. Other)", `recording:"Song" AND artist:"Milo J"`},
+		{"Song - Radio Edit (Live)", "A", `recording:"Song (Live)" AND artist:"A"`},
 	}
 	for _, c := range cases {
 		if got := recordingQuery(c.title, c.artist); got != c.want {
@@ -312,5 +320,105 @@ func TestWaitMusicBrainz_SpacesRequestsAndHonoursContext(t *testing.T) {
 	_ = waitMusicBrainz(context.Background()) // reserve a slot a second out
 	if err := waitMusicBrainz(ctx); err == nil {
 		t.Error("expected context error while waiting for a slot")
+	}
+}
+
+func TestTrackDepth_ISRCErrorNotWipedByEmptySearch(t *testing.T) {
+	oldURL, oldInt := musicbrainzURL, mbMinInterval
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/isrc/") {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"recordings":[]}`))
+	}))
+	defer func() { srv.Close(); musicbrainzURL, mbMinInterval = oldURL, oldInt }()
+	musicbrainzURL, mbMinInterval = srv.URL, time.Millisecond
+	depthCacheMu.Lock()
+	depthCache, depthOrder = map[string]*TrackDepth{}, nil
+	depthCacheMu.Unlock()
+
+	if _, err := FetchTrackDepth(context.Background(), "GBUM71029604", "T", "A"); err == nil {
+		t.Fatal("ISRC 503 must surface even when the search is clean and empty")
+	}
+	depthCacheMu.Lock()
+	n := len(depthCache)
+	depthCacheMu.Unlock()
+	if n != 0 {
+		t.Errorf("empty result was cached after an ISRC outage")
+	}
+}
+
+func TestStoreDepth_EvictsSingleOldestEntry(t *testing.T) {
+	depthCacheMu.Lock()
+	depthCache, depthOrder = map[string]*TrackDepth{}, nil
+	depthCacheMu.Unlock()
+	for i := 0; i < mbDepthCacheMax; i++ {
+		storeDepth("k"+strconv.Itoa(i), newDepth())
+	}
+	storeDepth("new", newDepth())
+	depthCacheMu.Lock()
+	defer depthCacheMu.Unlock()
+	if len(depthCache) != mbDepthCacheMax {
+		t.Fatalf("cache size = %d, want %d", len(depthCache), mbDepthCacheMax)
+	}
+	if _, ok := depthCache["k0"]; ok {
+		t.Error("oldest entry should be evicted")
+	}
+	if _, ok := depthCache["k1"]; !ok {
+		t.Error("other entries must survive")
+	}
+}
+
+func TestWaitMusicBrainz_CancelReturnsSlotAndDeadlineFailsFast(t *testing.T) {
+	old := mbMinInterval
+	defer func() { mbMinInterval = old }()
+	mbMinInterval = 300 * time.Millisecond
+	mbMu.Lock()
+	mbNext = time.Time{}
+	mbMu.Unlock()
+
+	_ = waitMusicBrainz(context.Background()) // takes now, next = +300ms
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := waitMusicBrainz(ctx); err == nil || time.Since(start) > 100*time.Millisecond {
+		t.Fatalf("expected fast failure, err=%v after %v", err, time.Since(start))
+	}
+	mbMu.Lock()
+	n1 := mbNext
+	mbMu.Unlock()
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	go func() { time.Sleep(20 * time.Millisecond); cancel2() }()
+	if err := waitMusicBrainz(ctx2); err == nil {
+		t.Fatal("expected cancel error")
+	}
+	mbMu.Lock()
+	n2 := mbNext
+	mbMu.Unlock()
+	if !n2.Equal(n1) {
+		t.Errorf("cancelled waiter kept its slot: next moved %v", n2.Sub(n1))
+	}
+}
+
+func TestFetchTrackDepth_CoalescesConcurrentCalls(t *testing.T) {
+	st, done := mbServer(t, mbSearchFixture, `{}`, mbLookupFixture)
+	defer done()
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := FetchTrackDepth(context.Background(), "", "Recorde", "Milo J"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.paths) != 3 {
+		t.Errorf("5 concurrent identical calls should cost one sequence of 3 requests, got %v", st.paths)
 	}
 }

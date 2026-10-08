@@ -2,6 +2,7 @@ package match
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -39,23 +40,44 @@ var (
 
 	depthCacheMu sync.Mutex
 	depthCache   = map[string]*TrackDepth{}
+	depthOrder   []string // insertion order, for single-entry eviction
+
+	inflightMu sync.Mutex
+	inflight   = map[string]*depthCall{}
 )
+
+type depthCall struct {
+	done chan struct{}
+	res  *TrackDepth
+	err  error
+}
 
 // waitMusicBrainz blocks until the caller may send the next MusicBrainz
 // request, or ctx ends. Slots are reserved under a mutex, so concurrent callers
-// queue one interval apart instead of racing for a shared tick.
+// queue one interval apart instead of racing for a shared tick. A caller whose
+// deadline falls before its slot fails fast without reserving, and a caller
+// cancelled while waiting hands its slot back if it is still the last one, so
+// timed-out requests cannot poison the queue for everyone behind them.
 func waitMusicBrainz(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	mbMu.Lock()
 	slot := time.Now()
 	if slot.Before(mbNext) {
 		slot = mbNext
 	}
+	if dl, ok := ctx.Deadline(); ok && slot.After(dl) {
+		mbMu.Unlock()
+		return context.DeadlineExceeded
+	}
 	mbNext = slot.Add(mbMinInterval)
+	end := mbNext
 	mbMu.Unlock()
 
 	d := time.Until(slot)
 	if d <= 0 {
-		return ctx.Err()
+		return nil
 	}
 	t := time.NewTimer(d)
 	defer t.Stop()
@@ -63,6 +85,11 @@ func waitMusicBrainz(ctx context.Context) error {
 	case <-t.C:
 		return nil
 	case <-ctx.Done():
+		mbMu.Lock()
+		if mbNext.Equal(end) {
+			mbNext = slot
+		}
+		mbMu.Unlock()
 		return ctx.Err()
 	}
 }
@@ -109,10 +136,14 @@ type mbRelation struct {
 var (
 	// Version suffixes streaming services append to titles. Stripped for the
 	// search only, so "Song - Radio Edit" finds the "Song" recording. Remixes
-	// and live versions are different recordings and are kept.
-	versionSuffixRe = regexp.MustCompile(`(?i)\s*(?:-\s*|[(\[]\s*)(?:radio edit|single version|album version|(?:mono|stereo) version|explicit|(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?(?:\s+version)?)[^)\]]*[)\]]?\s*$`)
-	// Secondary artists: search on the primary one only.
-	secondaryArtistRe = regexp.MustCompile(`(?i)\s*(?:,|&|\bfeat\.?|\bft\.?|\bfeaturing|\bx\b|\bwith\b)\s+.*$`)
+	// and live versions are different recordings and are kept, as is anything
+	// trailing the suffix: "Song - Radio Edit (Live)" becomes "Song (Live)".
+	versionKW        = `(?:radio edit|single version|album version|(?:mono|stereo) version|explicit|(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?(?:\s+version)?)`
+	versionDashRe    = regexp.MustCompile(`(?i)\s*-\s*` + versionKW + `(\s*[(\[].*)?$`)
+	versionBracketRe = regexp.MustCompile(`(?i)\s*[(\[]\s*` + versionKW + `\s*[)\]]\s*$`)
+	// Featured artists only. Commas and ampersands are left alone: they are
+	// part of band names ("Earth, Wind & Fire", "Simon & Garfunkel").
+	secondaryArtistRe = regexp.MustCompile(`(?i)\s*[(\[]?\s*\b(?:feat\.?|ft\.?|featuring)\s+.*$`)
 	luceneEscaper     = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 )
 
@@ -120,7 +151,7 @@ var (
 func searchTitle(title string) string {
 	t := strings.TrimSpace(title)
 	for i := 0; i < 2; i++ {
-		next := strings.TrimSpace(versionSuffixRe.ReplaceAllString(t, ""))
+		next := strings.TrimSpace(versionBracketRe.ReplaceAllString(versionDashRe.ReplaceAllString(t, "$1"), ""))
 		if next == t || next == "" {
 			break
 		}
@@ -167,8 +198,8 @@ func mbGet(ctx context.Context, rawURL string, v any) error {
 }
 
 func isNotFoundErr(err error) bool {
-	se, ok := err.(*httpx.StatusError)
-	return ok && se.Code == http.StatusNotFound
+	var se *httpx.StatusError
+	return errors.As(err, &se) && se.Code == http.StatusNotFound
 }
 
 // FetchTrackDepth fetches deep metadata for a track from MusicBrainz.
@@ -186,8 +217,32 @@ func FetchTrackDepth(ctx context.Context, isrc, title, artist string) (*TrackDep
 	}
 	depthCacheMu.Unlock()
 
+	// Collapse concurrent identical requests into one upstream sequence, so a
+	// burst of rooms on the same track costs one slot, not N.
+	inflightMu.Lock()
+	if c, ok := inflight[key]; ok {
+		inflightMu.Unlock()
+		select {
+		case <-c.done:
+			return c.res, c.err
+		case <-ctx.Done():
+			return newDepth(), ctx.Err()
+		}
+	}
+	c := &depthCall{done: make(chan struct{})}
+	inflight[key] = c
+	inflightMu.Unlock()
+	c.res, c.err = fetchTrackDepth(ctx, key, isrc, title, artist)
+	inflightMu.Lock()
+	delete(inflight, key)
+	inflightMu.Unlock()
+	close(c.done)
+	return c.res, c.err
+}
+
+func fetchTrackDepth(ctx context.Context, key, isrc, title, artist string) (*TrackDepth, error) {
 	var base *mbRecording
-	var upstreamErr error
+	var isrcErr, searchErr error
 
 	if isrc != "" {
 		var resp struct {
@@ -196,7 +251,7 @@ func FetchTrackDepth(ctx context.Context, isrc, title, artist string) (*TrackDep
 		u := fmt.Sprintf("%s/isrc/%s?fmt=json&inc=releases", musicbrainzURL, url.QueryEscape(strings.ToUpper(isrc)))
 		if err := mbGet(ctx, u, &resp); err != nil {
 			if !isNotFoundErr(err) {
-				upstreamErr = err
+				isrcErr = err
 			}
 		} else if len(resp.Recordings) > 0 {
 			base = &resp.Recordings[0]
@@ -210,10 +265,9 @@ func FetchTrackDepth(ctx context.Context, isrc, title, artist string) (*TrackDep
 		u := fmt.Sprintf("%s/recording?query=%s&fmt=json&limit=5", musicbrainzURL, url.QueryEscape(recordingQuery(title, artist)))
 		if err := mbGet(ctx, u, &resp); err != nil {
 			if !isNotFoundErr(err) {
-				upstreamErr = err
+				searchErr = err
 			}
 		} else {
-			upstreamErr = nil
 			for i := range resp.Recordings {
 				if resp.Recordings[i].Score >= mbMinScore {
 					base = &resp.Recordings[i]
@@ -224,9 +278,14 @@ func FetchTrackDepth(ctx context.Context, isrc, title, artist string) (*TrackDep
 	}
 
 	if base == nil {
-		if upstreamErr != nil {
-			slog.Warn("trackdepth_failed", "title", title, "artist", artist, "err", upstreamErr.Error())
-			return newDepth(), upstreamErr
+		// An ISRC outage is not erased by a clean search with no hit: the
+		// authoritative lookup never answered, so do not cache an empty result.
+		// The hub logs the returned error once.
+		if isrcErr != nil {
+			return newDepth(), isrcErr
+		}
+		if searchErr != nil {
+			return newDepth(), searchErr
 		}
 		res := newDepth()
 		storeDepth(key, res)
@@ -294,8 +353,12 @@ func earliestReleaseID(recs ...*mbRecording) string {
 func storeDepth(key string, d *TrackDepth) {
 	depthCacheMu.Lock()
 	defer depthCacheMu.Unlock()
-	if len(depthCache) >= mbDepthCacheMax {
-		depthCache = map[string]*TrackDepth{}
+	if _, exists := depthCache[key]; !exists {
+		if len(depthCache) >= mbDepthCacheMax && len(depthOrder) > 0 {
+			delete(depthCache, depthOrder[0])
+			depthOrder = depthOrder[1:]
+		}
+		depthOrder = append(depthOrder, key)
 	}
 	depthCache[key] = d
 }

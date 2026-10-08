@@ -2319,7 +2319,12 @@ func (h *Hub) enrichQuery(logEvent, title, artist string, configured bool, empty
 	result, err := fetch(ctx)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Error(logEvent, "title", title, "artist", artist, "err", err.Error())
+			// A timeout or cancel is an upstream being slow, not a bug.
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				h.logger.Warn(logEvent, "title", title, "artist", artist, "err", err.Error())
+			} else {
+				h.logger.Error(logEvent, "title", title, "artist", artist, "err", err.Error())
+			}
 		}
 		return json.Marshal(empty)
 	}

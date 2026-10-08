@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -339,5 +340,51 @@ func TestCachedLyricsFetcher_DoesNotCacheErrors(t *testing.T) {
 	f(context.Background(), "A", "T", "", 0) // cached hit
 	if calls != 2 {
 		t.Fatalf("expected 2 inner calls (error not cached, success cached), got %d", calls)
+	}
+}
+
+// /get 5xx followed by /search 404 (or empty) is inconclusive, not a miss: it
+// must error so the cache does not pin it.
+func TestFetchLyrics_GetServerErrorThenEmptySearchIsError(t *testing.T) {
+	oldGet, oldSearch := lrclibURL, lrclibSearchURL
+	defer func() { lrclibURL, lrclibSearchURL = oldGet, oldSearch }()
+
+	for name, searchHandler := range map[string]func(http.ResponseWriter){
+		"404":   func(w http.ResponseWriter) { w.WriteHeader(http.StatusNotFound) },
+		"empty": func(w http.ResponseWriter) { _, _ = w.Write([]byte(`[]`)) },
+	} {
+		h := searchHandler
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/search" {
+				h(w)
+				return
+			}
+			w.WriteHeader(http.StatusBadGateway)
+		}))
+		lrclibURL, lrclibSearchURL = srv.URL+"/api/get", srv.URL+"/api/search"
+		if _, err := FetchLyrics(context.Background(), "A", "T", "", 0); err == nil {
+			t.Errorf("get 502 + search %s must return an error", name)
+		}
+		srv.Close()
+	}
+}
+
+func TestCachedLyricsFetcher_Bounded(t *testing.T) {
+	calls := 0
+	f := NewCachedLyricsFetcher(func(ctx context.Context, artist, title, album string, d int) (*Lyrics, error) {
+		calls++
+		return &Lyrics{Source: "lrclib"}, nil
+	})
+	for i := 0; i <= lyricsCacheMax; i++ {
+		_, _ = f(context.Background(), "A", "T"+strconv.Itoa(i), "", 0)
+	}
+	before := calls
+	_, _ = f(context.Background(), "A", "T1", "", 0) // still cached
+	if calls != before {
+		t.Error("recent entry should still be cached")
+	}
+	_, _ = f(context.Background(), "A", "T0", "", 0) // evicted
+	if calls != before+1 {
+		t.Error("oldest entry should have been evicted")
 	}
 }
