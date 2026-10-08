@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { LegalPage } from '@/app/components/LegalPage';
+import { YourDataId } from '@/app/components/YourDataId';
 
 export const metadata: Metadata = {
   title: 'Política de Privacidade',
@@ -181,6 +182,9 @@ export default function PrivacyPage() {
         atribuição e votos já gravados em uma sala e a exclusão do token do Spotify dependem de
         ação manual do operador; <code>[[CONFIRMAR: procedimento de atendimento de exclusão]]</code>.
       </p>
+
+      <h2 id="excluir-seus-dados">Excluir seus dados</h2>
+      <YourDataId inline />
 
       <h2>9. Crianças e adolescentes (ECA Digital)</h2>
       <ul>

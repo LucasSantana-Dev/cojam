@@ -1,22 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, CheckIcon } from '@/app/components/icons';
-import { RoomShowcase } from '@/app/components/RoomShowcase';
+import { CheckIcon } from '@/app/components/icons';
 import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
 import { LiveCounter } from '@/app/components/LiveCounter';
-import { LogoMark } from '@/app/components/Logo';
-import { YourDataId } from '@/app/components/YourDataId';
-import { HeroDevice } from '@/app/components/HeroDevice';
-import { useDemoCycle } from '@/lib/useDemoCycle';
-import { groundPair } from '@/lib/trackColor';
-import { demoTintStyle, demoCover, DEMO_TRACKS } from '@/lib/demoTracks';
-import { GroundStack } from '@/app/components/GroundStack';
-import { useMotion } from '@/lib/motionFlags';
-import { ScrollStory } from '@/app/components/ScrollStory';
-import { SectionWave } from '@/app/components/SectionWave';
+import { R4Brand, R4Footer } from '@/app/components/R4Shell';
+import { RoomPreview } from '@/app/components/RoomPreview';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
 import { MINIMUM_AGE } from '@/lib/ageGate';
@@ -24,33 +15,13 @@ import { readGuestName, saveGuestName } from '@/lib/guestName';
 import { trackEvent } from '@/lib/telemetry';
 
 const STEPS = [
-  { n: '01', t: 'Digite seu nome e crie a sala', d: 'Sem instalar nada e sem conta. A sala nasce privada: só entra quem tem o link.' },
-  { n: '02', t: 'Mande o link', d: 'Um link coloca seus amigos na mesma sala, onde estiverem. Cada um entra com o próprio nome.' },
-  { n: '03', t: 'Toquem em sincronia', d: 'Montem a fila juntos; a sala sincroniza quem toca o quê. Cada um ouve na própria conta, no Spotify ou no YouTube.' },
+  { n: '01', t: 'Digite seu nome e crie a sala', chips: ['Grátis', 'Sem cadastro'], d: 'Sem instalar nada e sem conta. A sala nasce privada: só entra quem tem o link.' },
+  { n: '02', t: 'Mande o link', chips: ['Um link só', 'Onde estiverem'], d: 'Um link coloca seus amigos na mesma sala, onde estiverem. Cada um entra com o próprio nome.' },
+  { n: '03', t: 'Toquem em sincronia', chips: ['Spotify', 'YouTube'], d: 'Montem a fila juntos; a sala sincroniza quem toca o quê. Cada um ouve na própria conta, no Spotify ou no YouTube.' },
 ];
-
-// Protocol commands cycled in the HUD readout. The product is a protocol
-// (RoomState, RPC dispatch, version bumps) — this is its voice.
-const HUD_COMMANDS = [';sync', ';queue', ';veto'];
 
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
 const noopSubscribe = () => () => {};
-
-// ScrollTrigger registration is global; a StrictMode remount must not re-register.
-let scrollTriggerRegistered = false;
-
-// Split a headline into per-word spans wrapped in overflow:hidden masks for reveal animation.
-function Words({ text, start = 0 }: { text: string; start?: number }) {
-  return (
-    <>
-      {text.split(' ').map((w, i) => (
-        <span key={`${w}-${i}`} className="word-mask" style={{ ['--i' as string]: start + i }}>
-          <span className="word">{w}</span>
-        </span>
-      ))}
-    </>
-  );
-}
 
 // Honest, current-state answers (README platform table, CONTEXT.md trust model).
 // Keep this list true: no video, no screen share, no unsupported services.
@@ -104,7 +75,6 @@ export default function Home() {
   const [typedName, setTypedName] = useState<string | null>(null);
   const nameInput = typedName ?? savedName;
   const router = useRouter();
-  const rootRef = useRef<HTMLDivElement>(null);
   // Accounts are optional and resolved at runtime (via /env.js); the server
   // snapshot keeps SSR and the first client render in agreement.
   const accountsEnabled = useSyncExternalStore(noopSubscribe, supabaseEnabled, () => false);
@@ -138,751 +108,140 @@ export default function Home() {
     }
   };
 
-  // HUD readouts (hunt-2: the landing behaves like a room). A real session
-  // clock (honest time — never a fabricated room count) and a rotating
-  // protocol command. Both tick only when motion is allowed.
-  const [clock, setClock] = useState('00:00');
-  const [cmdIndex, setCmdIndex] = useState(0);
-  // Landing device: a demo room that changes colour with its (fictional) track.
-  const motion = useMotion();
-  // cycles slowly (8 s): the ground is the only thing allowed to drift
-  const demoIndex = useDemoCycle(8000);
-  // the pinned scroll story washes the same page ground (null when not pinned)
-  const [storyStep, setStoryStep] = useState<number | null>(null);
-  const groundIdx = storyStep !== null ? storyStep : demoIndex;
-  const groundDemo = DEMO_TRACKS[groundIdx % DEMO_TRACKS.length];
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const t0 = Date.now();
-    const clockId = setInterval(() => {
-      const s = Math.floor((Date.now() - t0) / 1000);
-      setClock(`${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`);
-    }, 1000);
-    const cmdId = setInterval(() => setCmdIndex((i) => (i + 1) % HUD_COMMANDS.length), 2200);
-    return () => {
-      clearInterval(clockId);
-      clearInterval(cmdId);
-    };
-  }, []);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const cleanups: Array<() => void> = [];
-    // React StrictMode double-mount can run the cleanup below before the
-    // dynamic import resolves; a stale init must not attach GSAP after that.
-    let cancelled = false;
-
-    // Dynamic import GSAP only client-side, after window is defined.
-    const initGsap = async () => {
-      try {
-        const gsap = await import('gsap');
-        const ScrollTrigger = (await import('gsap/ScrollTrigger')).default;
-        if (cancelled) return;
-        if (!scrollTriggerRegistered) {
-          gsap.default.registerPlugin(ScrollTrigger);
-          scrollTriggerRegistered = true;
-        }
-
-        const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-        // Use gsap.context for scoped cleanup.
-        const ctx = gsap.default.context(() => {
-          // Replace the IO-based reveals with GSAP ScrollTrigger: stagger section cards.
-          const revealElements = root.querySelectorAll('.reveal');
-
-          // Stagger group: step-cards have a 40ms stagger between each.
-          // Gated on reduced-motion — under reduce, the CSS `.reveal` rule shows
-          // them statically (no slide), per prefers-reduced-motion guidance.
-          const stepCards = root.querySelectorAll('.step-card.reveal');
-          if (stepCards.length > 0 && !prefersReduced) {
-            gsap.default.fromTo(
-              stepCards,
-              { opacity: 0, y: 28 },
-              {
-                opacity: 1,
-                y: 0,
-                duration: 0.7,
-                stagger: 0.05,
-                ease: 'cubic-bezier(0.2, 0.65, 0.2, 1)',
-                scrollTrigger: {
-                  trigger: stepCards[0],
-                  start: 'top center+=100',
-                  end: 'center center',
-                  toggleActions: 'play none none none',
-                  markers: false,
-                },
-              },
-            );
-          }
-
-          // Platform chips: stagger in individually (springy) instead of the whole
-          // row appearing as one flat block — the one spot that read less crafted.
-          const chips = root.querySelectorAll('.platform-chip');
-          if (chips.length > 0 && !prefersReduced) {
-            gsap.default.fromTo(
-              chips,
-              { opacity: 0, y: 20, scale: 0.94 },
-              {
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                duration: 0.6,
-                stagger: 0.08,
-                ease: 'back.out(1.6)',
-                scrollTrigger: {
-                  trigger: root.querySelector('.platform-row'),
-                  start: 'top center+=120',
-                  toggleActions: 'play none none none',
-                  markers: false,
-                },
-              },
-            );
-          }
-
-          // Hunt-2 "the landing is a room": backdrop word repeats sway at their
-          // fixed angles; the example room card floats. CSS vars carry the
-          // motion so the CSS rotate/tilt survives (GSAP writes inline transform).
-          if (!prefersReduced) {
-            const swayA = root.querySelector<HTMLElement>('.hero-backdrop-word--a');
-            if (swayA) {
-              gsap.default.to(swayA, {
-                '--sway': '18px',
-                duration: 9,
-                yoyo: true,
-                repeat: -1,
-                ease: 'sine.inOut',
-              });
-            }
-            const swayB = root.querySelector<HTMLElement>('.hero-backdrop-word--b');
-            if (swayB) {
-              gsap.default.to(swayB, {
-                '--sway': '-16px',
-                duration: 12,
-                yoyo: true,
-                repeat: -1,
-                ease: 'sine.inOut',
-              });
-            }
-            const roomCard = root.querySelector<HTMLElement>('.room-card');
-            if (roomCard) {
-              gsap.default.to(roomCard, {
-                '--float': '-10px',
-                duration: 3.4,
-                yoyo: true,
-                repeat: -1,
-                ease: 'sine.inOut',
-              });
-            }
-          }
-
-          // ---- Modern motion pack (created top-to-bottom in page order; all
-          // gated on reduced-motion, compositor-safe transform/opacity) ----
-          if (!prefersReduced) {
-            // 1. Scroll progress rail: the page's own instrument readout.
-            const railBar = root.querySelector<HTMLElement>('.scroll-rail__bar');
-            if (railBar) {
-              gsap.default.to(railBar, {
-                scaleX: 1,
-                ease: 'none',
-                scrollTrigger: { start: 0, end: 'max', scrub: 0.3, markers: false },
-              });
-            }
-
-            // 2. Hero exit: content drifts up and recedes as you scroll away;
-            // the giant backdrop word sinks slower, for depth.
-            const heroEl = root.querySelector<HTMLElement>('.hero');
-            const heroInner = root.querySelector<HTMLElement>('.hero-inner');
-            if (heroEl && heroInner) {
-              gsap.default.to(heroInner, {
-                y: -70,
-                opacity: 0.25,
-                ease: 'none',
-                scrollTrigger: {
-                  trigger: heroEl,
-                  start: 'top top',
-                  end: 'bottom top',
-                  scrub: true,
-                  markers: false,
-                },
-              });
-            }
-            const backdropWord = root.querySelector<HTMLElement>('.hero-backdrop-word:not(.hero-backdrop-word--a):not(.hero-backdrop-word--b)');
-            if (heroEl && backdropWord) {
-              gsap.default.to(backdropWord, {
-                y: 90,
-                ease: 'none',
-                scrollTrigger: {
-                  trigger: heroEl,
-                  start: 'top top',
-                  end: 'bottom top',
-                  scrub: true,
-                  markers: false,
-                },
-              });
-            }
-
-            // 3. Velocity-reactive marquee: GSAP takes over from the CSS loop
-            // so the ticker surges while scrolling and settles back when idle.
-            // (CSS animation stays as the no-GSAP fallback; disabled inline here.)
-            const tickerTrack = root.querySelector<HTMLElement>('.hero-ticker__track');
-            if (tickerTrack) {
-              tickerTrack.style.animation = 'none';
-              const marquee = gsap.default.to(tickerTrack, {
-                xPercent: -50,
-                duration: 36,
-                ease: 'none',
-                repeat: -1,
-              });
-              let speedTarget = 1;
-              ScrollTrigger.create({
-                start: 0,
-                end: 'max',
-                onUpdate: (self) => {
-                  speedTarget = 1 + Math.min(Math.abs(self.getVelocity()) / 250, 3.5);
-                },
-              });
-              const speedTick = () => {
-                marquee.timeScale(marquee.timeScale() + (speedTarget - marquee.timeScale()) * 0.08);
-                speedTarget += (1 - speedTarget) * 0.05;
-              };
-              gsap.default.ticker.add(speedTick);
-              cleanups.push(() => gsap.default.ticker.remove(speedTick));
-            }
-
-            // 4. Spec rules draw in across the step modules, staggered.
-            const stepRules = root.querySelectorAll('.step-rule');
-            if (stepRules.length > 0) {
-              gsap.default.to(stepRules, {
-                scaleX: 1,
-                duration: 0.7,
-                stagger: 0.12,
-                ease: 'power3.out',
-                scrollTrigger: {
-                  trigger: root.querySelector('.step-grid'),
-                  start: 'top center+=100',
-                  toggleActions: 'play none none none',
-                  markers: false,
-                },
-              });
-            }
-
-            // 5. Showcase card tilts in on approach (perspective set in CSS).
-            const tiltCard = root.querySelector<HTMLElement>('.showcase-tilt');
-            if (tiltCard) {
-              gsap.default.fromTo(
-                tiltCard,
-                { rotateX: 9, transformOrigin: 'center top' },
-                {
-                  rotateX: 0,
-                  duration: 1,
-                  ease: 'power2.out',
-                  scrollTrigger: {
-                    trigger: root.querySelector('.room-showcase'),
-                    start: 'top center+=120',
-                    toggleActions: 'play none none none',
-                    markers: false,
-                  },
-                },
-              );
-            }
-
-            // 6. Comparison rows cascade (opacity only: transforms on table
-            // rows are unreliable in some engines).
-            const vsRows = root.querySelectorAll('.vs-table tbody tr');
-            if (vsRows.length > 0) {
-              gsap.default.fromTo(
-                vsRows,
-                { opacity: 0 },
-                {
-                  opacity: 1,
-                  duration: 0.5,
-                  stagger: 0.07,
-                  ease: 'power2.out',
-                  scrollTrigger: {
-                    trigger: root.querySelector('.vs-table'),
-                    start: 'top center+=100',
-                    toggleActions: 'play none none none',
-                    markers: false,
-                  },
-                },
-              );
-            }
-          }
-
-          // Individual reveals (section titles, eyebrows, platform row, final CTA).
-          // Gated on reduced-motion — under reduce, the CSS `.reveal` rule shows
-          // them statically instead of sliding up.
-          if (!prefersReduced) {
-            revealElements.forEach((el) => {
-              // Skip step-cards + platform chips (already animated above).
-              if (el.classList.contains('step-card') || el.classList.contains('platform-chip')) return;
-
-              gsap.default.fromTo(
-                el,
-                { opacity: 0, y: 28 },
-                {
-                  opacity: 1,
-                  y: 0,
-                  duration: 0.7,
-                  ease: 'cubic-bezier(0.2, 0.65, 0.2, 1)',
-                  scrollTrigger: {
-                    trigger: el,
-                    start: 'top center+=100',
-                    end: 'center center',
-                    toggleActions: 'play none none none',
-                    markers: false,
-                  },
-                },
-              );
-            });
-          }
-
-          // Scroll scrub: RoomShowcase progress bar animates as user scrolls through showcase.
-          // One subtle, scrubbed beat: progress bar fills from 35% to 90% over the showcase scroll.
-          if (!prefersReduced) {
-            const showcase = root.querySelector<HTMLElement>('.room-showcase');
-            if (showcase) {
-              gsap.default.to(showcase, {
-                '--progress': '90%',
-                scrollTrigger: {
-                  trigger: showcase,
-                  start: 'top center+=100',
-                  end: 'bottom center',
-                  scrub: 1.2,
-                  markers: false,
-                },
-              });
-            }
-          }
-
-          // Scroll parallax: multi-layer depth for hero + sections (compositor-safe, vestibular-safe).
-          if (!prefersReduced) {
-            // Hero aurora: slower parallax (background layer, farther away).
-            const heroAurora = root.querySelector<HTMLElement>('.hero-aurora');
-            if (heroAurora) {
-              gsap.default.to(heroAurora, {
-                y: -30,
-                scrollTrigger: {
-                  trigger: root.querySelector('.hero'),
-                  start: 'top top',
-                  end: 'bottom top',
-                  scrub: 0.8,
-                  markers: false,
-                },
-              });
-            }
-
-            // Hero glow: medium parallax (midground, interactive element).
-            const heroGlow = root.querySelector<HTMLElement>('.hero-glow');
-            if (heroGlow) {
-              gsap.default.to(heroGlow, {
-                y: -60,
-                scrollTrigger: {
-                  trigger: root.querySelector('.hero'),
-                  start: 'top top',
-                  end: 'bottom top',
-                  scrub: 1,
-                  markers: false,
-                },
-              });
-            }
-
-            // Sections: staggered parallax for depth perception.
-            const sections = root.querySelectorAll('.section');
-            sections.forEach((section, i) => {
-              // #how hosts the pinned scroll story: a transformed ancestor would break
-              // position:fixed pinning, so it is the one section without parallax.
-              if (section.id === 'how') return;
-              gsap.default.to(section, {
-                y: (i + 1) * -35,
-                scrollTrigger: {
-                  trigger: section,
-                  start: 'top 85%',
-                  end: 'bottom 15%',
-                  scrub: 1,
-                  markers: false,
-                },
-              });
-            });
-          }
-        }, root);
-
-        cleanups.push(() => ctx.revert());
-
-        // Web fonts (next/font) load after this init, and their metrics reflow
-        // the hero + sections — recomputing every ScrollTrigger's start/end so
-        // reveals don't fire against the fallback-font layout. Official GSAP
-        // guidance: refresh after fonts are ready.
-        if (typeof document !== 'undefined' && document.fonts?.ready) {
-          document.fonts.ready.then(() => ScrollTrigger.refresh()).catch(() => {});
-        }
-      } catch (error) {
-        console.error('GSAP initialization failed:', error);
-        // Without GSAP, .reveal.in is never applied; the .no-gsap CSS rule
-        // forces reveals visible instead of leaving sections hidden.
-        if (!cancelled) document.documentElement.classList.add('no-gsap');
-      }
-    };
-
-    initGsap();
-
-    // Magnetic buttons — pointer devices only (touch skips it entirely).
-    const mq = window.matchMedia('(hover: hover) and (pointer: fine)');
-    if (mq.matches) {
-      root.querySelectorAll<HTMLElement>('.magnetic').forEach((el) => {
-        const onMove = (ev: PointerEvent) => {
-          const r = el.getBoundingClientRect();
-          el.style.setProperty('--mx', `${(ev.clientX - (r.left + r.width / 2)) * 0.25}px`);
-          el.style.setProperty('--my', `${(ev.clientY - (r.top + r.height / 2)) * 0.4}px`);
-        };
-        const reset = () => {
-          el.style.setProperty('--mx', '0px');
-          el.style.setProperty('--my', '0px');
-        };
-        el.addEventListener('pointermove', onMove);
-        el.addEventListener('pointerleave', reset);
-        cleanups.push(() => {
-          el.removeEventListener('pointermove', onMove);
-          el.removeEventListener('pointerleave', reset);
-        });
-      });
-    }
-
-    // Scroll-driven: hide/reveal sticky header by scroll direction. rAF-throttled; transform/opacity only.
-    // (Hero parallax is now handled by GSAP ScrollTrigger for smoother, coordinated depth layering.)
-    const header = root.querySelector<HTMLElement>('.site-header');
-    let lastY = window.scrollY;
-    let ticking = false;
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        const y = window.scrollY;
-        if (header) {
-          // Reveal near the top; otherwise hide when scrolling down.
-          header.classList.toggle('hidden', y > lastY && y > 120);
-        }
-        lastY = y;
-        ticking = false;
-      });
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    cleanups.push(() => window.removeEventListener('scroll', onScroll));
-
-    return () => {
-      cancelled = true;
-      cleanups.forEach((fn) => fn());
-    };
-  }, []);
-
-
-  // Evergreen value phrases for the hero marquee. Decorative (the parent is
-  // aria-hidden); the same claims appear in the readable sections below.
-  const tickerPhrases = [
-    'Um stream por pessoa',
-    'Só metadados, nunca uma retransmissão',
-    'Cada um na própria conta',
-    'A fila fica em sincronia',
-    'Traga o serviço que você já paga',
-  ].map((phrase, i) => (
-    <span key={i} className="ticker-item">
-      {phrase}
-      <b>·</b>
-    </span>
-  ));
-
-  const platformIcons: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
-    'YouTube': YouTubeIcon,
-    'Spotify': SpotifyIcon,
-    'Apple Music': AppleMusicIcon,
-  };
-
-  const platforms: Array<[string, boolean]> = [
-    ['YouTube', true],
-    ['Spotify', true],
-    ['Apple Music', false],
-  ];
-
+  // Round 4 (#325): near-black ground with violet ambient light, the room's
+  // panels and type. Everything is plain markup: no scroll-reveal, so every
+  // section is visible without JS or animation.
   return (
-    <div ref={rootRef} className="landing" data-bg="sintonia" data-tint="page" style={demoTintStyle(groundIdx)}>
-      <GroundStack
-        spec={{ palette: groundPair(groundDemo.tint, groundDemo.palette) }}
-        animate={motion.ground}
-        className="ground-stack--page"
-      />
-      {/* Scroll progress rail: the page's own instrument readout. */}
-      <div className="scroll-rail" aria-hidden><div className="scroll-rail__bar" /></div>
-      <header className="site-header">
-        <span className="brand"><LogoMark size={18} /> CoJam</span>
-        <nav className="site-nav" aria-label="Primary">
+    <div className="r4s">
+      <header className="r4s-bar r4s-bar--landing">
+        <R4Brand tagline />
+        <nav className="r4s-nav" aria-label="Primary">
           <a href="#how">Como funciona</a>
-          <a href="#showcase">Veja ao vivo</a>
+          <a href="#previa">Veja ao vivo</a>
           <a href="#faq">Dúvidas</a>
           <a href="https://github.com/LucasSantana-Dev/cojam" target="_blank" rel="noreferrer">
             GitHub
           </a>
           {accountsEnabled && <Link href="/account">Entrar</Link>}
         </nav>
-        <button onClick={createRoom} className="btn-primary magnetic">
+        <button type="button" onClick={createRoom} className="r4s-btn r4s-btn--sm r4s-bar__cta">
           Começar uma sala
         </button>
       </header>
-      <main id="main" className="landing-content">
-        {/* Hero */}
-        <header className="hero" data-tint="hero" data-bg="sintonia" style={{ ...demoTintStyle(groundIdx), ['--demo-cover' as string]: `url("${demoCover(demoIndex)}")` }}>
-          <div className="hero-aurora" aria-hidden />
-          <div className="hero-glow" aria-hidden />
-          <div className="hero-grid" aria-hidden />
 
-          {/* HUD corner readouts: the landing reports state like a room does.
-              Honest signals only — a real session clock and the protocol's own
-              command vocabulary; never a fabricated room count. Decorative. */}
-          <div className="hero-hud hero-hud--tl" aria-hidden>
-            <span className="hud-label">CMD</span>
-            <span className="cmd-readout">{HUD_COMMANDS[cmdIndex]}</span>
-          </div>
-          <div className="hero-hud hero-hud--tr" aria-hidden>
-            <span className="hud-label">SESSION</span>
-            <span className="hud-clock">{clock}</span>
-          </div>
-          <div className="hero-layout">
-          <div className="hero-inner">
-            <span className="eyebrow is-live">
-              <span className="eyebrow-dot" aria-hidden />
-              Sincronia ao vivo, entre serviços
-            </span>
-            <h1 className="hero-title">
-              <Words text="Seus amigos." start={0} />
-              <br />
-              <Words text="Suas plataformas." start={2} />
-              <br />
-              <Words text="Uma" start={4} />
-              {/* Signature payoff word: italic + brighter glow, wrapped in mask. */}
-              <span className="word-mask word-accent" style={{ ['--i' as string]: 5 }}>
-                <span className="word">sala.</span>
+      <main id="main" className="r4s-main r4s-main--landing">
+        <section className="r4s-hero" aria-labelledby="hero-title">
+          <div className="r4s-hero__copy">
+            <h1 id="hero-title" className="r4s-hero__title">
+              <span className="r4s-line">Seus amigos.</span>
+              <span className="r4s-line">Suas plataformas.</span>
+              <span className="r4s-line">
+                Uma <span className="r4s-accent">sala</span>.
               </span>
             </h1>
-            <p className="hero-sub">
-              A fila é de quem está na sala, não de um algoritmo. O CoJam mantém a fila
-              sincronizada enquanto cada pessoa toca na própria conta de streaming. Um stream por
-              pessoa, só metadados, nunca uma retransmissão.
+            <p className="r4s-lede r4s-hero__sub">
+              A fila é de quem está na sala, não de um algoritmo. Cada pessoa toca na própria conta
+              de streaming, e o CoJam só sincroniza os metadados.
             </p>
-            <div className="hero-cta">
-              <form onSubmit={createNamedRoom} className="hero-create">
-                <label htmlFor="hero-name" className="hero-join__label">
-                  Seu nome
-                </label>
+
+            <div className="r4s-create r4s-glow">
+              <form onSubmit={createNamedRoom} className="r4s-create__form">
+                <label htmlFor="hero-name" className="r4s-label">Seu nome</label>
                 <input
                   id="hero-name"
                   type="text"
                   autoComplete="nickname"
                   maxLength={40}
-                  placeholder="Ana"
+                  placeholder="Digite seu nome"
                   value={nameInput}
                   onChange={(e) => setTypedName(e.target.value)}
-                  className="hero-create__input"
+                  className="r4s-input"
                 />
-                <button type="submit" disabled={!nameInput.trim()} className="btn-primary magnetic">
+                <button type="submit" disabled={!nameInput.trim()} className="r4s-btn">
                   Criar sala
                 </button>
               </form>
-              <form onSubmit={joinRoom} className="hero-join">
-                <label htmlFor="hero-room-code" className="hero-join__label">
-                  Tem um código?
-                </label>
+              <form onSubmit={joinRoom} className="r4s-create__form r4s-create__form--join">
+                <label htmlFor="hero-room-code" className="r4s-label">Tem um código?</label>
                 <input
                   id="hero-room-code"
                   type="text"
                   placeholder="Código"
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value)}
-                  style={{ width: '8rem', textAlign: 'center', textTransform: 'uppercase' }}
+                  className="r4s-input r4s-input--code"
                 />
-                <button type="submit" disabled={!roomId.trim()} className="btn-ghost">
+                <button type="submit" disabled={!roomId.trim()} className="r4s-btn r4s-btn--quiet">
                   Entrar
                 </button>
               </form>
             </div>
 
-            <LiveCounter />
+            <LiveCounter pill className="r4s-livecount" />
 
-            {/* F1: when FEATURE_PUBLIC_ROOMS is on and the directory returns live
-                rooms, LiveRoomsSlot renders the live strip here; flag off, empty
-                list, or fetch failure renders nothing and the hero device (the
-                static example room, beside the copy) is the whole story. */}
-            <LiveRoomsSlot fallback={null} />
+            <p className="r4s-claims">
+              <span><CheckIcon size={13} /> Sem instalar</span>
+              <span><CheckIcon size={13} /> Sem conta para convidados</span>
+              <span><CheckIcon size={13} /> Grátis</span>
+            </p>
+          </div>
 
-            <div className="hero-claims">
-              <span className="claim"><CheckIcon size={13} /> Sem instalar</span>
-              <span className="claim"><CheckIcon size={13} /> Sem conta para convidados</span>
-              <span className="claim"><CheckIcon size={13} /> Grátis</span>
-              <span className="claim-sep" aria-hidden />
-              <span className="claim"><SpotifyIcon size={13} /> Spotify</span>
-              <span className="claim"><YouTubeIcon size={13} /> YouTube</span>
-            </div>
-            <nav className="hero-manifest" aria-label="Page sections">
-              <a href="#how">como</a>
-              <a href="#showcase">ao vivo</a>
-              <a href="#vs">por quê</a>
-              <a href="#platforms">serviços</a>
-              <a href="#faq">dúvidas</a>
-            </nav>
+          <div className="r4s-hero__side" data-testid="hero-device">
+            <RoomPreview />
           </div>
-          <HeroDevice index={demoIndex} waveAnimate={motion.ground} testId="hero-device" />
-          </div>
-          <div className="hero-ticker" aria-hidden>
-            <div className="hero-ticker__track">
-              <span>{tickerPhrases}</span>
-              <span>{tickerPhrases}</span>
-            </div>
-          </div>
-        </header>
+        </section>
 
-        {motion.wave && <SectionWave animate={!motion.reduced} beat={motion.ground} />}
-        {/* How it works */}
-        <section id="how" className="section">
-          <p className="section-eyebrow reveal">Como funciona em 3 passos</p>
-          <h2 className="section-title reveal">Uma sala, seus serviços de streaming, <em>zero troca de app.</em></h2>
-          {motion.scrollstory ? (
-            <ScrollStory steps={STEPS} waveAnimate={motion.ground} onActive={setStoryStep} />
-          ) : (
-            <div className="step-grid">
-              {STEPS.map((s) => (
-                <div key={s.n} className="step-card reveal">
-                  <i className="step-rule" aria-hidden />
-                  <span className="step-num">{s.n}]</span>
-                  <h3>{s.t}</h3>
-                  <p>{s.d}</p>
-                </div>
+        {/* F1: when FEATURE_PUBLIC_ROOMS is on and the directory returns live
+            rooms, the slot renders the live strip; flag off, empty list or fetch
+            failure renders nothing and the example room above stands alone. */}
+        <LiveRoomsSlot fallback={null} />
+
+        <section id="how" className="r4s-section" aria-labelledby="how-title">
+          <h2 id="how-title" className="r4s-h2 r4s-h2--grad">Como funciona em 3 passos</h2>
+          <ol className="r4s-steps">
+            {STEPS.map((s) => (
+              <li key={s.n} className="r4s-card r4s-step">
+                <h3 className="r4s-step__title"><span>{s.n} /</span> {s.t}</h3>
+                <p>{s.d}</p>
+                <p className="r4s-step__chips">
+                  {s.chips.map((c) => <span key={c} className="r4s-chip">{c}</span>)}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <div className="r4s-lower">
+          {/* FAQ: native details/summary (keyboard + a11y for free). The same
+              array feeds the FAQPage JSON-LD, so markup and structured data
+              cannot drift. Answers describe CoJam as it ships today. */}
+          <section id="faq" className="r4s-section r4s-faq" aria-labelledby="faq-title">
+            <h2 id="faq-title" className="r4s-h2">Dúvidas</h2>
+            <div className="r4s-faq__list">
+              {FAQ.map((item) => (
+                <details key={item.q} className="faq-item">
+                  <summary>{item.q}</summary>
+                  <p>{item.a}</p>
+                </details>
               ))}
             </div>
-          )}
-        </section>
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: faqJsonLd() }}
+            />
+          </section>
 
-        {/* Room Showcase */}
-        <section id="showcase" className="section">
-          <p className="section-eyebrow reveal">Na sala agora</p>
-          <h2 className="section-title reveal">Veja <em>em sincronia.</em></h2>
-          <p className="max-w-2xl mx-auto text-center reveal" style={{ color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
-            Veja como o CoJam mantém a fila de todo mundo em sincronia enquanto cada pessoa toca no próprio serviço.
-          </p>
-          <RoomShowcase />
-        </section>
-
-        {/* Alone vs in a room (Direction B borrow: evidence as comparison table) */}
-        <section id="vs" className="section">
-          {motion.wave && <SectionWave animate={!motion.reduced} beat={motion.ground} />}
-          <p className="section-eyebrow reveal">Por que uma sala</p>
-          <h2 className="section-title reveal">
-            Sozinho funciona. <em>Junto é outra coisa.</em>
-          </h2>
-          <table className="vs-table">
-            <thead>
-              <tr>
-                <th scope="col"><span className="sr-only">Tema</span></th>
-                <th scope="col">Ouvindo sozinho</th>
-                <th scope="col">Numa sala do CoJam</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th scope="row">Fila</th>
-                <td>Só você</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Todo mundo adiciona, todo mundo ouve</span></td>
-              </tr>
-              <tr>
-                <th scope="row">O que toca</th>
-                <td>O que o algoritmo servir</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Escolhido por quem está na sala</span></td>
-              </tr>
-              <tr>
-                <th scope="row">Convite</th>
-                <td>Mandar música por música</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Um link</span></td>
-              </tr>
-              <tr>
-                <th scope="row">Serviços</th>
-                <td>Todo mundo precisa do mesmo</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Cada um traz o seu</span></td>
-              </tr>
-              <tr>
-                <th scope="row">Sincronia</th>
-                <td>Contar &ldquo;3, 2, 1&rdquo; e apertar play</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Automática, por metadados</span></td>
-              </tr>
-              <tr>
-                <th scope="row">Preparo</th>
-                <td>Um app por pessoa</td>
-                <td><span className="vs-yes"><CheckIcon size={14} /> Uma aba do navegador</span></td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-
-        {/* Platforms */}
-        <section id="platforms" className="section" style={{ textAlign: 'center' }}>
-          <p className="section-eyebrow reveal">Funciona com</p>
-          <h2 className="section-title reveal">Traga o serviço <em>que você já paga.</em></h2>
-          <div className="platform-row">
-            {platforms.map(([name, live]) => {
-              const Icon = platformIcons[name];
-              return (
-                <span key={name} className="platform-chip reveal inline-flex items-center gap-2" data-live={live ? '1' : '0'}>
-                  <Icon size={16} />
-                  {name}
-                  {!live && <span className="platform-chip__soon">em breve</span>}
-                </span>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* FAQ: native details/summary (keyboard + a11y for free). The same
-            array feeds the FAQPage JSON-LD, so markup and structured data
-            cannot drift. Answers describe CoJam as it ships today. */}
-        <section id="faq" className="section">
-          {motion.wave && <SectionWave animate={!motion.reduced} beat={motion.ground} />}
-          <p className="section-eyebrow reveal">Perguntas frequentes</p>
-          <h2 className="section-title reveal">O que as pessoas <em>perguntam antes de criar a sala.</em></h2>
-          <div className="faq-list reveal">
-            {FAQ.map((item) => (
-              <details key={item.q} className="faq-item">
-                <summary>{item.q}</summary>
-                <p>{item.a}</p>
-              </details>
-            ))}
-          </div>
-          <script
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{ __html: faqJsonLd() }}
-          />
-        </section>
-
-        {/* Final CTA */}
-        <section className="final-cta">
-          <h2 className="section-title reveal" style={{ marginBottom: '1.5rem' }}>
-            Crie uma sala <em>em um clique.</em>
-          </h2>
-          <button onClick={createRoom} className="btn-primary magnetic reveal">
-            Começar uma sala
-          </button>
-        </section>
+          <section className="r4s-final r4s-glow" aria-labelledby="final-title">
+            <h2 id="final-title" className="r4s-final__title">Crie uma sala em um clique.</h2>
+            <button type="button" onClick={createRoom} className="r4s-btn">
+              Começar uma sala
+            </button>
+            <p className="r4s-final__note">É grátis, rápido e direto no seu navegador.</p>
+          </section>
+        </div>
       </main>
 
-      {/* LGPD erasure (#318): only for browsers that hold a guest id. */}
-      <YourDataId />
-
-      <footer className="landing-footer">
-        Built in public ·{' '}
-        <a href="https://github.com/LucasSantana-Dev/cojam" target="_blank" rel="noreferrer">
-          github.com/LucasSantana-Dev/cojam
-        </a>
-        {' · '}
-        <Link href="/privacidade">Privacidade</Link>
-        {' · '}
-        <Link href="/termos">Termos</Link>
-      </footer>
+      <R4Footer />
     </div>
   );
 }
