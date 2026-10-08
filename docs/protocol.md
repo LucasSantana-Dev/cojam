@@ -338,7 +338,7 @@ Listening service ("Ouvir no"): ConnInfo is fixed per connection and a reconnect
 
 Clients overlay it on the presence entry with that `clientId` (it wins over the ConnInfo platform). A late joiner seeds the overlay with `member.platforms` (membership-gated read, the current overrides of the room's members).
 
-Audience character ("Modo palco"): each member is drawn as one of a fixed roster of 13 characters, `characterId` 1 to 13, repeats allowed (two people may pick the same one). It is member data shown to the whole room, like the display name, and is only ever an id: never an image or a free string. `member.set_character` is membership-gated, rejects anything that is not an integer from 1 to 12, shares the chat rate limit, and never reconnects (a reconnect would run the host handoff). The server keeps it per connection, drops it on disconnect, and publishes on the room channel (no version guard, not `RoomState`):
+Audience character ("Modo palco"): each member is drawn as one of a fixed roster of 13 characters, `characterId` 1 to 13, repeats allowed (two people may pick the same one). It is member data shown to the whole room, like the display name, and is only ever an id: never an image or a free string. `member.set_character` is membership-gated, rejects anything that is not an integer from 1 to 13, shares the chat rate limit, and never reconnects (a reconnect would run the host handoff). The server keeps it per connection, drops it on disconnect, and publishes on the room channel (no version guard, not `RoomState`):
 
 ```json
 { "type": "member.character", "clientId": "...", "characterId": 7 }

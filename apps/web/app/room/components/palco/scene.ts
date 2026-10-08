@@ -104,16 +104,16 @@ export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
       load(`/palco/characters/${pad(id)}-dance-back.png`).then((i) => { if (i) out.danceBack[id] = i; }),
     ]),
   );
+  // Results come back in EXTRA_MOVES order (Promise.all keeps it), so the cycle is fixed.
   await Promise.all(
-    ids.flatMap((id) =>
-      EXTRA_MOVES.map(async (name) => {
-        const frames = await Promise.all([1, 2, 3, 4].map((n) => load(`/palco/characters/${pad(id)}-${name}-${n}.png`)));
-        if (frames.every((f): f is HTMLImageElement => f !== null)) (out.moves[id] ??= []).push(frames);
-      }),
-    ),
+    ids.map(async (id) => {
+      const loaded = await Promise.all(
+        EXTRA_MOVES.map((name) => Promise.all([1, 2, 3, 4].map((n) => load(`/palco/characters/${pad(id)}-${name}-${n}.png`)))),
+      );
+      const ok = loaded.filter((frames): frames is HTMLImageElement[] => frames.every((f) => f !== null));
+      if (ok.length) out.moves[id] = ok;
+    }),
   );
-  // Promise order is not load order: keep the move order stable (ombrinho, passinho).
-  for (const id of ids) out.moves[id]?.sort((a, b) => a[0].src.localeCompare(b[0].src));
   return out;
 }
 

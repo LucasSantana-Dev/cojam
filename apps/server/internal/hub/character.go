@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-// Audience character per member ("Modo palco"). A fixed roster of 12; repeats
+// Audience character per member ("Modo palco"). A fixed roster of 13; repeats
 // are allowed. Like the listening service, the choice is changeable without a
 // reconnect (a reconnect would run the host handoff): member.set_character
 // stores it per connection, publishes a member.character event on the room
