@@ -127,6 +127,31 @@ export const COMPACT_PAD = 6;
 // World pixels the scene draws past each side of the art (sky, ground, crowd).
 export const SIDE_EXT = 60;
 
+// Plain side extension of a plate: each row takes the most common dark colour
+// of the plate's EDGE_COLS outer columns (x0..x0+EDGE_COLS) when it covers most
+// of them, the sky or ground there. Rows where the edge is busy (towers, booths,
+// beams) carry the colour of the row above, so only flat bands reach the sides.
+export const EDGE_COLS = 8;
+const EDGE_DARK = 50;
+export function plainSideColours(px: Uint8ClampedArray, w: number, h: number, x0: number): number[] {
+  const out: number[] = [];
+  let prev = -1;
+  for (let y = 0; y < h; y++) {
+    const count = new Map<number, number>();
+    for (let x = x0; x < x0 + EDGE_COLS && x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11 >= EDGE_DARK) continue;
+      const c = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+      count.set(c, (count.get(c) ?? 0) + 1);
+    }
+    let best = -1, n = 0;
+    for (const [c, k] of count) if (k > n) { best = c; n = k; }
+    if (n * 2 > EDGE_COLS || prev < 0) prev = best;
+    out.push(prev < 0 ? 0 : prev);
+  }
+  return out;
+}
+
 export interface Framing {
   scale: number;
   // Canvas size in world pixels.

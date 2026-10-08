@@ -30,7 +30,7 @@ import {
   type Material,
   type MeshBasicMaterialParameters,
 } from 'three';
-import { DESK_BOTTOM, DESK_TOP, SIDE_EXT, SPLIT, SPRITE_H, SPRITE_W, type Framing, type Slot, type WorldDef } from '@/lib/palco';
+import { DESK_BOTTOM, DESK_TOP, EDGE_COLS, plainSideColours, SIDE_EXT, SPLIT, SPRITE_H, SPRITE_W, type Framing, type Slot, type WorldDef } from '@/lib/palco';
 import { beatAt } from '@/lib/beatClock';
 import { serverNow } from '@/lib/playbackSync';
 import { CHARACTER_COUNT } from '@/lib/characters';
@@ -140,6 +140,21 @@ function crop(img: CanvasImageSource, x: number, y: number, w: number, h: number
   c.width = w;
   c.height = h;
   c.getContext('2d')!.drawImage(img, x, y, w, h, 0, 0, w, h);
+  return c;
+}
+
+function plainSide(img: HTMLImageElement | HTMLCanvasElement, x0: number): HTMLCanvasElement {
+  const src = crop(img, 0, 0, img.width, img.height);
+  const px = src.getContext('2d')!.getImageData(0, 0, img.width, img.height).data;
+  const rows = plainSideColours(px, img.width, img.height, x0);
+  const c = document.createElement('canvas');
+  c.width = SIDE_EXT;
+  c.height = img.height;
+  const g = c.getContext('2d')!;
+  rows.forEach((col, y) => {
+    g.fillStyle = '#' + col.toString(16).padStart(6, '0');
+    g.fillRect(0, y, SIDE_EXT, 1);
+  });
   return c;
 }
 
@@ -314,9 +329,10 @@ export class PalcoScene {
 
     // Stage plate, its edge columns carried past the sides, and the ground under it.
     this.put(this.plane(texFrom(imgs.stage), W, world.H, 1), 0, 0);
-    // Past the sides: the plate's own edge, mirrored (a stretched edge column streaks).
-    this.put(this.plane(texFrom(mirrored(crop(imgs.stage, 0, 0, SIDE_EXT, world.H))), SIDE_EXT, world.H, 1), -SIDE_EXT, 0);
-    this.put(this.plane(texFrom(mirrored(crop(imgs.stage, W - SIDE_EXT, 0, SIDE_EXT, world.H))), SIDE_EXT, world.H, 1), W, 0);
+    // Past the sides: plain sky and ground only, sampled row by row from the
+    // plate's outer columns (a mirror repeated the booths and screens).
+    this.put(this.plane(texFrom(plainSide(imgs.stage, 0)), SIDE_EXT, world.H, 1), -SIDE_EXT, 0);
+    this.put(this.plane(texFrom(plainSide(imgs.stage, W - EDGE_COLS)), SIDE_EXT, world.H, 1), W, 0);
     const groundH = 700;
     const gC = document.createElement('canvas');
     gC.width = 4;
