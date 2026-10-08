@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, DRIFT_THRESHOLD_MS } from './playbackSync';
+import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, isPastEnd, PAST_END_GRACE_MS, DRIFT_THRESHOLD_MS } from './playbackSync';
 
 // Mock getClockOffsetMs to control clock offset in tests
 vi.mock('./realtime', () => ({
@@ -92,5 +92,39 @@ describe('isExpectedPositionKnown', () => {
   });
   it('is always known when paused', () => {
     expect(isExpectedPositionKnown({ ...playing, state: 'paused' }, 0)).toBe(true);
+  });
+});
+
+describe('isPastEnd (stale transport past the track end)', () => {
+  const dur = 223_000;
+  const playing = (positionMs: number, updatedAtServerMs: number) =>
+    ({ state: 'playing' as const, positionMs, updatedAtServerMs });
+
+  it('is true for the prod case: position 0 stamped 62 minutes ago on a 3:43 track', () => {
+    const now = 10_000_000;
+    const t = playing(0, now - 62 * 60 * 1000);
+    expect(computeExpectedPosition(t, now)).toBeGreaterThan(dur);
+    expect(isPastEnd(t, now, dur)).toBe(true);
+  });
+
+  it('is false inside the track and inside the grace window', () => {
+    const now = 10_000_000;
+    expect(isPastEnd(playing(0, now - 60_000), now, dur)).toBe(false);
+    expect(isPastEnd(playing(0, now - dur - PAST_END_GRACE_MS + 1), now, dur)).toBe(false);
+    expect(isPastEnd(playing(0, now - dur - PAST_END_GRACE_MS), now, dur)).toBe(true);
+  });
+
+  it('is false for paused, stopped, missing transport and unknown duration', () => {
+    const now = 10_000_000;
+    const old = now - 3_600_000;
+    expect(isPastEnd({ state: 'paused', positionMs: 0, updatedAtServerMs: old }, now, dur)).toBe(false);
+    expect(isPastEnd({ state: 'stopped', positionMs: 0, updatedAtServerMs: old }, now, dur)).toBe(false);
+    expect(isPastEnd(undefined, now, dur)).toBe(false);
+    expect(isPastEnd(playing(0, old), now, undefined)).toBe(false);
+    expect(isPastEnd(playing(0, old), now, 0)).toBe(false);
+  });
+
+  it('is false when the clock is wrong (stamp in the future): position unknown, not past the end', () => {
+    expect(isPastEnd(playing(500_000, 10_000_000 + 60_000), 10_000_000, dur)).toBe(false);
   });
 });

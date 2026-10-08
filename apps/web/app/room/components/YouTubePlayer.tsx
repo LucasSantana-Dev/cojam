@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useStore, nowPlayingAdvance } from '@/lib/realtime';
+import { useStore, nowPlayingAdvance, isPermissionDeniedError } from '@/lib/realtime';
 import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
 import { computeExpectedPosition, isExpectedPositionKnown, serverNow } from '@/lib/playbackSync';
@@ -255,7 +255,10 @@ export function YouTubePlayer({
             // PLAYING: playback actually started, clear any prior failure.
             if (event.data === 1) onPlayErrorRef.current?.(null);
             if (event.data === 0 && nowPlayingIdRef.current) {
-              nowPlayingAdvance(roomId, nowPlayingIdRef.current);
+              // Advance is control-gated on the server: a listener's rejection is expected.
+              nowPlayingAdvance(roomId, nowPlayingIdRef.current).catch((err) => {
+                if (!isPermissionDeniedError(err)) console.warn('[youtube] advance at track end failed:', err);
+              });
             }
           },
           onError: (event: { data: number }) => {

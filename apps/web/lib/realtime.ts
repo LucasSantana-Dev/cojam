@@ -781,6 +781,13 @@ export function isRateLimitError(err: unknown): boolean {
   return /too many requests|rate.?limit/i.test(rawRpcMessage(err));
 }
 
+// isPermissionDeniedError reports whether an RPC rejection is the server's
+// control gate ("permission denied"): a listener's ENDED advance hits it by
+// design, so it is ignored while any other failure is worth a log line.
+export function isPermissionDeniedError(err: unknown): boolean {
+  return (err as { code?: number } | null)?.code === 103 || /permission denied/i.test(rawRpcMessage(err));
+}
+
 // isTrackNotFoundError reports whether an RPC rejection is the server's
 // code-400 UserError for a track that is no longer in the queue (#211), so
 // the UI can treat "already gone" as the desired end state instead of a
