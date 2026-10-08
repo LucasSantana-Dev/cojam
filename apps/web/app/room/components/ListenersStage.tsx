@@ -128,8 +128,9 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
   // Nothing to show when presence is disabled or nobody is connected
   if (!f.presence || members.length === 0) return null;
 
-  const handleKick = (member: { clientId: string; name: string }) => {
-    kickMember(roomId, member.clientId).catch((err) => {
+  const handleKick = (member: { clientId: string; clientIds?: string[]; name: string }) => {
+    // One person can hold several connections; room.kick takes one clientId.
+    Promise.all((member.clientIds ?? [member.clientId]).map((id) => kickMember(roomId, id))).catch((err) => {
       console.warn('[moderation] kick failed:', rpcErrorMessage(err, 'unknown error'));
     });
   };
@@ -150,7 +151,7 @@ export function ListenersStage({ roomId, canControl = false, running, hostUserId
           const label = memberLabel(member, nameSuffixes);
           const Icon = member.platform ? platformIcon[member.platform] : null;
           const isHost = Boolean(hostUserId && member.userId && member.userId === hostUserId);
-          const mine = member.clientId === myClientId;
+          const mine = (member.clientIds ?? [member.clientId]).includes(myClientId);
           return (
             <div key={member.clientId} className="r4-ls__item">
               {i > 0 && (
