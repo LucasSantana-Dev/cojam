@@ -331,6 +331,28 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
   }), [showEmote]);
   const [emoteCooling, setEmoteCooling] = useState(false);
   const [reactOpen, setReactOpen] = useState(false);
+  const reactWrapRef = useRef<HTMLDivElement>(null);
+  const reactToggleRef = useRef<HTMLButtonElement>(null);
+  // The phone Reagir popup closes on Escape (focus back on its toggle) and on
+  // a pointer press outside it.
+  useEffect(() => {
+    if (!reactOpen) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      setReactOpen(false);
+      reactToggleRef.current?.focus();
+    };
+    const onDown = (ev: PointerEvent) => {
+      if (ev.target instanceof Node && reactWrapRef.current?.contains(ev.target)) return;
+      setReactOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+    };
+  }, [reactOpen]);
   const react = (emote: Emote) => {
     if (emoteCooling) return;
     const me = members.find((m) => isMe(m, clientId));
@@ -568,8 +590,9 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
               {likeCount > 0 && <span className="palco__likes" aria-label={`${likeCount} curtidas`}>{likeCount}</span>}
             </button>
             {kind === 'phone' ? (
-              <div className="palco__react">
+              <div className="palco__react" ref={reactWrapRef}>
                 <button
+                  ref={reactToggleRef}
                   type="button"
                   className="palco__toggle palco__react-open"
                   aria-expanded={reactOpen}

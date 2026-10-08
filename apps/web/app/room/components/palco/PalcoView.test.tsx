@@ -222,5 +222,34 @@ describe('PalcoView', () => {
       vi.useRealTimers();
     }
   });
-});
 
+  describe('Reagir popup on phones', () => {
+    const size = { w: window.innerWidth, h: window.innerHeight };
+    beforeEach(() => {
+      Object.assign(window, { innerWidth: 390, innerHeight: 844 });
+    });
+    afterAll(() => {
+      Object.assign(window, { innerWidth: size.w, innerHeight: size.h });
+    });
+
+    it('closes on Escape and returns focus to the toggle', async () => {
+      await mount();
+      const toggle = screen.getByRole('button', { name: 'Reagir' });
+      fireEvent.click(toggle);
+      expect(screen.getByRole('group', { name: 'Reações' })).toBeTruthy();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByRole('group', { name: 'Reações' })).toBeNull();
+      expect(document.activeElement).toBe(toggle);
+    });
+
+    it('closes on a pointerdown outside, stays open for one inside', async () => {
+      await mount();
+      fireEvent.click(screen.getByRole('button', { name: 'Reagir' }));
+      const group = screen.getByRole('group', { name: 'Reações' });
+      fireEvent.pointerDown(group);
+      expect(screen.queryByRole('group', { name: 'Reações' })).toBeTruthy();
+      fireEvent.pointerDown(document.body);
+      expect(screen.queryByRole('group', { name: 'Reações' })).toBeNull();
+    });
+  });
+});
