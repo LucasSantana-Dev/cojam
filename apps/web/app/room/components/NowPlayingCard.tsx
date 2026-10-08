@@ -95,6 +95,9 @@ interface NowPlayingCardProps {
   onOpenDepth: () => void;
   onOpenLyrics: () => void;
   onOpenEnrichment: () => void;
+  // The YouTube player, when YouTube is the active source: it takes the cover
+  // slot (visible, square, nothing over it, as the YouTube API terms require).
+  media?: ReactNode;
   // Pre-join preview: the same card, nothing to operate.
   preview?: boolean;
 }
@@ -119,6 +122,7 @@ export function NowPlayingCard({
   onOpenDepth,
   onOpenLyrics,
   onOpenEnrichment,
+  media,
   preview = false,
 }: NowPlayingCardProps) {
   const f = useRuntimeFeatures();
@@ -171,8 +175,10 @@ export function NowPlayingCard({
   return (
     <section className={`r4-card r4-now${track && isPlaying ? ' is-live' : ''}`} aria-label="Tocando agora" data-state={track ? state : 'empty'}>
       <div className="r4-now__grid">
-        <div className="r4-cover" aria-hidden>
-          {track && artwork && coverLevel < 2 && state === 'ok' ? (
+        <div className={`r4-cover${media && ok ? ' r4-cover--media' : ''}`} aria-hidden={media && ok ? undefined : true}>
+          {media && ok ? (
+            <div className="r4-cover__media">{media}</div>
+          ) : track && artwork && coverLevel < 2 && state === 'ok' ? (
             <>
               {/* the cover's own soft halo: the same image, blurred behind it */}
               {/* eslint-disable-next-line @next/next/no-img-element -- decorative copy of the cover */}

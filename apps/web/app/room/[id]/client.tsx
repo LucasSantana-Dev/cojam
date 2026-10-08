@@ -492,19 +492,17 @@ export function RoomClient({ roomId }: { roomId: string }) {
     </>
   );
 
-  // The YouTube iframe of an audio track has no place in the room's layout (the
-  // cover is the picture). It stays mounted and laid out, just out of sight, the
-  // way the phone layout already keeps it (see .video-panel-keep).
+  // The YouTube player of an audio track takes the cover slot of the now-playing
+  // card: visible, square, nothing overlaid (YouTube API terms).
   const youtubeAudio =
     !fixture && !videoMode && f.youtube && activeSource === 'youtube' ? (
-      <div className="r4-yt-dock" aria-hidden="true">
-        <YouTubePlayer
-          roomId={roomId}
-          onPlayerReady={setActivePlayer}
-          onPlayerGone={() => setActivePlayer(null)}
-          onPlayError={setPlayFailedId}
-        />
-      </div>
+      <YouTubePlayer
+        roomId={roomId}
+        fill
+        onPlayerReady={setActivePlayer}
+        onPlayerGone={() => setActivePlayer(null)}
+        onPlayError={setPlayFailedId}
+      />
     ) : null;
 
   const pickerProps = {
@@ -548,6 +546,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       onOpenDepth={() => setDrawer('depth')}
       onOpenLyrics={() => setDrawer('lyrics')}
       onOpenEnrichment={() => setDrawer('enrichment')}
+      media={youtubeAudio}
     />
   );
 
@@ -742,8 +741,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
           </>
         )}
       </main>
-
-      {youtubeAudio}
 
       {/* Track Depth Panel */}
       <TrackDepthPanel
