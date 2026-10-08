@@ -4585,6 +4585,121 @@ input:focus, textarea:focus, select:focus {
   border-bottom: 0;
   border-top-color: var(--palco-text);
 }
+/* "A seguir": an LED setlist board under the player (lib/palco boardRect sets
+   the box; BOARD_PAD, BOARD_HEAD and BOARD_ROW there match these sizes). */
+.palco-board {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 3px 8px;
+  overflow: hidden;
+  border: 2px solid oklch(0.32 0.09 296);
+  border-radius: 2px;
+  background-color: oklch(0.11 0.025 292);
+  background-image: radial-gradient(oklch(1 0 0 / 0.06) 0.6px, transparent 0.8px);
+  background-size: 3px 3px;
+  box-shadow: 0 2px 0 0 oklch(0 0 0 / 0.55), inset 0 0 0 1px oklch(0 0 0 / 0.6);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+.palco-board__head {
+  margin: 0;
+  height: 16px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  color: oklch(0.76 0.15 298);
+  text-shadow: 0 0 4px oklch(0.6 0.2 298 / 0.8);
+}
+.palco-board__list { margin: 0; padding: 0; list-style: none; }
+.palco-board__row {
+  display: flex;
+  gap: 0.4em;
+  height: 15px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 15px;
+  white-space: nowrap;
+  color: oklch(0.93 0.05 300);
+  text-shadow: 0 0 3px oklch(0.62 0.2 298 / 0.75);
+}
+.palco-board__n { flex: none; color: oklch(0.76 0.15 298); }
+.palco-board__t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.palco-board__a { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: oklch(0.78 0.04 300); }
+/* Emotes (reaction.emote): a pixel bubble over the sender, popping, floating
+   up --float (10 native px) and blinking out; static under reduced motion. */
+.palco-emote { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; }
+.palco-emote__box {
+  position: relative;
+  display: block;
+  padding: 4px;
+  border-radius: 4px;
+  background: var(--palco-text);
+  box-shadow: 0 2px 0 0 oklch(0 0 0 / 0.55);
+  animation: palco-emote 1.5s steps(1, end) forwards, palco-emote-rise 1.5s linear forwards;
+}
+.palco-emote__box::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  margin-left: -5px;
+  border: 5px solid transparent;
+  border-bottom: 0;
+  border-top-color: var(--palco-text);
+}
+.palco-emote img, .palco__emote img { display: block; width: 32px; height: 32px; image-rendering: pixelated; }
+@keyframes palco-emote {
+  0% { scale: 0.4; }
+  6% { scale: 1.2; }
+  12% { scale: 1; }
+  80% { opacity: 1; }
+  84% { opacity: 0; }
+  88% { opacity: 1; }
+  92% { opacity: 0; }
+  96% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes palco-emote-rise {
+  from { translate: 0 0; }
+  to { translate: 0 var(--float, -10px); }
+}
+.palco[data-motion="off"] .palco-emote__box { animation: none; }
+.palco__emotes { display: flex; align-items: center; gap: 0.125rem; }
+.palco__emote {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0.6rem;
+  background: none;
+  cursor: pointer;
+}
+.palco__emote:hover:not(:disabled) { background: oklch(1 0 0 / 0.08); }
+.palco__emote:disabled { opacity: 0.5; cursor: not-allowed; }
+.palco__emote[aria-disabled="true"] { opacity: 0.6; }
+.palco__emote:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.palco__react { position: relative; }
+.palco__react-open[aria-expanded="true"] { background: var(--r4-panel-2); }
+.palco__emotes--pop {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.5rem);
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  gap: 0.25rem;
+  padding: 0.375rem;
+  border-radius: 0.8rem;
+  background: var(--r4-panel);
+  border: 1px solid var(--r4-line);
+  box-shadow: 0 6px 18px oklch(0 0 0 / 0.45);
+}
 .palco__more {
   position: absolute;
   right: 0.5rem;
@@ -4631,6 +4746,25 @@ input:focus, textarea:focus, select:focus {
 .palco__toggle { background: none; border: 1px solid var(--r4-line); color: var(--color-text-primary); }
 .palco__toggle[aria-pressed="false"] { color: var(--color-text-secondary); text-decoration: line-through; }
 .palco__toggle:disabled { opacity: 0.6; cursor: not-allowed; }
+.palco__ctrls { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
+.palco__ctrl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 0.6rem;
+  background: none;
+  border: 1px solid var(--r4-line);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.palco__ctrl:hover:not(:disabled) { background: oklch(1 0 0 / 0.08); }
+.palco__ctrl:disabled { opacity: 0.5; cursor: not-allowed; }
+.palco__ctrl:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.palco__ctrls .r4-vol { margin-left: 0; }
+.palco__ctrls .r4-vol__mute { width: 44px; height: 44px; }
 .palco__tabs { display: flex; gap: 0.25rem; padding: 0.25rem; border-radius: 0.8rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); }
 .palco__tab { background: transparent; border: 0; color: var(--color-text-secondary); white-space: nowrap; }
 .palco__tab[aria-selected="true"] { background: var(--color-accent); color: var(--color-surface-0); }
@@ -4656,6 +4790,9 @@ input:focus, textarea:focus, select:focus {
 .palco[data-world="phone"] .palco__hud { padding: 0.5rem 0.75rem; gap: 0.5rem; }
 .palco[data-world="phone"] .palco__acts { flex: 1 1 auto; }
 .palco[data-world="phone"] .palco__tabs { flex: 1 1 100%; }
+.palco[data-world="phone"] .palco__ctrls { flex: 1 1 100%; }
+.palco[data-world="phone"] .palco__ctrls .r4-vol { flex: 1 1 auto; }
+.palco[data-world="phone"] .palco__ctrls .r4-vol__pop { flex: 1 1 auto; }
 .palco[data-world="phone"] .palco__tab { flex: 1; padding: 0 0.5rem; }
 .palco[data-world="phone"] .palco__panel { flex: 1; width: auto; min-width: 0; padding: 0.5rem; border-left: 0; border-top: 1px solid var(--r4-line); }
 .palco[data-world="phone"][data-panel="queue"] .palco__acts,
@@ -4663,5 +4800,5 @@ input:focus, textarea:focus, select:focus {
 .palco[data-world="phone"][data-panel="queue"] .palco__bar,
 .palco[data-world="phone"][data-panel="chat"] .palco__bar { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  .palco__like, .palco__toggle, .palco__tab { transition: none; }
+  .palco__like, .palco__toggle, .palco__tab, .palco__ctrl { transition: none; }
 }

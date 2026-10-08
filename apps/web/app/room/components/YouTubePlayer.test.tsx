@@ -23,7 +23,15 @@ type YTEvents = {
 let capturedEvents: YTEvents | null = null;
 const loadCalls: unknown[] = [];
 
+const muteCalls: string[] = [];
+
 class FakeYTPlayer {
+  mute() {
+    muteCalls.push('mute');
+  }
+  setVolume(v: number) {
+    muteCalls.push(`volume ${v}`);
+  }
   playVideo() {}
   pauseVideo() {}
   seekTo() {}
@@ -102,6 +110,16 @@ describe('YouTubePlayer onError wiring', () => {
     render(<YouTubePlayer roomId="r1" fill />);
     act(() => capturedEvents!.onStateChange!({ data: 0 }));
     expect(realtimeMocks.nowPlayingAdvance).toHaveBeenCalledWith('r1', 't1');
+  });
+
+  it('a muted palco video mutes itself and never advances the room at its end (decision 8)', () => {
+    realtimeMocks.nowPlayingAdvance.mockClear();
+    muteCalls.length = 0;
+    render(<YouTubePlayer roomId="r1" fill muted />);
+    act(() => capturedEvents!.onReady!());
+    expect(muteCalls).toEqual(['mute', 'volume 0']);
+    act(() => capturedEvents!.onStateChange!({ data: 0 }));
+    expect(realtimeMocks.nowPlayingAdvance).not.toHaveBeenCalled();
   });
 
   it('clears the failure when playback actually starts', () => {

@@ -50,7 +50,11 @@ vi.mock('@/lib/useDriftCorrection', () => ({
 // logic under test lives in the room, so stand in for them.
 vi.mock('../components/SpotifyPlayer', () => ({
   SpotifyPlayer: (props: { onAuthorized: (v: boolean) => void; onPlayerReady?: (p: unknown) => void; active?: boolean }) => {
-    h.spotify = props;
+    // Published at commit, not render: the room's activeSourceRef is updated by
+    // an effect, so a render-time handle can be used one effect too early.
+    useEffect(() => {
+      h.spotify = props;
+    });
     const { onAuthorized } = props;
     useEffect(() => {
       onAuthorized(true);
@@ -60,7 +64,9 @@ vi.mock('../components/SpotifyPlayer', () => ({
 }));
 vi.mock('../components/YouTubePlayer', () => ({
   YouTubePlayer: (props: { onPlayerGone?: () => void; onPlayerReady?: (p: unknown) => void }) => {
-    h.youtube = props;
+    useEffect(() => {
+      h.youtube = props;
+    });
     // Like the real player: keep the latest callback in a ref, call it on unmount only.
     const gone = useRef(props.onPlayerGone);
     useEffect(() => {
@@ -125,8 +131,10 @@ describe('RoomClient switching "Ouvir no" between live players', () => {
 
     // auto + connected Spotify plays Spotify
     await waitFor(() => expect(h.spotify?.active).toBe(true));
-    act(() => h.spotify!.onPlayerReady!(spotify));
-    expect(lastDrift()).toBe(spotify);
+    await waitFor(() => {
+      act(() => h.spotify!.onPlayerReady!(spotify));
+      expect(lastDrift()).toBe(spotify);
+    });
 
     // YouTube chosen: the Spotify adapter stops driving, the Spotify SDK is told it is inactive
     act(() => setListeningService('youtube'));

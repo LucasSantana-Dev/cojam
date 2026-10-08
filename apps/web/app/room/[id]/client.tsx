@@ -40,6 +40,7 @@ import { LyricsPanel } from '../components/LyricsPanel';
 import { EnrichmentPanel } from '../components/EnrichmentPanel';
 import { NowPlayingCard } from '../components/NowPlayingCard';
 import { VolumeControl } from '../components/VolumeControl';
+import { useVisualSync } from '@/lib/useVisualSync';
 import { useApplyVolume } from '@/lib/volume';
 import { ListeningServicePicker } from '../components/ListeningServicePicker';
 import { Stage } from '../components/Stage';
@@ -322,6 +323,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // U4: Drift correction loop (gated by the sync feature flag). The hook keys
   // off the meaningful transport fields, not publication object identity (#177).
   useDriftCorrection(activePlayer, f.sync, hostControl);
+
+  // Modo palco, decision 8: a Spotify listener sees the room's YouTube video on
+  // the stage screen, muted and kept in step; Spotify still plays the audio.
+  // Palco only, and only when the track has a YouTube match (else the cover).
+  const [visualPlayer, setVisualPlayer] = useState<IPlayer | null>(null);
+  // A video that cannot embed falls back to the cover, not a black frame.
+  const [visualFailedId, setVisualFailedId] = useState<string | null>(null);
+  const mutedVideo =
+    palco && nowPlaying?.id !== visualFailedId && !fixture && f.youtube && activeSource === 'spotify' && nowPlaying?.kind !== 'video' && Boolean(nowPlaying?.sources.youtube?.videoId);
+  useVisualSync(mutedVideo ? visualPlayer : null);
 
   // Auto-advance at track end for Spotify (YouTube also advances via its
   // native onStateChange; the server dedups through AdvanceAfter). onEnded has
@@ -608,7 +619,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
       onOpenDepth={() => setDrawer('depth')}
       onOpenLyrics={() => setDrawer('lyrics')}
       onOpenEnrichment={() => setDrawer('enrichment')}
-      media={fixtureYt ? <div id="youtube-player" className="r4-fixture-yt" /> : youtubeAudio}
+      media={
+        fixtureYt ? (
+          <div id="youtube-player" className="r4-fixture-yt" />
+        ) : (
+          youtubeAudio ??
+          (mutedVideo ? <YouTubePlayer roomId={roomId} fill muted onMutedError={setVisualFailedId} onPlayerReady={setVisualPlayer} onPlayerGone={() => setVisualPlayer(null)} /> : null)
+        )
+      }
     />
   );
 
@@ -720,7 +738,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
               className="r4-palco-toggle"
               aria-pressed={palco}
               aria-label="Modo palco"
-              title="Modo palco. Por enquanto, pausar e pular ficam na visão normal."
               onClick={() => setPalcoView(!palco)}
             >
               <span className="r4-palco-toggle__long" aria-hidden="true">Modo palco</span>
@@ -762,8 +779,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
             queue={queuePanel}
             chat={chatPanel}
             queueCount={store.state?.queue.filter((t) => t.id !== store.state?.nowPlayingId).length ?? 0}
-            hasPlayer={videoMode || Boolean(youtubeAudio) || fixtureYt}
+            hasPlayer={videoMode || Boolean(youtubeAudio) || mutedVideo || fixtureYt}
             artwork={artwork}
+            canControl={hostControl}
+            activePlayer={activePlayer}
+            volume={<VolumeControl />}
+            servicePicker={servicePicker}
           />
         )}
         {/* Switching between a video and an audio track changes layouts and remounts

@@ -28,12 +28,29 @@ const fake = vi.hoisted(() => {
     woot(k: string) { this.woots.push(k); }
     setFrameListener(cb: ((out: FrameOut) => void) | null) { this.listener = cb; }
   }
-  return { FakeScene, wootListeners: [] as Array<(id: string) => void>, sendWoot: vi.fn(async () => {}) };
+  return {
+    FakeScene,
+    wootListeners: [] as Array<(id: string) => void>,
+    sendWoot: vi.fn(async () => {}),
+    sendEmote: vi.fn(async () => {}),
+    emoteListeners: [] as Array<(id: string, e: string) => void>,
+    advance: vi.fn(async () => {}),
+    pause: vi.fn(async () => {}),
+    play: vi.fn(async () => {}),
+  };
 });
 vi.mock('./scene', () => ({ PalcoScene: fake.FakeScene, loadSceneImages: async () => ({}) }));
 vi.mock('@/lib/realtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/realtime')>()),
   sendWoot: fake.sendWoot,
+  nowPlayingAdvance: fake.advance,
+  sendEmote: fake.sendEmote,
+  onEmote: (cb: (id: string, e: string) => void) => {
+    fake.emoteListeners.push(cb);
+    return () => { fake.emoteListeners.splice(fake.emoteListeners.indexOf(cb), 1); };
+  },
+  transportPause: fake.pause,
+  transportPlay: fake.play,
   onWoot: (cb: (id: string) => void) => {
     fake.wootListeners.push(cb);
     return () => { fake.wootListeners.splice(fake.wootListeners.indexOf(cb), 1); };
@@ -83,13 +100,18 @@ beforeEach(() => {
   fake.FakeScene.last = null;
   fake.wootListeners.length = 0;
   fake.sendWoot.mockClear();
+  fake.sendEmote.mockClear();
+  fake.emoteListeners.length = 0;
+  fake.advance.mockClear();
+  fake.pause.mockClear();
+  fake.play.mockClear();
   useStore.setState({ state: state(), clientId: 'c-lucas', chat: [], nameSuffixes: {} });
   useStore.getState().setMembers(MEMBERS);
   useStore.getState().setCharacterOverride('c-lucas', 5);
 });
 
-async function mount() {
-  render(<PalcoView {...props} />);
+async function mount(extra: Partial<React.ComponentProps<typeof PalcoView>> = {}) {
+  render(<PalcoView {...props} {...extra} />);
   await waitFor(() => expect(fake.FakeScene.last).not.toBeNull());
   return fake.FakeScene.last!;
 }
@@ -149,5 +171,85 @@ describe('PalcoView', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Chat' }));
     expect(screen.queryByTestId('queue-slot')).toBeNull();
     expect(screen.getByTestId('chat-slot')).toBeTruthy();
+  });
+
+  it('puts the volume, the service picker and, for who controls, pause and skip in the HUD', async () => {
+    const player = { getCurrentPositionMs: async () => 4200 } as unknown as import('@/lib/playerInterface').IPlayer;
+    await mount({ canControl: true, activePlayer: player, volume: <input aria-label="Volume" />, servicePicker: <div role="group" aria-label="Ouvir no" /> });
+    const hud = screen.getByTestId('palco-hud');
+    const ctrls = screen.getByRole('group', { name: 'Controles da música' });
+    expect(hud.contains(ctrls)).toBe(true);
+    expect(screen.getByLabelText('Volume')).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Ouvir no' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Próxima faixa' }));
+    expect(fake.advance).toHaveBeenCalledWith('R1', 't1');
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar' }));
+    await waitFor(() => expect(fake.pause).toHaveBeenCalledWith('R1', 4200));
+  });
+
+  it('shows no transport to who cannot control', async () => {
+    await mount({ canControl: false, volume: <input aria-label="Volume" /> });
+    expect(screen.queryByRole('button', { name: 'Próxima faixa' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pausar' })).toBeNull();
+    expect(screen.getByLabelText('Volume')).toBeTruthy();
+  });
+
+  it('lists the next tracks on the "A seguir" board and hides it when nothing is queued', async () => {
+    await mount();
+    const board = screen.getByRole('region', { name: 'A seguir' });
+    expect([...board.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['1Faixa t2 · Artista', '2Faixa t3 · Artista']);
+    act(() => useStore.getState().setState({ ...state(undefined, 2), queue: [track('t1', 'Bia', 'u-bia')] }));
+    expect(screen.queryByRole('region', { name: 'A seguir' })).toBeNull();
+  });
+
+  it('sends an emote from the reaction bar and shows emotes over the sender, ours once', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await mount();
+      const bar = screen.getByRole('group', { name: 'Reações' });
+      expect([...bar.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Amei', 'Fogo', 'Rindo', 'Palmas', 'Uau', 'Cantando']);
+      fireEvent.click(screen.getByRole('button', { name: 'Fogo' }));
+      expect(fake.sendEmote).toHaveBeenCalledWith('R1', 'fogo');
+      // Cooling down: a second press within 600 ms sends nothing.
+      fireEvent.click(screen.getByRole('button', { name: 'Uau' }));
+      expect(fake.sendEmote).toHaveBeenCalledTimes(1);
+      act(() => fake.emoteListeners.forEach((l) => l('c-lucas', 'fogo'))); // our own echo
+      act(() => fake.emoteListeners.forEach((l) => l('c-dani', 'palmas')));
+      expect([...document.querySelectorAll('.palco-emote')].map((el) => el.getAttribute('data-emote'))).toEqual(['fogo', 'palmas']);
+      act(() => { vi.advanceTimersByTime(1600); });
+      expect(document.querySelectorAll('.palco-emote')).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe('Reagir popup on phones', () => {
+    const size = { w: window.innerWidth, h: window.innerHeight };
+    beforeEach(() => {
+      Object.assign(window, { innerWidth: 390, innerHeight: 844 });
+    });
+    afterAll(() => {
+      Object.assign(window, { innerWidth: size.w, innerHeight: size.h });
+    });
+
+    it('closes on Escape and returns focus to the toggle', async () => {
+      await mount();
+      const toggle = screen.getByRole('button', { name: 'Reagir' });
+      fireEvent.click(toggle);
+      expect(screen.getByRole('group', { name: 'Reações' })).toBeTruthy();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByRole('group', { name: 'Reações' })).toBeNull();
+      expect(document.activeElement).toBe(toggle);
+    });
+
+    it('closes on a pointerdown outside, stays open for one inside', async () => {
+      await mount();
+      fireEvent.click(screen.getByRole('button', { name: 'Reagir' }));
+      const group = screen.getByRole('group', { name: 'Reações' });
+      fireEvent.pointerDown(group);
+      expect(screen.queryByRole('group', { name: 'Reações' })).toBeTruthy();
+      fireEvent.pointerDown(document.body);
+      expect(screen.queryByRole('group', { name: 'Reações' })).toBeNull();
+    });
   });
 });

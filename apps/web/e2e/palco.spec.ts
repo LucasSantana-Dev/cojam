@@ -9,6 +9,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 const FIXTURE = '/room/SALABIA?fixture=room&yt=1';
 const SHOTS = process.env.PALCO_SHOTS_DIR;
+const SHOT_PREFIX = process.env.PALCO_SHOT_PREFIX ?? 'palco';
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -24,7 +25,7 @@ async function playerBox(page: Page): Promise<Box> {
 async function overlayBoxes(page: Page): Promise<Array<{ what: string; box: Box }>> {
   return page.evaluate(() => {
     const out: Array<{ what: string; box: { x: number; y: number; width: number; height: number } }> = [];
-    const sel = '.palco-tag, .palco-bubble, .palco__more, [data-testid="palco-hud"], .palco__panel, .room-header';
+    const sel = '.palco-tag, .palco-bubble, .palco__more, .palco-board, .palco-emote, .palco__emotes--pop, [data-testid="palco-hud"], .palco__panel, .room-header';
     document.querySelectorAll<HTMLElement>(sel).forEach((el) => {
       const cs = getComputedStyle(el);
       if (cs.visibility === 'hidden' || cs.display === 'none') return;
@@ -102,11 +103,100 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
           // The Next dev indicator is not part of the page.
           await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
           const name = typeof tab === 'string' ? tab.toLowerCase() : 'fila';
-          await page.screenshot({ path: `${SHOTS}/palco-${vp.width}x${vp.height}-${name}.png` });
+          await page.screenshot({ path: `${SHOTS}/${SHOT_PREFIX}-${vp.width}x${vp.height}-${name}.png` });
         }
       }
       // Never two copies of the queue or the chat.
       await expect(page.getByTestId('queue-panel')).toHaveCount(0);
+    });
+
+    test('the HUD carries volume, Ouvir no and the host transport, 44 px targets, inside the view', async ({ page }) => {
+      await openPalco(page);
+      const hud = page.getByTestId('palco-hud');
+      const ctrls = hud.getByRole('group', { name: 'Controles da música' });
+      await expect(ctrls).toBeVisible();
+      await expect(ctrls.getByRole('slider', { name: 'Volume' })).toBeVisible();
+      await expect(ctrls.getByRole('button', { name: 'Silenciar' })).toBeVisible();
+      // The fixture's host is Bia and we are Lucas. With room auth off everyone
+      // controls and the transport shows; with it on (CI sets the web flag only on
+      // the dev server, not here) we are a listener and it is absent. Either way
+      // pause and skip come together, and the 44 px loop below measures whichever
+      // buttons are there.
+      const transport = await ctrls.getByRole('button', { name: /^(Pausar|Tocar)$/ }).count();
+      const skip = await ctrls.getByRole('button', { name: 'Próxima faixa' }).count();
+      expect(transport).toBe(skip);
+      if (process.env.NEXT_PUBLIC_FEATURE_SPOTIFY === 'on') await expect(ctrls.getByRole('group', { name: 'Ouvir no' })).toBeVisible();
+      const vpw = page.viewportSize()!;
+      const player = await playerBox(page);
+      for (const b of await hud.getByRole('button').all()) {
+        if (!(await b.isVisible())) continue;
+        const r = (await b.boundingBox())!;
+        const name = (await b.getAttribute('aria-label')) ?? (await b.textContent());
+        expect(r.height, `${name} height`).toBeGreaterThanOrEqual(44);
+        expect(r.width, `${name} width`).toBeGreaterThanOrEqual(44);
+        expect(r.x + r.width, `${name} inside`).toBeLessThanOrEqual(vpw.width);
+        expect(overlaps(r, player), `${name} off the player`).toBe(false);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      await expectPlayerClear(page);
+    });
+
+    test('the "A seguir" board lists the next tracks under the player, clear of every tag', async ({ page }) => {
+      await openPalco(page);
+      const board = page.getByRole('region', { name: 'A seguir' });
+      await expect(board).toBeVisible();
+      const rows = await board.getByRole('listitem').count();
+      expect(rows).toBeGreaterThanOrEqual(1);
+      expect(rows).toBeLessThanOrEqual(3);
+      const b = (await board.boundingBox())!;
+      const player = await playerBox(page);
+      expect(overlaps(b, player)).toBe(false);
+      expect(b.y).toBeGreaterThanOrEqual(player.y + player.height);
+      for (const t of await overlayBoxes(page)) {
+        if (!t.what.startsWith('palco-tag')) continue;
+        expect(overlaps(t.box, b), t.what).toBe(false);
+      }
+      await expectPlayerClear(page);
+    });
+
+    test('emotes: the reaction bar sends one and it shows over you, never over the player', async ({ page }) => {
+      await openPalco(page);
+      const hud = page.getByTestId('palco-hud');
+      if (vp.width < 640) {
+        // Phones: one Reagir button opens the six.
+        await expect(hud.getByRole('group', { name: 'Reações' })).toHaveCount(0);
+        await hud.getByRole('button', { name: 'Reagir' }).click();
+      }
+      const bar = hud.getByRole('group', { name: 'Reações' });
+      await expect(bar).toBeVisible();
+      const labels = await bar.getByRole('button').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+      expect(labels).toEqual(['Amei', 'Fogo', 'Rindo', 'Palmas', 'Uau', 'Cantando']);
+      const player = await playerBox(page);
+      for (const b of await bar.getByRole('button').all()) {
+        const r = (await b.boundingBox())!;
+        expect(r.width).toBeGreaterThanOrEqual(44);
+        expect(r.height).toBeGreaterThanOrEqual(44);
+        expect(overlaps(r, player)).toBe(false);
+      }
+      await expectPlayerClear(page);
+      if (SHOTS && vp.width < 640) {
+        await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
+        await page.screenshot({ path: `${SHOTS}/${SHOT_PREFIX}-${vp.width}x${vp.height}-reagir.png` });
+      }
+      await bar.getByRole('button', { name: 'Fogo' }).click();
+      const emote = page.locator('.palco-emote[data-emote="fogo"]');
+      await expect(emote).toBeVisible();
+      for (const wait of [100, 300, 500]) {
+        await page.waitForTimeout(wait);
+        // The emote fades out on its own; a missing one is not a failure and must not wait.
+        const e = await emote.boundingBox({ timeout: 500 }).catch(() => null);
+        if (e) expect(overlaps(e, player)).toBe(false);
+        if (SHOTS && wait === 300) {
+          await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
+          await page.screenshot({ path: `${SHOTS}/${SHOT_PREFIX}-${vp.width}x${vp.height}-emote.png` });
+        }
+      }
+      await expect(emote).toHaveCount(0, { timeout: 3000 });
     });
 
     test('the view is remembered and the player is never remounted by the switch', async ({ page }) => {
