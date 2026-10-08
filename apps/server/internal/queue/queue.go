@@ -130,6 +130,22 @@ type RoomState struct {
 	Name string `json:"name,omitempty"`
 }
 
+// setNowPlayingID is the single place NowPlayingID changes. When the pointer
+// actually moves, an existing Transport is re-anchored to position 0 at the
+// current server time, keeping its play/pause state: otherwise the old
+// position plus the time since the old play would be applied to the new track
+// (minutes in, so listeners seek past the end or loop).
+func (rs *RoomState) setNowPlayingID(id string) {
+	if rs.NowPlayingID == id {
+		return
+	}
+	rs.NowPlayingID = id
+	if rs.Transport != nil {
+		rs.Transport.PositionMs = 0
+		rs.Transport.UpdatedAtServerMs = time.Now().UnixMilli()
+	}
+}
+
 // Add appends a track to the queue, generates an ID, stamps the server-side
 // AddedAt (overwriting any client-supplied value), and bumps the version.
 // If nothing is playing (NowPlayingID empty), the new track starts playing.
@@ -143,7 +159,7 @@ func (rs *RoomState) Add(track TrackRef) *TrackRef {
 	rs.Version++
 
 	if rs.NowPlayingID == "" {
-		rs.NowPlayingID = track.ID
+		rs.setNowPlayingID(track.ID)
 	}
 
 	return &rs.Queue[len(rs.Queue)-1]
@@ -162,9 +178,9 @@ func (rs *RoomState) Remove(trackID string) error {
 
 			if rs.NowPlayingID == trackID {
 				if i < len(rs.Queue) {
-					rs.NowPlayingID = rs.Queue[i].ID
+					rs.setNowPlayingID(rs.Queue[i].ID)
 				} else {
-					rs.NowPlayingID = ""
+					rs.setNowPlayingID("")
 				}
 			}
 			return nil
@@ -281,7 +297,7 @@ func (rs *RoomState) RewriteVoter(oldVoter, newVoter string) {
 func (rs *RoomState) SetNowPlaying(trackID string) error {
 	for _, t := range rs.Queue {
 		if t.ID == trackID {
-			rs.NowPlayingID = trackID
+			rs.setNowPlayingID(trackID)
 			rs.Version++
 			return nil
 		}
@@ -328,13 +344,13 @@ func (rs *RoomState) AdvanceAfter(afterID string) error {
 
 	// If afterID is the last track, clear NowPlayingID
 	if afterIndex == len(rs.Queue)-1 {
-		rs.NowPlayingID = ""
+		rs.setNowPlayingID("")
 		rs.Version++
 		return nil
 	}
 
 	// Otherwise, advance to the next track
-	rs.NowPlayingID = rs.Queue[afterIndex+1].ID
+	rs.setNowPlayingID(rs.Queue[afterIndex+1].ID)
 	rs.Version++
 	return nil
 }

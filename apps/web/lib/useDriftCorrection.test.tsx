@@ -107,4 +107,103 @@ describe('useDriftCorrection (#177)', () => {
     expect(player.seekToMs).not.toHaveBeenCalled();
     unmount();
   });
+  describe('YouTube 2 s loop (clock behind server, buffering reads)', () => {
+    it('never seeks to a clamped 0 when the client clock is behind the server', async () => {
+      const player = makePlayer();
+      player.getCurrentPositionMs.mockResolvedValue(30_000);
+      // Server stamped the play 60 s "in the future" of this client's clock.
+      const t: TransportState = { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() + 60_000 };
+      useStore.getState().setState(roomState(1, t));
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      expect(player.seekToMs).not.toHaveBeenCalled();
+      unmount();
+    });
+
+    it('skips drift checks while the player is not PLAYING', async () => {
+      const player = { ...makePlayer(), isPlaying: vi.fn(() => false) };
+      player.getCurrentPositionMs.mockResolvedValue(0);
+      useStore.getState().setState(
+        roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 20_000 }),
+      );
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      player.seekToMs.mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      expect(player.seekToMs).not.toHaveBeenCalled();
+      unmount();
+    });
+
+    it('waits out a cooldown after a seek before correcting again', async () => {
+      const player = makePlayer();
+      // Position read stays stale at 0 (seek not settled): old code re-seeked every 1.5 s.
+      player.getCurrentPositionMs.mockResolvedValue(0);
+      useStore.getState().setState(
+        roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 20_000 }),
+      );
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      expect(player.seekToMs).toHaveBeenCalledTimes(1); // initial sync seek
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000); // tick at 1.5 s, inside the cooldown
+      });
+      expect(player.seekToMs).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500); // tick at 4.5 s, cooldown over
+      });
+      expect(player.seekToMs).toHaveBeenCalledTimes(2);
+      unmount();
+    });
+
+    it('corrects once the offset lands when the position was unknown at start', async () => {
+      const player = makePlayer();
+      player.getCurrentPositionMs.mockResolvedValue(0);
+      const t: TransportState = { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() + 60_000 };
+      useStore.getState().setState(roomState(1, t));
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      expect(player.seekToMs).not.toHaveBeenCalled(); // initial seek skipped
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(player.seekToMs).not.toHaveBeenCalled();
+      // Offset lands: server stamp is now 20 s in the past of our corrected clock.
+      act(() => {
+        useStore.getState().setState(
+          roomState(2, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 20_000 }),
+        );
+      });
+      // New transport fields re-run the effect (initial seek), position is stale at 0.
+      expect(player.seekToMs).toHaveBeenCalledTimes(1);
+      unmount();
+    });
+
+    it('keeps the interval alive while unknown, correcting when the clock fixes itself', async () => {
+      const player = makePlayer();
+      player.getCurrentPositionMs.mockResolvedValue(0);
+      const stamp = Date.now() + 5000; // 5 s ahead: unknown now, known after 3+ s
+      useStore.getState().setState(roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: stamp }));
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9000); // elapsed reaches ~4 s, drift > 1 s
+      });
+      expect(player.seekToMs).toHaveBeenCalled();
+      unmount();
+    });
+
+    it('tries play() once when the player is paused while the room plays', async () => {
+      const player = { ...makePlayer(), isPlaying: vi.fn(() => false), isPaused: vi.fn(() => true) };
+      useStore.getState().setState(
+        roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 5000 }),
+      );
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      player.play.mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      expect(player.play).toHaveBeenCalledTimes(1);
+      unmount();
+    });
+  });
 });

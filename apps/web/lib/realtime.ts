@@ -383,6 +383,7 @@ export async function joinRoom(
   // room the user has navigated away from. Set again after this join's
   // room.join succeeds.
   activeRoom = null;
+  cancelClockMeasure();
 
   const token = await resolveConnectionToken();
 
@@ -424,9 +425,9 @@ export async function joinRoom(
     // The server-assigned client id (self-identification in presence, #181).
     store.setClientId((ctx as { client?: string } | undefined)?.client ?? '');
     // Re-measure clock offset on reconnect (fire-and-forget, non-fatal on error)
-    measureClockOffset().catch(() => {
-      /* clock sync error - not fatal */
-    });
+    cancelClockMeasure();
+    clockOffsetMeasured = false;
+    measureClockOffsetWithRetry();
     // Reconnect resync (B10): on the FIRST connect activeRoom is still null
     // (set only after the initial room.join below), so this fires only on
     // reconnects: re-join to adopt the authoritative state, healing anything
@@ -468,6 +469,7 @@ export async function joinRoom(
   });
 
   centrifuge.on('disconnected', (ctx) => {
+    cancelClockMeasure();
     store.setConnected(false);
     store.setReconnecting(false);
     // room.kick (#181): the server closed this connection with the terminal
@@ -608,9 +610,7 @@ export async function joinRoom(
   }
 
   // Measure initial clock offset (fire-and-forget, non-fatal on error)
-  measureClockOffset().catch(() => {
-    /* clock sync error - not fatal */
-  });
+  measureClockOffsetWithRetry();
 
   return sub;
 }
@@ -982,7 +982,67 @@ export async function measureClockOffset(samples = 5): Promise<{ offsetMs: numbe
 
   const result = estimateOffset(pingSamples);
   clockOffsetMs = result.offsetMs;
+  clockOffsetMeasured = true;
   return result;
+}
+
+let clockOffsetMeasured = false;
+let clockMeasureInFlight = false;
+let clockRetryTimer: ReturnType<typeof setTimeout> | null = null;
+// Bumped by cancelClockMeasure so an in-flight measure from a previous
+// room/connection cannot schedule retries or overwrite newer state.
+let clockMeasureGen = 0;
+let lastClockRequestAt = 0;
+const CLOCK_RETRY_DELAYS_MS = [1000, 3000, 10_000, 30_000];
+export const CLOCK_REMEASURE_MIN_GAP_MS = 30_000;
+
+export function hasMeasuredClockOffset(): boolean {
+  return clockOffsetMeasured;
+}
+
+// Stop pending retries (new join, disconnect). Keeps the last offset: it is
+// still the best estimate until a fresh measurement lands.
+export function cancelClockMeasure(): void {
+  clockMeasureGen++;
+  if (clockRetryTimer) clearTimeout(clockRetryTimer);
+  clockRetryTimer = null;
+  clockMeasureInFlight = false;
+}
+
+// Fire-and-forget measure that retries on failure. A single failed attempt used
+// to leave the offset at 0 forever, so a client whose wall clock ran behind the
+// server computed a negative elapsed time, clamped the expected position to 0
+// and drift-seeked to 0 every 1.5 s (the YouTube 2 s loop).
+export function measureClockOffsetWithRetry(attempt = 0, gen = clockMeasureGen): void {
+  if (attempt === 0) {
+    if (clockMeasureInFlight) return;
+    clockMeasureInFlight = true;
+  }
+  measureClockOffset().then(
+    () => {
+      if (gen === clockMeasureGen) clockMeasureInFlight = false;
+    },
+    () => {
+      if (gen !== clockMeasureGen) return;
+      if (attempt >= CLOCK_RETRY_DELAYS_MS.length) {
+        clockMeasureInFlight = false;
+        return;
+      }
+      clockRetryTimer = setTimeout(() => {
+        clockRetryTimer = null;
+        measureClockOffsetWithRetry(attempt + 1, gen);
+      }, CLOCK_RETRY_DELAYS_MS[attempt]);
+    },
+  );
+}
+
+// Throttled re-measure for callers that notice a bad offset (drift ticks):
+// at most one chain per 30 s so a dead sync.ping is not hammered.
+export function requestClockRemeasure(): void {
+  const now = Date.now();
+  if (now - lastClockRequestAt < CLOCK_REMEASURE_MIN_GAP_MS) return;
+  lastClockRequestAt = now;
+  measureClockOffsetWithRetry();
 }
 
 export function getClockOffsetMs(): number {
