@@ -7,7 +7,7 @@ import { fetchConnectionToken, getLastTokenFetchError, getStoredProofToken, clea
 import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
 import { isCharacterId } from './characters';
-import type { ChatDeletePub, ChatMessage, ChatMessagePub, MemberPlatformPub, MemberCharacterPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
+import type { ChatDeletePub, ChatMessage, ChatMessagePub, MemberPlatformPub, MemberCharacterPub, ReactionWootPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 
 export type Member = {
   clientId: string;
@@ -536,7 +536,7 @@ export async function joinRoom(
   const sub = centrifuge.newSubscription(`room:${roomId}`);
 
   sub.on('publication', (ctx) => {
-    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub | MemberPlatformPub | MemberCharacterPub;
+    const pub = ctx.data as RoomStatePub | ChatMessagePub | ChatDeletePub | MemberPlatformPub | MemberCharacterPub | ReactionWootPub;
     if (pub.type === 'room.state') {
       store.setState(pub.state);
       // Rebind completion rule (#172): the proof token is discarded only when
@@ -556,6 +556,8 @@ export async function joinRoom(
       store.setPlatformOverride(pub.clientId, pub.platform);
     } else if (pub.type === 'member.character') {
       if (isCharacterId(pub.characterId)) store.setCharacterOverride(pub.clientId, pub.characterId);
+    } else if (pub.type === 'reaction.woot') {
+      if (typeof pub.clientId === 'string') emitWoot(pub.clientId);
     }
   });
 
@@ -961,6 +963,28 @@ export async function importPlaylist(roomId: string, url: string, addedBy: strin
 export async function setRadio(roomId: string, enabled: boolean) {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('radio.set', { roomId, enabled });
+}
+
+// Reactions ("Modo palco"): reaction.woot is an ephemeral room broadcast, so
+// it never enters the store. Modo palco subscribes while it is mounted.
+type WootListener = (clientId: string) => void;
+const wootListeners = new Set<WootListener>();
+
+export function onWoot(cb: WootListener): () => void {
+  wootListeners.add(cb);
+  return () => {
+    wootListeners.delete(cb);
+  };
+}
+
+function emitWoot(clientId: string): void {
+  wootListeners.forEach((l) => l(clientId));
+}
+
+// Curtir: every member (the sender included) receives the reaction.woot event.
+export async function sendWoot(roomId: string): Promise<void> {
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
+  await centrifuge.rpc('reaction.woot', { roomId });
 }
 
 // Room chat (F8). Server-first: no optimistic append; the message appears

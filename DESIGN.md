@@ -101,7 +101,7 @@ Code: `apps/web/app/room/[id]/client.tsx`, `NowPlayingCard.tsx`, `ListenersStage
 
 ## Modo palco
 
-Status: decided, not built. Decision record and owner quotes: [`docs/design/modo-palco.md`](docs/design/modo-palco.md). References (local, gitignored, not committed): `.claude/design/refs/r5-palco-02-festival-1440.png` (anchor), `r5-palco-var-0{1..6}-*.png` (variations), `r5-palco-roster-v2.png` (roster), `r5-style-owner-avatar.png` (portrait style).
+Status: v1 in build. Part 1 (#367): the character roster and picker. Part 2: the stage view behind the "Modo palco" toggle in the top bar (remembered per browser, round 4 stays the default), with the room's own YouTube player lifted onto the screen, the booths (who queued the playing and the next track), the audience, Curtir (`reaction.woot`) and chat bubbles. Not built yet: the muted synced video for non-YouTube listeners (decision 8; the screen shows the cover art meanwhile), the "A seguir" setlist board and the listening rings. v1: use the normal view for play/pause/skip until the palco HUD lands (the toggle's tooltip says so). Decision record and owner quotes: [`docs/design/modo-palco.md`](docs/design/modo-palco.md). References (local, gitignored, not committed): `.claude/design/refs/r5-palco-02-festival-1440.png` (anchor), `r5-palco-var-0{1..6}-*.png` (variations), `r5-palco-roster-v2.png` (roster), `r5-style-owner-avatar.png` (portrait style).
 
 An alternative view of the live room: a pixel art stage with the YouTube video on its screen and the people in the room as the audience. It sits next to the round 4 room, not in place of it. The anchor shows a "MODO PALCO" pill in the top bar; how the user switches is for the build spec.
 
@@ -156,7 +156,7 @@ Hard rule from the YouTube API terms (see the record, section "YouTube ToS const
 
 ### Phone layout (390)
 
-Top to bottom: top bar, the stage (arch, screen, speakers) with the embed at least 200 px wide and tall, an audience band (sprites with tags, bubbles kept outside the screen), a compact now-playing card (title, artist, "X pediu", play, progress), tabs **Palco / Fila / Chat**.
+Top to bottom: top bar, the stage (arch, screen, speakers) with the embed full width (less a 17 px gutter), 16:9 and never under 200x200, over the stage screen and the art around it (owner decision 9 in the record: the DJs stand just below it), an audience band (sprites with tags, bubbles kept outside the screen), a compact now-playing card (title, artist, "X pediu", play, progress), tabs **Palco / Fila / Chat**.
 
 - The embed **stays mounted and visible on every tab**. Under Fila and Chat the stage shrinks to the screen plus a thin strip, never to nothing. This also removes the current phone behaviour where `.video-panel-keep` hides the player under those tabs.
 - 44px targets. The audience band scrolls horizontally if it overflows.

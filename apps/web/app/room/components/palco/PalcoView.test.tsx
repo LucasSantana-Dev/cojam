@@ -1,0 +1,153 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import type { ChatMessage, RoomState, TrackRef } from '@cojam/shared';
+import { useStore, type Member } from '@/lib/realtime';
+import { WORLDS, frameStage, screenRect } from '@/lib/palco';
+import type { FrameOut } from './scene';
+
+// The view wired to a fake scene: who stands where, which reactions woot whom,
+// where chat bubbles land. The three.js scene itself is a browser concern
+// (covered by e2e/palco.spec.ts).
+const fake = vi.hoisted(() => {
+  class FakeScene {
+    static last: FakeScene | null = null;
+    woots: string[] = [];
+    crowd: Array<Array<{ key: string; characterId: number }>> = [];
+    booths: Array<[{ key: string } | null, { key: string } | null]> = [];
+    listener: ((out: FrameOut) => void) | null = null;
+    constructor() {
+      FakeScene.last = this;
+    }
+    start() {}
+    dispose() {}
+    resize() {}
+    setMotion() {}
+    setIdle() {}
+    setCrowd(e: Array<{ key: string; characterId: number }>) { this.crowd.push(e); }
+    setBooths(l: { key: string } | null, r: { key: string } | null) { this.booths.push([l, r]); }
+    woot(k: string) { this.woots.push(k); }
+    setFrameListener(cb: ((out: FrameOut) => void) | null) { this.listener = cb; }
+  }
+  return { FakeScene, wootListeners: [] as Array<(id: string) => void>, sendWoot: vi.fn(async () => {}) };
+});
+vi.mock('./scene', () => ({ PalcoScene: fake.FakeScene, loadSceneImages: async () => ({}) }));
+vi.mock('@/lib/realtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/realtime')>()),
+  sendWoot: fake.sendWoot,
+  onWoot: (cb: (id: string) => void) => {
+    fake.wootListeners.push(cb);
+    return () => { fake.wootListeners.splice(fake.wootListeners.indexOf(cb), 1); };
+  },
+}));
+
+import { PalcoView } from './PalcoView';
+
+const track = (id: string, addedBy: string, addedByUserId: string): TrackRef => ({ id, title: `Faixa ${id}`, artist: 'Artista', addedBy, addedByUserId, durationMs: 200000, sources: {} });
+const MEMBERS: Member[] = [
+  { clientId: 'c-bia', clientIds: ['c-bia'], userId: 'u-bia', name: 'Bia' },
+  { clientId: 'c-caio', clientIds: ['c-caio'], userId: 'u-caio', name: 'Caio' },
+  { clientId: 'c-dani', clientIds: ['c-dani'], userId: 'u-dani', name: 'Dani' },
+  { clientId: 'c-lucas', clientIds: ['c-lucas'], userId: 'u-lucas', name: 'Lucas' },
+];
+const state = (votes: RoomState['votes'] = {}, version = 1): RoomState => ({
+  roomId: 'R1',
+  queue: [track('t1', 'Bia', 'u-bia'), track('t2', 'Caio', 'u-caio'), track('t3', 'Dani', 'u-dani')],
+  nowPlayingId: 't1',
+  radioEnabled: false,
+  version,
+  transport: { state: 'playing', positionMs: 1000, updatedAtServerMs: Date.now() },
+  votes,
+});
+
+const W = 1440, H = 900, HUD = 60;
+const props = { roomId: 'R1', queue: <div data-testid="queue-slot" />, chat: <div data-testid="chat-slot" />, queueCount: 2, hasPlayer: true, artwork: null };
+
+const restore: Array<() => void> = [];
+beforeAll(() => {
+  const def = (proto: object, key: string, get: (this: HTMLElement) => number) => {
+    const prev = Object.getOwnPropertyDescriptor(proto, key);
+    Object.defineProperty(proto, key, { configurable: true, get });
+    restore.push(() => (prev ? Object.defineProperty(proto, key, prev) : delete (proto as Record<string, unknown>)[key]));
+  };
+  def(HTMLElement.prototype, 'clientWidth', () => W);
+  def(HTMLElement.prototype, 'clientHeight', () => H);
+  def(HTMLElement.prototype, 'offsetHeight', function () { return this.classList.contains('palco__hud') ? HUD : 20; });
+  def(HTMLElement.prototype, 'offsetWidth', () => 80);
+  const RO = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
+  restore.push(() => { globalThis.ResizeObserver = RO; });
+});
+afterAll(() => restore.forEach((r) => r()));
+
+beforeEach(() => {
+  fake.FakeScene.last = null;
+  fake.wootListeners.length = 0;
+  fake.sendWoot.mockClear();
+  useStore.setState({ state: state(), clientId: 'c-lucas', chat: [], nameSuffixes: {} });
+  useStore.getState().setMembers(MEMBERS);
+  useStore.getState().setCharacterOverride('c-lucas', 5);
+});
+
+async function mount() {
+  render(<PalcoView {...props} />);
+  await waitFor(() => expect(fake.FakeScene.last).not.toBeNull());
+  return fake.FakeScene.last!;
+}
+
+describe('PalcoView', () => {
+  it('puts the playing track adder at the left booth, the next one at the right, and the rest in the crowd', async () => {
+    const scene = await mount();
+    await waitFor(() => expect(scene.booths.at(-1)?.map((b) => b?.key)).toEqual(['u:u-bia', 'u:u-caio']));
+    const crowd = scene.crowd.at(-1)!;
+    expect(crowd.map((e) => e.key).sort()).toEqual(['u:u-dani', 'u:u-lucas']);
+    expect(crowd.find((e) => e.key === 'u:u-lucas')?.characterId).toBe(5);
+    expect(screen.getByText('Bia · tocando')).toBeTruthy();
+    expect(screen.getByText('Caio · próxima')).toBeTruthy();
+    expect(screen.getByText('Você').className).toContain('palco-tag--you');
+  });
+
+  it('woots a member who upvotes, a member whose reaction.woot arrives, and you on Curtir', async () => {
+    const scene = await mount();
+    act(() => useStore.getState().setState(state({ t3: ['user:u-dani'] }, 2)));
+    expect(scene.woots).toEqual(['u:u-dani']);
+    act(() => fake.wootListeners.forEach((l) => l('c-caio')));
+    act(() => fake.wootListeners.forEach((l) => l('c-lucas'))); // our own echo: already shown
+    expect(scene.woots).toEqual(['u:u-dani', 'u:u-caio']);
+    fireEvent.click(screen.getByRole('button', { name: /Curtir/ }));
+    expect(scene.woots).toEqual(['u:u-dani', 'u:u-caio', 'u:u-lucas']);
+    expect(fake.sendWoot).toHaveBeenCalledWith('R1');
+    expect(screen.getByLabelText('2 curtidas')).toBeTruthy();
+  });
+
+  it('shows a new chat line as a bubble over the sender, never over the screen', async () => {
+    const scene = await mount();
+    const line: ChatMessage = { id: 'm1', roomId: 'R1', name: 'Dani', userId: 'u-dani', text: 'que voz', sentAtServerMs: Date.now() };
+    act(() => useStore.getState().addChatMessage(line));
+    const bubble = await screen.findByText('que voz');
+    const framing = frameStage(WORLDS.wide, W, H - HUD);
+    const scr = screenRect(WORLDS.wide, framing);
+    // Dani's head right under the middle of the screen: the bubble must move below it.
+    const out: FrameOut = {
+      people: new Map([['u:u-dani', { x: scr.x + scr.w / 2, y: scr.y + scr.h + 10, visible: true }], ['u:u-lucas', { x: 100, y: 600, visible: true }]]),
+      booths: [{ key: 'u:u-bia', x: 50, y: 300, visible: true }, { key: 'u:u-caio', x: 1300, y: 300, visible: true }],
+    };
+    act(() => scene.listener?.(out));
+    const m = /translate\((-?\d+)px, (-?\d+)px\)/.exec(bubble.style.transform);
+    expect(m).not.toBeNull();
+    const top = Number(m![2]);
+    expect(top).toBeGreaterThanOrEqual(scr.y + scr.h);
+    expect(bubble.style.visibility).toBe('visible');
+    // Lines from before the view opened never pop up.
+    expect(screen.queryByText('antes')).toBeNull();
+  });
+
+  it('opens Fila and Chat as panels and keeps one at a time', async () => {
+    await mount();
+    expect(screen.queryByTestId('queue-slot')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Fila (2)' }));
+    expect(screen.getByTestId('queue-slot')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Chat' }));
+    expect(screen.queryByTestId('queue-slot')).toBeNull();
+    expect(screen.getByTestId('chat-slot')).toBeTruthy();
+  });
+});

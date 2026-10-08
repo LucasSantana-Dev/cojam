@@ -233,6 +233,7 @@ type Hub struct {
 	store           store.Store
 	node            *centrifuge.Node
 	publishFn       func(roomID string, state json.RawMessage) error // test seam; nil = publish via node
+	wootPublishFn   func(roomID string, payload []byte) error        // test seam for reaction.woot; nil = node
 	logger          *slog.Logger
 	moderationAudit ModerationAudit
 	metrics         *obs.Metrics
@@ -306,6 +307,11 @@ type Hub struct {
 	// throttling the room. The host moderation RPCs (chat.delete, room.kick,
 	// #181) share the bucket.
 	chatLimiter *rateLimiter
+
+	// reactionLimiter rate-limits the modo palco reactions per caller
+	// (reactionMethods). Its own bucket: mashing Curtir must never leave the
+	// caller rate limited on chat.send.
+	reactionLimiter *rateLimiter
 
 	// listLimiter rate-limits the room.list directory read per caller. It is
 	// an unauthenticated read that landing visitors poll, so it gets its own
@@ -414,6 +420,7 @@ var mutatingMethods = map[string]bool{
 	"member.platforms":            true,
 	"member.set_character":        true,
 	"member.characters":           true,
+	"reaction.woot":               true,
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
 }
@@ -454,6 +461,7 @@ var knownMethods = map[string]bool{
 	"member.platforms":            true,
 	"member.set_character":        true,
 	"member.characters":           true,
+	"reaction.woot":               true,
 	"sync.ping":                   true,
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
@@ -599,6 +607,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		fanoutLimiter:     newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
 		voteLimiter:       newRateLimiter(voteBurst, voteRefill, time.Now),
 		chatLimiter:       newRateLimiter(chatBurst, chatRefill, time.Now),
+		reactionLimiter:   newRateLimiter(reactionBurst, reactionRefill, time.Now),
 		transportLimiter:  newRateLimiter(transportBurst, transportRefill, time.Now),
 		heartbeatEvery:    videoHeartbeatEvery,
 		heartbeats:        make(map[string]chan struct{}),
@@ -1562,6 +1571,9 @@ func (h *Hub) checkRateLimits(method, rlKey string) error {
 	}
 	if err == nil {
 		err = h.checkChatLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.checkReactionLimit(method, rlKey)
 	}
 	if err == nil {
 		err = h.checkTransportLimit(method, rlKey)
@@ -2560,6 +2572,18 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, fmt.Errorf("member.characters: roomId required")
 		}
 		return h.memberCharacters(req.RoomID)
+
+	case "reaction.woot":
+		var req struct {
+			RoomID string `json:"roomId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("reaction.woot: roomId required")
+		}
+		return h.reactionWoot(req.RoomID, clientID)
 
 	case "sync.ping":
 		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})

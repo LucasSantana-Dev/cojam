@@ -54,6 +54,16 @@ import { serviceOptions, ServiceFallbackNote } from '../components/ListeningServ
 import { SpotifyProblemNote } from '../components/SpotifyProblemNote';
 import type { SpotifyConnectErrorKind } from '@/lib/spotifyConnectError';
 import { fixtureKind, applyRoomFixture, fixturePlayer } from '@/lib/devFixture';
+import dynamic from 'next/dynamic';
+import { usePalcoView, setPalcoView } from '@/lib/palcoView';
+
+// Modo palco: client-only chunk (three.js), never in the round 4 bundle.
+// While the chunk (three.js) loads, a plain stage-coloured block holds the
+// space, so the room never flashes an empty area.
+const PalcoView = dynamic(() => import('../components/palco/PalcoView'), {
+  ssr: false,
+  loading: () => <section className="palco palco--loading" aria-hidden="true" data-testid="palco-loading" />,
+});
 
 type VideoPanelTab = 'playing' | 'queue' | 'chat';
 // One side drawer at a time: opening one closes the other.
@@ -180,6 +190,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const coverLevel = coverFail.url === artwork ? coverFail.level : 0;
   const motion = useMotion();
   useCoverFlight(nowPlaying?.id, motion.flip);
+  // Modo palco (opt-in, remembered in this browser); the round 4 room is the default.
+  const palco = usePalcoView();
 
   // U5: compute room control permission for this user
   const myUserId = useMyUserId();
@@ -630,6 +642,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
     />
   );
   const chatPanel = f.roomChat ? <ChatPanel roomId={roomId} canControl={moderate} /> : null;
+  // Modo palco shows the queue and chat in its own panels: never two copies.
+  const r4Queue = palco ? null : queuePanel;
+  const r4Chat = palco ? null : chatPanel;
 
   // Same seed as the ListenersStage avatar: userId when present, else clientId.
   const me = store.members.find((m) => (m.clientIds ?? [m.clientId]).includes(store.clientId));
@@ -659,6 +674,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       className="room r4"
       data-room="r4"
       data-has-track={nowPlaying ? 'true' : 'false'}
+      data-view={palco ? 'palco' : 'r4'}
       style={{ color: 'var(--color-text-primary)' }}
     >
       <StatusBanner />
@@ -699,6 +715,17 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 <span className="r4-conn__text">{store.reconnecting ? 'Reconectando...' : 'Desconectado'}</span>
               </span>
             )}
+            <button
+              type="button"
+              className="r4-palco-toggle"
+              aria-pressed={palco}
+              aria-label="Modo palco"
+              title="Modo palco. Por enquanto, pausar e pular ficam na visão normal."
+              onClick={() => setPalcoView(!palco)}
+            >
+              <span className="r4-palco-toggle__long" aria-hidden="true">Modo palco</span>
+              <span className="r4-palco-toggle__short" aria-hidden="true">Palco</span>
+            </button>
             <ShareRoomButton />
             <AvatarMenu
               roomId={roomId}
@@ -729,6 +756,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
       </header>
 
       <main id="main" className="room-main r4-main">
+        {palco && (
+          <PalcoView
+            roomId={roomId}
+            queue={queuePanel}
+            chat={chatPanel}
+            queueCount={store.state?.queue.filter((t) => t.id !== store.state?.nowPlayingId).length ?? 0}
+            hasPlayer={videoMode || Boolean(youtubeAudio) || fixtureYt}
+            artwork={artwork}
+          />
+        )}
         {/* Switching between a video and an audio track changes layouts and remounts
             the YouTube player once (accepted: tracks rarely alternate mid-session). */}
         {videoMode ? (
@@ -766,11 +803,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
             <div data-testid="video-side-column" className="video-side r4-stack">
               <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel r4-stack" data-active={panelTab === 'queue'}>
-                {queuePanel}
+                {r4Queue}
               </div>
-              {chatPanel && (
+              {r4Chat && (
                 <div id="video-panel-chat" role="tabpanel" aria-labelledby="video-tab-chat" className="video-panel" data-active={panelTab === 'chat'}>
-                  {chatPanel}
+                  {r4Chat}
                 </div>
               )}
             </div>
@@ -789,11 +826,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
               <div data-testid="room-side-column" className="r4-side room-arrival" style={{ ['--i' as string]: 1 }}>
                 <div id="video-panel-queue" role="tabpanel" aria-labelledby="video-tab-queue" className="video-panel r4-queue-col r4-stack" data-active={panelTab === 'queue'}>
-                  {queuePanel}
+                  {r4Queue}
                 </div>
-                {chatPanel && (
+                {r4Chat && (
                   <div id="video-panel-chat" role="tabpanel" aria-labelledby="video-tab-chat" className="video-panel r4-chat-col" data-active={panelTab === 'chat'}>
-                    {chatPanel}
+                    {r4Chat}
                   </div>
                 )}
               </div>
