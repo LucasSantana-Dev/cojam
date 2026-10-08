@@ -710,7 +710,7 @@ async function attemptRebind(roomId: string) {
   try {
     await rebindRoom(roomId, proof);
   } catch (err) {
-    const msg = rpcErrorMessage(err, '');
+    const msg = rawRpcMessage(err);
     if (/already upgraded/i.test(msg)) {
       // Dead-token path: an earlier rebind already consumed the proof.
       clearStoredIdentity();
@@ -747,20 +747,38 @@ export async function queueAdd(roomId: string, track: Omit<TrackRef, 'id'>) {
   await centrifuge.rpc('queue.add', { roomId, track });
 }
 
-// rpcErrorMessage normalizes centrifuge-js RPC rejections (plain {code,
-// message} objects, not Errors) so UI handlers can surface the server's
-// message inline instead of failing silently.
-export function rpcErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) return err.message;
+// rawRpcMessage is the server's own (English) message text, used for matching.
+function rawRpcMessage(err: unknown): string {
+  if (err instanceof Error) return err.message || '';
   const msg = (err as { message?: string } | null)?.message;
-  return typeof msg === 'string' && msg ? msg : fallback;
+  return typeof msg === 'string' ? msg : '';
+}
+
+// Server RPC rejections arrive in English. Map the common ones to PT-BR.
+const RPC_MESSAGES_PT: Array<[RegExp, string]> = [
+  [/too many requests|rate.?limit/i, 'Muitas ações seguidas. Espere um instante e tente de novo.'],
+  [/invalid room id|invalid room/i, 'Código de sala inválido.'],
+  [/permission denied|not (the )?host|forbidden|unauthori[sz]ed/i, 'Você não tem permissão para fazer isso.'],
+  [/not found/i, 'Não encontrado. Pode já ter sido removido.'],
+];
+
+// rpcErrorMessage normalizes centrifuge-js RPC rejections (plain {code,
+// message} objects, not Errors) so UI handlers can surface a PT-BR message
+// inline instead of failing silently. Errors built in the client are already
+// PT-BR and pass through; known server messages are mapped; any other server
+// rejection falls back to the caller's generic message.
+export function rpcErrorMessage(err: unknown, fallback: string): string {
+  const raw = rawRpcMessage(err);
+  if (!raw) return fallback;
+  for (const [re, pt] of RPC_MESSAGES_PT) if (re.test(raw)) return pt;
+  return err instanceof Error ? raw : fallback;
 }
 
 // isRateLimitError reports whether an RPC rejection is the server's per-caller
 // rate limit ("too many requests, slow down"), so the UI can show a slow-down
 // message instead of a generic failure.
 export function isRateLimitError(err: unknown): boolean {
-  return /too many requests|rate.?limit/i.test(rpcErrorMessage(err, ''));
+  return /too many requests|rate.?limit/i.test(rawRpcMessage(err));
 }
 
 // isTrackNotFoundError reports whether an RPC rejection is the server's
@@ -768,7 +786,7 @@ export function isRateLimitError(err: unknown): boolean {
 // the UI can treat "already gone" as the desired end state instead of a
 // failure (#179).
 export function isTrackNotFoundError(err: unknown): boolean {
-  return /track not found/i.test(rpcErrorMessage(err, ''));
+  return /track not found/i.test(rawRpcMessage(err));
 }
 
 export async function queueRemove(roomId: string, trackId: string) {

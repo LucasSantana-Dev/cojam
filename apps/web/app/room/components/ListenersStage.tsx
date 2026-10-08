@@ -265,7 +265,8 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
                       <Crown />
                     </span>
                   )}
-                  <span className="r4-ls__name-text" title={label}>{label}</span>
+                  <span className="r4-ls__name-text" title={label} tabIndex={0}>{label}</span>
+                  <span className="r4-ls__full" aria-hidden="true">{label}</span>
                 </div>
                 {isAdmin && <span className="r4-chip r4-ls__chip">admin</span>}
                 {manageable && (

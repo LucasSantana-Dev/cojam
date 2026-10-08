@@ -110,7 +110,7 @@ describe('ChatPanel', () => {
     fireEvent.change(input, { target: { value: 'spam' } });
     fireEvent.submit(input.closest('form')!);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('too many requests, slow down');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Muitas ações/);
     // The draft stays so the user can retry once the limiter window passes.
     expect((input as HTMLInputElement).value).toBe('spam');
   });
@@ -140,7 +140,7 @@ describe('ChatPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /apagar mensagem de ana/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('only the host can delete messages');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não deu para apagar a mensagem. Tente de novo.');
   });
 });
 

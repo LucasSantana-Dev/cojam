@@ -3512,6 +3512,14 @@ input:focus, textarea:focus, select:focus {
 /* Few members: the slot grows so the full name stays readable. */
 .r4-ls[data-count="1"] .r4-ls__member, .r4-ls[data-count="2"] .r4-ls__member { max-width: 13rem; }
 .r4-ls[data-count="3"] .r4-ls__member, .r4-ls[data-count="4"] .r4-ls__member { max-width: 10rem; }
+/* Crowded stage (5+): one-line names, tighter slots and gaps so a row of six fits. */
+.r4-ls:is([data-count="5"], [data-count="6"], [data-count="7"], [data-count="8"]) { --ls-av: clamp(3.25rem, 4.6vw, 4.25rem); }
+.r4-ls:is([data-count="5"], [data-count="6"], [data-count="7"], [data-count="8"]) .r4-ls__member { max-width: 5.5rem; min-width: 3.5rem; }
+.r4-ls:is([data-count="5"], [data-count="6"], [data-count="7"], [data-count="8"]) .r4-ls__between { width: 1rem; }
+.r4-ls:is([data-count="5"], [data-count="6"], [data-count="7"], [data-count="8"]) .r4-ls__between svg { width: 1rem; }
+.r4-ls:is([data-count="5"], [data-count="6"], [data-count="7"], [data-count="8"]) .r4-ls__name-text { -webkit-line-clamp: 1; line-clamp: 1; }
+/* Safety net: whatever the names are, extra rows scroll instead of being cut off. */
+.r4-ls { overflow-y: auto; scrollbar-width: thin; }
 .r4-ls__av-wrap { position: relative; width: var(--ls-av); padding-top: var(--ls-pad); }
 .r4-arcs { position: absolute; top: 0; left: 50%; width: calc(var(--ls-av) * 2.1); height: auto; translate: -50% 0; overflow: visible; pointer-events: none; }
 .r4-arcs__a { stroke: oklch(0.72 0.19 298); opacity: 0.3; }
@@ -3535,6 +3543,11 @@ input:focus, textarea:focus, select:focus {
 .r4-ls__badge { position: absolute; right: -0.35rem; bottom: -0.2rem; display: inline-flex; }
 .r4-ls__name { display: inline-flex; align-items: flex-start; justify-content: center; gap: 0.3rem; max-width: 100%; margin-top: 0.55rem; font-family: var(--font-display), system-ui, sans-serif; font-size: 1.15rem; font-weight: 700; color: var(--color-text-primary); }
 .r4-ls__name-text { min-width: 0; overflow: hidden; overflow-wrap: anywhere; text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.2; }
+.r4-ls__name { position: relative; }
+.r4-ls__name-text:focus-visible { outline: 2px solid var(--r4-violet-text); outline-offset: 2px; border-radius: 0.25rem; }
+/* The full name on hover, keyboard focus or tap (focus-within), over the slot. */
+.r4-ls__full { display: none; position: absolute; top: 100%; left: 50%; translate: -50% 0.2rem; z-index: 8; width: max-content; max-width: 13rem; padding: 0.3rem 0.6rem; border-radius: 0.5rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); font-size: 0.9375rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; pointer-events: none; }
+.r4-ls__name:is(:hover, :focus-within) .r4-ls__full { display: block; }
 .r4-ls__crown { display: inline-flex; margin-top: 0.35em; color: var(--r4-violet-text); }
 .r4-ls__svc { font-size: 0.875rem; color: var(--color-text-muted); }
 .r4-ls__tuned { position: absolute; left: 50%; bottom: calc(100% - 0.1rem); translate: -50% 0; white-space: nowrap; font-size: 0.9375rem; font-style: italic; color: var(--r4-violet-text); }
