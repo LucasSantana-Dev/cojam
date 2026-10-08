@@ -4,7 +4,6 @@
 export type Features = {
   youtube: boolean;
   spotify: boolean;
-  apple: boolean;
   presence: boolean;
   trackDepth: boolean;
   lyrics: boolean;
@@ -30,7 +29,6 @@ export type FeatureName = keyof Features;
 export const FEATURE_ENV_VARS: Record<FeatureName, string> = {
   youtube: 'COJAM_FEATURE_YOUTUBE',
   spotify: 'COJAM_FEATURE_SPOTIFY',
-  apple: 'COJAM_FEATURE_APPLE',
   presence: 'COJAM_FEATURE_PRESENCE',
   trackDepth: 'COJAM_FEATURE_TRACK_DEPTH',
   lyrics: 'COJAM_FEATURE_LYRICS',
@@ -60,7 +58,6 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
   return {
     youtube: flag(env.NEXT_PUBLIC_FEATURE_YOUTUBE, true),
     spotify: flag(env.NEXT_PUBLIC_FEATURE_SPOTIFY, false),
-    apple: flag(env.NEXT_PUBLIC_FEATURE_APPLE, false),
     presence: flag(env.NEXT_PUBLIC_FEATURE_PRESENCE, true),
     trackDepth: flag(env.NEXT_PUBLIC_FEATURE_TRACK_DEPTH, true),
     lyrics: flag(env.NEXT_PUBLIC_FEATURE_LYRICS, true),
@@ -80,7 +77,6 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
 export const features: Features = resolveFeatures({
   NEXT_PUBLIC_FEATURE_YOUTUBE: process.env.NEXT_PUBLIC_FEATURE_YOUTUBE,
   NEXT_PUBLIC_FEATURE_SPOTIFY: process.env.NEXT_PUBLIC_FEATURE_SPOTIFY,
-  NEXT_PUBLIC_FEATURE_APPLE: process.env.NEXT_PUBLIC_FEATURE_APPLE,
   NEXT_PUBLIC_FEATURE_PRESENCE: process.env.NEXT_PUBLIC_FEATURE_PRESENCE,
   NEXT_PUBLIC_FEATURE_TRACK_DEPTH: process.env.NEXT_PUBLIC_FEATURE_TRACK_DEPTH,
   NEXT_PUBLIC_FEATURE_LYRICS: process.env.NEXT_PUBLIC_FEATURE_LYRICS,

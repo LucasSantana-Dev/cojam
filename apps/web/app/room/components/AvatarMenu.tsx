@@ -5,7 +5,7 @@
 // they listen through, "Trocar nome", "Trocar serviço", "Seus dados" (the code
 // and the way to ask for deletion) and "Sair da sala". It also holds what used
 // to crowd the top bar: report the room, the host's public toggle, the legal
-// links and the Spotify / Apple connect buttons.
+// links and the Spotify connect button.
 //
 // The panel stays mounted while closed (hidden): the connect players inside it
 // own the SDK lifecycle and must never unmount with the menu.
@@ -21,7 +21,7 @@ import { YourDataId } from '@/app/components/YourDataId';
 import type { Source } from '@/lib/pickSource';
 import { ListeningServicePicker, type ListeningServicePickerProps } from './ListeningServicePicker';
 
-const SERVICE_NAME: Record<Source, string> = { spotify: 'Spotify', apple: 'Apple Music', youtube: 'YouTube' };
+const SERVICE_NAME: Record<Source, string> = { spotify: 'Spotify', youtube: 'YouTube' };
 
 interface AvatarMenuProps {
   roomId: string;
@@ -33,7 +33,7 @@ interface AvatarMenuProps {
   onCharacterChange: (id: number) => void;
   // The service this person listens through, track-independent.
   platform: Source | null;
-  // That service has a connected account (Spotify / Apple Music).
+  // That service has a connected account (Spotify).
   serviceConnected: boolean;
   // A guest, not signed in (accounts deployed): shows the Convidado chip.
   guest: boolean;
@@ -42,7 +42,7 @@ interface AvatarMenuProps {
   picker: Omit<ListeningServicePickerProps, 'variant' | 'effective'> & { effective: Source | null };
   // Items about the room (report, host's public toggle).
   roomItems: ReactNode;
-  // The Spotify / Apple connect players: mounted always, shown with "Trocar serviço".
+  // The Spotify connect player: mounted always, shown with "Trocar serviço".
   connectors: ReactNode;
 }
 

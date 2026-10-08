@@ -22,7 +22,6 @@ import { useSkipUnplayable } from '@/lib/useSkipUnplayable';
 import { getAccountSession, getConnectedServices, getDisplayName, markServiceConnected } from '@/lib/account';
 import { supabaseEnabled } from '@/lib/supabase';
 import { YouTubePlayer } from '../components/YouTubePlayer';
-import { ApplePlayer } from '../components/ApplePlayer';
 import { SpotifyPlayer } from '../components/SpotifyPlayer';
 import { QueuePanel } from '../components/QueuePanel';
 import { ChatPanel } from '../components/ChatPanel';
@@ -72,7 +71,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [joined, setJoined] = useState(false);
   const [loading, setLoading] = useState(false);
   const [joinError, setJoinError] = useState('');
-  const [appleAuthorized, setAppleAuthorized] = useState(false);
   // Dev fixture only (lib/devFixture): no SDK or iframe is mounted, the room is seeded.
   const [fixture, setFixture] = useState(false);
   // ?yt=1 with the fixture: a stand-in for the YouTube player in the cover slot.
@@ -82,10 +80,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // "+ Adicionar música" opens the search inline at the top of the queue.
   const [addOpen, setAddOpen] = useState(false);
   const [activePlayer, setActivePlayer] = useState<IPlayer | null>(null);
-  // The Spotify and Apple adapters outlive a switch to another service: keep
-  // them so switching back hands drift correction the right player again.
+  // The Spotify adapter outlives a switch to another service: keep it so
+  // switching back hands drift correction the right player again.
   const spotifyAdapterRef = useRef<IPlayer | null>(null);
-  const appleAdapterRef = useRef<IPlayer | null>(null);
   // Per-user playback failure: id of the now-playing track this client's
   // provider failed to play, reported by the player adapters. Local-only;
   // never touches transport state or other members.
@@ -135,14 +132,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
       });
     }
   }, [spotifyAuthorized]);
-  // Same for Apple Music.
-  useEffect(() => {
-    if (appleAuthorized) {
-      markServiceConnected('apple').catch((err) => {
-        console.warn('[account] persist apple connection failed', err);
-      });
-    }
-  }, [appleAuthorized]);
   const store = useStore();
   const nowPlaying = store.state?.nowPlayingId
     ? store.state.queue.find((t) => t.id === store.state!.nowPlayingId)
@@ -150,13 +139,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // "Ouvir no": the person's service choice. An explicit choice wins when it
   // can play this track; otherwise the auto order applies and fellBack says so.
   const preference = useListeningService();
-  const pickOpts = { appleAuthorized, spotifyAuthorized, preference };
+  const pickOpts = { spotifyAuthorized, preference };
   const resolved = nowPlaying ? resolveSource(nowPlaying, pickOpts) : { source: null, fellBack: false, reason: null };
   const activeSource = resolved.source;
   // The presence badge: the service this person listens through, track-independent.
   const platform = listeningPlatform(pickOpts);
-  // Keep the badge in step with the choice (and with Spotify/Apple finishing
-  // their authorization after the join): reconnects with fresh ConnInfo only on
+  // Keep the badge in step with the choice (and with Spotify finishing
+  // its authorization after the join): reconnects with fresh ConnInfo only on
   // an actual change.
   // doJoin reads it through a ref so a late authorization never re-triggers the
   // auto-rejoin effect (that would join twice).
@@ -261,7 +250,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
     setFixture(true);
     setFixtureYt(new URLSearchParams(window.location.search).get('yt') === '1');
     setSpotifyAuthorized(true);
-    setAppleAuthorized(true);
     spotifyAdapterRef.current = fixturePlayer;
     if (kind === 'room') {
       setJoined(true);
@@ -286,10 +274,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
     // A source whose player has not announced itself yet leaves no active
     // player (null), never the previous service's one; it is set when it does.
     if (activeSource === 'spotify') setActivePlayer(spotifyAdapterRef.current);
-    else if (activeSource === 'apple') setActivePlayer(appleAdapterRef.current);
     else if (activeSource === 'youtube') {
-      // YouTube announces itself on mount; just drop a Spotify/Apple one.
-      setActivePlayer((p) => (p && (p === spotifyAdapterRef.current || p === appleAdapterRef.current) ? null : p));
+      // YouTube announces itself on mount; just drop a Spotify one.
+      setActivePlayer((p) => (p && p === spotifyAdapterRef.current ? null : p));
     }
   }, [activeSource]);
 
@@ -324,7 +311,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // off the meaningful transport fields, not publication object identity (#177).
   useDriftCorrection(activePlayer, f.sync, hostControl);
 
-  // Auto-advance at track end for Spotify/Apple (YouTube also advances via its
+  // Auto-advance at track end for Spotify (YouTube also advances via its
   // native onStateChange; the server dedups through AdvanceAfter). onEnded has
   // no unsubscribe, so track the subscribed adapter instance and never
   // double-subscribe the same one.
@@ -361,9 +348,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     const hasPreview = Boolean(store.state) && store.members.length > 0;
     const joinOptions = [
       f.spotify && { id: 'spotify' as const, label: 'Spotify' },
-      f.apple && { id: 'apple' as const, label: 'Apple Music' },
       f.youtube && { id: 'youtube' as const, label: 'YouTube' },
-    ].filter((o): o is { id: 'spotify' | 'apple' | 'youtube'; label: string } => Boolean(o));
+    ].filter((o): o is { id: 'spotify' | 'youtube'; label: string } => Boolean(o));
     const chosen = preference === 'auto' ? null : preference;
     return (
       <div className="room r4 r4-joinroom" data-room="r4" data-view="join" style={{ color: 'var(--color-text-primary)' }}>
@@ -516,7 +502,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   // Video rooms (#258): stage + panels, only when the flag is on, the
   // now-playing track is video and this client plays it through YouTube. Every
-  // other case (audio track, flag off, Spotify/Apple source) keeps the
+  // other case (audio track, flag off, Spotify source) keeps the
   // original two-column layout untouched.
   const videoMode =
     f.video && f.youtube && nowPlaying?.kind === 'video' && activeSource === 'youtube';
@@ -527,8 +513,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     ...(f.roomChat ? ([['chat', 'Chat']] as const) : []),
   ];
 
-  // The Spotify and Apple players own their SDK and their connect buttons. They
-  // live in the avatar menu ("Trocar serviço"), mounted whether it is open or not.
+  // The Spotify player owns its SDK and its connect button. It lives in the
+  // avatar menu ("Trocar serviço"), mounted whether it is open or not.
   const connectors = fixture ? null : (
     <>
       {f.spotify && (
@@ -546,22 +532,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
           }}
           onPlayError={setPlayFailedId}
           onProblem={onSpotifyProblem}
-        />
-      )}
-      {f.apple && (
-        <ApplePlayer
-          authorized={appleAuthorized}
-          onAuthorized={setAppleAuthorized}
-          active={activeSource === 'apple'}
-          onPlayerReady={(player) => {
-            appleAdapterRef.current = player;
-            if (activeSourceRef.current === 'apple') setActivePlayer(player);
-          }}
-          onPlayerGone={() => {
-            appleAdapterRef.current = null;
-            if (activeSourceRef.current === 'apple') setActivePlayer(null);
-          }}
-          onPlayError={setPlayFailedId}
         />
       )}
     </>
@@ -584,9 +554,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     preference,
     onChange: setListeningService,
     spotifyEnabled: f.spotify,
-    appleEnabled: f.apple,
     spotifyConnected: spotifyAuthorized,
-    appleConnected: appleAuthorized,
     onConnectSpotify: connectSpotify,
     effective: platform,
   };
@@ -644,7 +612,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   );
 
   const addTrackForm = (
-    <AddTrackForm roomId={roomId} spotifyAuthorized={spotifyAuthorized} appleAuthorized={appleAuthorized} />
+    <AddTrackForm roomId={roomId} spotifyAuthorized={spotifyAuthorized} />
   );
 
   const queuePanel = (
@@ -739,7 +707,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
               characterId={myCharacter}
               onCharacterChange={setStoredCharacter}
               platform={platform}
-              serviceConnected={(platform === 'spotify' && spotifyAuthorized) || (platform === 'apple' && appleAuthorized)}
+              serviceConnected={platform === 'spotify' && spotifyAuthorized}
               guest={accountsEnabled && !store.signedIn}
               accountsEnabled={accountsEnabled}
               picker={pickerProps}

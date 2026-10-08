@@ -13,7 +13,7 @@ The idea: "O que acha de criar um modo palco onde tivesse uma ilustração em pi
 Constraints:
 
 - The YouTube API terms need the embedded player visible, at least 200x200 px, and never covered or hidden while audio plays.
-- Listeners are on different services (YouTube, Spotify, Apple Music); only the YouTube source has a video.
+- Listeners are on different services (YouTube, Spotify); only the YouTube source has a video.
 - CoJam stays metadata only: no audio or video is rehosted.
 - The mark (headphone plus sine wave), the violet and green rules and PT-BR copy stay fixed ([`DESIGN.md`](../../DESIGN.md)).
 
@@ -88,6 +88,8 @@ The roster is the design baseline. Final art may be redrawn on the fixed grid; t
 ### 8. Spotify and Apple Music listeners: the muted video (decided 2026-10-08)
 
 Question: for a listener on Spotify or Apple Music, either (A) a muted synced YouTube video on the screen, or (B) the cover art. Owner answer: "A".
+
+Update 2026-10-08: Apple Music was removed from the product (#374). The decision now applies to Spotify listeners.
 
 - Everyone in modo palco sees the YouTube video on the screen, muted and synced, while each person listens on their own service. YouTube listeners hear it from that same player.
 - Non-YouTube listeners get a muted YouTube player synced to the room transport, with drift correction relaxed (visuals only, not audio).

@@ -34,7 +34,7 @@ In scope:
 
 Out of scope:
 
-- Vulnerabilities in Spotify, Apple Music, YouTube, or Supabase themselves.
+- Vulnerabilities in Spotify, YouTube, or Supabase themselves.
   Report those to the vendor.
 - Findings that require an already-compromised host or browser.
 - Missing hardening headers on the local development server. These are applied

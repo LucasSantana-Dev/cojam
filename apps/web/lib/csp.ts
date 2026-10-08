@@ -8,8 +8,7 @@
 //  - Spotify Web Playback SDK: script and its player iframe on sdk.scdn.co,
 //    Web API on api.spotify.com, OAuth on accounts.spotify.com, cover art on
 //    the Spotify image CDNs.
-//  - Apple MusicKit JS v3: script on js-cdn.music.apple.com, API/playback
-//    endpoints below, artwork on is1-ssl.mzstatic.com.
+//  - Artwork on *.mzstatic.com: the landing-page demo room covers.
 // Artwork img-src stays an allowlist of vendor families on purpose (the server
 // will later restrict artwork hosts to the same set). Deezer search results
 // (cover_medium) arrive on *.dzcdn.net.
@@ -23,7 +22,6 @@ export const CSP_DIRECTIVES: Record<string, readonly string[]> = {
     "'unsafe-inline'",
     'https://www.youtube.com',
     'https://sdk.scdn.co',
-    'https://js-cdn.music.apple.com',
   ],
   'style-src': ["'self'", "'unsafe-inline'"],
   'frame-src': ['https://www.youtube.com', 'https://sdk.scdn.co'],
@@ -43,12 +41,8 @@ export const CSP_DIRECTIVES: Record<string, readonly string[]> = {
     'https://accounts.spotify.com',
     'https://api.spotify.com',
     'https://*.supabase.co',
-    'https://api.music.apple.com',
-    'https://play.itunes.apple.com',
-    'https://buy.itunes.apple.com',
   ],
-  // MusicKit feeds decrypted HLS segments to the media element through MSE.
-  'media-src': ["'self'", 'blob:'],
+  'media-src': ["'self'"],
   'frame-ancestors': ["'none'"],
   'base-uri': ["'self'"],
   'form-action': ["'self'"],

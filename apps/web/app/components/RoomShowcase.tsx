@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { SpotifyIcon, YouTubeIcon, AppleMusicIcon, PlayIcon, ArrowUpIcon, ArrowDownIcon, TrashIcon } from '@/app/components/icons';
+import { SpotifyIcon, YouTubeIcon, PlayIcon, ArrowUpIcon, ArrowDownIcon, TrashIcon } from '@/app/components/icons';
 
 const roomData = {
   roomId: 'NEON-4821',
@@ -22,7 +22,7 @@ const roomData = {
       title: 'Blinding Lights',
       artist: 'The Weeknd',
       addedBy: 'Maria',
-      source: 'apple' as const,
+      source: 'youtube' as const,
       confidence: 100,
       albumArt: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/a6/6e/bf/a66ebf79-5008-8948-b352-a790fc87446b/19UM1IM04638.rgb.jpg/600x600bb.jpg',
       albumAlt: 'After Hours album cover',
@@ -49,7 +49,7 @@ const roomData = {
       title: 'Delilah',
       artist: 'fred again.. & Delilah Montagu',
       addedBy: 'Maria',
-      source: 'apple' as const,
+      source: 'spotify' as const,
       confidence: 95,
       albumArt: 'https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/b0/9c/b7/b09cb72c-cca9-5d66-bc9d-a9b5e5f86b22/5054197236389.jpg/600x600bb.jpg',
       albumAlt: 'Actual Life 3 album cover',
@@ -59,7 +59,6 @@ const roomData = {
 
 const sourceConfig = {
   spotify: { Icon: SpotifyIcon, label: 'Spotify', color: 'var(--color-ident-1)' },
-  apple: { Icon: AppleMusicIcon, label: 'Apple', color: 'var(--color-ident-2)' },
   youtube: { Icon: YouTubeIcon, label: 'YouTube', color: 'var(--color-status-error)' },
 };
 

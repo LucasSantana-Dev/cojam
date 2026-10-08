@@ -147,9 +147,9 @@ export function TrackDepthPanel({ roomId, track, open, onClose }: TrackDepthPane
             <div className="meta-rail__row">
               <dt>Serviços</dt>
               <dd>
-                {(['youtube', 'spotify', 'apple'] as const)
+                {(['youtube', 'spotify'] as const)
                   .filter((s) => track.sources[s])
-                  .map((s) => (s === 'youtube' ? 'YouTube' : s === 'spotify' ? 'Spotify' : 'Apple'))
+                  .map((s) => (s === 'youtube' ? 'YouTube' : 'Spotify'))
                   .join(' · ') || 'Nenhum'}
               </dd>
             </div>

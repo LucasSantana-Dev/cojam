@@ -27,7 +27,7 @@ func TestMemberSetPlatform_MembershipGate(t *testing.T) {
 func TestMemberSetPlatform_ValidatesAndStores(t *testing.T) {
 	h := NewHub(nil)
 	h.Join("c1", "R")
-	for _, bad := range []string{"", "deezer", "SPOTIFY"} {
+	for _, bad := range []string{"", "deezer", "SPOTIFY", "apple"} {
 		if _, err := h.handleRPC("member.set_platform", platformReq("R", bad), "c1", ""); err == nil {
 			t.Fatalf("platform %q accepted", bad)
 		}
@@ -49,7 +49,7 @@ func TestMemberPlatforms_SeedsLateJoinerAndForgetsLeavers(t *testing.T) {
 	h.Join("c2", "R")
 	h.Join("c3", "OTHER")
 	_, _ = h.handleRPC("member.set_platform", platformReq("R", "youtube"), "c1", "")
-	_, _ = h.handleRPC("member.set_platform", platformReq("OTHER", "apple"), "c3", "")
+	_, _ = h.handleRPC("member.set_platform", platformReq("OTHER", "spotify"), "c3", "")
 
 	read := func() map[string]string {
 		raw, err := h.handleRPC("member.platforms", []byte(`{"roomId":"R"}`), "c2", "")

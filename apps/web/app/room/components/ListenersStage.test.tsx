@@ -99,7 +99,6 @@ describe('ListenersStage', () => {
     render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByTitle('Spotify')).toHaveAttribute('data-svc', 'spotify');
-    expect(screen.queryByTitle('Apple Music')).not.toBeInTheDocument();
     expect(screen.queryByTitle('YouTube')).not.toBeInTheDocument();
   });
 
@@ -115,12 +114,12 @@ describe('ListenersStage', () => {
   it('labels each listener with the service and crowns the host', () => {
     useStore.getState().setMembers([
       { clientId: 'a', userId: 'u1', name: 'Bia', platform: 'spotify' },
-      { clientId: 'b', userId: 'u2', name: 'Dani', platform: 'apple' },
+      { clientId: 'b', userId: 'u2', name: 'Dani', platform: 'youtube' },
     ]);
     render(<ListenersStage roomId="r" running={false} hostUserId="u1" />);
 
     expect(screen.getByText('(Spotify)')).toBeInTheDocument();
-    expect(screen.getByText('(Apple Music)')).toBeInTheDocument();
+    expect(screen.getByText('(YouTube)')).toBeInTheDocument();
     expect(screen.getAllByRole('img', { name: 'Anfitrião' })).toHaveLength(1);
   });
 

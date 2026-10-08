@@ -196,8 +196,11 @@ describe('parseConnInfo', () => {
 
   it('parses all valid platforms', () => {
     expect(parseConnInfo(JSON.stringify({ name: 'A', platform: 'spotify' })).platform).toBe('spotify');
-    expect(parseConnInfo(JSON.stringify({ name: 'B', platform: 'apple' })).platform).toBe('apple');
     expect(parseConnInfo(JSON.stringify({ name: 'C', platform: 'youtube' })).platform).toBe('youtube');
+  });
+
+  it('drops the removed apple platform sent by a stale client', () => {
+    expect(parseConnInfo(JSON.stringify({ name: 'B', platform: 'apple' })).platform).toBeUndefined();
   });
 
   it('ignores invalid platform values', () => {
@@ -219,11 +222,11 @@ describe('parseConnInfo', () => {
   });
 
   it('handles Uint8Array encoded ConnInfo', () => {
-    const json = JSON.stringify({ name: 'Dana', platform: 'apple' });
+    const json = JSON.stringify({ name: 'Dana', platform: 'spotify' });
     const uint8 = new TextEncoder().encode(json);
     const result = parseConnInfo(uint8);
     expect(result.name).toBe('Dana');
-    expect(result.platform).toBe('apple');
+    expect(result.platform).toBe('spotify');
   });
 
   it('handles base64 encoded ConnInfo', () => {
@@ -249,19 +252,11 @@ describe('parseConnInfo', () => {
 describe('buildProviderPrefs', () => {
   it('returns empty when nothing is connected', () => {
     expect(buildProviderPrefs({})).toEqual([]);
-    expect(buildProviderPrefs({ spotify: false, apple: false })).toEqual([]);
+    expect(buildProviderPrefs({ spotify: false })).toEqual([]);
   });
 
   it('lists spotify when spotify is connected', () => {
     expect(buildProviderPrefs({ spotify: true })).toEqual(['spotify']);
-  });
-
-  it('lists apple when apple is connected', () => {
-    expect(buildProviderPrefs({ apple: true })).toEqual(['apple']);
-  });
-
-  it('lists both in canonical order when both are connected', () => {
-    expect(buildProviderPrefs({ spotify: true, apple: true })).toEqual(['spotify', 'apple']);
   });
 });
 
@@ -1045,14 +1040,14 @@ describe('listening platform (member.set_platform)', () => {
     const instance = centrifugeMock.MockCentrifuge.instances.at(-1)!;
     const rpc = instance.rpc.bind(instance);
     instance.rpc = (method: string, payload: unknown) =>
-      method === 'member.platforms' ? Promise.resolve({ data: { platforms: { 'c-a': 'apple' } } }) : rpc(method, payload);
+      method === 'member.platforms' ? Promise.resolve({ data: { platforms: { 'c-a': 'youtube' } } }) : rpc(method, payload);
     instance.emit('connected', { client: 'c-me' });
     await joinPromise;
     instance.subscriptions[0].presence = () => Promise.resolve({
       clients: { 'c-a': { client: 'c-a', user: '', connInfo: new TextEncoder().encode(JSON.stringify({ name: 'Ana', platform: 'spotify' })) } },
     });
     (instance.subscriptions[0].handlers['subscribed'] ?? []).forEach((cb) => cb());
-    await vi.waitFor(() => expect(useStore.getState().members[0]?.platform).toBe('apple'));
+    await vi.waitFor(() => expect(useStore.getState().members[0]?.platform).toBe('youtube'));
   });
 
   it('debounces: rapid toggles send only the latest value', async () => {
@@ -1070,7 +1065,7 @@ describe('listening platform (member.set_platform)', () => {
     const instance = await joined();
     useStore.getState().setMembers([{ clientId: 'c-a', name: 'Ana' }]);
     (instance.subscriptions[0].handlers['publication'] ?? []).forEach((cb) => cb({ data: { type: 'member.platform', clientId: 'c-a', platform: 'youtube' } }));
-    useStore.getState().setPlatformOverrides({ 'c-a': 'apple', 'c-z': 'spotify' });
+    useStore.getState().setPlatformOverrides({ 'c-a': 'spotify', 'c-z': 'spotify' });
     expect(useStore.getState().platformOverrides['c-a']).toBe('youtube');
     expect(useStore.getState().platformOverrides['c-z']).toBe('spotify');
   });
@@ -1084,8 +1079,8 @@ describe('listening platform (member.set_platform)', () => {
     expect(useStore.getState().members[0].platform).toBe('spotify');
     useStore.getState().setPlatformOverride('b9', 'youtube');
     expect(useStore.getState().members[0].platform).toBe('youtube');
-    useStore.getState().setPlatformOverride('a1', 'apple');
-    expect(useStore.getState().members[0].platform).toBe('apple');
+    useStore.getState().setPlatformOverride('a1', 'spotify');
+    expect(useStore.getState().members[0].platform).toBe('spotify');
   });
 });
 

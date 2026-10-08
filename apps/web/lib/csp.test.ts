@@ -16,18 +16,16 @@ describe('production CSP', () => {
   it.each([
     ['script-src', 'https://www.youtube.com'],
     ['script-src', 'https://sdk.scdn.co'],
-    ['script-src', 'https://js-cdn.music.apple.com'],
     ['frame-src', 'https://www.youtube.com'],
     ['frame-src', 'https://sdk.scdn.co'],
     ['connect-src', 'https://api.spotify.com'],
     ['connect-src', 'https://accounts.spotify.com'],
-    ['connect-src', 'https://api.music.apple.com'],
     ['img-src', 'https://*.dzcdn.net'],
     ['img-src', 'https://*.mzstatic.com'],
     ['img-src', 'https://*.scdn.co'],
     ['img-src', 'https://*.spotifycdn.com'],
     ['img-src', 'https://*.ytimg.com'],
-    ['media-src', 'blob:'],
+    ['media-src', "'self'"],
   ])('%s allows %s', (directive, origin) => {
     expect(csp[directive]).toContain(origin);
   });

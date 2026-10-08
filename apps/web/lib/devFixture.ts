@@ -63,7 +63,7 @@ export function fixtureState(): RoomState {
 const MEMBERS: Member[] = [
   { clientId: 'c-bia', userId: 'u-bia', name: 'Bia', platform: 'spotify' },
   { clientId: 'c-caio', userId: 'u-caio', name: 'Caio', platform: 'youtube' },
-  { clientId: 'c-dani', userId: 'u-dani', name: 'Dani', platform: 'apple' },
+  { clientId: 'c-dani', userId: 'u-dani', name: 'Dani', platform: 'spotify' },
   { clientId: 'c-lucas', userId: 'u-lucas', name: 'Lucas', platform: 'spotify' },
   { clientId: 'c-maju', userId: 'u-maju', name: 'Maju', platform: 'youtube' },
 ];
@@ -73,7 +73,7 @@ const MEMBERS: Member[] = [
 const FIXTURE_CHARACTERS: Record<string, number> = { 'c-bia': 2, 'c-caio': 9, 'c-dani': 4, 'c-lucas': 1, 'c-maju': 7 };
 
 const LONG_NAMES = ['Jalam pibau', 'Luk', 'Maria Eduarda Albuquerque', 'Joao Pedro', 'Anna Beatriz Souza', 'Lucas', 'Fernanda Cristina', 'Zé'];
-const PLATFORMS: Member['platform'][] = ['spotify', 'youtube', 'apple', 'spotify', 'youtube', 'apple', 'spotify', 'youtube'];
+const PLATFORMS: Member['platform'][] = ['spotify', 'youtube', 'spotify', 'youtube', 'spotify', 'youtube', 'spotify', 'youtube'];
 
 // ?members=N (1..8) and ?long=1 reshape the stage for visual review.
 function fixtureMembers(): Member[] {

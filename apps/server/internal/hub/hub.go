@@ -35,8 +35,8 @@ const maxImportFieldLen = 300
 const maxSearchQueryLen = 200
 
 // maxSearchPrefer caps the track.search prefer list to the provider allowlist
-// size (match.providerAllowlist: spotify, deezer, apple); extras are truncated.
-const maxSearchPrefer = 3
+// size (match.providerAllowlist: spotify, deezer); extras are truncated.
+const maxSearchPrefer = 2
 
 // maxImportDurationMs bounds track duration (2 hours); longer is a client bug.
 const maxImportDurationMs = 2 * 60 * 60 * 1000
@@ -80,9 +80,6 @@ func validateImportTracks(tracks []queue.TrackRef) error {
 		}
 		if t.Sources.YouTube != nil && len(t.Sources.YouTube.VideoID) > maxImportFieldLen {
 			return userErrorf("track %d: youtube video id too long", i+1)
-		}
-		if t.Sources.Apple != nil && len(t.Sources.Apple.SongID) > maxImportFieldLen {
-			return userErrorf("track %d: apple song id too long", i+1)
 		}
 		if t.Sources.Spotify != nil && t.Sources.Spotify.TrackURI != "" &&
 			!spotifyTrackURIRe.MatchString(t.Sources.Spotify.TrackURI) {

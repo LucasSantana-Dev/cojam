@@ -20,7 +20,8 @@ func TestPresenceConnInfo(t *testing.T) {
 	}{
 		{"name only", `{"name":"Alice"}`, map[string]string{"name": "Alice"}},
 		{"name and platform", `{"name":"Bob","platform":"spotify"}`, map[string]string{"name": "Bob", "platform": "spotify"}},
-		{"apple", `{"name":"A","platform":"apple"}`, map[string]string{"name": "A", "platform": "apple"}},
+		// Apple Music was removed (2026-10-08): a stale client sending it gets no platform.
+		{"legacy apple dropped", `{"name":"A","platform":"apple"}`, map[string]string{"name": "A"}},
 		{"youtube", `{"name":"A","platform":"youtube"}`, map[string]string{"name": "A", "platform": "youtube"}},
 		// Unknown platforms are dropped so presence only carries renderable values.
 		{"unknown platform dropped", `{"name":"A","platform":"tiktok"}`, map[string]string{"name": "A"}},

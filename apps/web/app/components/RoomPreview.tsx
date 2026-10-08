@@ -1,21 +1,20 @@
 import { avatarGradient } from '@/lib/avatar';
-import { SpotifyIcon, YouTubeIcon, AppleMusicIcon } from '@/app/components/icons';
+import { SpotifyIcon, YouTubeIcon } from '@/app/components/icons';
 
 // A static, clearly illustrative live room for the landing hero: the room's own
 // language (now-playing card with the violet glowing border, "Ouvindo agora"
 // stage with service badges) built from example data. Presentational only: no
 // room state, no sockets. The whole card is one labelled image for assistive tech.
-type Service = 'Spotify' | 'YouTube' | 'Apple Music';
+type Service = 'Spotify' | 'YouTube';
 const BADGE: Record<Service, React.ComponentType<{ size?: number }>> = {
   Spotify: SpotifyIcon,
   YouTube: YouTubeIcon,
-  'Apple Music': AppleMusicIcon,
 };
 
 const LISTENERS: Array<{ name: string; service: Service; tuned?: boolean }> = [
   { name: 'Bia', service: 'Spotify' },
   { name: 'Caio', service: 'YouTube' },
-  { name: 'Dani', service: 'Apple Music', tuned: true },
+  { name: 'Dani', service: 'Spotify', tuned: true },
   { name: 'Lucas', service: 'Spotify' },
   { name: 'Maju', service: 'YouTube' },
 ];
@@ -26,7 +25,7 @@ export function RoomPreview({ id = 'previa' }: { id?: string }) {
       id={id}
       className="r4s-preview"
       role="img"
-      aria-label="Prévia ilustrativa de uma sala: Pétala, de Djavan, tocando para cinco pessoas em Spotify, YouTube e Apple Music"
+      aria-label="Prévia ilustrativa de uma sala: Pétala, de Djavan, tocando para cinco pessoas em Spotify e YouTube"
     >
       <div className="r4s-np">
         <div className="r4s-np__cover" aria-hidden />

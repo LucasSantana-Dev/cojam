@@ -1,6 +1,5 @@
 export type SourceRef = {
   videoId?: string;
-  songId?: string;
   trackUri?: string;
   confidence: number;
 };
@@ -11,7 +10,7 @@ export type TrackRef = {
   artist: string;
   durationMs?: number;
   isrc?: string;
-  sources: { youtube?: SourceRef; apple?: SourceRef; spotify?: SourceRef };
+  sources: { youtube?: SourceRef; spotify?: SourceRef };
   // Display-name attribution. Server-stamped from the connection's
   // connect-time name on queue.add/playlist.import when one was recorded
   // (client-supplied values are overridden then); client-supplied otherwise.
@@ -50,7 +49,7 @@ export type HistoryEntry = {
   durationMs?: number;
   isrc?: string;
   kind?: 'audio' | 'video';
-  sources: { youtube?: SourceRef; apple?: SourceRef; spotify?: SourceRef };
+  sources: { youtube?: SourceRef; spotify?: SourceRef };
 };
 
 export type TransportState = {
@@ -147,7 +146,7 @@ export type ChatDeletePub = {
 export type MemberPlatformPub = {
   type: 'member.platform';
   clientId: string;
-  platform: 'spotify' | 'apple' | 'youtube';
+  platform: 'spotify' | 'youtube';
 };
 
 // Audience characters ("Modo palco"): a fixed roster of 12, ids 1..12, repeats

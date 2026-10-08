@@ -21,7 +21,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/LucasSantana-Dev/cojam/server/internal/appletoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
@@ -137,7 +136,7 @@ func presenceConnInfo(data []byte) []byte {
 	}
 	info := map[string]string{"name": name}
 	switch d.Platform {
-	case "spotify", "apple", "youtube":
+	case "spotify", "youtube":
 		info["platform"] = d.Platform
 	}
 	b, _ := json.Marshal(info)
@@ -711,30 +710,6 @@ func main() {
 		r.Post("/api/spotify/token", spotifyExchangeHandler(spotifyStore, roomAuthSecret, logger, spotifyLimiter))
 		r.Post("/api/spotify/refresh", spotifyRefreshHandler(spotifyStore, roomAuthSecret, logger, spotifyLimiter))
 	}
-
-	// Apple token endpoint
-	r.Get("/api/apple/dev-token", func(w http.ResponseWriter, r *http.Request) {
-		token, err := appletoken.BuildToken()
-		if err == appletoken.ErrNotConfigured {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotImplemented)
-			json.NewEncoder(w).Encode(map[string]string{"error": "apple credentials not configured"})
-			return
-		}
-		if err != nil {
-			// Never echo err.Error() to clients (no-upstream-bodies rule); the
-			// detail goes to logs only.
-			logger.Error("apple dev-token failed", "err", err)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": "failed to build apple developer token"})
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"token": token})
-	})
 
 	// Connection token endpoint: returns a signed JWT token for anonymous connection auth.
 	// If FEATURE_ROOM_AUTH is off, returns 501 (not implemented). POST carries

@@ -11,7 +11,7 @@ const config: NextConfig = {
   // Standalone output for Docker deployments
   output: 'standalone',
   images: {
-    // Apple Music artwork CDN used by the landing-page demo room cards.
+    // Artwork CDN (mzstatic) used by the landing-page demo room cards.
     remotePatterns: [{ protocol: 'https', hostname: 'is1-ssl.mzstatic.com' }],
   },
   // outputFileTracingRoot ensures the standalone build includes workspace dependencies
@@ -22,7 +22,6 @@ const config: NextConfig = {
     // Dev/e2e only in practice: in production Caddy routes /api/* to the Go
     // server before Next sees it.
     return [
-      { source: '/api/apple/:path*', destination: `${server}/api/apple/:path*` },
       { source: '/api/stats/:path*', destination: `${server}/api/stats/:path*` },
     ];
   },

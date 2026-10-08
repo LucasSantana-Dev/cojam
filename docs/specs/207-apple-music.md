@@ -1,3 +1,5 @@
+Superseded 2026-10-08: Apple Music removed from the product by owner decision.
+
 # 207: Apple Music playback
 
 Issue: [#207](https://github.com/LucasSantana-Dev/cojam/issues/207)

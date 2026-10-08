@@ -5,7 +5,7 @@ import { platformIcon } from './icons';
 // enforced by scripts/check_web_drift.sh). Everything else stays monochrome.
 export type ServiceSource = keyof typeof platformIcon;
 
-const LABEL: Record<ServiceSource, string> = { spotify: 'Spotify', apple: 'Apple Music', youtube: 'YouTube' };
+const LABEL: Record<ServiceSource, string> = { spotify: 'Spotify', youtube: 'YouTube' };
 
 export function ServiceBadge({ source, size = 'md', title }: { source: ServiceSource; size?: 'sm' | 'md' | 'lg'; title?: string }) {
   const Icon = platformIcon[source];

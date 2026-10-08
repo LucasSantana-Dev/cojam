@@ -40,7 +40,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: 'Quais serviços funcionam?',
-    a: 'Hoje funcionam o YouTube e o Spotify (com Premium). O Apple Music ainda está em desenvolvimento. YouTube Music e Tidal não são compatíveis por falta de API oficial ou de licença.',
+    a: 'Hoje funcionam o YouTube e o Spotify (com Premium). YouTube Music e Tidal não são compatíveis por falta de API oficial ou de licença.',
   },
   {
     q: 'Funciona no celular?',

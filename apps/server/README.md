@@ -6,7 +6,7 @@ Go realtime server for collaborative music jamming with WebSocket support.
 
 - **chi** - HTTP router
 - **centrifuge** - Embeddable realtime node (v0.38.0)
-- **golang-jwt** - JWT token generation for Apple Music
+- **golang-jwt** - Connection tokens and Supabase JWT verification
 - **uuid** - Track ID generation
 
 ## Quick Start
@@ -33,13 +33,6 @@ Server listens on `:8080`.
 | Variable | Purpose | Example |
 |----------|---------|---------|
 | `YOUTUBE_API_KEY` | YouTube Data API key (optional, enables YouTube search) | `AIzaSy...` |
-| `APPLE_TEAM_ID` | Apple Developer Team ID | `ABC123DEF4` |
-| `APPLE_KEY_ID` | Apple Music Key ID | `ABC123DEF456` |
-| `APPLE_PRIVATE_KEY_P8` | Path to `.p8` private key file | `/path/to/key.p8` |
-
-### Stub mode
-
-If Apple credentials are not set, the `/api/apple/dev-token` endpoint returns `501 Not Implemented`.
 
 ## Endpoints
 
@@ -52,24 +45,6 @@ GET /healthz
 Response:
 ```json
 {"status":"ok"}
-```
-
-### Apple Music Developer Token
-
-```
-GET /api/apple/dev-token
-```
-
-Requires env vars: `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY_P8`
-
-Response on success:
-```json
-{"token":"eyJhbGc..."}
-```
-
-Response if not configured:
-```json
-{"error":"apple credentials not configured"}
 ```
 
 ### WebSocket (Centrifuge)
@@ -117,10 +92,6 @@ Pure queue reducer: `RoomState` with `Add`, `Remove`, `SetNowPlaying` operations
 ### `internal/hub`
 
 Room registry with Centrifuge integration. RPC handlers serialize to JSON and publish state changes to `room:<roomId>` channel.
-
-### `internal/appletoken`
-
-ES256 JWT builder for Apple Music. Reads `.p8` key, signs with 12-hour expiration.
 
 ### `internal/match`
 

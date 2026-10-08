@@ -30,6 +30,10 @@ All notable changes to this project are documented here. Format follows
 - Deployment docs describe how CoJam is actually deployed (#267)
 - Dependency bumps (npm minor/patch groups, GitHub Actions, jsdom 30) (#164, #235, #236, #240, #304, #305)
 
+### Removed
+
+- Apple Music support, by owner decision: the MusicKit player, the `/api/apple/dev-token` endpoint and its `APPLE_*` env vars, the `apple` feature flag, the Apple option in "Ouvir no" and the `apple` track source and platform in the protocol. Legacy `apple` sources on persisted rooms are ignored on load, and a saved "apple" listening service falls back to Automático.
+
 ### Fixed
 
 - Race-proofed the queue undo window against concurrent activity (#230)

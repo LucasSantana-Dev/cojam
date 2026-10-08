@@ -1,5 +1,5 @@
 /**
- * Common player interface for adapting Spotify, Apple Music, and YouTube SDKs.
+ * Common player interface for adapting the Spotify and YouTube SDKs.
  * All methods return Promises for consistency; positions and durations are in milliseconds.
  */
 export interface IPlayer {
@@ -31,7 +31,7 @@ export interface IPlayer {
 
   /**
    * Return true if seeking is allowed on this provider for this account.
-   * Spotify free tier forbids seek; Premium allows it. YouTube and Apple always allow seek.
+   * Spotify free tier forbids seek; Premium allows it. YouTube always allows seek.
    */
   canSeek(): boolean;
 

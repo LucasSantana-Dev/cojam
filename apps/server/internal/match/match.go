@@ -873,7 +873,7 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 }
 
 // providerAllowlist gates which provider names may influence ranking.
-var providerAllowlist = map[string]bool{"spotify": true, "deezer": true, "apple": true}
+var providerAllowlist = map[string]bool{"spotify": true, "deezer": true}
 
 // playableOn reports whether the candidate can be played via provider p.
 // Spotify playback needs a URI, which dedup may have merged onto a Deezer-sourced

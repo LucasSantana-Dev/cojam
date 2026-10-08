@@ -19,7 +19,6 @@ import {
 
 const PROVIDER_LABEL: Record<ConnectedProvider, string> = {
   spotify: 'Spotify',
-  apple: 'Apple Music',
 };
 
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.

@@ -6,7 +6,6 @@ CoJam follows the Stationhead / Vertigo model: per-user streams synchronized by 
 | --- | --- | --- | --- |
 | YouTube | Supported | IFrame embed | Public API, web only |
 | Spotify | Supported | Web Playback SDK | Premium per user; Dev Mode capped at 5 |
-| Apple Music | Stubbed | MusicKit JS | Needs Apple Developer Program; behind a toggle |
 | YouTube Music | Unsupported | None | No official API |
 | Deezer | Search/identity (default) | None | Keyless public search API; playback SDK closed to new apps since 2024 |
 | Tidal | Unsupported | SDK | Full-catalog license agreement required |

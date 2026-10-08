@@ -1,11 +1,10 @@
 import type { TrackRef } from '@cojam/shared';
 
-export type Source = 'spotify' | 'apple' | 'youtube';
+export type Source = 'spotify' | 'youtube';
 // What the person chose: a fixed service, or 'auto' (best one that can play).
 export type ServicePreference = 'auto' | Source;
 
 export interface PickOptions {
-  appleAuthorized: boolean;
   spotifyAuthorized: boolean;
   // Omitted means 'auto'.
   preference?: ServicePreference;
@@ -13,11 +12,10 @@ export interface PickOptions {
 
 function canPlay(track: TrackRef, source: Source, opts: PickOptions): boolean {
   if (source === 'spotify') return opts.spotifyAuthorized && Boolean(track.sources.spotify?.trackUri);
-  if (source === 'apple') return opts.appleAuthorized && Boolean(track.sources.apple?.songId);
   return Boolean(track.sources.youtube?.videoId);
 }
 
-const AUTO_ORDER: readonly Source[] = ['spotify', 'apple', 'youtube'];
+const AUTO_ORDER: readonly Source[] = ['spotify', 'youtube'];
 
 // Which platform adapter plays this track for THIS client, and whether an
 // explicit choice had to be overridden. An explicit choice wins when that
@@ -36,7 +34,7 @@ export function resolveSource(
   if (pref === 'auto') return { source, fellBack: false, reason: null };
   // Why the choice could not play: the account is not connected, or the track
   // has no version on that service.
-  const notConnected = (pref === 'spotify' && !opts.spotifyAuthorized) || (pref === 'apple' && !opts.appleAuthorized);
+  const notConnected = pref === 'spotify' && !opts.spotifyAuthorized;
   return { source, fellBack: true, reason: notConnected ? 'not-connected' : 'no-version' };
 }
 
@@ -53,14 +51,12 @@ export function isUnavailable(track: TrackRef | null, opts: PickOptions): boolea
 
 // The service this person listens through at account level (track-independent,
 // so it is stable across the queue): what goes in the presence badge. An
-// explicit choice counts when it is usable at all (Spotify and Apple need an
-// authorized account; YouTube always); 'auto' is the best authorized service.
+// explicit choice counts when it is usable at all (Spotify needs an authorized
+// account; YouTube always); 'auto' is the best authorized service.
 export function listeningPlatform(opts: PickOptions): Source {
   const pref = opts.preference ?? 'auto';
   if (pref === 'youtube') return 'youtube';
   if (pref === 'spotify' && opts.spotifyAuthorized) return 'spotify';
-  if (pref === 'apple' && opts.appleAuthorized) return 'apple';
   if (opts.spotifyAuthorized) return 'spotify';
-  if (opts.appleAuthorized) return 'apple';
   return 'youtube';
 }
