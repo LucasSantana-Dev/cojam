@@ -48,6 +48,8 @@ import { useCoverFlight } from '@/lib/useCoverFlight';
 import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 import { ServiceBadge } from '@/app/components/ServiceBadge';
 import { serviceOptions, ServiceFallbackNote } from '../components/ListeningServicePicker';
+import { SpotifyProblemNote } from '../components/SpotifyProblemNote';
+import type { SpotifyConnectErrorKind } from '@/lib/spotifyConnectError';
 import { fixtureKind, applyRoomFixture, fixturePlayer } from '@/lib/devFixture';
 
 type VideoPanelTab = 'playing' | 'queue' | 'chat';
@@ -84,6 +86,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // provider failed to play, reported by the player adapters. Local-only;
   // never touches transport state or other members.
   const [playFailedId, setPlayFailedId] = useState<string | null>(null);
+  // Why Spotify is silent (set by SpotifyPlayer, which lives in the closed avatar menu).
+  const [spotifyProblem, setSpotifyProblem] = useState<{ kind: SpotifyConnectErrorKind; retry?: () => void } | null>(null);
+  const onSpotifyProblem = useCallback((kind: SpotifyConnectErrorKind | null, retry?: () => void) => {
+    setSpotifyProblem(kind ? { kind, retry } : null);
+  }, []);
   // Video rooms below 768px: which panel the tab bar shows under the pinned
   // stage. Ignored at md and up, where every panel is visible.
   const [panelTab, setPanelTab] = useState<VideoPanelTab>('playing');
@@ -509,6 +516,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             if (activeSourceRef.current === 'spotify') setActivePlayer(null);
           }}
           onPlayError={setPlayFailedId}
+          onProblem={onSpotifyProblem}
         />
       )}
       {f.apple && (
@@ -556,7 +564,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // Only offer the icon row when there is a real choice to make.
   const servicePicker = serviceOptions(pickerProps).length > 1 ? <ListeningServicePicker {...pickerProps} /> : null;
   const serviceNote =
-    nowPlaying && fallbackWanted && resolved.reason ? (
+    spotifyProblem && activeSource === 'spotify' ? (
+      <SpotifyProblemNote
+        kind={spotifyProblem.kind}
+        onRetry={spotifyProblem.retry}
+        onUseYouTube={f.youtube ? () => setListeningService('youtube') : undefined}
+      />
+    ) : nowPlaying && fallbackWanted && resolved.reason ? (
       <ServiceFallbackNote fallback={{ wanted: fallbackWanted, playing: activeSource, reason: resolved.reason }} />
     ) : null;
 
