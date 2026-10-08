@@ -1704,10 +1704,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 					h.logger.Info("stale_transport_advanced", "room_id", req.RoomID, "now_playing_id", s.NowPlayingID)
 				}
 				// Same as advanceAfter: a radio room whose queue ran dry refills.
-				if s.NowPlayingID == "" && s.RadioEnabled && len(s.Queue) > 0 {
-					seed := s.Queue[len(s.Queue)-1]
-					joinRefillSeed = &seed
-				}
+				joinRefillSeed = radioSeedAfterEmptied(s)
 			}
 			return nil
 		})
@@ -2498,6 +2495,18 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certa
 			"video_id", ref.VideoID, "confidence", ref.Confidence)
 	}
 	return true
+}
+
+// radioSeedAfterEmptied returns the track to seed a radio refill when an advance
+// just emptied the queue (nil otherwise). It copies the value: a pointer into
+// s.Queue would race with later queue mutations. Kept in one place so the
+// queue-history change only has to re-point the seed source.
+func radioSeedAfterEmptied(s *queue.RoomState) *queue.TrackRef {
+	if s.NowPlayingID != "" || !s.RadioEnabled || len(s.Queue) == 0 {
+		return nil
+	}
+	seed := s.Queue[len(s.Queue)-1]
+	return &seed
 }
 
 // advanceAfter moves playback past afterID (idempotent) and runs the side
