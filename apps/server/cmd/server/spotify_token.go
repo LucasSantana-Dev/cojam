@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
@@ -176,6 +177,78 @@ func spotifyExchangeHandler(
 	}
 }
 
+// errSpotifyReconnect means no usable grant is filed (never connected, expired,
+// or revoked in Spotify): the remedy is a fresh connect, not a retry.
+var errSpotifyReconnect = errors.New("spotify reconnect required")
+
+var spotifySubLocks sync.Map // sub -> *sync.Mutex
+
+func spotifySubLock(sub string) *sync.Mutex {
+	m, _ := spotifySubLocks.LoadOrStore(sub, &sync.Mutex{})
+	return m.(*sync.Mutex)
+}
+
+type spotifyLoadError struct{ err error }
+
+func (e *spotifyLoadError) Error() string { return "could not load the stored spotify token" }
+func (e *spotifyLoadError) Unwrap() error { return e.err }
+
+// mintSpotifyAccess exchanges the refresh token filed under sub for a fresh
+// access token, persisting a rotated refresh token and dropping a revoked one.
+// Shared by the refresh endpoint and server-side playlist import. Nothing it
+// logs or returns as an error carries a token.
+func mintSpotifyAccess(
+	ctx context.Context, store spotifytoken.Store, sub string, logger *slog.Logger,
+) (*spotifyTokenReply, error) {
+	// One refresh at a time per sub, shared by the import path and the refresh
+	// endpoint: with rotation, two refreshes on the same token make the loser
+	// see invalid_grant.
+	mu := spotifySubLock(sub)
+	mu.Lock()
+	defer mu.Unlock()
+	refreshToken, err := store.Get(ctx, sub)
+	if errors.Is(err, spotifytoken.ErrNotFound) {
+		return nil, errSpotifyReconnect
+	}
+	if err != nil {
+		logger.Error("spotify_token_load_failed", "err", err.Error())
+		return nil, &spotifyLoadError{err: err}
+	}
+
+	reply, err := postSpotifyForm(ctx, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+	})
+	if err != nil {
+		// invalid_grant means the user revoked the grant in Spotify. Retrying
+		// can never succeed, so drop the record and ask for a reconnect.
+		if reply != nil && reply.Error == "invalid_grant" {
+			// Only drop the record if it still holds the token we just used; a
+			// newer one means another refresh rotated it and the grant is live.
+			if cur, getErr := store.Get(ctx, sub); getErr == nil && cur != refreshToken {
+				logger.Info("spotify_refresh_lost_race")
+				return nil, errors.New("spotify refresh raced with a rotation; retry")
+			}
+			if delErr := store.Delete(ctx, sub); delErr != nil {
+				logger.Error("spotify_token_delete_failed", "err", delErr.Error())
+			}
+			logger.Info("spotify_grant_revoked")
+			return nil, errSpotifyReconnect
+		}
+		logger.Warn("spotify_refresh_failed", "err", err.Error())
+		return nil, err
+	}
+
+	// Spotify may rotate the refresh token on use; persist the new one or
+	// the next refresh fails against a token Spotify has retired.
+	if reply.RefreshToken != "" && reply.RefreshToken != refreshToken {
+		if err := store.Put(ctx, sub, reply.RefreshToken, time.Now().Add(spotifyRecordTTL)); err != nil {
+			logger.Error("spotify_token_rotate_failed", "err", err.Error())
+		}
+	}
+	return reply, nil
+}
+
 // spotifyRefreshHandler mints a fresh access token from the stored refresh
 // token. The refresh token itself never leaves the server.
 func spotifyRefreshHandler(
@@ -205,45 +278,19 @@ func spotifyRefreshHandler(
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 
-		refreshToken, err := store.Get(ctx, sub)
-		if errors.Is(err, spotifytoken.ErrNotFound) {
-			// Nothing filed, or it expired. The client's remedy is to reconnect,
-			// which is a different UX from a transient failure.
+		reply, err := mintSpotifyAccess(ctx, store, sub, logger)
+		if errors.Is(err, errSpotifyReconnect) {
 			writeSpotifyJSON(w, http.StatusNotFound, map[string]string{"error": "reconnect required"})
 			return
 		}
-		if err != nil {
-			logger.Error("spotify_token_load_failed", "err", err.Error())
+		var loadErr *spotifyLoadError
+		if errors.As(err, &loadErr) {
 			writeSpotifyJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load the stored token"})
 			return
 		}
-
-		reply, err := postSpotifyForm(ctx, url.Values{
-			"grant_type":    {"refresh_token"},
-			"refresh_token": {refreshToken},
-		})
 		if err != nil {
-			// invalid_grant means the user revoked the grant in Spotify. Retrying
-			// can never succeed, so drop the record and ask for a reconnect.
-			if reply != nil && reply.Error == "invalid_grant" {
-				if delErr := store.Delete(ctx, sub); delErr != nil {
-					logger.Error("spotify_token_delete_failed", "err", delErr.Error())
-				}
-				logger.Info("spotify_grant_revoked")
-				writeSpotifyJSON(w, http.StatusNotFound, map[string]string{"error": "reconnect required"})
-				return
-			}
-			logger.Warn("spotify_refresh_failed", "err", err.Error())
 			writeSpotifyJSON(w, http.StatusBadGateway, map[string]string{"error": "spotify rejected the refresh"})
 			return
-		}
-
-		// Spotify may rotate the refresh token on use; persist the new one or
-		// the next refresh fails against a token Spotify has retired.
-		if reply.RefreshToken != "" && reply.RefreshToken != refreshToken {
-			if err := store.Put(ctx, sub, reply.RefreshToken, time.Now().Add(spotifyRecordTTL)); err != nil {
-				logger.Error("spotify_token_rotate_failed", "err", err.Error())
-			}
 		}
 
 		writeSpotifyJSON(w, http.StatusOK, spotifyAccessResponse{

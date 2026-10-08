@@ -505,6 +505,18 @@ func main() {
 		spotifyStore = spotifytoken.NewMemory(spotifySealer)
 	}
 	if spotifyStore != nil {
+		// Playlist import reads with the caller's own Spotify grant: Spotify
+		// refuses most playlist reads for a development-mode app's client
+		// credentials. The store key is the connection identity (the sub of the
+		// room-auth token), which is the hub's userID for those callers.
+		store := spotifyStore
+		h.WithSpotifyUserToken(func(ctx context.Context, userID string) (string, error) {
+			reply, err := mintSpotifyAccess(ctx, store, userID, logger)
+			if err != nil {
+				return "", err
+			}
+			return reply.AccessToken, nil
+		})
 		logger.Info("spotify_token_custody_enabled", "store", map[bool]string{true: "postgres", false: "memory"}[dbPool != nil])
 	}
 

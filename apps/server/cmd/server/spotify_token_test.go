@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -226,5 +228,109 @@ func TestSpotifyEndpoints_RateLimited(t *testing.T) {
 	}
 	if !limited {
 		t.Fatal("expected the limiter to reject a sustained flood")
+	}
+}
+
+// Playlist import mints an access token from the stored grant, and rotates
+// the refresh token when Spotify hands back a new one.
+func TestMintSpotifyAccess_RefreshesAndRotates(t *testing.T) {
+	spotifyStub(t, 200, `{"access_token":"AT-NEW","refresh_token":"RT-2","expires_in":3600}`)
+	store := spotifyTestStore(t)
+	if err := store.Put(context.Background(), "u1", "RT-1", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := mintSpotifyAccess(context.Background(), store, "u1", quietLogger())
+	if err != nil || reply.AccessToken != "AT-NEW" {
+		t.Fatalf("got %v, %v", reply, err)
+	}
+	if got, _ := store.Get(context.Background(), "u1"); got != "RT-2" {
+		t.Fatalf("rotated refresh token not persisted, got %q", got)
+	}
+}
+
+func TestMintSpotifyAccess_NotConnectedAndRevoked(t *testing.T) {
+	store := spotifyTestStore(t)
+	spotifyStub(t, 400, `{"error":"invalid_grant"}`)
+	if _, err := mintSpotifyAccess(context.Background(), store, "nobody", quietLogger()); !errors.Is(err, errSpotifyReconnect) {
+		t.Fatalf("not connected: want errSpotifyReconnect, got %v", err)
+	}
+	_ = store.Put(context.Background(), "u2", "RT", time.Now().Add(time.Hour))
+	if _, err := mintSpotifyAccess(context.Background(), store, "u2", quietLogger()); !errors.Is(err, errSpotifyReconnect) {
+		t.Fatalf("revoked: want errSpotifyReconnect, got %v", err)
+	}
+	if _, err := store.Get(context.Background(), "u2"); err == nil {
+		t.Fatal("revoked grant should have been dropped")
+	}
+}
+
+// Two mints for one sub (import plus web refresh) against a rotating Spotify:
+// the stale token gets invalid_grant, but the winner's grant must survive.
+func TestMintSpotifyAccess_ConcurrentRotationKeepsGrant(t *testing.T) {
+	var mu sync.Mutex
+	current := "RT-1"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if r.PostForm.Get("refresh_token") != current {
+			w.WriteHeader(400)
+			io.WriteString(w, `{"error":"invalid_grant"}`)
+			return
+		}
+		current = current + "x" // rotate
+		io.WriteString(w, `{"access_token":"AT","refresh_token":"`+current+`","expires_in":3600}`)
+	}))
+	defer srv.Close()
+	oldURL, oldID, oldSecret := spotifyauth.TokenURL, spotifyauth.ClientID, spotifyauth.ClientSecret
+	spotifyauth.TokenURL, spotifyauth.ClientID, spotifyauth.ClientSecret = srv.URL, "id", "secret"
+	defer func() {
+		spotifyauth.TokenURL, spotifyauth.ClientID, spotifyauth.ClientSecret = oldURL, oldID, oldSecret
+	}()
+
+	store := spotifyTestStore(t)
+	_ = store.Put(context.Background(), "race", "RT-1", time.Now().Add(time.Hour))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mintSpotifyAccess(context.Background(), store, "race", quietLogger())
+		}()
+	}
+	wg.Wait()
+
+	got, err := store.Get(context.Background(), "race")
+	if err != nil {
+		t.Fatalf("grant was wiped by a losing refresh: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got != current {
+		t.Fatalf("stored %q, want the latest rotated token %q", got, current)
+	}
+}
+
+// A losing refresh must not delete a record another refresh already rotated.
+func TestMintSpotifyAccess_InvalidGrantDoesNotDeleteNewerToken(t *testing.T) {
+	store := spotifyTestStore(t)
+	_ = store.Put(context.Background(), "s", "RT-OLD", time.Now().Add(time.Hour))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate another instance rotating while this call is in flight.
+		store.Put(context.Background(), "s", "RT-NEW", time.Now().Add(time.Hour))
+		w.WriteHeader(400)
+		io.WriteString(w, `{"error":"invalid_grant"}`)
+	}))
+	defer srv.Close()
+	oldURL, oldID, oldSecret := spotifyauth.TokenURL, spotifyauth.ClientID, spotifyauth.ClientSecret
+	spotifyauth.TokenURL, spotifyauth.ClientID, spotifyauth.ClientSecret = srv.URL, "id", "secret"
+	defer func() {
+		spotifyauth.TokenURL, spotifyauth.ClientID, spotifyauth.ClientSecret = oldURL, oldID, oldSecret
+	}()
+
+	mintSpotifyAccess(context.Background(), store, "s", quietLogger())
+	if got, err := store.Get(context.Background(), "s"); err != nil || got != "RT-NEW" {
+		t.Fatalf("newer token must survive, got %q err %v", got, err)
 	}
 }

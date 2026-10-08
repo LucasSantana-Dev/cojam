@@ -3,6 +3,7 @@ package playlist
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -569,5 +570,214 @@ func TestTrackRefSerialization(t *testing.T) {
 	if decoded.Title != track.Title || decoded.Artist != track.Artist {
 		t.Errorf("serialization failed: got %q/%q, want %q/%q",
 			decoded.Title, decoded.Artist, track.Title, track.Artist)
+	}
+}
+
+// --- Spotify user-token path, error mapping and bounds ---
+
+type spotifyFake struct {
+	playlist *httptest.Server
+	tokens   *httptest.Server
+	auths    []string
+	paths    []string
+	queries  []string
+}
+
+func authHeader(tok string) string { return "Bear" + "er " + tok }
+
+// newSpotifyFake serves playlists via handle and a client-credentials token
+// endpoint, and points the package and spotifyauth at them.
+func newSpotifyFake(t *testing.T, handle func(w http.ResponseWriter, r *http.Request)) *spotifyFake {
+	t.Helper()
+	f := &spotifyFake{}
+	f.playlist = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.auths = append(f.auths, r.Header.Get("Authorization"))
+		f.paths = append(f.paths, r.URL.Path)
+		f.queries = append(f.queries, r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		handle(w, r)
+	}))
+	f.tokens = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"access_token": "app-token", "expires_in": 3600})
+	}))
+	oldURL, oldID, oldSecret := spotifyPlaylistURL, spotifyauth.ClientID, spotifyauth.ClientSecret
+	oldTok, oldClient := spotifyauth.TokenURL, spotifyauth.Client
+	spotifyPlaylistURL = f.playlist.URL + "/v1/playlists"
+	spotifyauth.ClientID, spotifyauth.ClientSecret = "id", "secret"
+	spotifyauth.TokenURL, spotifyauth.Client = f.tokens.URL, http.DefaultClient
+	spotifyauth.ResetCache()
+	t.Cleanup(func() {
+		f.playlist.Close()
+		f.tokens.Close()
+		spotifyPlaylistURL = oldURL
+		spotifyauth.ClientID, spotifyauth.ClientSecret = oldID, oldSecret
+		spotifyauth.TokenURL, spotifyauth.Client = oldTok, oldClient
+		spotifyauth.ResetCache()
+	})
+	return f
+}
+
+func itemsPage(n int, next string, field string) map[string]any {
+	items := make([]map[string]any, 0, n)
+	for i := 0; i < n; i++ {
+		items = append(items, map[string]any{field: map[string]any{
+			"name": "Song", "uri": "spotify:track:0123456789012345678901", "duration_ms": 1000,
+			"artists": []map[string]string{{"name": "Artist"}},
+		}})
+	}
+	return map[string]any{"items": items, "next": next}
+}
+
+func userCtx(token string, err error) context.Context {
+	return WithUserToken(context.Background(), func(context.Context) (string, error) { return token, err })
+}
+
+func TestFetchSpotifyPlaylist_UsesUserTokenWhenPresent(t *testing.T) {
+	f := newSpotifyFake(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(itemsPage(2, "", "item")) // Feb 2026 shape
+	})
+	tracks, err := FetchSpotifyPlaylist(userCtx("user-token", nil), "abc123")
+	if err != nil || len(tracks) != 2 {
+		t.Fatalf("got %d tracks, err %v", len(tracks), err)
+	}
+	if f.auths[0] != authHeader("user-token") {
+		t.Fatal("expected the user token to be used")
+	}
+	if f.paths[0] != "/v1/playlists/abc123/items" || !strings.Contains(f.queries[0], "market=from_token") {
+		t.Fatalf("unexpected request %s?%s", f.paths[0], f.queries[0])
+	}
+}
+
+func TestFetchSpotifyPlaylist_FallsBackToClientCredentials(t *testing.T) {
+	for name, ctx := range map[string]context.Context{
+		"no source":        context.Background(),
+		"not connected":    userCtx("", errors.New("reconnect required")),
+		"empty user token": userCtx("", nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newSpotifyFake(t, func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(itemsPage(1, "", "track")) // legacy shape still parses
+			})
+			tracks, err := FetchSpotifyPlaylist(ctx, "abc123")
+			if err != nil || len(tracks) != 1 {
+				t.Fatalf("got %d tracks, err %v", len(tracks), err)
+			}
+			if f.auths[0] != authHeader("app-token") {
+				t.Fatal("expected client credentials")
+			}
+			if strings.Contains(f.queries[0], "market") {
+				t.Fatalf("client credentials must not ask for from_token: %s", f.queries[0])
+			}
+		})
+	}
+}
+
+func TestFetchSpotifyPlaylist_ErrorMapping(t *testing.T) {
+	cases := []struct {
+		name   string
+		ctx    context.Context
+		id     string
+		status int
+		want   error
+	}{
+		{"403 without user token", context.Background(), "abc", 403, ErrSpotifyConnectRequired},
+		{"403 with user token", userCtx("u", nil), "abc", 403, ErrSpotifyNotOwner},
+		{"404 with user token", userCtx("u", nil), "abc", 404, ErrSpotifyEditorial},
+		{"404 without user token", context.Background(), "abc", 404, ErrSpotifyConnectRequired},
+		{"37i9 id", userCtx("u", nil), "37i9dQZF1DXcBWIGoYBM5M", 200, ErrSpotifyEditorial},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSpotifyFake(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+			})
+			_, err := FetchSpotifyPlaylist(tc.ctx, tc.id)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("want %v, got %v", tc.want, err)
+			}
+			if strings.HasPrefix(tc.id, "37i9") && len(f.paths) != 0 {
+				t.Fatal("editorial ids must be rejected before any request")
+			}
+		})
+	}
+}
+
+func TestFetchSpotifyPlaylist_PaginationIsBounded(t *testing.T) {
+	f := newSpotifyFake(t, func(w http.ResponseWriter, r *http.Request) {
+		// Endless playlist: every page links to another.
+		json.NewEncoder(w).Encode(itemsPage(100, spotifyPlaylistURL+"/abc/items?offset=100", "item"))
+	})
+	tracks, err := FetchSpotifyPlaylist(userCtx("u", nil), "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tracks) != MaxTracks {
+		t.Fatalf("got %d tracks, want the %d cap", len(tracks), MaxTracks)
+	}
+	if len(f.paths) != 2 {
+		t.Fatalf("expected 2 pages for 200 tracks, got %d", len(f.paths))
+	}
+}
+
+func TestFetchSpotifyPlaylist_NeverFollowsForeignNextURL(t *testing.T) {
+	var evil int
+	evilSrv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { evil++ }))
+	defer evilSrv.Close()
+	newSpotifyFake(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(itemsPage(1, evilSrv.URL+"/steal", "item"))
+	})
+	if _, err := FetchSpotifyPlaylist(userCtx("u", nil), "abc"); err != nil {
+		t.Fatal(err)
+	}
+	if evil != 0 {
+		t.Fatal("followed a next URL outside the Spotify API with the credential")
+	}
+}
+
+func TestFetchYouTubePlaylist_PagesAndBounds(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		items := make([]map[string]any, 50)
+		for i := range items {
+			items[i] = map[string]any{
+				"snippet":        map[string]string{"title": "V", "videoOwnerChannelTitle": "C"},
+				"contentDetails": map[string]string{"videoId": "vid"},
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"items": items, "nextPageToken": "more"})
+	}))
+	defer server.Close()
+	old := youtubePlaylistURL
+	youtubePlaylistURL = server.URL
+	defer func() { youtubePlaylistURL = old }()
+	t.Setenv("YOUTUBE_API_KEY", "test-key")
+
+	tracks, err := FetchYouTubePlaylist(context.Background(), "PL1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tracks) != MaxTracks || calls != 4 {
+		t.Fatalf("got %d tracks in %d calls, want %d in 4", len(tracks), calls, MaxTracks)
+	}
+}
+
+// Transport errors embed the request URL, which carries the YouTube API key.
+func TestFetchYouTubePlaylist_NetworkErrorDoesNotLeakKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close() // connection refused
+	old := youtubePlaylistURL
+	youtubePlaylistURL = url
+	defer func() { youtubePlaylistURL = old }()
+	t.Setenv("YOUTUBE_API_KEY", "SECRETKEY123")
+
+	_, err := FetchYouTubePlaylist(context.Background(), "PL1")
+	if err == nil {
+		t.Fatal("expected a network error")
+	}
+	if strings.Contains(err.Error(), "key=") || strings.Contains(err.Error(), "SECRETKEY123") {
+		t.Fatalf("error leaks the API key: %v", err)
 	}
 }

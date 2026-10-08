@@ -57,7 +57,7 @@ var spotifyTrackURIRe = regexp.MustCompile(`^spotify:track:[0-9A-Za-z]{22}$`)
 // Errors are user-facing (UserError) so the host sees why the import failed.
 func validateImportTracks(tracks []queue.TrackRef) error {
 	if len(tracks) > maxImportTracks {
-		return userErrorf("too many tracks: %d (max %d per import)", len(tracks), maxImportTracks)
+		return userErrorf("Músicas demais: %d (o máximo por importação é %d)", len(tracks), maxImportTracks)
 	}
 	for i, t := range tracks {
 		if t.Title == "" {
@@ -243,14 +243,17 @@ type Hub struct {
 	spotifyMatcher  Matcher
 	searcher        Searcher
 	playlistFetcher PlaylistFetcher
-	similar         SimilarProvider
-	trackDepth      TrackDepthProvider
-	lyrics          LyricsProvider
-	listenBrainz    ListenBrainzProvider
-	lastfmEnrich    LastfmEnrichProvider
-	syncEnabled     bool
-	votingEnabled   bool
-	chatEnabled     bool
+	// spotifyUserToken mints a Spotify access token for a caller's userID from
+	// the server-held grant (nil when token custody is off).
+	spotifyUserToken func(ctx context.Context, userID string) (string, error)
+	similar          SimilarProvider
+	trackDepth       TrackDepthProvider
+	lyrics           LyricsProvider
+	listenBrainz     ListenBrainzProvider
+	lastfmEnrich     LastfmEnrichProvider
+	syncEnabled      bool
+	votingEnabled    bool
+	chatEnabled      bool
 
 	// videoEnabled gates the video heartbeat (FEATURE_VIDEO, #258). Its own
 	// flag, not syncEnabled: video carries ToS exposure and must switch off
@@ -1959,7 +1962,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, userErrorf("room id required")
 		}
 		if req.URL == "" {
-			return nil, userErrorf("enter a playlist URL")
+			return nil, userErrorf("Cole o link de uma playlist.")
 		}
 		if len(req.AddedBy) > maxImportFieldLen {
 			return nil, userErrorf("addedBy too long (max %d chars)", maxImportFieldLen)
@@ -1977,22 +1980,22 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		} else {
 			// If playlist fetcher not configured, return error
 			if h.playlistFetcher == nil {
-				return nil, userErrorf("playlist import is not enabled on this server")
+				return nil, userErrorf("A importação de playlists não está ativada neste servidor.")
 			}
 
 			// Fetch playlist tracks (short timeout to not block the RPC too long)
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
+			if h.spotifyUserToken != nil && userID != "" {
+				ctx = playlist.WithUserToken(ctx, func(c context.Context) (string, error) {
+					return h.spotifyUserToken(c, userID)
+				})
+			}
 
 			var err error
 			tracks, err = h.playlistFetcher(ctx, req.URL)
 			if err != nil {
-				// Fetcher errors are already sanitized (no upstream bodies, see
-				// httpx/playlist packages), so they are safe to show the user.
-				if errors.Is(err, playlist.ErrNotConfigured) {
-					return nil, userErrorf("this playlist service is not configured on the server (Spotify import needs server credentials)")
-				}
-				return nil, userErrorf("could not load playlist: %v", err)
+				return nil, h.playlistImportError(err)
 			}
 		}
 
@@ -2012,7 +2015,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		res, mutErr := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			remaining := queue.MaxQueueSize - len(s.Queue)
 			if remaining <= 0 {
-				return userErrorf("queue is full")
+				return userErrorf("A fila está cheia.")
 			}
 
 			toAdd := tracks
@@ -2586,6 +2589,33 @@ func (h *Hub) WithSpotifyMatcher(m Matcher) *Hub {
 func (h *Hub) WithSearcher(s Searcher) *Hub {
 	h.searcher = s
 	return h
+}
+
+// WithSpotifyUserToken lets playlist.import read Spotify playlists with the
+// importing user's own authorization instead of client credentials.
+func (h *Hub) WithSpotifyUserToken(f func(ctx context.Context, userID string) (string, error)) *Hub {
+	h.spotifyUserToken = f
+	return h
+}
+
+// playlistImportError turns fetcher errors into pt-BR messages the host can
+// act on. Fetcher errors never carry upstream bodies, so wrapping is safe.
+func (h *Hub) playlistImportError(err error) error {
+	switch {
+	case errors.Is(err, playlist.ErrSpotifyConnectRequired):
+		return userErrorf("O Spotify só deixa importar playlists de quem conectou a conta. Conecte o Spotify e tente de novo, ou cole uma playlist do Deezer ou do YouTube.")
+	case errors.Is(err, playlist.ErrSpotifyEditorial):
+		return userErrorf("Playlists criadas pelo próprio Spotify (como as Daily Mix e as do Spotify) não podem ser importadas. Copie as músicas para uma playlist sua e cole o link dela.")
+	case errors.Is(err, playlist.ErrSpotifyNotOwner):
+		return userErrorf("O Spotify só deixa importar playlists que são suas ou em que você colabora. Copie as músicas para uma playlist sua e cole o link dela.")
+	case errors.Is(err, playlist.ErrNotConfigured):
+		return userErrorf("Esse serviço de playlists não está configurado no servidor.")
+	}
+	// Anything else stays server-side: transport errors can embed URLs.
+	if h.logger != nil {
+		h.logger.Warn("playlist_import_failed", "err", err.Error())
+	}
+	return userErrorf("Não foi possível carregar a playlist. Tente de novo em instantes.")
 }
 
 // WithPlaylistFetcher enables playlist import via playlist.import RPC.

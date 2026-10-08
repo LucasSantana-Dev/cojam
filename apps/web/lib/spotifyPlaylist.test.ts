@@ -89,14 +89,15 @@ describe('fetchSpotifyPlaylistTracks', () => {
 
   it('pages until next is null', async () => {
     const page1 =
-      'https://api.spotify.com/v1/playlists/p/tracks?limit=100' +
-      '&fields=items(track(name,uri,duration_ms,artists(name),external_ids,album(images))),next';
+      'https://api.spotify.com/v1/playlists/p/items?limit=100&market=from_token' +
+      '&fields=items(item(name,uri,duration_ms,artists(name),external_ids,album(images)),' +
+      'track(name,uri,duration_ms,artists(name),external_ids,album(images))),next';
     const pages: Record<string, object> = {
       [page1]: {
         items: [item(1)],
-        next: 'https://api.spotify.com/v1/playlists/p/tracks?offset=100&limit=100',
+        next: 'https://api.spotify.com/v1/playlists/p/items?offset=100&limit=100',
       },
-      'https://api.spotify.com/v1/playlists/p/tracks?offset=100&limit=100': {
+      'https://api.spotify.com/v1/playlists/p/items?offset=100&limit=100': {
         items: [item(2)],
         next: null,
       },
@@ -113,14 +114,25 @@ describe('fetchSpotifyPlaylistTracks', () => {
     expect(tracks[1].title).toBe('T2');
   });
 
-  it('throws a development-mode restriction error on 403', async () => {
+  it('explains that only own or collaborative playlists import on 403', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 403, json: async () => ({}) })));
-    await expect(fetchSpotifyPlaylistTracks('p', async () => 'tok')).rejects.toThrow(/development mode/i);
+    await expect(fetchSpotifyPlaylistTracks('p', async () => 'tok')).rejects.toThrow(/suas ou em que você colabora/);
+  });
+
+  it('explains that Spotify-made playlists cannot be imported on 404', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) })));
+    await expect(fetchSpotifyPlaylistTracks('p', async () => 'tok')).rejects.toThrow(/Daily Mix/);
+  });
+
+  it('reads the Feb 2026 `item` field as well as the legacy `track`', () => {
+    const t = { name: 'S', uri: 'spotify:track:4uLU6hMCjMI75M1A2tKUQC' };
+    expect(toTrackRef({ item: t })?.title).toBe('S');
+    expect(toTrackRef({ track: t })?.title).toBe('S');
   });
 
   it('throws a rate-limit error on 429', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 429, json: async () => ({}) })));
-    await expect(fetchSpotifyPlaylistTracks('p', async () => 'tok')).rejects.toThrow(/rate/i);
+    await expect(fetchSpotifyPlaylistTracks('p', async () => 'tok')).rejects.toThrow(/limitou/i);
   });
 
   it('throws when there is no token', async () => {
@@ -129,7 +141,7 @@ describe('fetchSpotifyPlaylistTracks', () => {
 
   it('throws on an empty playlist', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ items: [], next: null }) })));
-    await expect(fetchSpotifyPlaylistTracks('p', async () => 'tok')).rejects.toThrow(/no importable tracks/i);
+    await expect(fetchSpotifyPlaylistTracks('p', async () => 'tok')).rejects.toThrow(/não tem músicas/i);
   });
 
   it('truncates at MAX_IMPORT_TRACKS (payload budget)', async () => {
