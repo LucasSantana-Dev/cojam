@@ -3,7 +3,7 @@
 // different V8 realm, so parseConnInfo's `instanceof Uint8Array` check
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
+import { useStore, isPermissionDeniedError, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
   chatUnavailableNotice, updatePlatform,
 } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
@@ -577,13 +577,31 @@ describe('room chat (F8)', () => {
   });
 });
 
+describe('isPermissionDeniedError', () => {
+  it('matches the control gate rejection, not other failures', () => {
+    expect(isPermissionDeniedError({ code: 103, message: 'permission denied' })).toBe(true);
+    expect(isPermissionDeniedError(new Error('permission denied'))).toBe(true);
+    expect(isPermissionDeniedError({ message: 'permission denied' })).toBe(true); // raw text, not the PT-BR mapping
+    expect(isPermissionDeniedError(new Error('Not connected'))).toBe(false);
+    expect(isPermissionDeniedError(null)).toBe(false);
+  });
+});
+
 describe('rpcErrorMessage', () => {
   it('returns the message from a real Error', () => {
     expect(rpcErrorMessage(new Error('boom'), 'fallback')).toBe('boom');
   });
 
   it('unwraps centrifuge-style plain {code, message} rejections', () => {
-    expect(rpcErrorMessage({ code: 403, message: 'not the host' }, 'fallback')).toBe('not the host');
+    expect(rpcErrorMessage({ code: 403, message: 'not the host' }, 'fallback')).toBe('Você não tem permissão para fazer isso.');
+  });
+
+  it('maps common server messages to PT-BR and falls back on unknown ones', () => {
+    expect(rpcErrorMessage({ code: 429, message: 'too many requests, slow down' }, 'x')).toMatch(/Muitas ações/);
+    expect(rpcErrorMessage({ code: 400, message: 'invalid room id' }, 'x')).toBe('Código de sala inválido.');
+    expect(rpcErrorMessage({ code: 400, message: 'permission denied' }, 'x')).toMatch(/permissão/);
+    expect(rpcErrorMessage({ code: 400, message: 'track not found' }, 'x')).toMatch(/Não encontrado/);
+    expect(rpcErrorMessage({ code: 500, message: 'something odd' }, 'generico')).toBe('generico');
   });
 
   it('falls back when there is no usable message', () => {

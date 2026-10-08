@@ -222,7 +222,7 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
         <span className="sr-only">{members.length === 1 ? '1 ouvindo' : `${members.length} ouvindo`}</span>
       </header>
 
-      <div ref={boxRef} className={`r4-ls${running ? ' is-running' : ''}${tuned ? ' is-tuned' : ''}`} role="group" aria-label="Quem está ouvindo">
+      <div ref={boxRef} data-count={visible.length} className={`r4-ls${running ? ' is-running' : ''}${tuned ? ' is-tuned' : ''}`} role="group" aria-label="Quem está ouvindo">
         {visible.map((member, i) => {
           const label = memberLabel(member, nameSuffixes);
           const isHost = Boolean(hostUserId && member.userId && member.userId === hostUserId);
@@ -250,7 +250,7 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
                       <path key={r} className={`r4-arcs__a r4-arcs__a${k}`} d={arcPath(r)} fill="none" strokeWidth="2.6" strokeLinecap="round" />
                     ))}
                   </svg>
-                  <div className="r4-ls__av" style={{ background: avatarGradient(member.userId ?? member.clientId ?? member.name) }} title={label}>
+                  <div className="r4-ls__av" style={{ background: avatarGradient(member.userId ?? member.clientId ?? member.name) }}>
                     <span aria-hidden="true">{member.name.charAt(0).toUpperCase()}</span>
                     {member.platform && (
                       <span className="r4-ls__badge">
@@ -265,9 +265,10 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
                       <Crown />
                     </span>
                   )}
-                  <span className="r4-ls__name-text">{label}</span>
-                  {isAdmin && <span className="r4-chip r4-ls__chip">admin</span>}
+                  <span className="r4-ls__name-text" title={label} tabIndex={0}>{label}</span>
+                  <span className="r4-ls__full" aria-hidden="true">{label}</span>
                 </div>
+                {isAdmin && <span className="r4-chip r4-ls__chip">admin</span>}
                 {manageable && (
                   <div className="r4-ls__roles">
                     <button

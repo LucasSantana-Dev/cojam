@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useStore, nowPlayingAdvance } from '@/lib/realtime';
+import { useStore, nowPlayingAdvance, isPermissionDeniedError } from '@/lib/realtime';
 import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
 import { computeExpectedPosition, isExpectedPositionKnown, serverNow } from '@/lib/playbackSync';
@@ -146,10 +146,10 @@ class YouTubePlayerAdapter implements IPlayer {
     }
   }
 
-  // YT.PlayerState.PLAYING === 1. Without getPlayerState assume playing.
+  // YT.PlayerState.PLAYING === 1. Without getPlayerState it is not playing.
   isPlaying(): boolean {
     try {
-      return this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() === 1 : true;
+      return this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() === 1 : false;
     } catch {
       return false;
     }
@@ -255,7 +255,10 @@ export function YouTubePlayer({
             // PLAYING: playback actually started, clear any prior failure.
             if (event.data === 1) onPlayErrorRef.current?.(null);
             if (event.data === 0 && nowPlayingIdRef.current) {
-              nowPlayingAdvance(roomId, nowPlayingIdRef.current);
+              // Advance is control-gated on the server: a listener's rejection is expected.
+              nowPlayingAdvance(roomId, nowPlayingIdRef.current).catch((err) => {
+                if (!isPermissionDeniedError(err)) console.warn('[youtube] advance at track end failed:', err);
+              });
             }
           },
           onError: (event: { data: number }) => {

@@ -673,7 +673,7 @@ func (h *Hub) Join(clientID, roomID string) {
 		h.observeFirstShared(roomID)
 	}
 	if !alreadyMember {
-		h.announceMembership(roomID, h.displayName(clientID), "joined")
+		h.announceMembership(roomID, h.displayName(clientID), "entrou")
 	}
 	// A room reloaded from the store may already be playing video.
 	h.reconcileHeartbeat(roomID)
@@ -722,7 +722,7 @@ func (h *Hub) Leave(clientID string) {
 	if len(rooms) > 0 {
 		name := h.displayName(clientID)
 		for _, roomID := range rooms {
-			h.announceMembership(roomID, name, "left")
+			h.announceMembership(roomID, name, "saiu")
 		}
 	}
 }
@@ -1663,7 +1663,9 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		// resets seniority by design.
 		h.recordJoinTime(req.RoomID, userID)
 		h.cancelHostGrace(req.RoomID, userID) // the host came back inside the grace window
-		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
+		// Seed for a radio refill when the join-time advance empties the queue.
+		var joinRefillSeed *queue.TrackRef
+		joinRes, joinErr := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			// Set host if authenticated and room has no host yet.
 			// If host left the room, reclaim for the new joiner.
 			if userID != "" {
@@ -1693,8 +1695,23 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 				// else: host is present, don't reassign
 			}
 			// When userID is empty (FEATURE_ROOM_AUTH off), HostUserID stays empty
+
+			// A transport restored from the store (or left by an absent host)
+			// may already be past the end of its track; nobody would advance
+			// it, so do it here, in the same mutation the joiner gets back.
+			if s.AdvanceIfEnded(time.Now().UnixMilli()) {
+				if h.logger != nil {
+					h.logger.Info("stale_transport_advanced", "room_id", req.RoomID, "now_playing_id", s.NowPlayingID)
+				}
+				// Same as advanceAfter: a radio room whose queue ran dry refills.
+				joinRefillSeed = radioSeedAfterEmptied(s)
+			}
 			return nil
 		})
+		if joinErr == nil && joinRefillSeed != nil && h.similar != nil && h.refillAllowed(req.RoomID) {
+			go h.refillRadio(req.RoomID, joinRefillSeed)
+		}
+		return joinRes, joinErr
 
 	case "queue.add":
 		var req struct {
@@ -2146,7 +2163,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		var req struct {
 			RoomID     string `json:"roomId"`
 			TrackID    string `json:"trackId,omitempty"`
-			PositionMs int64  `json:"positionMs"`
+			PositionMs *int64 `json:"positionMs"`
 		}
 		if err := json.Unmarshal(data, &req); err != nil {
 			return nil, err
@@ -2154,18 +2171,30 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		if req.RoomID == "" {
 			return nil, fmt.Errorf("transport.play: roomId required")
 		}
-		if req.PositionMs < 0 {
-			req.PositionMs = 0
-		}
 		return h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			if req.TrackID != "" {
 				if err := s.SetNowPlaying(req.TrackID); err != nil {
 					return err
 				}
 			}
+			// A missing positionMs means "resume": keep the paused position
+			// (or the live one if already playing) unless a new track starts.
+			var pos int64
+			switch {
+			case req.PositionMs != nil:
+				pos = *req.PositionMs
+			case req.TrackID == "" && s.Transport != nil:
+				pos = s.Transport.PositionMs
+				if s.Transport.State == "playing" {
+					pos += time.Now().UnixMilli() - s.Transport.UpdatedAtServerMs
+				}
+			}
+			if pos < 0 {
+				pos = 0
+			}
 			s.Transport = &queue.TransportState{
 				State:             "playing",
-				PositionMs:        req.PositionMs,
+				PositionMs:        pos,
 				UpdatedAtServerMs: time.Now().UnixMilli(),
 			}
 			s.Version++
@@ -2457,7 +2486,7 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certa
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ref, err := h.matcher(ctx, track.Title, track.Artist, track.ISRC)
+	ref, err := h.matcher(queue.WithDuration(ctx, track.DurationMs), track.Title, track.Artist, track.ISRC)
 	if err != nil || ref == nil {
 		if h.logger != nil {
 			h.logger.Info("match_miss", "room_id", roomID, "track_id", trackID, "err", fmt.Sprint(err))
@@ -2478,6 +2507,18 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certa
 			"video_id", ref.VideoID, "confidence", ref.Confidence)
 	}
 	return true
+}
+
+// radioSeedAfterEmptied returns the track to seed a radio refill when an advance
+// just emptied the queue (nil otherwise). It copies the value: a pointer into
+// s.Queue would race with later queue mutations. Kept in one place so the
+// queue-history change only has to re-point the seed source.
+func radioSeedAfterEmptied(s *queue.RoomState) *queue.TrackRef {
+	if s.NowPlayingID != "" || !s.RadioEnabled || len(s.Queue) == 0 {
+		return nil
+	}
+	seed := s.Queue[len(s.Queue)-1]
+	return &seed
 }
 
 // advanceAfter moves playback past afterID (idempotent) and runs the side
@@ -2537,7 +2578,7 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 	// The system message rides chat, not RoomState: no Version bump, no
 	// store.Save beyond the advance's own write-through (#205).
 	if err == nil && announced != nil {
-		h.publishSystemChat(roomID, fmt.Sprintf("Now playing: %s — %s", announced.Title, announced.Artist))
+		h.publishSystemChat(roomID, fmt.Sprintf("Tocando agora: %s, de %s", announced.Title, announced.Artist))
 	}
 
 	return res, err

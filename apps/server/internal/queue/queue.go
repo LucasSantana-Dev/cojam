@@ -358,6 +358,43 @@ func (rs *RoomState) AdvanceAfter(afterID string) error {
 	return nil
 }
 
+// EndedGraceMs is how far past a track's duration a playing transport may run
+// before the server treats the track as ended. It keeps a joiner from racing
+// the host's own end-of-track advance, which lands within about a second.
+//
+// It is also deliberately wide: the catalogue duration of a YouTube-matched
+// track is not the video's (the match can be a longer music video), so a
+// joiner reconnecting 5 s past a 3:48 catalogue entry must not skip a 4:30
+// video that is still playing. Only a transport that ran this far past the
+// catalogue end is treated as abandoned. The server cannot know the real video
+// length (only the player can), so a video more than 30 s longer than its
+// catalogue entry can still be cut on a late join; the matcher keeps matched
+// videos close to the catalogue length to make that rare.
+const EndedGraceMs = 30_000
+
+// AdvanceIfEnded moves playback past the now-playing track when a playing
+// transport has run beyond that track's duration (plus EndedGraceMs). Advance
+// is host-only on the client, so a host that vanished (or a server restart that
+// restored the transport from the store) leaves the position growing forever
+// and every listener seeking past the end. The advance re-anchors the
+// transport to position 0 (setNowPlayingID), so one step is enough: a long
+// outage does not skip the whole queue. It never refills radio. Tracks with an
+// unknown duration are left alone. Reports whether the room advanced.
+func (rs *RoomState) AdvanceIfEnded(nowMs int64) bool {
+	t := rs.Transport
+	if t == nil || t.State != "playing" || rs.NowPlayingID == "" {
+		return false
+	}
+	tr := rs.Track(rs.NowPlayingID)
+	if tr == nil || tr.DurationMs <= 0 {
+		return false
+	}
+	if t.PositionMs+(nowMs-t.UpdatedAtServerMs) < tr.DurationMs+EndedGraceMs {
+		return false
+	}
+	return rs.AdvanceAfter(rs.NowPlayingID) == nil
+}
+
 // Move relocates a track to a new position in the queue.
 // Index is clamped to [0, len-1]; NowPlayingID is unchanged.
 // Bumps Version when the move happens.
