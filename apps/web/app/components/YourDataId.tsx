@@ -14,8 +14,12 @@ const noopSubscribe = () => () => {};
 export function YourDataId({ inline = false }: { inline?: boolean } = {}) {
   const id = useSyncExternalStore(noopSubscribe, getStoredUserId, () => null);
   const [copied, setCopied] = useState(false);
+  // False on the server and during hydration: the inline variant must not flash
+  // "no code" before localStorage has been read.
+  const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
   if (!id) {
+    if (!mounted) return null;
     // Inline (the privacy page): say why there is nothing to copy instead of
     // leaving an empty section. Elsewhere the control stays hidden.
     return inline ? (

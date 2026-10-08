@@ -177,6 +177,9 @@ export default function PrivacyPage() {
         <code>[[PRAZO DE RESPOSTA]]</code>.
       </p>
       <p>
+        Para pedir a exclusão, use o código da seção <a href="#excluir-seus-dados">Excluir seus dados</a>.
+      </p>
+      <p>
         Como o serviço é de convidados, não podemos localizar dados sem esses indicadores. Parte
         dos dados (chat, presença) já não existe após o encerramento da sala. A remoção de
         atribuição e votos já gravados em uma sala e a exclusão do token do Spotify dependem de

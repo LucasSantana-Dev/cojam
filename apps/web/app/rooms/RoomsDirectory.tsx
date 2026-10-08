@@ -136,6 +136,7 @@ export function RoomsDirectory() {
                       <Link
                         href={`/room/${room.roomId}`}
                         className="r4s-room"
+                        aria-label={`Entrar na sala ${room.name || room.roomId}`}
                         onClick={(e) => onCardClick(e, room.roomId)}
                       >
                         <span className="r4s-room__top">

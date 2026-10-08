@@ -33,6 +33,8 @@ export function R4Footer() {
         <Link href="/privacidade">Privacidade</Link>
         {' · '}
         <Link href="/termos">Termos</Link>
+        {' · '}
+        <Link href="/privacidade#excluir-seus-dados">Seus dados</Link>
       </p>
       <p className="r4s-footer__mark">
         <LogoMark size={20} /> CoJam © {new Date().getFullYear()}
