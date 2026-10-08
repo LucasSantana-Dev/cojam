@@ -164,7 +164,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }, [joined, roomId, platform]);
   // isUnavailable() is exactly "pickSource() found nothing for this client"
   const trackUnavailable = Boolean(nowPlaying) && activeSource === null;
-  const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
+  const queueEmpty = (store.state?.queue?.length ?? 0) === 0 && (store.state?.history?.length ?? 0) === 0;
 
   const artwork = nowPlaying ? queueArtwork(nowPlaying) : null;
   const [coverFail, setCoverFail] = useState<{ url: string | null; level: number }>({ url: null, level: 0 });

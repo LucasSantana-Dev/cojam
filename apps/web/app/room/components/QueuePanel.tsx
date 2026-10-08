@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import Image from 'next/image';
-import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, rpcErrorMessage, isTrackNotFoundError } from '@/lib/realtime';
+import { useStore, queueRemove, nowPlayingSet, queueReorder, voteTrack, historyReadd, rpcErrorMessage, isTrackNotFoundError } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
-import type { TrackRef } from '@cojam/shared';
+import type { TrackRef, HistoryEntry } from '@cojam/shared';
 import type { Member } from '@/lib/realtime';
 import {
   PlayIcon,
@@ -14,6 +14,7 @@ import {
   MusicNoteIcon,
   PlusIcon,
   BlockIcon,
+  ChevronDownIcon,
 } from '@/app/components/icons';
 import { memberLabel } from '@/lib/nameSuffix';
 
@@ -25,6 +26,18 @@ export function queueArtwork(track: TrackRef): string | null {
   if (track.artworkUrl) return track.artworkUrl;
   const videoId = track.sources.youtube?.videoId;
   return videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null;
+}
+
+// "agora" / "há 5 min" / "há 2 h" for the Tocadas rows. Entries migrated from
+// rooms that predate history carry no playedAt and show no time.
+export function playedAgo(playedAt: number | undefined, now: number): string {
+  if (!playedAt) return '';
+  const min = Math.max(0, Math.floor((now - playedAt) / 60_000));
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `há ${h} h`;
+  return `há ${Math.floor(h / 24)} d`;
 }
 
 function ThumbUp() {
@@ -53,6 +66,10 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
   const state = useStore((s) => s.state);
   const queue = state?.queue ?? [];
   const nowPlayingId = state?.nowPlayingId;
+  const history = state?.history ?? [];
+  // Tocadas starts collapsed: it is reference material, not the queue.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [readdingId, setReaddingId] = useState<string | null>(null);
   const connected = useStore((s) => s.connected);
   const myVotes = useStore((s) => s.myVotes);
   const markVoted = useStore((s) => s.markVoted);
@@ -215,8 +232,24 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
     }
   };
 
+  // The playing track is the queue head; the first upcoming row cannot move above it.
+  const headOffset = nowPlayingId && queue[0]?.id === nowPlayingId ? 1 : 0;
+
+  const handleReadd = async (trackId: string) => {
+    if (readdingId) return;
+    setActionError('');
+    setReaddingId(trackId);
+    try {
+      await historyReadd(roomId, trackId);
+    } catch (err) {
+      setActionError(rpcErrorMessage(err, 'Não deu para adicionar esta faixa de novo. Tente de novo.'));
+    } finally {
+      setReaddingId(null);
+    }
+  };
+
   const handleMoveUp = async (trackId: string, currentIndex: number) => {
-    if (currentIndex > 0) {
+    if (currentIndex > headOffset) {
       await handleMove(trackId, currentIndex - 1);
     }
   };
@@ -371,7 +404,7 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
             </button>
             <button
               onClick={() => handleMoveUp(track.id, index)}
-              disabled={index === 0 || !canControl || isRemoving}
+              disabled={index <= headOffset || !canControl || isRemoving}
               aria-label="Mover para cima"
               title={isRemoving ? pendingTitle : canControl ? 'Mover para cima' : 'Só o anfitrião pode reordenar faixas'}
             >
@@ -455,7 +488,87 @@ export function QueuePanel({ roomId, canControl, onAdd, addOpen = false, addSlot
             {queue.map((t, i) => (t.id === nowPlayingId ? null : renderRow(t, i)))}
           </div>
         )}
+        {history.length > 0 && (
+          <section className="fq-hist" aria-labelledby="fq-hist-title">
+            <h4 id="fq-hist-title" className="fq-hist__head">
+              <button
+                type="button"
+                className="fq-hist__toggle"
+                aria-expanded={historyOpen}
+                aria-controls="fq-hist-list"
+                onClick={() => setHistoryOpen((o) => !o)}
+              >
+                <span>
+                  Tocadas <span className="r4-h2__n">({history.length})</span>
+                </span>
+                <span className="fq-hist__chev" aria-hidden="true"><ChevronDownIcon size={20} /></span>
+              </button>
+            </h4>
+            {historyOpen && (
+              <div id="fq-hist-list" role="list" aria-label="Faixas já tocadas" className="fq-hist__list">
+                {history.map((h) => (
+                  <HistoryRow
+                    key={h.id}
+                    entry={h}
+                    canControl={canControl}
+                    busy={readdingId === h.id}
+                    disabled={!connected || readdingId !== null}
+                    onReadd={handleReadd}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
+    </div>
+  );
+}
+
+function HistoryRow({
+  entry,
+  canControl,
+  busy,
+  disabled,
+  onReadd,
+}: {
+  entry: HistoryEntry;
+  canControl: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onReadd: (id: string) => void;
+}) {
+  const art = queueArtwork(entry);
+  const when = playedAgo(entry.playedAt, Date.now());
+  return (
+    <div data-testid="history-item" data-track-id={entry.id} role="listitem" className="fq-hrow">
+      <div className="fq-hrow__art">
+        {art ? (
+          <Image src={art} alt="" width={40} height={40} unoptimized />
+        ) : (
+          <span className="fq-art__fallback" aria-hidden="true"><MusicNoteIcon size={16} /></span>
+        )}
+      </div>
+      <div className="fq-text">
+        <div className="fq-title fq-title--sm">{entry.title}</div>
+        <div className="fq-artist">
+          {entry.artist}
+          {when && <span className="fq-hrow__when"> · {when}</span>}
+        </div>
+      </div>
+      {canControl && (
+        <button
+          type="button"
+          className="fq-hrow__add"
+          onClick={() => onReadd(entry.id)}
+          disabled={disabled}
+          aria-label={`Adicionar de novo: ${entry.title}`}
+          title="Adicionar de novo ao fim da fila"
+        >
+          <PlusIcon size={16} />
+          <span>{busy ? 'Adicionando...' : 'Adicionar de novo'}</span>
+        </button>
+      )}
     </div>
   );
 }

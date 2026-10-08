@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act, within, waitFor } from '@testing-library/react';
-import { QueuePanel, queueArtwork } from './QueuePanel';
+import { QueuePanel, queueArtwork, playedAgo } from './QueuePanel';
 import { useStore, restoreMyVotes } from '@/lib/realtime';
 import type { RoomState, TrackRef } from '@cojam/shared';
 
@@ -11,6 +11,7 @@ const rpcMocks = vi.hoisted(() => ({
   nowPlayingSet: vi.fn(async () => {}),
   queueReorder: vi.fn(async () => {}),
   voteTrack: vi.fn(async () => {}),
+  historyReadd: vi.fn(async () => {}),
 }));
 
 vi.mock('@/lib/realtime', async (importOriginal) => ({
@@ -19,6 +20,7 @@ vi.mock('@/lib/realtime', async (importOriginal) => ({
   nowPlayingSet: rpcMocks.nowPlayingSet,
   queueReorder: rpcMocks.queueReorder,
   voteTrack: rpcMocks.voteTrack,
+  historyReadd: rpcMocks.historyReadd,
 }));
 
 // The F4 flag resolves through useRuntimeFeatures: the /env.js runtime
@@ -407,5 +409,97 @@ describe('QueuePanel voting (F4)', () => {
     expect(area).not.toHaveAttribute('hidden');
     expect(screen.getByLabelText('Buscar uma música')).toHaveFocus();
     expect(screen.getByRole('button', { name: /Adicionar música/ })).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+describe('QueuePanel Tocadas (history)', () => {
+  const playing = track('t3', 'Playing Now');
+  const upcoming = track('t4', 'Up Next');
+  const seed = (history?: RoomState['history']) =>
+    useStore.setState({
+      state: { ...roomState([playing, upcoming]), nowPlayingId: 't3', history },
+    });
+  const hist = (id: string, title: string, playedAt?: number) => ({
+    id,
+    title,
+    artist: 'Old Artist',
+    addedBy: 'Bia',
+    playedAt,
+    sources: {},
+  });
+
+  beforeEach(() => {
+    rpcMocks.historyReadd.mockClear();
+    rpcMocks.queueReorder.mockClear();
+  });
+
+  it('lists only the upcoming tracks under A seguir, never a played one', () => {
+    seed([hist('h1', 'Already Played')]);
+    render(<QueuePanel roomId="r1" canControl />);
+    const rows = screen.getAllByTestId('queue-item');
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).getByTestId('queue-title')).toHaveTextContent('Up Next');
+    expect(screen.getByText('A seguir')).toBeInTheDocument();
+    expect(screen.queryByText('Already Played')).not.toBeInTheDocument();
+  });
+
+  it('renders no Tocadas section when nothing was played', () => {
+    seed(undefined);
+    render(<QueuePanel roomId="r1" canControl />);
+    expect(screen.queryByRole('button', { name: /Tocadas/ })).not.toBeInTheDocument();
+  });
+
+  it('starts collapsed and opens from a real button with aria-expanded', () => {
+    seed([hist('h1', 'Already Played'), hist('h2', 'Older One')]);
+    render(<QueuePanel roomId="r1" canControl />);
+    const toggle = screen.getByRole('button', { name: /Tocadas/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('history-item')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const items = screen.getAllByTestId('history-item');
+    expect(items.map((i) => i.getAttribute('data-track-id'))).toEqual(['h1', 'h2']);
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId('history-item')).not.toBeInTheDocument();
+  });
+
+  it('lets a controller add a played track again', async () => {
+    seed([hist('h1', 'Already Played')]);
+    render(<QueuePanel roomId="r1" canControl />);
+    fireEvent.click(screen.getByRole('button', { name: /Tocadas/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar de novo: Already Played' }));
+    await waitFor(() => expect(rpcMocks.historyReadd).toHaveBeenCalledWith('r1', 'h1'));
+  });
+
+  it('shows the played rows but no re-add action to a non-controller', () => {
+    seed([hist('h1', 'Already Played')]);
+    render(<QueuePanel roomId="r1" canControl={false} />);
+    fireEvent.click(screen.getByRole('button', { name: /Tocadas/ }));
+    expect(screen.getByText('Already Played')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Adicionar de novo/ })).not.toBeInTheDocument();
+  });
+
+  it('reports a failed re-add in an alert', async () => {
+    rpcMocks.historyReadd.mockRejectedValueOnce({});
+    seed([hist('h1', 'Already Played')]);
+    render(<QueuePanel roomId="r1" canControl />);
+    fireEvent.click(screen.getByRole('button', { name: /Tocadas/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar de novo: Already Played' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não deu para adicionar esta faixa de novo');
+  });
+
+  it('keeps the first upcoming row from moving above the playing head', () => {
+    seed([hist('h1', 'Already Played')]);
+    render(<QueuePanel roomId="r1" canControl />);
+    expect(screen.getByRole('button', { name: 'Mover para cima' })).toBeDisabled();
+  });
+
+  it('formats the played time', () => {
+    const now = 10_000_000_000;
+    expect(playedAgo(undefined, now)).toBe('');
+    expect(playedAgo(now - 20_000, now)).toBe('agora');
+    expect(playedAgo(now - 5 * 60_000, now)).toBe('há 5 min');
+    expect(playedAgo(now - 3 * 3_600_000, now)).toBe('há 3 h');
+    expect(playedAgo(now - 2 * 86_400_000, now)).toBe('há 2 d');
   });
 });

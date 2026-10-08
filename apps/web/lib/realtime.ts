@@ -793,6 +793,14 @@ export async function nowPlayingAdvance(roomId: string, afterId: string) {
   await centrifuge.rpc('now_playing.advance', { roomId, afterId });
 }
 
+// history.readd: queues a played track again at the end as a new entry.
+// Controllers only (host, owner, admin); the server copies the track from
+// history, so the old entry is never resurrected.
+export async function historyReadd(roomId: string, trackId: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('history.readd', { roomId, trackId });
+}
+
 export async function queueReorder(roomId: string, trackId: string, toIndex: number) {
   if (!centrifuge) throw new Error('Not connected');
   await centrifuge.rpc('queue.reorder', { roomId, trackId, toIndex });
