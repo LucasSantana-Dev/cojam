@@ -21,7 +21,7 @@ import { usePalcoMotion, setPalcoMotion } from '@/lib/palcoView';
 import { computeExpectedPosition, serverNow } from '@/lib/playbackSync';
 import {
   WORLDS, pickWorld, frameStage, playerRect, boothTop, boothMembers, crowdMembers, crowdSlots, memberKey,
-  newVoters, memberForVoter, memberForClient, placeBubble, placeTag, type Framing, type WorldKind,
+  newVoters, memberForVoter, memberForClient, placeBubble, placeTag, upNext, boardRect, type Framing, type WorldKind,
 } from '@/lib/palco';
 import { PalcoScene, loadSceneImages, type FrameOut } from './scene';
 import type { Member } from '@/lib/realtime';
@@ -405,6 +405,10 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
     document.getElementById(`palco-tab-${next}`)?.focus();
   };
 
+  // "A seguir": the next tracks on an LED board under the player, never over it.
+  const upcoming = useMemo(() => upNext(state), [state]);
+  const board = framing && screen ? boardRect(world, framing, screen, upcoming.length) : null;
+
   const stageImgStyle = framing
     ? { left: framing.ox - framing.camLeft * framing.scale, top: -framing.camTop * framing.scale, width: world.W * framing.scale, height: world.H * framing.scale }
     : undefined;
@@ -427,6 +431,20 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
                 <span className="palco__screen-empty">{nowPlaying ? nowPlaying.title : 'Nada tocando'}</span>
               ))}
             </div>
+          )}
+          {board && (
+            <section className="palco-board" aria-labelledby="palco-board-head" data-testid="palco-board" style={{ left: board.x, top: board.y, width: board.w, height: board.h }}>
+              <p id="palco-board-head" className="palco-board__head">A seguir</p>
+              <ol className="palco-board__list">
+                {upcoming.slice(0, board.rows).map((t, i) => (
+                  <li key={t.id} className="palco-board__row">
+                    <span className="palco-board__n" aria-hidden="true">{i + 1}</span>
+                    <span className="palco-board__t">{t.title}</span>
+                    <span className="palco-board__a"> · {t.artist}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
           )}
           <div className="palco__tags" aria-hidden="true">
             {(['L', 'R'] as const).map((side) => {

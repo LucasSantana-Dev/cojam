@@ -184,4 +184,13 @@ describe('PalcoView', () => {
     expect(screen.queryByRole('button', { name: 'Pausar' })).toBeNull();
     expect(screen.getByLabelText('Volume')).toBeTruthy();
   });
+
+  it('lists the next tracks on the "A seguir" board and hides it when nothing is queued', async () => {
+    await mount();
+    const board = screen.getByRole('region', { name: 'A seguir' });
+    expect([...board.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['1Faixa t2 · Artista', '2Faixa t3 · Artista']);
+    act(() => useStore.getState().setState({ ...state(undefined, 2), queue: [track('t1', 'Bia', 'u-bia')] }));
+    expect(screen.queryByRole('region', { name: 'A seguir' })).toBeNull();
+  });
 });
+

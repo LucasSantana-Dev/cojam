@@ -4,7 +4,7 @@ import {
   WORLDS, pickWorld, frameStage, screenRect, playerRect, boothTop, intersects, toCss,
   boothMembers, crowdMembers, crowdSlots, nextTrack, memberForTrack,
   newVoters, memberForVoter, memberForClient, placeBubble, placeTag,
-  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, type PalcoMember,
+  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, upNext, boardRect, BOARD_MAX, SPRITE_H, type PalcoMember,
 } from './palco';
 
 const t = (id: string, addedBy: string, addedByUserId?: string): TrackRef => ({ id, title: id, artist: 'A', addedBy, addedByUserId, sources: {} });
@@ -240,3 +240,48 @@ describe('overlays never touch the screen', () => {
     expect(below.top).toBe(302);
   });
 });
+
+describe('"A seguir" board', () => {
+  it('lists up to three tracks after the playing one, in queue order', () => {
+    const q = [t('a', 'Bia'), t('b', 'Caio'), t('c', 'Dani'), t('d', 'Bia'), t('e', 'Caio')];
+    expect(upNext(room(q, 'a')).map((x) => x.id)).toEqual(['b', 'c', 'd']);
+    expect(upNext(room(q, 'c')).map((x) => x.id)).toEqual(['a', 'b', 'd']);
+    expect(upNext(room([t('a', 'Bia')], 'a'))).toEqual([]);
+    expect(upNext(null)).toEqual([]);
+  });
+
+  const sizes: Array<[number, number]> = [[390, 844], [390, 664], [360, 740], [430, 932], [1440, 900], [1280, 720], [1024, 768], [1920, 1080], [800, 600]];
+  it.each(sizes)('never touches the player or the crowd tags at %ix%i', (vw, vh) => {
+    const world = WORLDS[pickWorld(vw, vh)];
+    const ch = vh - (world.kind === 'phone' ? 330 : 150); // header and HUD
+    const f = frameStage(world, vw, ch);
+    const player = playerRect(world, f, vw);
+    const b = boardRect(world, f, player, BOARD_MAX);
+    if (!b) return; // no room: hidden, which is allowed
+    expect(intersects(b, player)).toBe(false);
+    expect(b.y).toBeGreaterThanOrEqual(player.y + player.h);
+    expect(b.x).toBeGreaterThanOrEqual(0);
+    expect(b.x + b.w).toBeLessThanOrEqual(vw);
+    expect(b.rows).toBeGreaterThanOrEqual(1);
+    expect(b.rows).toBeLessThanOrEqual(BOARD_MAX);
+    const heads = toCss(f, 0, f.crowdBottom + Math.min(world.frontOff, world.backOff) - SPRITE_H)[1];
+    expect(b.y + b.h).toBeLessThanOrEqual(heads - 20);
+  });
+
+  it('shows all three rows at 390x844 and 1440x900', () => {
+    for (const [vw, ch] of [[390, 844 - 330], [1440, 900 - 150]]) {
+      const world = WORLDS[pickWorld(vw, ch + 150)];
+      const f = frameStage(world, vw, ch);
+      expect(boardRect(world, f, playerRect(world, f, vw), 3)?.rows).toBe(3);
+    }
+  });
+
+  it('is hidden with an empty queue or the compact phone framing', () => {
+    const world = WORLDS.phone;
+    const f = frameStage(world, 390, 500);
+    expect(boardRect(world, f, playerRect(world, f, 390), 0)).toBeNull();
+    const c = frameStage(world, 390, 500, true);
+    expect(boardRect(world, c, playerRect(world, c, 390), 3)).toBeNull();
+  });
+});
+
