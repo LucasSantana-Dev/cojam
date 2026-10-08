@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore, requestClockRemeasure, nowPlayingAdvance } from './realtime';
 import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, isPastEnd, DRIFT_THRESHOLD_MS, seekCooldownMs, serverNow } from './playbackSync';
@@ -21,6 +21,12 @@ import type { IPlayer } from './playerInterface';
 // now_playing.advance RPC (guarded per track, the server also dedups on
 // afterId); everyone else stops correcting and waits for the room to move.
 const ADVANCE_RETRY_MS = 10_000;
+// How long a catalogue-only past-end verdict waits for the player's own duration.
+const PAST_END_CONFIRM_MS = 10_000;
+// A player duration beyond this multiple of the catalogue entry is not trusted.
+const MAX_PLAYER_DURATION_FACTOR = 3;
+// Drift this far off is a real jump, not a rebuffer: it resets the seek backoff.
+const BACKOFF_RESET_DRIFT_MS = 8000;
 
 export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: boolean, canAdvance = false) {
   const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -37,38 +43,52 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
   );
 
   // The player's own duration for the now-playing track, learned while it
-  // PLAYS (a duration read during a load can still be the previous video's).
-  // The catalogue durationMs is a hint, not the video: a YouTube match can be a
+  // PLAYS (a duration read during a load is 0 or the previous video's). The
+  // catalogue durationMs is a hint, not the video: a YouTube match can be a
   // longer music video, and radio refills, pasted links and video tracks carry
   // none, so the end is max(catalogue, player) and unknown means never past.
   const playerDurationRef = useRef<{ id: string; ms: number } | null>(null);
-  // Track id whose player duration was already asked for once at a past-end decision.
-  const confirmedRef = useRef<string | null>(null);
+  // When a catalogue-only past-end verdict started being held, per track.
+  const holdRef = useRef<{ id: string; at: number } | null>(null);
+
+  // Reads the player's duration into playerDurationRef, only while it PLAYS.
+  const learnDuration = useCallback(() => {
+    if (!activePlayer) return;
+    if (activePlayer.isPlaying && !activePlayer.isPlaying()) return;
+    const id = useStore.getState().state?.nowPlayingId;
+    if (!id) return;
+    activePlayer
+      .getDurationMs()
+      .then((ms) => {
+        if (Number.isFinite(ms) && ms > 0) playerDurationRef.current = { id, ms };
+      })
+      .catch(() => {});
+  }, [activePlayer]);
 
   // Returns true when the transport is past the end of the now-playing track
   // (the caller must not seek); advances once if this user can control.
-  const handlePastEnd = (current: { state: 'playing' | 'paused' | 'stopped'; positionMs: number; updatedAtServerMs: number }, now: number): boolean => {
+  const handlePastEnd = useCallback((current: { state: 'playing' | 'paused' | 'stopped'; positionMs: number; updatedAtServerMs: number }, now: number): boolean => {
     const st = useStore.getState().state;
     const id = st?.nowPlayingId;
     if (!st || !id) return false;
+    learnDuration();
     const catalogueMs = st.queue.find((t) => t.id === id)?.durationMs ?? 0;
     const learned = playerDurationRef.current;
-    const playerMs = learned && learned.id === id ? learned.ms : 0;
+    let playerMs = learned && learned.id === id ? learned.ms : 0;
+    // A player length far beyond the entry is a wrong match (hour-long loop),
+    // not a longer cut: the catalogue end stands.
+    if (catalogueMs > 0 && playerMs > catalogueMs * MAX_PLAYER_DURATION_FACTOR) playerMs = 0;
     const durationMs = Math.max(catalogueMs, playerMs);
-    if (!isPastEnd(current, now, durationMs)) return false;
-    // The catalogue says the track ended but the player has not told us its
-    // own length yet: ask once before acting, so a longer video than the
-    // catalogue entry is never cut short. Hold (no seek) meanwhile.
-    if (activePlayer && playerMs === 0 && confirmedRef.current !== id) {
-      confirmedRef.current = id;
-      // The next drift tick re-evaluates with whatever was learned.
-      activePlayer
-        .getDurationMs()
-        .then((ms) => {
-          if (Number.isFinite(ms) && ms > 0) playerDurationRef.current = { id, ms };
-        })
-        .catch(() => {});
-      return true;
+    if (!isPastEnd(current, now, durationMs)) {
+      holdRef.current = null;
+      return false;
+    }
+    // Only the catalogue says the track ended and the player has not told us
+    // its length yet (metadata still loading): hold, no seek, no advance, until
+    // it does, bounded so a stale room whose player never starts still moves.
+    if (activePlayer && playerMs === 0) {
+      const hold = holdRef.current && holdRef.current.id === id ? holdRef.current : (holdRef.current = { id, at: Date.now() });
+      if (Date.now() - hold.at < PAST_END_CONFIRM_MS) return true;
     }
     const last = advancedRef.current;
     if (canAdvanceRef.current && (!last || last.id !== id || Date.now() - last.at > ADVANCE_RETRY_MS)) {
@@ -78,7 +98,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
       });
     }
     return true;
-  };
+  }, [activePlayer, learnDuration]);
 
   useEffect(() => {
     if (!syncEnabled || !activePlayer || !transport) return;
@@ -148,12 +168,6 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         return;
       }
       if (handlePastEnd(current, now)) return;
-      if (!activePlayer.isPlaying || activePlayer.isPlaying()) {
-        const idAtRead = useStore.getState().state?.nowPlayingId;
-        activePlayer.getDurationMs().then((ms) => {
-          if (idAtRead && Number.isFinite(ms) && ms > 0) playerDurationRef.current = { id: idAtRead, ms };
-        }).catch(() => {});
-      }
       // Cued/buffering/unstarted reads are unreliable (getCurrentTime() is 0).
       if (activePlayer.isPlaying && !activePlayer.isPlaying()) {
         // Paused while the room plays (e.g. autoplay blocked): try play() once
@@ -164,8 +178,6 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         }
         return;
       }
-      // Let the last seek settle before judging drift again.
-      if (Date.now() - lastSeekAt < seekCooldownMs(consecutiveSeeks)) return;
       const expected = computeExpectedPosition(current, now);
 
       activePlayer.getCurrentPositionMs()
@@ -174,6 +186,10 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
           if (!shouldCorrect(drift, DRIFT_THRESHOLD_MS)) {
             consecutiveSeeks = 0;
           } else {
+            // Drift is measured every tick; only the SEEK waits for the last one
+            // to settle. A large new jump is not a rebuffer: back to the base wait.
+            if (Math.abs(drift) > BACKOFF_RESET_DRIFT_MS) consecutiveSeeks = 0;
+            if (Date.now() - lastSeekAt < seekCooldownMs(consecutiveSeeks)) return;
             lastSeekAt = Date.now();
             consecutiveSeeks++;
             activePlayer.seekToMs(expected).catch((err) => {
@@ -192,5 +208,5 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         driftCorrectionIntervalRef.current = null;
       }
     };
-  }, [activePlayer, transport, syncEnabled]);
+  }, [activePlayer, transport, syncEnabled, handlePastEnd]);
 }

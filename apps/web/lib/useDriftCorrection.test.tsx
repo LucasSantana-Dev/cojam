@@ -163,51 +163,75 @@ describe('useDriftCorrection (#177)', () => {
       unmount();
     });
 
-    it('backs off when every seek leaves the player behind again (slow rebuffer chase)', async () => {
+    // A chase: the player lags the expected position by 3 s after every seek
+    // (a rebuffer longer than the 1 s threshold, far below the 8 s jump reset).
+    const chase = () => {
       const player = makePlayer();
-      // The player never catches up: each seek costs a rebuffer longer than the threshold.
-      player.getCurrentPositionMs.mockResolvedValue(0);
-      useStore.getState().setState(
-        roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 20_000 }),
-      );
-      const { unmount } = renderHook(() => useDriftCorrection(player, true));
-      const stamps: number[] = [];
+      const stamp = Date.now() - 20_000;
+      let lag = true;
+      player.getCurrentPositionMs.mockImplementation(async () => Date.now() - stamp - (lag ? 3000 : 0));
+      useStore.getState().setState(roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: stamp }));
+      const seeks: number[] = [];
       player.seekToMs.mockImplementation(async () => {
-        stamps.push(Date.now());
+        seeks.push(Date.now());
       });
+      return { player, seeks, setLag: (v: boolean) => (lag = v) };
+    };
+
+    it('backs off when every seek leaves the player behind again (slow rebuffer chase)', async () => {
+      const { player, seeks } = chase();
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
       await act(async () => {
         await vi.advanceTimersByTimeAsync(60_000);
       });
       // A fixed 3 s cooldown re-seeked every 4.5 s (13 times a minute).
-      expect(stamps.length).toBeLessThanOrEqual(5);
-      const gaps = stamps.slice(1).map((v, i) => v - stamps[i]);
+      expect(seeks.length).toBeLessThanOrEqual(5);
+      const gaps = seeks.slice(1).map((v, i) => v - seeks[i]);
       for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeGreaterThan(gaps[i - 1]);
       unmount();
     });
 
     it('resets the backoff once drift is back in range', async () => {
-      const player = makePlayer();
-      let lag = true;
-      useStore.getState().setState(
-        roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 20_000 }),
-      );
-      const start = Date.now();
+      const { player, seeks, setLag } = chase();
       const { unmount } = renderHook(() => useDriftCorrection(player, true));
-      player.getCurrentPositionMs.mockImplementation(async () => (lag ? 0 : Date.now() - start + 20_000));
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(5000); // one corrective seek at 4.5 s
+        await vi.advanceTimersByTimeAsync(30_000); // several seeks: the wait has grown past 6 s
       });
-      expect(player.seekToMs).toHaveBeenCalledTimes(2);
-      lag = false;
+      setLag(false);
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(20_000); // in sync: no further seeks, counter resets
+        await vi.advanceTimersByTimeAsync(30_000); // in sync: counter resets
       });
-      expect(player.seekToMs).toHaveBeenCalledTimes(2);
-      lag = true;
+      const before = seeks.length;
+      setLag(true);
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(4500); // back to the base 3 s cooldown
+        await vi.advanceTimersByTimeAsync(20_000);
       });
-      expect(player.seekToMs).toHaveBeenCalledTimes(3);
+      const relapse = seeks.slice(before);
+      expect(relapse.length).toBeGreaterThanOrEqual(2);
+      // Base 3 s wait again (one 1.5 s tick later), not the 12 s the grown backoff would impose.
+      expect(relapse[1] - relapse[0]).toBeLessThanOrEqual(6000);
+      unmount();
+    });
+
+    it('a large new jump at the backoff cap is corrected at the base wait', async () => {
+      const { player, seeks, setLag } = chase();
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000); // backoff at its cap
+      });
+      const before = seeks.length;
+      // The host seeks the room 60 s ahead: drift jumps far over the rebuffer scale.
+      act(() => {
+        useStore.getState().setState(
+          roomState(2, { state: 'playing', positionMs: 100_000, updatedAtServerMs: Date.now() }),
+        );
+      });
+      setLag(false);
+      player.getCurrentPositionMs.mockImplementation(async () => 0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(seeks.length).toBeGreaterThan(before + 1); // initial sync + a drift correction inside 5 s
       unmount();
     });
 
@@ -303,7 +327,7 @@ describe('useDriftCorrection past the end of the track', () => {
     const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
     await act(async () => {
       seed(2, { ...STALE, positionMs: 1 });
-      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(2000);
     });
     expect(advanceMock).toHaveBeenCalledTimes(1);
     unmount();
@@ -392,6 +416,58 @@ describe('useDriftCorrection past the end of the track', () => {
     });
     expect(advanceMock).toHaveBeenCalledTimes(1);
     expect(advanceMock).toHaveBeenCalledWith('r1', 't1');
+    unmount();
+  });
+
+  it('does not cut a longer video when the first duration read is 0 (metadata still loading)', async () => {
+    const player = makePlayer();
+    player.getDurationMs.mockResolvedValueOnce(0).mockResolvedValue(270_000);
+    // Reload at 4:00 into a 4:30 video whose catalogue entry says 3:43.
+    seed(1, { state: 'playing', positionMs: 0, updatedAtServerMs: NOW - 240_000 });
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+    expect(advanceMock).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('still advances a stale room whose player never reports a duration (bounded hold)', async () => {
+    const player = makePlayer();
+    player.getDurationMs.mockResolvedValue(0);
+    seed(1, STALE);
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(advanceMock).not.toHaveBeenCalled(); // held while the duration is unknown
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(advanceMock).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('does not read the duration while the player is not PLAYING', async () => {
+    const player = { ...makePlayer(), isPlaying: vi.fn(() => false) };
+    seed(1, STALE);
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, false));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(player.getDurationMs).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('distrusts a player duration over 3x the catalogue (hour-long loop): the catalogue end stands', async () => {
+    const player = makePlayer();
+    player.getDurationMs.mockResolvedValue(3_829_000); // 63:49 for a 2:49 entry
+    seed(1, { state: 'playing', positionMs: 0, updatedAtServerMs: NOW - 400_000 }, 169_000);
+    const { unmount } = renderHook(() => useDriftCorrection(player, true, true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+    expect(advanceMock).toHaveBeenCalledTimes(1);
     unmount();
   });
 });
