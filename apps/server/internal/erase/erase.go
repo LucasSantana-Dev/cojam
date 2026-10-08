@@ -145,7 +145,11 @@ func ScrubRoom(s *queue.RoomState, req Request) RoomChanges {
 		s.OwnerUserID = ""
 		ch.RoleCleared = true
 	}
-	if changed, _ := s.SetAdmin(req.Sub, false); changed {
+	for {
+		changed, _ := s.SetAdmin(req.Sub, false) // every occurrence goes
+		if !changed {
+			break
+		}
 		ch.RoleCleared = true
 	}
 	for i := range s.Queue {

@@ -399,6 +399,7 @@ var mutatingMethods = map[string]bool{
 	"room.set_public":     true,
 	"room.set_admin":      true,
 	"room.transfer_host":  true,
+	"room.claim_host":     true,
 	"room.kick":           true,
 	"room.rebind":         true,
 	"transport.play":      true,
@@ -440,6 +441,7 @@ var knownMethods = map[string]bool{
 	"room.kick":           true,
 	"room.set_admin":      true,
 	"room.transfer_host":  true,
+	"room.claim_host":     true,
 	"room.rebind":         true,
 	"member.set_platform": true,
 	"member.platforms":    true,
@@ -1672,8 +1674,11 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 					s.HostUserID = userID
 					s.Version++ // host changed: bump so version-guarded clients accept it
 				} else if s.OwnerUserID != "" && s.OwnerUserID == userID {
-					// The owner always takes host back, whoever holds it now.
-					if s.HostUserID != userID {
+					// The owner takes host back when the host is absent (a
+					// restart, a dropped connection). A present host stays:
+					// the owner uses room.claim_host to take it deliberately,
+					// so a transfer is not undone by a page refresh.
+					if s.HostUserID != userID && !h.IsUserIDInRoom(req.RoomID, s.HostUserID) {
 						s.HostUserID = userID
 						s.Version++
 					}
@@ -2329,6 +2334,22 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		res, err := h.setAdmin(req.RoomID, userID, req.UserID, req.Admin)
 		return res, err
 
+	case "room.claim_host":
+		var req struct {
+			RoomID string `json:"roomId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("room.claim_host: roomId required")
+		}
+		res, err := h.claimHost(req.RoomID, userID)
+		if err == nil && h.logger != nil {
+			h.logger.Info("room_host_claimed", "room_id", req.RoomID, "by", userID)
+		}
+		return res, err
+
 	case "room.transfer_host":
 		var req struct {
 			RoomID string `json:"roomId"`
@@ -2506,7 +2527,7 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 	})
 
 	// After successful mutate, trigger refill if needed (async, outside the lock)
-	if err == nil && refillSeed != nil && h.similar != nil {
+	if err == nil && refillSeed != nil && h.similar != nil && h.refillAllowed(roomID) {
 		go h.refillRadio(roomID, refillSeed)
 	}
 

@@ -102,22 +102,6 @@ func TestOwner_ExistingRoomWithoutOwnerIsNotGuessed(t *testing.T) {
 	}
 }
 
-func TestOwner_ReclaimsHostEvenWhenHostIsPresent(t *testing.T) {
-	h := NewHub(nil)
-	rolesJoin(t, h, "c-o", "owner")
-	rolesJoin(t, h, "c-j", "jack")
-	if err := rolesRPC(h, "room.transfer_host", `{"roomId":"`+rolesRoom+`","userId":"jack"}`, "c-o", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if s := rolesState(t, h); s.HostUserID != "jack" {
-		t.Fatalf("host = %q, want jack", s.HostUserID)
-	}
-	rolesJoin(t, h, "c-o2", "owner") // owner reconnects
-	if s := rolesState(t, h); s.HostUserID != "owner" {
-		t.Fatalf("host = %q, want owner to reclaim", s.HostUserID)
-	}
-}
-
 func TestShutdown_NoPromotion(t *testing.T) {
 	h := NewHub(nil)
 	rolesJoin(t, h, "c-o", "owner")

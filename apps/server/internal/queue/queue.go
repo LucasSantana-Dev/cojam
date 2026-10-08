@@ -77,6 +77,9 @@ type TrackRef struct {
 	// serialized, so never persisted or published (see roles.go).
 	EnrichPending   int  `json:"-"`
 	EnrichUncertain bool `json:"-"`
+	// EnrichChecked is true once a lookup ran in this process and cleanly
+	// missed (or no matcher exists at all). Unknown after a restart.
+	EnrichChecked bool `json:"-"`
 }
 
 // Track kinds (#258). Empty is treated as KindAudio.

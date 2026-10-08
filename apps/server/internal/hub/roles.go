@@ -13,6 +13,9 @@ import (
 // longest-present member is promoted. A deploy restart, a page refresh or a
 // flaky network drops the connection for seconds, not a minute; handing the
 // room away on every blip cost an owner their own room (2026-10-08).
+// refillMinGap is the minimum time between radio refills in one room.
+const refillMinGap = 30 * time.Second
+
 const DefaultHostGrace = 60 * time.Second
 
 // timerStopper is the slice of *time.Timer the grace logic needs, so tests can
@@ -35,6 +38,8 @@ type roleState struct {
 
 	graceMu sync.Mutex
 	graces  map[string]*graceEntry // roomID -> pending promotion
+
+	lastRefill map[string]time.Time // roomID -> last radio refill
 }
 
 func (r *roleState) after(d time.Duration, f func()) timerStopper {
@@ -257,6 +262,9 @@ func (h *Hub) enrichBookkeeping(t *queue.TrackRef) {
 		n++
 	}
 	t.EnrichPending = n
+	// No matcher at all: nothing can ever resolve a source, which is a
+	// definitive answer rather than an unknown one.
+	t.EnrichChecked = h.matcher == nil && h.spotifyMatcher == nil
 }
 
 // launchTrackEnrich launches one lookup for a track counted by
@@ -281,6 +289,8 @@ func (h *Hub) enrichDone(roomID, trackID string, certain bool) {
 			}
 			if !certain {
 				t.EnrichUncertain = true
+			} else {
+				t.EnrichChecked = true
 			}
 		}
 		return nil
@@ -302,12 +312,28 @@ func (h *Hub) autoSkipSourceless(roomID string) {
 			return
 		}
 		var stuckID, title string
+		var relaunch *queue.TrackRef
 		room.mu.Lock()
-		if t := room.State.Track(room.State.NowPlayingID); t != nil &&
-			!t.HasSource() && t.EnrichPending == 0 && !t.EnrichUncertain {
-			stuckID, title = t.ID, t.Title
+		if t := room.State.Track(room.State.NowPlayingID); t != nil && !t.HasSource() && t.EnrichPending == 0 && !t.EnrichUncertain {
+			if t.EnrichChecked {
+				stuckID, title = t.ID, t.Title
+			} else {
+				// Unknown state (loaded from storage after a restart): look
+				// it up once before judging it, never skip blind.
+				h.enrichBookkeeping(t)
+				if t.EnrichChecked {
+					stuckID, title = t.ID, t.Title
+				} else {
+					cp := *t
+					relaunch = &cp
+				}
+			}
 		}
 		room.mu.Unlock()
+		if relaunch != nil {
+			h.relaunchEnrich(roomID, *relaunch)
+			return
+		}
 		if stuckID == "" {
 			return
 		}
@@ -318,4 +344,46 @@ func (h *Hub) autoSkipSourceless(roomID string) {
 			return
 		}
 	}
+}
+
+// relaunchEnrich re-runs the source lookups for a track whose bookkeeping was
+// just reset by enrichBookkeeping.
+func (h *Hub) relaunchEnrich(roomID string, tr queue.TrackRef) {
+	if h.matcher != nil && tr.Sources.YouTube == nil {
+		h.launchTrackEnrich(roomID, tr.ID, func() bool { return h.enrichYouTube(roomID, tr.ID, tr) })
+	}
+	if h.spotifyMatcher != nil && tr.Sources.Spotify == nil {
+		h.launchTrackEnrich(roomID, tr.ID, func() bool { return h.enrichSpotify(roomID, tr.ID, tr) })
+	}
+}
+
+// refillAllowed caps radio refills at one per room per refillMinGap, so no
+// loop of refill, skip, refill can burn provider quota.
+func (h *Hub) refillAllowed(roomID string) bool {
+	r := &h.roles
+	r.graceMu.Lock()
+	defer r.graceMu.Unlock()
+	if r.lastRefill == nil {
+		r.lastRefill = make(map[string]time.Time)
+	}
+	now := time.Now()
+	if last, ok := r.lastRefill[roomID]; ok && now.Sub(last) < refillMinGap {
+		return false
+	}
+	r.lastRefill[roomID] = now
+	return true
+}
+
+// claimHost gives the owner the host role back on request.
+func (h *Hub) claimHost(roomID, userID string) (json.RawMessage, error) {
+	return h.mutate(roomID, func(s *queue.RoomState) error {
+		if s.OwnerUserID == "" || s.OwnerUserID != userID {
+			return userErrorf("only the room owner can claim the host role")
+		}
+		if s.HostUserID != userID {
+			s.HostUserID = userID
+			s.Version++
+		}
+		return nil
+	})
 }
