@@ -499,7 +499,7 @@ func TestHandleRPC_PlaylistImportClientTracksValidation(t *testing.T) {
 		tracks  string
 		wantErr string
 	}{
-		{"too many tracks", `"tracks":` + string(tooManyJSON), "too many tracks"},
+		{"too many tracks", `"tracks":` + string(tooManyJSON), "Músicas demais"},
 		{"empty title", `"tracks":[{"title":"","artist":"A"}]`, "title"},
 		{"title too long", `"tracks":[{"title":"` + longTitle + `","artist":"A"}]`, "title"},
 		{"artist too long", `"tracks":[{"title":"T","artist":"` + longTitle + `"}]`, "artist"},
@@ -553,7 +553,7 @@ func TestHandleRPC_PlaylistImportEmptyTracksNeedsFetcher(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no tracks and no fetcher configured")
 	}
-	if !strings.Contains(err.Error(), "not enabled") {
+	if !strings.Contains(err.Error(), "não está ativada") {
 		t.Errorf("error %q should be the fetcher-not-enabled message", err.Error())
 	}
 }
@@ -572,8 +572,8 @@ func TestHandleRPC_PlaylistImportErrorsAreUserFacing(t *testing.T) {
 		payload string
 		wantMsg string
 	}{
-		{"missing url", `{"roomId":"demo"}`, "enter a playlist URL"},
-		{"service not configured", `{"roomId":"demo","url":"https://open.spotify.com/playlist/x"}`, "not configured on the server"},
+		{"missing url", `{"roomId":"demo"}`, "Cole o link de uma playlist"},
+		{"service not configured", `{"roomId":"demo","url":"https://open.spotify.com/playlist/x"}`, "não está configurado no servidor"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -801,5 +801,67 @@ func TestQueueAdd_KindRoundTrips(t *testing.T) {
 				t.Fatalf("kind = %q, want %q", st.Queue[0].Kind, tc.want)
 			}
 		})
+	}
+}
+
+// Spotify refusals reach the host as actionable pt-BR messages (code 400).
+func TestPlaylistImport_SpotifyErrorsArePortuguese(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{playlist.ErrSpotifyConnectRequired, "Conecte o Spotify"},
+		{playlist.ErrSpotifyEditorial, "Daily Mix"},
+		{playlist.ErrSpotifyNotOwner, "são suas ou em que você colabora"},
+	}
+	for _, tc := range cases {
+		h := NewHub(nil)
+		h.WithPlaylistFetcher(func(context.Context, string) ([]queue.TrackRef, error) {
+			return nil, fmt.Errorf("wrapped: %w", tc.err)
+		})
+		_, err := h.HandleRPC("playlist.import", []byte(`{"roomId":"demo","url":"https://open.spotify.com/playlist/x"}`), "")
+		var ue *UserError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: got %v, want UserError containing %q", tc.err, err, tc.want)
+		}
+	}
+}
+
+// The fetcher's ctx yields a token minted for the importing caller's userID.
+func TestPlaylistImport_FetcherGetsCallersSpotifyToken(t *testing.T) {
+	h := NewHub(nil)
+	var minted string
+	h.WithSpotifyUserToken(func(_ context.Context, userID string) (string, error) {
+		minted = userID
+		return "tok", nil
+	})
+	var got string
+	h.WithPlaylistFetcher(func(ctx context.Context, _ string) ([]queue.TrackRef, error) {
+		fn, ok := playlist.UserTokenFrom(ctx)
+		if !ok {
+			return nil, errors.New("no token source on ctx")
+		}
+		got, _ = fn(ctx)
+		return []queue.TrackRef{{Title: "T", Artist: "A"}}, nil
+	})
+	if _, err := h.dispatch("playlist.import", []byte(`{"roomId":"demo","url":"https://open.spotify.com/playlist/x"}`), "c1", "user-9", "k"); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if minted != "user-9" || got != "tok" {
+		t.Fatalf("minted for %q, fetcher saw %q", minted, got)
+	}
+}
+
+// Unknown fetch failures reach the client as a generic message, never the raw
+// error (which can embed a URL with an API key).
+func TestPlaylistImport_UnknownErrorIsGeneric(t *testing.T) {
+	h := NewHub(nil)
+	h.WithPlaylistFetcher(func(context.Context, string) ([]queue.TrackRef, error) {
+		return nil, errors.New(`Get "https://x/y?key=SECRETKEY123": dial tcp: refused`)
+	})
+	_, err := h.HandleRPC("playlist.import", []byte(`{"roomId":"demo","url":"https://youtube.com/playlist?list=PL1"}`), "")
+	var ue *UserError
+	if !errors.As(err, &ue) || strings.Contains(err.Error(), "key=") || !strings.Contains(err.Error(), "Não foi possível") {
+		t.Fatalf("got %v", err)
 	}
 }
