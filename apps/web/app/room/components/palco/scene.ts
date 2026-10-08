@@ -52,6 +52,8 @@ export interface SceneImages {
   stage: HTMLImageElement;
   // Image-model sky (bands, stars, moon, far lights), as wide as the plate.
   sky: HTMLImageElement | null;
+  // Background crowd tiles, two frames per layer.
+  crowd: Record<CrowdLayer, [HTMLImageElement, HTMLImageElement]>;
   front: Record<number, HTMLImageElement>;
   back: Record<number, HTMLImageElement>;
   upFront: Record<number, HTMLImageElement>;
@@ -72,8 +74,13 @@ function load(src: string): Promise<HTMLImageElement | null> {
 export async function loadSceneImages(world: WorldDef): Promise<SceneImages> {
   const stage = await load(world.src);
   if (!stage) throw new Error('palco: stage art failed to load');
-  const sky = await load(world.sky);
-  const out: SceneImages = { stage, sky, front: {}, back: {}, upFront: {}, upBack: {} };
+  const [sky, ...tiles] = await Promise.all([
+    load(world.sky),
+    ...CROWD_LAYERS.flatMap((l) => [load(`/palco/crowd-${l}-a.png`), load(`/palco/crowd-${l}-b.png`)]),
+  ]);
+  if (tiles.some((t) => !t)) throw new Error('palco: crowd art failed to load');
+  const crowd = Object.fromEntries(CROWD_LAYERS.map((l, i) => [l, [tiles[i * 2]!, tiles[i * 2 + 1]!]])) as SceneImages['crowd'];
+  const out: SceneImages = { stage, sky, crowd, front: {}, back: {}, upFront: {}, upBack: {} };
   const ids = Array.from({ length: CHARACTER_COUNT }, (_, i) => i + 1);
   await Promise.all(
     ids.flatMap((id) => [
@@ -150,10 +157,6 @@ const BEAM_LOOK: Array<[[number, number, number], number, number]> = [
   [[0.55, 0.38, 1.0], 0.7, 0], [[0.85, 0.8, 1.0], 0.9, 1.7], [[0.85, 0.8, 1.0], 0.9, 3.1],
   [[0.55, 0.38, 1.0], 0.7, 4.4], [[0.95, 0.45, 0.85], 1.4, 0.4], [[0.95, 0.45, 0.85], 1.4, 2.2],
 ];
-const FAR = [[0x2b, 0x20, 0x50], [0x9a, 0x82, 0xea]];
-const NEAR = [[0x15, 0x0f, 0x29], [0x56, 0x42, 0x9a]];
-const HAIR = ['round', 'afro', 'bun', 'cap', 'long', 'short'] as const;
-const mix = (a: number[], b: number[], t: number) => '#' + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('');
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 interface CharTex {
@@ -201,29 +204,20 @@ interface Booth {
   wave?: Sized;
 }
 
-interface RowPerson {
-  x: number;
-  hr: number;
-  hair: (typeof HAIR)[number];
-  sw: number;
-  style: number;
-  phase: number;
-  arms: number;
-  phone: boolean;
-  lift: number;
-}
-
+// A background crowd row: an image-model tile layer (far, mid or near) tiled
+// across the view, with two frames that alternate on the half beat.
 interface Row {
   feet: number;
   h: number;
-  body: string;
-  rim: string;
-  c: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
-  tex: Texture;
+  texA: Texture;
+  texB: Texture;
   mesh: Sized;
-  people: RowPerson[];
+  phase: number;
+  frame: number;
 }
+
+type CrowdLayer = 'far' | 'mid' | 'near';
+const CROWD_LAYERS: CrowdLayer[] = ['far', 'mid', 'near'];
 
 // --- the scene ------------------------------------------------------------------
 
@@ -248,7 +242,6 @@ export class PalcoScene {
   private readonly people = new Map<string, Person>();
   private readonly booths: Booth[] = [];
   private rows: Row[] = [];
-  private lastHalf = -1;
   private lastSky = -1;
   private energy = 0;
   private lastBurst = -100;
@@ -454,7 +447,6 @@ export class PalcoScene {
     this.camera.updateProjectionMatrix();
     this.camera.position.set(f.camLeft, -f.camTop, 10);
     this.buildRows(f.crowdBottom);
-    this.lastHalf = -1;
     this.kick();
   }
 
@@ -465,7 +457,6 @@ export class PalcoScene {
       this.conf.forEach((c) => { c.y = -999; });
       this.hearts.splice(0).forEach((h) => this.drop(h.m));
     }
-    this.lastHalf = -1;
     this.kick();
   }
 
@@ -592,7 +583,7 @@ export class PalcoScene {
     for (const t of this.charTex.values()) {
       [...t.halves.front, ...t.halves.back, ...(t.arms.front ?? []), ...(t.arms.back ?? []), t.front].forEach((x) => x?.dispose());
     }
-    this.rows.forEach((r) => r.tex.dispose());
+    this.rows.forEach((r) => { textures.add(r.texA); textures.add(r.texB); });
     this.renderer.dispose();
     // Free the GPU context now: a world switch or a remount makes a new canvas.
     this.renderer.forceContextLoss();
@@ -735,90 +726,39 @@ export class PalcoScene {
     }
   }
 
-  // Background crowd: procedural silhouettes in rows behind the named audience.
+  // Background crowd: image-model tile rows behind the named audience, far
+  // to near. Every other tile is mirrored, so the joins stay seamless and the
+  // repeat period doubles; each row starts at its own offset.
   private buildRows(crowdBottom: number): void {
-    this.rows.forEach((r) => { this.drop(r.mesh); r.tex.dispose(); });
+    this.rows.forEach((r) => { this.drop(r.mesh); r.texA.dispose(); r.texB.dispose(); });
     this.rows = [];
     const W = this.world.W + 2 * SIDE_EXT;
     this.seed = 11;
+    const tiled = (img: HTMLImageElement, off: number) => {
+      const c = document.createElement('canvas');
+      c.width = W;
+      c.height = img.height;
+      const g = c.getContext('2d')!;
+      for (let x = -off, i = 0; x < W; x += img.width, i++) {
+        if (i % 2) g.drawImage(mirrored(img), x, 0);
+        else g.drawImage(img, x, 0);
+      }
+      return texFrom(c);
+    };
     const first = this.world.rowsFrom;
     const last = crowdBottom - this.world.rowsToOff;
     let feet = first;
     while (feet <= last) {
       const t = clamp01((feet - first) / Math.max(26, last - first));
-      const h = Math.round(24 + 14 * t), spacing = 8 + 6 * t;
-      const c = document.createElement('canvas');
-      c.width = W;
-      c.height = h + 14;
-      const tex = texFrom(c);
-      const mesh = this.plane(tex, c.width, c.height, 5 + this.rows.length * 0.08);
-      const n = Math.ceil(W / spacing) + 1;
-      const people: RowPerson[] = Array.from({ length: n }, (_, i) => {
-        const hr = Math.max(2, Math.round(h / 11 + this.rnd() * 1.2));
-        return {
-          x: Math.round(2 + i * spacing + (this.rnd() - 0.5) * spacing * 0.8),
-          hr,
-          hair: HAIR[Math.floor(this.rnd() * HAIR.length)],
-          sw: hr + 2 + Math.floor(this.rnd() * 2),
-          style: this.rnd() < 0.5 ? 0 : 1,
-          phase: this.rnd() < 0.5 ? 0 : 0.5,
-          arms: this.rnd() < 0.1 ? 1 : 0,
-          phone: this.rnd() < 0.2,
-          lift: Math.floor(this.rnd() * 5),
-        };
-      });
-      const row: Row = { feet, h, body: mix(FAR[0], NEAR[0], t), rim: mix(FAR[1], NEAR[1], t), c, ctx: c.getContext('2d')!, tex, mesh, people };
-      this.put(mesh, -SIDE_EXT, feet - c.height + 2);
-      this.rows.push(row);
-      feet += Math.max(11, Math.round(h * 0.42));
+      const [a, b] = this.imgs.crowd[t < 0.34 ? 'far' : t < 0.67 ? 'mid' : 'near'];
+      const off = Math.floor(this.rnd() * a.width * 2);
+      const texA = tiled(a, off), texB = tiled(b, off);
+      const mesh = this.plane(texA, W, a.height, 5 + this.rows.length * 0.08);
+      this.put(mesh, -SIDE_EXT, feet + 2 - a.height);
+      // Neighbouring rows are out of phase.
+      this.rows.push({ feet, h: a.height, texA, texB, mesh, phase: this.rows.length % 2 ? 0.5 : 0, frame: 0 });
+      feet += Math.max(11, Math.round((24 + 14 * t) * 0.42));
     }
-  }
-
-  private drawPerson(ctx: CanvasRenderingContext2D, p: RowPerson, base: number, row: Row, bob: number): void {
-    const cx = p.x + 10, top = base - row.h + p.lift + bob;
-    const r = p.hr, headCy = top + r + (p.hair === 'afro' ? 2 : 0);
-    ctx.fillStyle = row.body;
-    const disc = (cx0: number, cy0: number, rr: number) => {
-      for (let y = -rr; y <= rr; y++) for (let x = -rr; x <= rr; x++) if (x * x + y * y <= rr * rr + rr) ctx.fillRect(cx0 + x, cy0 + y, 1, 1);
-    };
-    if (p.hair === 'afro') disc(cx, headCy - 1, r + 2);
-    disc(cx, headCy, r);
-    if (p.hair === 'bun') disc(cx, headCy - r - 1, Math.max(1, r - 2));
-    if (p.hair === 'cap') { ctx.fillRect(cx - r, headCy - r, r * 2 + 1, 2); ctx.fillRect(cx + r, headCy - r + 1, 2, 1); }
-    if (p.hair === 'long') ctx.fillRect(cx - r, headCy, r * 2 + 1, r + 3);
-    const neckY = headCy + r;
-    ctx.fillRect(cx - 1, neckY, 3, 2);
-    const sy = neckY + 2, sw = p.sw;
-    ctx.fillRect(cx - sw + 2, sy, sw * 2 - 3, 1);
-    ctx.fillRect(cx - sw + 1, sy + 1, sw * 2 - 1, 1);
-    ctx.fillRect(cx - sw, sy + 2, sw * 2 + 1, base + 20 - sy);
-    if (p.hair !== 'cap' && p.hair !== 'bun') {
-      // Rim light on the head from the lit stage.
-      ctx.fillStyle = row.rim;
-      const rr = p.hair === 'afro' ? r + 2 : r, cy = p.hair === 'afro' ? headCy - 1 : headCy;
-      for (let x = -rr + 1; x <= rr - 1; x++) ctx.fillRect(cx + x, cy - Math.floor(Math.sqrt(Math.max(0, rr * rr + rr - x * x))), 1, 1);
-      ctx.fillStyle = row.body;
-    }
-    if (p.arms) {
-      const reach = Math.round(r * 2 + 4);
-      const ax = cx + (sw - 1);
-      for (let k = 0; k < reach; k++) ctx.fillRect(ax + Math.floor(k / 5), sy - k, 2, 1);
-      const hx = ax + Math.floor(reach / 5), hy = sy - reach - 1;
-      ctx.fillRect(hx, hy, 2, 2);
-      ctx.fillStyle = row.rim; ctx.fillRect(hx, hy, 2, 1); ctx.fillStyle = row.body;
-      if (p.phone) { ctx.fillStyle = '#cfe6ff'; ctx.fillRect(hx, hy - 3, 2, 3); ctx.fillStyle = row.body; }
-    }
-  }
-
-  private drawRow(row: Row, beat: number): void {
-    const ctx = row.ctx, H = row.c.height, base = H - 2;
-    ctx.clearRect(0, 0, row.c.width, H);
-    for (const p of row.people) {
-      const f = (beat + p.phase) % 1;
-      const bob = this.motion ? (p.style === 0 ? (f < 0.5 ? 1 : 0) : (f < 0.25 ? -1 : 0)) : 0;
-      this.drawPerson(ctx, p, base, row, bob);
-    }
-    row.tex.needsUpdate = true;
   }
 
   private spawnHeart(p: Person): void {
@@ -890,11 +830,14 @@ export class PalcoScene {
       out.booths.push({ key: b.who?.key ?? null, x: ax, y: ay, visible: Boolean(b.who) && b.rise >= 1 });
     });
 
-    // Background rows dance on half beats.
-    const half = Math.floor(beat * 4);
-    if (half !== this.lastHalf) {
-      this.rows.forEach((row) => this.drawRow(row, beat));
-      this.lastHalf = half;
+    // Background rows: two frames, half a beat each, neighbours out of phase.
+    for (const row of this.rows) {
+      const fr = motion ? Math.floor(beat * 2 + row.phase * 2) % 2 : 0;
+      if (fr !== row.frame) {
+        row.frame = fr;
+        (row.mesh.material as MeshBasicMaterial).map = fr ? row.texB : row.texA;
+        row.mesh.material.needsUpdate = true;
+      }
     }
 
     // Named audience: walk in from the side, groove, woot.
