@@ -61,7 +61,7 @@ Variations 01 (bubbles), 04 (tags) and 05 (placards) were drawn over the video r
 
 Owner: "Mas acho que vamos precisar separar os personagens do ambiente pra que a pessoa escolha exatamente quem melhor representa ela, não precisa ser uma personalização absurda e pode permitir repetição".
 
-- A fixed roster of 12, no customisation, repeats allowed.
+- A fixed roster of 13 (12 at first, Mel added 2026-10-08), no customisation, repeats allowed.
 - The picker shows on join and in the avatar menu: "Escolha quem vai pra plateia" and "Pode repetir: outras pessoas podem escolher o mesmo".
 
 ### 4. Style: the owner's GitHub avatar
@@ -84,6 +84,28 @@ After the style change: "O perfil ficou melhor agora, mas o boneco em si que vai
 Owner on `r5-palco-roster-v2.png`: "aprovado". Twelve characters, one per call, front and back matched for all 12. In words: a portrait row and a body row per character. Character 1 is the owner (brown hair, blue hoodie, jeans). The set covers a young woman with an afro and a red tee, a bald older man with glasses and a floral shirt, a woman in a green hijab and denim jacket, a person with long braids in a green tank, a woman with curly hair, glasses and a yellow sweater, a shaved-head man with purple headphones, a woman with a bun and a patterned dress, a man with curly hair, glasses and a grey hoodie, a person with an undercut and a striped tee, an older woman with grey curls and a beige cardigan, and a person in a cap with locs in a wheelchair.
 
 The roster is the design baseline. Final art may be redrawn on the fixed grid; the 12 identities, and the front and back match, stay.
+
+Names (owner approved 2026-10-08, roster order). The picker shows the name; the accessible name is "<Nome>, <descrição>".
+
+| # | Name | Description |
+|---|---|---|
+| 01 | Rafa | Cabelo castanho e moletom azul |
+| 02 | Jaque | Cabelo afro e camiseta vermelha |
+| 03 | Seu Zé | Homem calvo de óculos e camisa florida |
+| 04 | Samira | Hijab verde e jaqueta jeans |
+| 05 | Luana | Tranças longas e regata verde |
+| 06 | Clarice | Cabelo cacheado, óculos e suéter amarelo |
+| 07 | Thiago | Cabeça raspada e fones roxos |
+| 08 | Dandara | Coque e vestido estampado |
+| 09 | Davi | Cabelo cacheado, óculos e moletom cinza |
+| 10 | Ari | Undercut e camiseta listrada |
+| 11 | Dona Cida | Cabelos grisalhos cacheados e cardigã bege |
+| 12 | Biel | Boné, dreads e cadeira de rodas |
+| 13 | Mel | Cachos pretos volumosos e blusa vinho |
+
+Character 13 (Mel) joined the roster on 2026-10-08 and is pickable. The default hash still maps to 1..12 only, so nobody's default changed.
+
+Dance: the audience cycles between the round 10 dance, "ombrinho" and "passinho", switching move every 8 beats on a per-person phase. Each loop is 4 frames, one per half beat. A woot still shows arms up; with motion off, idle.
 
 ### 8. Spotify and Apple Music listeners: the muted video (decided 2026-10-08)
 
@@ -120,7 +142,7 @@ Owner on part 2: "os personagens estão com braços gigantes, não dá pra ver o
 
 ### Protocol
 
-- A new member field for the chosen character (an id from the roster, 1 to 12), set on join and changeable from the avatar menu. Needs a default for members who never choose (guests, old clients: derive one from the member id so it is stable) and server-side validation to the roster range. Document it in [`docs/protocol.md`](../protocol.md) in the build PR. Not stored as a photo or a free string.
+- A new member field for the chosen character (an id from the roster, 1 to 13), set on join and changeable from the avatar menu. Needs a default for members who never choose (guests, old clients: derive one from the member id so it is stable) and server-side validation to the roster range. Document it in [`docs/protocol.md`](../protocol.md) in the build PR. Not stored as a photo or a free string.
 - The character is shown to the whole room, so it is member data like the display name. Check the privacy page wording when it ships.
 
 ### Asset pipeline

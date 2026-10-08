@@ -30,7 +30,7 @@ func TestMemberSetCharacter_ValidatesRange(t *testing.T) {
 	h := NewHub(nil)
 	h.chatLimiter = nil // the range checks fire more RPCs than one burst
 	h.Join("c1", "R")
-	for _, bad := range []int{-1, 0, 13, 100} {
+	for _, bad := range []int{-1, 0, 14, 100} {
 		if _, err := h.handleRPC("member.set_character", characterReq("R", bad), "c1", ""); err == nil {
 			t.Fatalf("characterId %d accepted", bad)
 		}
@@ -47,7 +47,7 @@ func TestMemberSetCharacter_ValidatesRange(t *testing.T) {
 	if _, err := h.handleRPC("member.set_character", characterReq("R", 1), "ghost", ""); err == nil {
 		t.Fatal("non-member accepted")
 	}
-	for _, good := range []int{1, 7, 12} {
+	for _, good := range []int{1, 7, 12, 13} {
 		if _, err := h.handleRPC("member.set_character", characterReq("R", good), "c1", ""); err != nil {
 			t.Fatalf("id %d: %v", good, err)
 		}
@@ -84,8 +84,14 @@ func TestDefaultCharacter_StableAndInRange(t *testing.T) {
 		}
 		seen[c] = true
 	}
-	if len(seen) != CharacterCount {
-		t.Fatalf("hash reaches %d of %d characters", len(seen), CharacterCount)
+	if len(seen) != DefaultCharacterPool {
+		t.Fatalf("hash reaches %d of %d characters", len(seen), DefaultCharacterPool)
+	}
+	if seen[13] {
+		t.Fatal("character 13 must never be a default")
+	}
+	if !validCharacter(13) {
+		t.Fatal("character 13 must be pickable")
 	}
 }
 

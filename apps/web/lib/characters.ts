@@ -1,11 +1,11 @@
-// Audience characters ("Modo palco"): a fixed roster of 12, ids 1..12, repeats
+// Audience characters ("Modo palco"): a fixed roster of 13, ids 1..13, repeats
 // allowed. The wire carries only the id (packages/shared protocol.ts); the art
 // lives in public/palco/characters. Render it with integer scaling and
 // image-rendering: pixelated only.
 import { useSyncExternalStore } from 'react';
-import { CHARACTER_COUNT } from '@cojam/shared';
+import { CHARACTER_COUNT, CHARACTER_DEFAULT_POOL } from '@cojam/shared';
 
-export { CHARACTER_COUNT };
+export { CHARACTER_COUNT, CHARACTER_DEFAULT_POOL };
 
 export const CHARACTER_KEY = 'cojam.character';
 
@@ -23,13 +23,33 @@ export const CHARACTER_LABELS: readonly string[] = [
   'Undercut e camiseta listrada',
   'Cabelos grisalhos cacheados e cardigã bege',
   'Boné, dreads e cadeira de rodas',
+  'Cachos pretos volumosos e blusa vinho',
+];
+
+// First names, in roster order (docs/design/modo-palco.md section 7). The
+// picker shows the name; the accessible name is "<Nome>, <descrição>".
+export const CHARACTER_NAMES: readonly string[] = [
+  'Rafa',
+  'Jaque',
+  'Seu Zé',
+  'Samira',
+  'Luana',
+  'Clarice',
+  'Thiago',
+  'Dandara',
+  'Davi',
+  'Ari',
+  'Dona Cida',
+  'Biel',
+  'Mel',
 ];
 
 export function isCharacterId(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= CHARACTER_COUNT;
 }
 
-// FNV-1a 32 bit of the UTF-8 bytes, mod 12, plus 1. Same function as the
+// FNV-1a 32 bit of the UTF-8 bytes, mod 12 (CHARACTER_DEFAULT_POOL, so 13 is
+// pickable but never a default), plus 1. Same function as the
 // server's DefaultCharacter (apps/server/internal/hub/character.go); both are
 // pinned by the same test vectors.
 export function defaultCharacterId(seed: string): number {
@@ -37,7 +57,7 @@ export function defaultCharacterId(seed: string): number {
   for (const b of new TextEncoder().encode(seed)) {
     h = Math.imul(h ^ b, 0x01000193) >>> 0;
   }
-  return (h % CHARACTER_COUNT) + 1;
+  return (h % CHARACTER_DEFAULT_POOL) + 1;
 }
 
 const pad = (id: number) => String(id).padStart(2, '0');

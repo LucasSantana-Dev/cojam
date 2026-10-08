@@ -21,12 +21,12 @@ function Harness({ start = 1, onChange = () => {} }: { start?: number; onChange?
 const radios = () => screen.getAllByRole('radio');
 
 describe('CharacterPicker', () => {
-  it('shows the title, the hint and 12 radios in one group', () => {
+  it('shows the title, the hint and 13 radios in one group', () => {
     render(<Harness />);
     expect(screen.getByText('Escolha quem vai pra plateia')).toBeInTheDocument();
     expect(screen.getByText('Pode repetir: outras pessoas podem escolher o mesmo')).toBeInTheDocument();
     expect(screen.getByRole('radiogroup', { name: 'Escolha quem vai pra plateia' })).toBeInTheDocument();
-    expect(radios()).toHaveLength(12);
+    expect(radios()).toHaveLength(13);
     for (const r of radios()) expect(r.tagName).toBe('BUTTON');
   });
 
@@ -62,14 +62,22 @@ describe('CharacterPicker', () => {
     fireEvent.keyDown(radios()[1], { key: 'ArrowUp' });
     expect(radios()[0]).toHaveFocus();
     fireEvent.keyDown(radios()[0], { key: 'ArrowLeft' });
-    expect(onChange).toHaveBeenLastCalledWith(12);
-    expect(radios()[11]).toHaveFocus();
-    fireEvent.keyDown(radios()[11], { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith(13);
+    expect(radios()[12]).toHaveFocus();
+    fireEvent.keyDown(radios()[12], { key: 'ArrowRight' });
     expect(onChange).toHaveBeenLastCalledWith(1);
     fireEvent.keyDown(radios()[0], { key: 'End' });
-    expect(onChange).toHaveBeenLastCalledWith(12);
-    fireEvent.keyDown(radios()[11], { key: 'Home' });
+    expect(onChange).toHaveBeenLastCalledWith(13);
+    fireEvent.keyDown(radios()[12], { key: 'Home' });
     expect(onChange).toHaveBeenLastCalledWith(1);
+  });
+
+  it('shows the name and gives "<Nome>, <descrição>" as the accessible name, Mel included', () => {
+    render(<Harness />);
+    expect(radios()[2]).toHaveTextContent('Seu Zé');
+    expect(radios()[2]).toHaveAccessibleName('Seu Zé, Homem calvo de óculos e camisa florida');
+    expect(radios()[12]).toHaveAccessibleName('Mel, Cachos pretos volumosos e blusa vinho');
+    expect(radios()[12]).toHaveTextContent('Mel');
   });
 
   it('ignores other keys', () => {
@@ -82,10 +90,10 @@ describe('CharacterPicker', () => {
   it('draws pixel portraits and falls back to the number when one fails', () => {
     render(<Harness />);
     const imgs = document.querySelectorAll('img.px-portrait');
-    expect(imgs).toHaveLength(12);
+    expect(imgs).toHaveLength(13);
     expect(imgs[2]).toHaveAttribute('src', '/palco/characters/03-portrait.png');
     fireEvent.error(imgs[2]);
-    expect(document.querySelectorAll('img.px-portrait')).toHaveLength(11);
+    expect(document.querySelectorAll('img.px-portrait')).toHaveLength(12);
     expect(radios()[2]).toHaveTextContent('3');
   });
 });
