@@ -96,6 +96,7 @@ Update 2026-10-08: Apple Music was removed from the product (#374). The decision
 - If there is no YouTube match for the track, the screen falls back to the cover art.
 - The ToS rules still apply to the muted player: at least 200x200 and never covered.
 - Cost: two players run per Spotify listener (their service plus the muted video). CPU and battery cost on phones; revisit if measured as heavy.
+- Built in part 3 (about 160 lines with tests, the Spotify audio path untouched): in palco view only, a second `YouTubePlayer` with `muted` takes the screen for a Spotify listener when the track has a YouTube match. It mutes itself, never advances the room at its end, and `lib/useVisualSync` keeps it in step every 2 s, seeking only past 3 s of drift.
 
 ### 9. Phones: a full-width player over the scene art (decided 2026-10-08)
 

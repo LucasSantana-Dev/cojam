@@ -40,6 +40,7 @@ import { LyricsPanel } from '../components/LyricsPanel';
 import { EnrichmentPanel } from '../components/EnrichmentPanel';
 import { NowPlayingCard } from '../components/NowPlayingCard';
 import { VolumeControl } from '../components/VolumeControl';
+import { useVisualSync } from '@/lib/useVisualSync';
 import { useApplyVolume } from '@/lib/volume';
 import { ListeningServicePicker } from '../components/ListeningServicePicker';
 import { Stage } from '../components/Stage';
@@ -322,6 +323,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // U4: Drift correction loop (gated by the sync feature flag). The hook keys
   // off the meaningful transport fields, not publication object identity (#177).
   useDriftCorrection(activePlayer, f.sync, hostControl);
+
+  // Modo palco, decision 8: a Spotify listener sees the room's YouTube video on
+  // the stage screen, muted and kept in step; Spotify still plays the audio.
+  // Palco only, and only when the track has a YouTube match (else the cover).
+  const [visualPlayer, setVisualPlayer] = useState<IPlayer | null>(null);
+  const mutedVideo =
+    palco && !fixture && f.youtube && activeSource === 'spotify' && nowPlaying?.kind !== 'video' && Boolean(nowPlaying?.sources.youtube?.videoId);
+  useVisualSync(mutedVideo ? visualPlayer : null);
 
   // Auto-advance at track end for Spotify (YouTube also advances via its
   // native onStateChange; the server dedups through AdvanceAfter). onEnded has
@@ -608,7 +617,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
       onOpenDepth={() => setDrawer('depth')}
       onOpenLyrics={() => setDrawer('lyrics')}
       onOpenEnrichment={() => setDrawer('enrichment')}
-      media={fixtureYt ? <div id="youtube-player" className="r4-fixture-yt" /> : youtubeAudio}
+      media={
+        fixtureYt ? (
+          <div id="youtube-player" className="r4-fixture-yt" />
+        ) : (
+          youtubeAudio ??
+          (mutedVideo ? <YouTubePlayer roomId={roomId} fill muted onPlayerReady={setVisualPlayer} onPlayerGone={() => setVisualPlayer(null)} /> : null)
+        )
+      }
     />
   );
 
@@ -761,7 +777,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             queue={queuePanel}
             chat={chatPanel}
             queueCount={store.state?.queue.filter((t) => t.id !== store.state?.nowPlayingId).length ?? 0}
-            hasPlayer={videoMode || Boolean(youtubeAudio) || fixtureYt}
+            hasPlayer={videoMode || Boolean(youtubeAudio) || mutedVideo || fixtureYt}
             artwork={artwork}
             canControl={hostControl}
             activePlayer={activePlayer}
