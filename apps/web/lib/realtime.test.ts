@@ -4,7 +4,7 @@
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore, isPermissionDeniedError, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
-  chatUnavailableNotice, updatePlatform, updateCharacter,
+  chatUnavailableNotice, updatePlatform, updateCharacter, onWoot, sendWoot,
 } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
 
@@ -1160,5 +1160,37 @@ describe('audience character (member.set_character)', () => {
     expect(st.members.find((m) => m.userId === 'u3')?.characterId).toBe(5);
     s.removeMember('c3');
     expect(useStore.getState().characterOverrides.c3).toBeUndefined();
+  });
+});
+
+describe('reactions (reaction.woot)', () => {
+  beforeEach(() => {
+    centrifugeMock.MockCentrifuge.instances = [];
+    authMocks.accountToken = null;
+    runtimeEnvMocks.env = undefined;
+    useStore.setState({ state: null, connected: false, reconnecting: false, chat: [], kicked: false, clientId: '', connections: [], members: [] });
+  });
+
+  it('sends reaction.woot and hands room events to listeners, never to the store', async () => {
+    const joinPromise = joinRoom('woot-1', 'Alice', 'youtube');
+    await vi.waitFor(() => expect(centrifugeMock.MockCentrifuge.instances.length).toBeGreaterThan(0));
+    const instance = centrifugeMock.MockCentrifuge.instances.at(-1)!;
+    instance.emit('connected', { client: 'c-me' });
+    await joinPromise;
+
+    await sendWoot('woot-1');
+    expect(instance.rpcCalls.filter((c) => c.method === 'reaction.woot')).toEqual([{ method: 'reaction.woot', payload: { roomId: 'woot-1' } }]);
+
+    const seen: string[] = [];
+    const off = onWoot((id) => seen.push(id));
+    const before = useStore.getState();
+    const publish = (data: unknown) => (instance.subscriptions[0].handlers['publication'] ?? []).forEach((cb) => cb({ data }));
+    publish({ type: 'reaction.woot', clientId: 'c-a' });
+    publish({ type: 'reaction.woot', clientId: 42 });
+    expect(seen).toEqual(['c-a']);
+    expect(useStore.getState().state).toBe(before.state);
+    off();
+    publish({ type: 'reaction.woot', clientId: 'c-b' });
+    expect(seen).toEqual(['c-a']);
   });
 });
