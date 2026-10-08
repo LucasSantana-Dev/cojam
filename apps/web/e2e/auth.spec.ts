@@ -25,13 +25,18 @@ async function join(page: Page, roomId: string, name: string) {
   await expect(page.getByTestId('room-me')).toContainText(name);
 }
 
+const YT_ID = 'jNQXAC9IVRw';
+
 async function addTrack(page: Page, title: string, artist: string) {
   await openAdd(page);
   await page.getByPlaceholder('Título').fill(title);
   await page.getByPlaceholder('Artista').fill(artist);
+  // A source keeps the sourceless auto skip from dropping the track at once.
+  await page.getByPlaceholder('Link do YouTube ou ID do vídeo (opcional)').fill(YT_ID);
   await page.getByRole('button', { name: 'Adicionar à fila' }).click();
   // Wait for the add to land (queue shows the title) before returning.
-  await expect(page.getByTestId('queue-title').filter({ hasText: title })).toBeVisible();
+  // The first add is now playing: it shows in the stage card, not the queue list.
+  await expect(page.locator('[data-testid="queue-title"], .r4-now__title').filter({ hasText: title }).first()).toBeVisible();
 }
 
 test('room auth: listener sees host-only controls disabled, host sees them enabled', async ({ browser }) => {
@@ -44,6 +49,7 @@ test('room auth: listener sees host-only controls disabled, host sees them enabl
   await join(host, roomId, 'Host');
   await join(listener, roomId, 'Listener');
 
+  await addTrack(host, 'Opener', 'Z-Zero'); // plays now; Alpha and Beta are upcoming
   await addTrack(host, 'Alpha', 'A-One');
   await addTrack(host, 'Beta', 'B-Two');
 

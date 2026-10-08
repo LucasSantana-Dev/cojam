@@ -135,6 +135,7 @@ func (l *rateLimiter) allow(key string) bool {
 // their own bucket (queue.vote: voteMethods; transport.*: transportMethods;
 // room.kick/chat.*: chatMethods; playlist.import: fanoutMethods).
 var mutationMethods = map[string]bool{
+	"history.readd":       true,
 	"queue.add":           true,
 	"queue.remove":        true,
 	"queue.reorder":       true,

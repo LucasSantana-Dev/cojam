@@ -777,6 +777,7 @@ let rebindWaiter: { roomId: string; userId: string; resolve: (confirmed: boolean
 function stateShowsIdentity(state: RoomState, userId: string): boolean {
   if (state.hostUserId === userId) return true;
   if (state.queue.some((t) => t.addedByUserId === userId)) return true;
+  if ((state.history ?? []).some((t) => t.addedByUserId === userId)) return true;
   const voterKey = `user:${userId}`;
   return Object.values(state.votes ?? {}).some((voters) => voters.includes(voterKey));
 }
@@ -875,6 +876,13 @@ export function isRateLimitError(err: unknown): boolean {
   return /too many requests|rate.?limit/i.test(rawRpcMessage(err));
 }
 
+// isPermissionDeniedError reports whether an RPC rejection is the server's
+// control gate ("permission denied"): a listener's ENDED advance hits it by
+// design, so it is ignored while any other failure is worth a log line.
+export function isPermissionDeniedError(err: unknown): boolean {
+  return (err as { code?: number } | null)?.code === 103 || /permission denied/i.test(rawRpcMessage(err));
+}
+
 // isTrackNotFoundError reports whether an RPC rejection is the server's
 // code-400 UserError for a track that is no longer in the queue (#211), so
 // the UI can treat "already gone" as the desired end state instead of a
@@ -903,6 +911,14 @@ export async function nowPlayingSet(roomId: string, trackId: string) {
 export async function nowPlayingAdvance(roomId: string, afterId: string) {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('now_playing.advance', { roomId, afterId });
+}
+
+// history.readd: queues a played track again at the end as a new entry.
+// Controllers only (host, owner, admin); the server copies the track from
+// history, so the old entry is never resurrected.
+export async function historyReadd(roomId: string, trackId: string) {
+  if (!centrifuge) throw new Error('Not connected');
+  await centrifuge.rpc('history.readd', { roomId, trackId });
 }
 
 export async function queueReorder(roomId: string, trackId: string, toIndex: number) {

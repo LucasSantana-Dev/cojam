@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, updatePlatform, updateCharacter } from '@/lib/realtime';
+import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, updatePlatform, updateCharacter, isPermissionDeniedError } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { NAME_KEY } from '@/lib/guestName';
@@ -51,6 +51,8 @@ import { useCoverFlight } from '@/lib/useCoverFlight';
 import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 import { ServiceBadge } from '@/app/components/ServiceBadge';
 import { serviceOptions, ServiceFallbackNote } from '../components/ListeningServicePicker';
+import { SpotifyProblemNote } from '../components/SpotifyProblemNote';
+import type { SpotifyConnectErrorKind } from '@/lib/spotifyConnectError';
 import { fixtureKind, applyRoomFixture, fixturePlayer } from '@/lib/devFixture';
 
 type VideoPanelTab = 'playing' | 'queue' | 'chat';
@@ -87,6 +89,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // provider failed to play, reported by the player adapters. Local-only;
   // never touches transport state or other members.
   const [playFailedId, setPlayFailedId] = useState<string | null>(null);
+  // Why Spotify is silent (set by SpotifyPlayer, which lives in the closed avatar menu).
+  const [spotifyProblem, setSpotifyProblem] = useState<{ kind: SpotifyConnectErrorKind; retry?: () => void } | null>(null);
+  const onSpotifyProblem = useCallback((kind: SpotifyConnectErrorKind | null, retry?: () => void) => {
+    setSpotifyProblem(kind ? { kind, retry } : null);
+  }, []);
   // Video rooms below 768px: which panel the tab bar shows under the pinned
   // stage. Ignored at md and up, where every panel is visible.
   const [panelTab, setPanelTab] = useState<VideoPanelTab>('playing');
@@ -176,7 +183,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const preJoinUserId = useSyncExternalStore(noopSubscribe, () => getStoredUserId() ?? '', () => '');
   // isUnavailable() is exactly "pickSource() found nothing for this client"
   const trackUnavailable = Boolean(nowPlaying) && activeSource === null;
-  const queueEmpty = (store.state?.queue?.length ?? 0) === 0;
+  const queueEmpty = (store.state?.queue?.length ?? 0) === 0 && (store.state?.history?.length ?? 0) === 0;
 
   const artwork = nowPlaying ? queueArtwork(nowPlaying) : null;
   const [coverFail, setCoverFail] = useState<{ url: string | null; level: number }>({ url: null, level: 0 });
@@ -304,7 +311,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   // U4: Drift correction loop (gated by the sync feature flag). The hook keys
   // off the meaningful transport fields, not publication object identity (#177).
-  useDriftCorrection(activePlayer, f.sync);
+  useDriftCorrection(activePlayer, f.sync, hostControl);
 
   // Auto-advance at track end for Spotify/Apple (YouTube also advances via its
   // native onStateChange; the server dedups through AdvanceAfter). onEnded has
@@ -316,7 +323,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
     advanceSubscribedRef.current = activePlayer;
     activePlayer.onEnded(() => {
       const id = useStore.getState().state?.nowPlayingId;
-      if (id) nowPlayingAdvance(roomId, id);
+      if (id) {
+        nowPlayingAdvance(roomId, id).catch((err) => {
+          if (!isPermissionDeniedError(err)) console.warn('[player] advance at track end failed:', err);
+        });
+      }
     });
   }, [activePlayer, roomId]);
 
@@ -523,6 +534,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             if (activeSourceRef.current === 'spotify') setActivePlayer(null);
           }}
           onPlayError={setPlayFailedId}
+          onProblem={onSpotifyProblem}
         />
       )}
       {f.apple && (
@@ -570,7 +582,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // Only offer the icon row when there is a real choice to make.
   const servicePicker = serviceOptions(pickerProps).length > 1 ? <ListeningServicePicker {...pickerProps} /> : null;
   const serviceNote =
-    nowPlaying && fallbackWanted && resolved.reason ? (
+    spotifyProblem && activeSource === 'spotify' ? (
+      <SpotifyProblemNote
+        kind={spotifyProblem.kind}
+        onRetry={spotifyProblem.retry}
+        onUseYouTube={f.youtube ? () => setListeningService('youtube') : undefined}
+      />
+    ) : nowPlaying && fallbackWanted && resolved.reason ? (
       <ServiceFallbackNote fallback={{ wanted: fallbackWanted, playing: activeSource, reason: resolved.reason }} />
     ) : null;
 

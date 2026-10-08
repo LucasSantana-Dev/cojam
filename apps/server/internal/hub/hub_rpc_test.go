@@ -220,18 +220,18 @@ func TestHandleRPC_QueueReorder(t *testing.T) {
 	_ = json.Unmarshal(res, st)
 	t3ID := st.Queue[2].ID
 
-	// Move t3 to index 0
-	res, err := h.HandleRPC("queue.reorder", []byte(`{"roomId":"demo","trackId":"`+t3ID+`","toIndex":0}`), "")
+	// Move t3 ahead of t2 (index 1: index 0 is the playing track t1)
+	res, err := h.HandleRPC("queue.reorder", []byte(`{"roomId":"demo","trackId":"`+t3ID+`","toIndex":1}`), "")
 	if err != nil {
 		t.Fatalf("queue.reorder: %v", err)
 	}
 	st = &queue.RoomState{}
 	_ = json.Unmarshal(res, st)
-	if st.Queue[0].ID != t3ID {
-		t.Fatalf("after reorder, queue[0] should be %s, got %s", t3ID, st.Queue[0].ID)
+	if st.Queue[0].ID != t1ID {
+		t.Fatalf("after reorder, queue[0] should be %s, got %s", t1ID, st.Queue[0].ID)
 	}
-	if st.Queue[1].ID != t1ID {
-		t.Fatalf("after reorder, queue[1] should be %s, got %s", t1ID, st.Queue[1].ID)
+	if st.Queue[1].ID != t3ID {
+		t.Fatalf("after reorder, queue[1] should be %s, got %s", t3ID, st.Queue[1].ID)
 	}
 	if st.Queue[2].ID != t2ID {
 		t.Fatalf("after reorder, queue[2] should be %s, got %s", t2ID, st.Queue[2].ID)

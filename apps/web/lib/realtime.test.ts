@@ -3,7 +3,7 @@
 // different V8 realm, so parseConnInfo's `instanceof Uint8Array` check
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useStore, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
+import { useStore, isPermissionDeniedError, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
   chatUnavailableNotice, updatePlatform, updateCharacter,
 } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
@@ -574,6 +574,16 @@ describe('room chat (F8)', () => {
     await vi.waitFor(() => {
       expect(useStore.getState().chat.map((m) => m.id)).toEqual(['h1', 'h2']);
     });
+  });
+});
+
+describe('isPermissionDeniedError', () => {
+  it('matches the control gate rejection, not other failures', () => {
+    expect(isPermissionDeniedError({ code: 103, message: 'permission denied' })).toBe(true);
+    expect(isPermissionDeniedError(new Error('permission denied'))).toBe(true);
+    expect(isPermissionDeniedError({ message: 'permission denied' })).toBe(true); // raw text, not the PT-BR mapping
+    expect(isPermissionDeniedError(new Error('Not connected'))).toBe(false);
+    expect(isPermissionDeniedError(null)).toBe(false);
   });
 });
 

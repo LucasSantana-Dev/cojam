@@ -52,6 +52,7 @@ export function TransportUI({ roomId, activePlayer, canControl, trailing }: Tran
   // known; a track-supplied duration always wins.
   const [playerDuration, setPlayerDuration] = useState<{ id: string; ms: number } | null>(null);
   const nowPlayingId = nowPlaying?.id;
+  const nowPlayingVideoId = nowPlaying?.sources.youtube?.videoId;
   const lastPlayerDurationRef = useRef(0);
   useEffect(() => {
     if (!activePlayer || !nowPlayingId || metaDuration > 0) return;
@@ -65,6 +66,10 @@ export function TransportUI({ roomId, activePlayer, canControl, trailing }: Tran
         .getDurationMs()
         .then((d) => {
           if (cancelled || !Number.isFinite(d) || d <= 0) return;
+          // The player must have this track's video loaded: a cached PLAYING
+          // state or length from the previous video must not pass.
+          const loadedId = activePlayer.getLoadedVideoId?.();
+          if (nowPlayingVideoId && loadedId && loadedId !== nowPlayingVideoId) return;
           const stale = d === lastPlayerDurationRef.current;
           if (stale && activePlayer.isPlaying && !activePlayer.isPlaying()) return;
           lastPlayerDurationRef.current = d;
@@ -79,7 +84,7 @@ export function TransportUI({ roomId, activePlayer, canControl, trailing }: Tran
       cancelled = true;
       clearInterval(timer);
     };
-  }, [activePlayer, nowPlayingId, metaDuration]);
+  }, [activePlayer, nowPlayingId, nowPlayingVideoId, metaDuration]);
   const fallbackDuration = playerDuration && playerDuration.id === nowPlayingId ? playerDuration.ms : 0;
   const duration = metaDuration > 0 ? metaDuration : fallbackDuration;
   const canSeek = activePlayer?.canSeek?.() ?? false;

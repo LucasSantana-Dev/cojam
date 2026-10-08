@@ -100,7 +100,11 @@ type RoomState struct {
 	RoomID       string     `json:"roomId"`
 	Queue        []TrackRef `json:"queue"`
 	NowPlayingID string     `json:"nowPlayingId,omitempty"`
-	HostUserID   string     `json:"hostUserId,omitempty"`
+	// History holds tracks that finished or were skipped, newest first, capped
+	// at MaxHistory. Queue holds only the playing track (head) plus upcoming
+	// ones; see history.go.
+	History    []HistoryEntry `json:"history,omitempty"`
+	HostUserID string         `json:"hostUserId,omitempty"`
 	// OwnerUserID is the room creator. It always reclaims host on (re)join
 	// and cannot be demoted or kicked. Empty on rooms that predate it.
 	OwnerUserID string `json:"ownerUserId,omitempty"`
@@ -152,9 +156,8 @@ func (rs *RoomState) setNowPlayingID(id string) {
 // Add appends a track to the queue, generates an ID, stamps the server-side
 // AddedAt (overwriting any client-supplied value), and bumps the version.
 // If nothing is playing (NowPlayingID empty), the new track starts playing.
-// Played tracks are never removed (clients only advance the pointer), so an
-// empty NowPlayingID with a non-empty queue means every prior entry is
-// history; pointing at Queue[0] there would restart the oldest played track.
+// Played tracks leave Queue for History, so the queue is empty whenever
+// nothing is playing and the new track is the head.
 func (rs *RoomState) Add(track TrackRef) *TrackRef {
 	track.ID = uuid.New().String()
 	track.AddedAt = time.Now().UnixMilli()
@@ -163,29 +166,29 @@ func (rs *RoomState) Add(track TrackRef) *TrackRef {
 
 	if rs.NowPlayingID == "" {
 		rs.setNowPlayingID(track.ID)
+		rs.moveToFront(track.ID)
+		return &rs.Queue[0]
 	}
 
 	return &rs.Queue[len(rs.Queue)-1]
 }
 
 // Remove removes a track from the queue by ID and bumps the version.
-// If the removed track was NowPlayingID, playback advances to the track that
-// followed it (now at the same index), or clears when nothing follows. The
+// If the removed track was NowPlayingID it moves to History and playback
+// advances to the next queued track, or clears when nothing follows. The
 // track's votes go with it so counts never outlive the track (F4).
 func (rs *RoomState) Remove(trackID string) error {
 	for i, t := range rs.Queue {
 		if t.ID == trackID {
+			if rs.NowPlayingID == trackID {
+				rs.retireNowPlaying()
+				rs.switchTo(rs.nextUpcoming())
+				rs.Version++
+				return nil
+			}
 			rs.Queue = append(rs.Queue[:i], rs.Queue[i+1:]...)
 			delete(rs.Votes, trackID)
 			rs.Version++
-
-			if rs.NowPlayingID == trackID {
-				if i < len(rs.Queue) {
-					rs.setNowPlayingID(rs.Queue[i].ID)
-				} else {
-					rs.setNowPlayingID("")
-				}
-			}
 			return nil
 		}
 	}
@@ -300,7 +303,10 @@ func (rs *RoomState) RewriteVoter(oldVoter, newVoter string) {
 func (rs *RoomState) SetNowPlaying(trackID string) error {
 	for _, t := range rs.Queue {
 		if t.ID == trackID {
-			rs.setNowPlayingID(trackID)
+			if rs.NowPlayingID != trackID {
+				rs.retireNowPlaying()
+				rs.switchTo(trackID)
+			}
 			rs.Version++
 			return nil
 		}
@@ -331,31 +337,53 @@ func (rs *RoomState) AdvanceAfter(afterID string) error {
 		return nil
 	}
 
-	// Find the index of afterID
-	var afterIndex int
-	found := false
-	for i, t := range rs.Queue {
-		if t.ID == afterID {
-			afterIndex = i
-			found = true
-			break
-		}
-	}
-	if !found {
+	if rs.Track(afterID) == nil {
 		return fmt.Errorf("track not found: %s", afterID)
 	}
 
-	// If afterID is the last track, clear NowPlayingID
-	if afterIndex == len(rs.Queue)-1 {
-		rs.setNowPlayingID("")
-		rs.Version++
-		return nil
-	}
-
-	// Otherwise, advance to the next track
-	rs.setNowPlayingID(rs.Queue[afterIndex+1].ID)
+	// The finished track goes to History; the head of what remains plays next,
+	// or nothing when the queue is finished.
+	rs.retireNowPlaying()
+	rs.switchTo(rs.nextUpcoming())
 	rs.Version++
 	return nil
+}
+
+// EndedGraceMs is how far past a track's duration a playing transport may run
+// before the server treats the track as ended. It keeps a joiner from racing
+// the host's own end-of-track advance, which lands within about a second.
+//
+// It is also deliberately wide: the catalogue duration of a YouTube-matched
+// track is not the video's (the match can be a longer music video), so a
+// joiner reconnecting 5 s past a 3:48 catalogue entry must not skip a 4:30
+// video that is still playing. Only a transport that ran this far past the
+// catalogue end is treated as abandoned. The server cannot know the real video
+// length (only the player can), so a video more than 30 s longer than its
+// catalogue entry can still be cut on a late join; the matcher keeps matched
+// videos close to the catalogue length to make that rare.
+const EndedGraceMs = 30_000
+
+// AdvanceIfEnded moves playback past the now-playing track when a playing
+// transport has run beyond that track's duration (plus EndedGraceMs). Advance
+// is host-only on the client, so a host that vanished (or a server restart that
+// restored the transport from the store) leaves the position growing forever
+// and every listener seeking past the end. The advance re-anchors the
+// transport to position 0 (setNowPlayingID), so one step is enough: a long
+// outage does not skip the whole queue. It never refills radio. Tracks with an
+// unknown duration are left alone. Reports whether the room advanced.
+func (rs *RoomState) AdvanceIfEnded(nowMs int64) bool {
+	t := rs.Transport
+	if t == nil || t.State != "playing" || rs.NowPlayingID == "" {
+		return false
+	}
+	tr := rs.Track(rs.NowPlayingID)
+	if tr == nil || tr.DurationMs <= 0 {
+		return false
+	}
+	if t.PositionMs+(nowMs-t.UpdatedAtServerMs) < tr.DurationMs+EndedGraceMs {
+		return false
+	}
+	return rs.AdvanceAfter(rs.NowPlayingID) == nil
 }
 
 // Move relocates a track to a new position in the queue.
@@ -374,6 +402,17 @@ func (rs *RoomState) Move(trackID string, toIndex int) error {
 	}
 	if !found {
 		return fmt.Errorf("%w: %s", ErrTrackNotFound, trackID)
+	}
+
+	// The playing track stays at the head: it cannot move and nothing may be
+	// placed ahead of it.
+	if rs.NowPlayingID != "" && len(rs.Queue) > 0 && rs.Queue[0].ID == rs.NowPlayingID {
+		if trackID == rs.NowPlayingID {
+			return nil
+		}
+		if toIndex < 1 {
+			toIndex = 1
+		}
 	}
 
 	// Clamp toIndex

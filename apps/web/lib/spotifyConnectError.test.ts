@@ -73,7 +73,7 @@ describe('spotifyConnectMessage', () => {
     expect(spotifyConnectMessage('denied')).toBe('Você cancelou a autorização no Spotify.');
     expect(spotifyConnectMessage('rejected')).toContain('lista de testadores');
     expect(spotifyConnectMessage('server')).toContain('erro do servidor');
-    expect(spotifyConnectMessage('premium')).toContain('A sala continua tocando pelo YouTube.');
+    expect(spotifyConnectMessage('premium')).toContain('Você pode ouvir pelo YouTube.');
   });
 });
 

@@ -377,3 +377,33 @@ func TestRun_SubOnly(t *testing.T) {
 		t.Fatalf("actor anonymized = %d, want 1", got.ModerationActorAnonymized)
 	}
 }
+
+// LGPD: played tracks live in History, so the scrub must reach them too.
+func TestScrubRoom_ScrubsHistory(t *testing.T) {
+	s := &queue.RoomState{
+		RoomID:  "r",
+		Version: 3,
+		Queue:   []queue.TrackRef{{ID: "q1", Title: "Up", AddedBy: "Bia", AddedByUserID: other}},
+		History: []queue.HistoryEntry{
+			{ID: "h1", Title: "Played mine", AddedBy: "Ana", AddedByUserID: person},
+			{ID: "h2", Title: "Played theirs", AddedBy: "Bia", AddedByUserID: other},
+			{ID: "h3", Title: "Played by name", AddedBy: "Ana"},
+		},
+	}
+	ch := ScrubRoom(s, Request{Sub: person, Name: "Ana"})
+	if !ch.Present || !ch.Changed() {
+		t.Fatalf("a person found only in History must count as present: %+v", ch)
+	}
+	if h := s.History[0]; h.AddedByUserID != "" || h.AddedBy != RemovedName {
+		t.Fatalf("history entry not anonymized: %+v", h)
+	}
+	if h := s.History[2]; h.AddedBy != RemovedName {
+		t.Fatalf("name-only history entry in a room with the person must be anonymized: %+v", h)
+	}
+	if h := s.History[1]; h.AddedBy != "Bia" || h.AddedByUserID != other {
+		t.Fatalf("other people's history must survive: %+v", h)
+	}
+	if ch.QueueEntries != 2 || s.Version != 4 {
+		t.Fatalf("entries=%d version=%d", ch.QueueEntries, s.Version)
+	}
+}

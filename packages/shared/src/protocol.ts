@@ -33,6 +33,26 @@ export type TrackRef = {
   addedAt?: number;
 };
 
+// A track that finished or was skipped. Lives in RoomState.history, never in
+// the queue, so votes and reorders cannot bring it back. The list uses id,
+// title, artist, artworkUrl, playedAt and addedBy; sources (and durationMs,
+// isrc, kind) are kept so a controller can re-add it (history.readd).
+export type HistoryEntry = {
+  id: string;
+  title: string;
+  artist: string;
+  artworkUrl?: string;
+  addedBy: string;
+  addedByUserId?: string;
+  // Server clock (unix ms) when the track left now-playing. Absent on entries
+  // migrated from rooms that predate history.
+  playedAt?: number;
+  durationMs?: number;
+  isrc?: string;
+  kind?: 'audio' | 'video';
+  sources: { youtube?: SourceRef; apple?: SourceRef; spotify?: SourceRef };
+};
+
 export type TransportState = {
   state: 'playing' | 'paused' | 'stopped';
   positionMs: number;
@@ -41,8 +61,13 @@ export type TransportState = {
 
 export type RoomState = {
   roomId: string;
+  // The playing track (head) plus the upcoming ones. Played tracks are in
+  // `history`, not here.
   queue: TrackRef[];
   nowPlayingId?: string;
+  // Tracks already played or skipped, newest first, at most 50. Absent when
+  // empty. Votes and reorders never touch it.
+  history?: HistoryEntry[];
   hostUserId?: string;
   // Room creator (server-set at creation). Always reclaims host on join and
   // cannot be demoted or kicked. Absent on rooms that predate it.
