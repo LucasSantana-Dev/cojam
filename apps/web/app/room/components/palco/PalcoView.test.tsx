@@ -22,6 +22,7 @@ const fake = vi.hoisted(() => {
     dispose() {}
     resize() {}
     setMotion() {}
+    setIdle() {}
     setCrowd(e: Array<{ key: string; characterId: number }>) { this.crowd.push(e); }
     setBooths(l: { key: string } | null, r: { key: string } | null) { this.booths.push([l, r]); }
     woot(k: string) { this.woots.push(k); }

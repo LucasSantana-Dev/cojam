@@ -95,6 +95,10 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork 
   );
   const boothLabel = (m: Member | null, verb: string) => (m ? `${isMe(m, clientId) ? 'Você' : memberLabel(m, suffixes)} · ${verb}` : '');
 
+  // Re-writes the fixed player's position (set by the effect below): any
+  // layout change, not only a new rectangle, can move the stage on the page.
+  const writePlayerRef = useRef<() => void>(() => {});
+
   // --- measuring: the stage column width, and the height left by the HUD ---
   useEffect(() => {
     const root = rootRef.current;
@@ -109,6 +113,7 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork 
       });
       const next = pickWorld(window.innerWidth, window.innerHeight);
       setKind((k) => (k === next ? k : next));
+      writePlayerRef.current();
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -135,13 +140,24 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork 
       root.style.setProperty('--palco-sh', `${screen.h}px`);
     };
     write();
+    writePlayerRef.current = write;
+    // A layout shift above the stage (banner, header wrap) or a phone keyboard
+    // or dynamic toolbar (visualViewport) moves the stage without resizing it.
+    const vv = window.visualViewport;
     window.addEventListener('scroll', write, { passive: true });
     window.addEventListener('resize', write);
+    vv?.addEventListener('resize', write);
+    vv?.addEventListener('scroll', write);
     const ro = new ResizeObserver(write);
     ro.observe(stage);
+    if (rootRef.current) ro.observe(rootRef.current);
+    ro.observe(document.documentElement);
     return () => {
+      writePlayerRef.current = () => {};
       window.removeEventListener('scroll', write);
       window.removeEventListener('resize', write);
+      vv?.removeEventListener('resize', write);
+      vv?.removeEventListener('scroll', write);
       ro.disconnect();
     };
   }, [screen?.x, screen?.y, screen?.w, screen?.h]); // eslint-disable-line react-hooks/exhaustive-deps -- the rectangle, not the object identity
@@ -185,6 +201,10 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork 
   useEffect(() => {
     scene?.setMotion(motion);
   }, [scene, motion]);
+  // Battery: the shrunken phone stage under an open panel renders only on change.
+  useEffect(() => {
+    scene?.setIdle(compact);
+  }, [scene, compact]);
   useEffect(() => {
     scene?.setCrowd(entries.map(({ key, characterId, slot }) => ({ key, characterId, slot })));
   }, [scene, entries]);

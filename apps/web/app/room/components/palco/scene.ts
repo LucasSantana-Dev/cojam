@@ -222,6 +222,11 @@ export class PalcoScene {
   private framing: Framing | null = null;
   private motion = true;
   private raf = 0;
+  // Battery: no frames while the tab is hidden, and while idle (the phone
+  // stage shrunk under an open Fila or Chat) only for a moment after a change.
+  private hidden = false;
+  private idle = false;
+  private awakeUntil = 0;
   private running = false;
   private seed = 7;
   private readonly t0 = performance.now();
@@ -417,6 +422,7 @@ export class PalcoScene {
     this.camera.position.set(f.camLeft, -f.camTop, 10);
     this.buildRows(f.crowdBottom);
     this.lastHalf = -1;
+    this.kick();
   }
 
   setMotion(on: boolean): void {
@@ -427,10 +433,12 @@ export class PalcoScene {
       this.hearts.splice(0).forEach((h) => this.drop(h.m));
     }
     this.lastHalf = -1;
+    this.kick();
   }
 
   setCrowd(entries: CrowdEntry[]): void {
     const now = this.now();
+    this.kick();
     const keep = new Set(entries.map((e) => e.key));
     for (const [key, p] of this.people) {
       if (!keep.has(key)) {
@@ -479,6 +487,7 @@ export class PalcoScene {
   }
 
   setBooths(left: BoothEntry | null, right: BoothEntry | null): void {
+    this.kick();
     [left, right].forEach((want, i) => {
       const b = this.booths[i];
       const same = (a: BoothEntry | null, c: BoothEntry | null) => (a?.key ?? null) === (c?.key ?? null) && (a?.characterId ?? 0) === (c?.characterId ?? 0);
@@ -503,6 +512,7 @@ export class PalcoScene {
 
   woot(key: string): void {
     const p = this.people.get(key);
+    this.kick();
     this.energy = Math.min(1, this.energy + 0.07);
     if (!p) return;
     p.wootAt = this.now();
@@ -513,24 +523,39 @@ export class PalcoScene {
   start(): void {
     if (this.running) return;
     this.running = true;
-    const loop = () => {
-      if (!this.running) return;
-      this.frame();
-      this.raf = requestAnimationFrame(loop);
-    };
-    this.raf = requestAnimationFrame(loop);
+    this.hidden = document.hidden;
+    document.addEventListener('visibilitychange', this.onVisibility);
+    this.kick();
+  }
+
+  // Idle: render only around changes (a booth swap, a woot, a resize).
+  setIdle(idle: boolean): void {
+    this.idle = idle;
+    this.kick();
   }
 
   dispose(): void {
     this.running = false;
     cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    document.removeEventListener('visibilitychange', this.onVisibility);
+    // Every texture once: the scene's maps (stage plate, edges, ground, covers,
+    // desks, lamps, rows) plus the ones not always in the scene.
+    const textures = new Set<Texture>([this.skyTex, this.waveTex, this.heartTex]);
+    this.booths.forEach((b) => { if (b.waveTex) textures.add(b.waveTex); });
     this.scene.traverse((o) => {
       const m = o as Mesh;
       if (m.geometry) m.geometry.dispose();
       const mat = m.material as Material | Material[] | undefined;
-      if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
-      else mat?.dispose();
+      for (const x of Array.isArray(mat) ? mat : mat ? [mat] : []) {
+        const map = (x as MeshBasicMaterial).map;
+        if (map) textures.add(map);
+        x.dispose();
+      }
     });
+    this.hearts.splice(0).forEach((h) => this.drop(h.m));
+    this.confGeo.dispose();
+    textures.forEach((t) => t.dispose());
     for (const t of this.charTex.values()) {
       [...t.halves.front, ...t.halves.back, ...(t.arms.front ?? []), ...(t.arms.back ?? []), t.front].forEach((x) => x?.dispose());
     }
@@ -541,6 +566,25 @@ export class PalcoScene {
   }
 
   // --- internals ------------------------------------------------------------------
+
+  private readonly onVisibility = () => {
+    this.hidden = document.hidden;
+    this.kick();
+  };
+
+  private readonly loop = () => {
+    this.raf = 0;
+    if (!this.running) return;
+    this.frame();
+    if (this.hidden || (this.idle && performance.now() > this.awakeUntil)) return;
+    this.raf = requestAnimationFrame(this.loop);
+  };
+
+  // Keeps frames coming for a moment (long enough for a booth sink and rise).
+  private kick(ms = 1200): void {
+    this.awakeUntil = Math.max(this.awakeUntil, performance.now() + ms);
+    if (this.running && !this.hidden && !this.raf) this.raf = requestAnimationFrame(this.loop);
+  }
 
   private now(): number {
     return (performance.now() - this.t0) / 1000;
