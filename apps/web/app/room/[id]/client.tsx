@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, updatePlatform } from '@/lib/realtime';
+import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, updatePlatform, isPermissionDeniedError } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { StatusBanner } from '../components/StatusBanner';
 import { NAME_KEY } from '@/lib/guestName';
@@ -292,7 +292,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   // U4: Drift correction loop (gated by the sync feature flag). The hook keys
   // off the meaningful transport fields, not publication object identity (#177).
-  useDriftCorrection(activePlayer, f.sync);
+  useDriftCorrection(activePlayer, f.sync, hostControl);
 
   // Auto-advance at track end for Spotify/Apple (YouTube also advances via its
   // native onStateChange; the server dedups through AdvanceAfter). onEnded has
@@ -304,7 +304,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
     advanceSubscribedRef.current = activePlayer;
     activePlayer.onEnded(() => {
       const id = useStore.getState().state?.nowPlayingId;
-      if (id) nowPlayingAdvance(roomId, id);
+      if (id) {
+        nowPlayingAdvance(roomId, id).catch((err) => {
+          if (!isPermissionDeniedError(err)) console.warn('[player] advance at track end failed:', err);
+        });
+      }
     });
   }, [activePlayer, roomId]);
 

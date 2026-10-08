@@ -99,6 +99,93 @@ Code: `apps/web/app/room/[id]/client.tsx`, `NowPlayingCard.tsx`, `ListenersStage
 - **Motion at rest:** one thing moves, the three sound-wave arcs above each listener avatar (and the glyph between neighbours), on the shared beat clock (`lib/beatClock`, rAF only while playing, on screen, tab visible). Static under reduced motion, paused, or alone. The queue and chat rows, the cover flight on a track change and the chat spring-in move only on events.
 - **Not built because the product lacks it:** shuffle, repeat, real photos on avatars. Dev fixture: `/room/<ID>?fixture=room|join` (non-production only, `lib/devFixture.ts`).
 
+## Modo palco
+
+Status: decided, not built. Decision record and owner quotes: [`docs/design/modo-palco.md`](docs/design/modo-palco.md). References (local, gitignored, not committed): `.claude/design/refs/r5-palco-02-festival-1440.png` (anchor), `r5-palco-var-0{1..6}-*.png` (variations), `r5-palco-roster-v2.png` (roster), `r5-style-owner-avatar.png` (portrait style).
+
+An alternative view of the live room: a pixel art stage with the YouTube video on its screen and the people in the room as the audience. It sits next to the round 4 room, not in place of it. The anchor shows a "MODO PALCO" pill in the top bar; how the user switches is for the build spec.
+
+### The scene
+
+Festival at night. Dark violet sky with stars and a skyline of lighting towers. A truss arch frames the screen and carries a pixel LED headphone arc (the logo's headphone). Speaker stacks flank the screen, each with a sine-wave screen (the logo's wave). Violet and lime beams fan out from the truss and the towers. The audience stands in front of the stage with silhouettes filling the back rows.
+
+- Palette from the product: the violet of `--color-accent`, the green family of the mark, near-black from `--r4-bg`. Lime beams are scene art, not a LIVE signal; the AO VIVO pill keeps the green rule.
+- One background asset plus a few animated layers (beams, wave screens, rings). No cover colour, no ground drift, no glass or blur.
+
+### Pixel rules
+
+- **One fixed grid.** Scene and sprites share one logical pixel size and never mix grids. Draw at the logical size, scale by an integer factor.
+- **Nearest-neighbour scaling only.** `image-rendering: pixelated` on every pixel asset. No smoothing, no sub-pixel offsets, no rotated sprites.
+- **Limited palette from the product.** Quantise every asset to one shared palette (the tokens above plus skin, hair and clothing ramps). No dithering inside sprites.
+- The interface (top bar, name tags, bottom strip, drawers, tabs) stays in the round 4 vector language and type. It is not pixelated.
+
+### Characters
+
+Characters are separate from the scene, so each person picks who represents them best.
+
+- **A fixed roster of 12.** No customisation. **Repeats are allowed**: two people may pick the same character.
+- **Portrait bust** per character, in the farm-sim portrait style of the owner's GitHub avatar (three-quarter view, warm dark outline, soft shading, no dithering). Used by the picker, chat and menus.
+- **Full-body sprite, front and back**, big head, in the earlier full-body style. Used in the audience. Front and back must be the same person (hair, clothes, accessories, build); a pair that does not match is rejected before it ships.
+- **Picker**, shown on join and in the avatar menu. Title "Escolha quem vai pra plateia", helper "Pode repetir: outras pessoas podem escolher o mesmo". Portrait grid, one selected, keyboard operable, 44px targets, selection shown by outline plus a check, not by colour alone.
+- The roster varies in age, skin tone, hair, glasses, head covering, a wheelchair user, headphones.
+
+### The audience row
+
+One row of sprites at the front of the stage, one per listener.
+
+- **Name tag** above each head: dark pill with the name and the service badge (`.svc-badge`).
+- **Listening rings:** the sound-wave arcs around the avatar in the member's identity colour, on the beat clock (`lib/beatClock`). Static when paused, alone or under reduced motion.
+- Silhouettes behind the row are scenery, not members.
+- Behaviour with many listeners (compress, wrap, scroll) is open for the build spec; whatever it is, tags never enter the screen rectangle.
+
+### The bottom strip
+
+A dark strip across the bottom: "TOCANDO AGORA: title · artist", the "X pediu" chip, the progress bar, and the **Fila (N)** and **Chat** buttons. Fila and Chat open as drawers that must not cover the screen.
+
+### The YouTube screen rule
+
+Hard rule from the YouTube API terms (see the record, section "YouTube ToS constraints").
+
+- The screen is the **real YouTube embed**: crisp (never pixelated or filtered), **at least 200x200 CSS px** at every viewport, visible the whole time audio plays.
+- **Nothing overlaps its rectangle, ever.** Not chat bubbles, placards, heads or sprites, beams or light effects, name tags (including the enlarged tags of the close camera variation), drawers, scrims or toasts.
+- Bubbles, boards and effects are laid out **outside** the rectangle. The layout reserves it; it does not rely on z-order.
+- Bezel and glow decoration sit outside the embed's box.
+- **Non-YouTube listeners (owner: "A", 2026-10-08):** the screen shows the same YouTube video as a muted player synced to the room transport (drift correction relaxed, visuals only); their own service plays the sound. The same rules apply to it: at least 200x200, never covered. No YouTube match for the track: the screen shows the cover art.
+- Several mockups broke this (bubbles over the video in variation 01, placards in 05, tags in 04). They are tone references, not layout references, for those parts.
+- A layout PR states where the player sits at 390 and 1440 with each drawer and tab open, with screenshots taken with YouTube as the active source. A fixture without a player hides the violation.
+
+### Phone layout (390)
+
+Top to bottom: top bar, the stage (arch, screen, speakers) with the embed at least 200 px wide and tall, an audience band (sprites with tags, bubbles kept outside the screen), a compact now-playing card (title, artist, "X pediu", play, progress), tabs **Palco / Fila / Chat**.
+
+- The embed **stays mounted and visible on every tab**. Under Fila and Chat the stage shrinks to the screen plus a thin strip, never to nothing. This also removes the current phone behaviour where `.video-panel-keep` hides the player under those tabs.
+- 44px targets. The audience band scrolls horizontally if it overflows.
+
+### Reduced motion
+
+Under `prefers-reduced-motion` (`useMotion`): beams, wave screens, crowd and sprite loops are static frames; rings static; bubbles appear without spring-in; no camera moves. The scene reads fully as a still. At rest, motion stays inside the room's budget (rings on the beat clock, plus one decorative stage layer that pauses when the tab is hidden or the stage is off screen).
+
+### Exclusions
+
+- **Not Habbo**: no walking around, no rooms, no furniture, no avatar shop.
+- **Not isometric.** Flat frontal stage view.
+- **No chibi bodies.** Big head, believable body.
+- **No front and back mismatch.** One character, one person, both views.
+- No customisation beyond the fixed roster of 12.
+
+### v1 and later
+
+| Idea | Variation | When |
+|---|---|---|
+| Anchor: festival, truss, speakers, audience, bottom strip | festival (02) | v1 |
+| Chat bubbles above heads, kept below the screen | var 01 | v1 |
+| "A seguir" LED setlist board, outside the screen | var 01 | v1 |
+| Phone layout, tabs Palco / Fila / Chat | var 06 | v1 |
+| Spotlight and DJ booth | var 02 | later |
+| Voting placards (re-laid out outside the screen) | var 05 | later |
+| Dusk | var 03 | later |
+| Close camera | var 04 | not planned (enlarged tags cover the screen) |
+
 ## Surfaces
 
 One treatment on the landing and the other screens (the room has its own, above): `--glass` fill, `--glass-line` 1px hairline, `--glass-radius`, `backdrop-filter: none`. On sintonia screens the page tokens are remapped (`.room[data-tint="room"][data-bg="sintonia"]`, `.landing[data-bg="sintonia"]`, `.sx`) so existing components pick up the glass without per-component overrides.

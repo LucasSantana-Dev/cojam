@@ -2,6 +2,7 @@
 // approved mockup. Never active in a production build: fixtureKind() returns
 // null when NODE_ENV is "production", so the branch is dead code there.
 //   /room/<ID>?fixture=room  joined room (Pétala, 5 listeners, 4 queued, 3 chat lines)
+//     add &members=1|2|5|8 and &long=1 for long names (stage review)
 //   /room/<ID>?fixture=join  pre-join screen with the room preview
 import { useStore, type Member } from './realtime';
 import { getStoredUserId } from './auth';
@@ -48,6 +49,7 @@ export function fixtureState(): RoomState {
     queue,
     nowPlayingId: 't1',
     hostUserId: 'u-bia',
+    admins: ['u-caio', 'u-dani'],
     radioEnabled: false,
     radioAvailable: true,
     version: 5,
@@ -64,6 +66,26 @@ const MEMBERS: Member[] = [
   { clientId: 'c-lucas', userId: 'u-lucas', name: 'Lucas', platform: 'spotify' },
   { clientId: 'c-maju', userId: 'u-maju', name: 'Maju', platform: 'youtube' },
 ];
+
+const LONG_NAMES = ['Jalam pibau', 'Luk', 'Maria Eduarda Albuquerque', 'Joao Pedro', 'Anna Beatriz Souza', 'Lucas', 'Fernanda Cristina', 'Zé'];
+const PLATFORMS: Member['platform'][] = ['spotify', 'youtube', 'apple', 'spotify', 'youtube', 'apple', 'spotify', 'youtube'];
+
+// ?members=N (1..8) and ?long=1 reshape the stage for visual review.
+function fixtureMembers(): Member[] {
+  const q = new URLSearchParams(window.location.search);
+  const n = Number(q.get('members'));
+  if (!n || n < 1 || n > 8) return MEMBERS;
+  const long = q.get('long') === '1';
+  const out: Member[] = [];
+  for (let i = 0; i < n; i++) {
+    const base = MEMBERS[i];
+    const name = long ? LONG_NAMES[i] : (base?.name ?? `Pessoa ${i + 1}`);
+    out.push({ clientId: base?.clientId ?? `c-x${i}`, userId: base?.userId ?? `u-x${i}`, name, platform: PLATFORMS[i] });
+  }
+  // The viewer must stay in the list (the fixture is "Lucas").
+  if (!out.some((m) => m.clientId === 'c-lucas')) out[out.length - 1] = { ...MEMBERS[3], name: long ? 'Luk' : 'Lucas' };
+  return out;
+}
 
 function chatLines(): ChatMessage[] {
   const t = NOW();
@@ -99,7 +121,7 @@ export function applyRoomFixture(kind: FixtureKind): void {
   s.setClientId('c-lucas');
   s.setConnected(true);
   s.setState(fixtureState());
-  s.setMembers(MEMBERS);
+  s.setMembers(fixtureMembers());
   s.setMyVotes({ t3: true });
   if (kind === 'room') s.setChat(chatLines());
 }

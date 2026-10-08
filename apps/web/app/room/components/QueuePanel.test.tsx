@@ -303,7 +303,7 @@ describe('QueuePanel voting (F4)', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Votar' }));
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('too many requests, slow down');
+    expect(alert).toHaveTextContent(/Muitas ações/);
     expect(useStore.getState().myVotes.t1).toBeUndefined();
     expect(within(row).getByRole('button', { name: 'Votar' })).toHaveAttribute('aria-pressed', 'false');
   });

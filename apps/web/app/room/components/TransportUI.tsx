@@ -52,18 +52,27 @@ export function TransportUI({ roomId, activePlayer, canControl, trailing }: Tran
   // known; a track-supplied duration always wins.
   const [playerDuration, setPlayerDuration] = useState<{ id: string; ms: number } | null>(null);
   const nowPlayingId = nowPlaying?.id;
+  const lastPlayerDurationRef = useRef(0);
   useEffect(() => {
     if (!activePlayer || !nowPlayingId || metaDuration > 0) return;
     let cancelled = false;
-    const poll = () =>
-      activePlayer
+    // YouTube getDuration() returns the previous video's length right after a
+    // load. Trust a read once the player reports PLAYING for this video, or
+    // when it differs from the last accepted length (so it cannot be the
+    // previous video's). Players without isPlaying are trusted as before.
+    const poll = () => {
+      return activePlayer
         .getDurationMs()
         .then((d) => {
           if (cancelled || !Number.isFinite(d) || d <= 0) return;
+          const stale = d === lastPlayerDurationRef.current;
+          if (stale && activePlayer.isPlaying && !activePlayer.isPlaying()) return;
+          lastPlayerDurationRef.current = d;
           setPlayerDuration({ id: nowPlayingId, ms: d });
           clearInterval(timer); // known: stop polling (timer is initialised before any poll resolves)
         })
         .catch(() => {});
+    };
     const timer = setInterval(poll, 1000);
     poll();
     return () => {
