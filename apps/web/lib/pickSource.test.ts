@@ -92,7 +92,7 @@ describe('isUnavailable', () => {
 });
 
 describe('pickSource with a listening preference', () => {
-  const all = track({ spotify: { trackUri: 'spotify:track:1' }, apple: { songId: 'a1' }, youtube: { videoId: 'v1' } });
+  const all = track({ spotify: { trackUri: 'spotify:track:1', confidence: 1 }, apple: { songId: 'a1', confidence: 1 }, youtube: { videoId: 'v1', confidence: 1 } });
   const both = { spotifyAuthorized: true, appleAuthorized: true };
 
   it('auto keeps the default order', () => {
@@ -105,14 +105,14 @@ describe('pickSource with a listening preference', () => {
     expect(pickSource(all, { ...both, preference: 'youtube' })).toBe('youtube');
   });
   it('falls back to the auto order and says so when the track lacks the chosen service', () => {
-    const t = track({ youtube: { videoId: 'v1' } });
+    const t = track({ youtube: { videoId: 'v1', confidence: 1 } });
     expect(resolveSource(t, { ...both, preference: 'spotify' })).toEqual({ source: 'youtube', fellBack: true });
   });
   it('falls back when the chosen service is not authorized', () => {
     expect(resolveSource(all, { spotifyAuthorized: false, appleAuthorized: true, preference: 'spotify' })).toEqual({ source: 'apple', fellBack: true });
   });
   it('returns null (still flagged as fallback) when nothing can play', () => {
-    const t = track({ spotify: { trackUri: 'spotify:track:1' } });
+    const t = track({ spotify: { trackUri: 'spotify:track:1', confidence: 1 } });
     expect(resolveSource(t, { spotifyAuthorized: false, appleAuthorized: false, preference: 'spotify' })).toEqual({ source: null, fellBack: true });
     expect(isUnavailable(t, { spotifyAuthorized: false, appleAuthorized: false, preference: 'youtube' })).toBe(true);
   });
