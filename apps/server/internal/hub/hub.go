@@ -373,6 +373,7 @@ type Hub struct {
 	clientName     map[string]string // clientID -> connect-time display name
 	clientIP       map[string]string // clientID -> client IP of the websocket upgrade
 	platforms      platformStore     // clientID -> listening service set by member.set_platform
+	characters     characterStore    // clientID -> audience character set by member.set_character
 
 	// rebindSecret verifies the anonymous connection JWT presented to
 	// room.rebind as proof of guest ownership (#172); rebindBurns records
@@ -391,64 +392,68 @@ type Hub struct {
 // room.join enrolls (see Authorize); reads and unknown methods fall through
 // to dispatch.
 var mutatingMethods = map[string]bool{
-	"queue.add":           true,
-	"queue.remove":        true,
-	"queue.reorder":       true,
-	"queue.vote":          true,
-	"now_playing.set":     true,
-	"now_playing.advance": true,
-	"playlist.import":     true,
-	"radio.set":           true,
-	"room.set_public":     true,
-	"room.set_admin":      true,
-	"room.transfer_host":  true,
-	"room.claim_host":     true,
-	"room.kick":           true,
-	"room.rebind":         true,
-	"transport.play":      true,
-	"transport.pause":     true,
-	"transport.seek":      true,
-	"chat.send":           true,
-	"chat.history":        true,
-	"chat.delete":         true,
-	"member.set_platform": true,
-	"member.platforms":    true,
+	"queue.add":            true,
+	"queue.remove":         true,
+	"queue.reorder":        true,
+	"queue.vote":           true,
+	"now_playing.set":      true,
+	"now_playing.advance":  true,
+	"playlist.import":      true,
+	"radio.set":            true,
+	"room.set_public":      true,
+	"room.set_admin":       true,
+	"room.transfer_host":   true,
+	"room.claim_host":      true,
+	"room.kick":            true,
+	"room.rebind":          true,
+	"transport.play":       true,
+	"transport.pause":      true,
+	"transport.seek":       true,
+	"chat.send":            true,
+	"chat.history":         true,
+	"chat.delete":          true,
+	"member.set_platform":  true,
+	"member.platforms":     true,
+	"member.set_character": true,
+	"member.characters":    true,
 }
 
 // knownMethods is the dispatch set. RPC method names are client-supplied, so
 // metrics and logs label anything outside it as "unknown" (metricMethod):
 // echoing the raw name would let a client mint unbounded time series.
 var knownMethods = map[string]bool{
-	"room.join":           true,
-	"queue.add":           true,
-	"queue.remove":        true,
-	"now_playing.set":     true,
-	"now_playing.advance": true,
-	"queue.reorder":       true,
-	"queue.vote":          true,
-	"track.search":        true,
-	"track.depth":         true,
-	"track.lyrics":        true,
-	"track.listenbrainz":  true,
-	"track.lastfm":        true,
-	"playlist.import":     true,
-	"radio.set":           true,
-	"room.set_public":     true,
-	"room.list":           true,
-	"transport.play":      true,
-	"transport.pause":     true,
-	"transport.seek":      true,
-	"chat.send":           true,
-	"chat.history":        true,
-	"chat.delete":         true,
-	"room.kick":           true,
-	"room.set_admin":      true,
-	"room.transfer_host":  true,
-	"room.claim_host":     true,
-	"room.rebind":         true,
-	"member.set_platform": true,
-	"member.platforms":    true,
-	"sync.ping":           true,
+	"room.join":            true,
+	"queue.add":            true,
+	"queue.remove":         true,
+	"now_playing.set":      true,
+	"now_playing.advance":  true,
+	"queue.reorder":        true,
+	"queue.vote":           true,
+	"track.search":         true,
+	"track.depth":          true,
+	"track.lyrics":         true,
+	"track.listenbrainz":   true,
+	"track.lastfm":         true,
+	"playlist.import":      true,
+	"radio.set":            true,
+	"room.set_public":      true,
+	"room.list":            true,
+	"transport.play":       true,
+	"transport.pause":      true,
+	"transport.seek":       true,
+	"chat.send":            true,
+	"chat.history":         true,
+	"chat.delete":          true,
+	"room.kick":            true,
+	"room.set_admin":       true,
+	"room.transfer_host":   true,
+	"room.claim_host":      true,
+	"room.rebind":          true,
+	"member.set_platform":  true,
+	"member.platforms":     true,
+	"member.set_character": true,
+	"member.characters":    true,
+	"sync.ping":            true,
 }
 
 // metricMethod is the bounded label for method: itself when known, else
@@ -863,6 +868,7 @@ func (h *Hub) RemoveClientUserID(clientID string) {
 	delete(h.clientName, clientID)
 	delete(h.clientIP, clientID)
 	h.platforms.remove(clientID)
+	h.characters.remove(clientID)
 }
 
 // recordJoinTime stamps when an authenticated userID joined a room, for
@@ -2425,6 +2431,31 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, fmt.Errorf("member.platforms: roomId required")
 		}
 		return h.memberPlatforms(req.RoomID)
+
+	case "member.set_character":
+		var req struct {
+			RoomID      string `json:"roomId"`
+			CharacterID int    `json:"characterId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("member.set_character: roomId required")
+		}
+		return h.memberSetCharacter(req.RoomID, req.CharacterID, clientID)
+
+	case "member.characters":
+		var req struct {
+			RoomID string `json:"roomId"`
+		}
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		if req.RoomID == "" {
+			return nil, fmt.Errorf("member.characters: roomId required")
+		}
+		return h.memberCharacters(req.RoomID)
 
 	case "sync.ping":
 		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})

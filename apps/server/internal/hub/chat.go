@@ -49,6 +49,8 @@ var chatMethods = map[string]bool{
 	// A listening-service change republishes to the room: same per-caller
 	// budget as chat so it cannot be scripted into a flood.
 	"member.set_platform": true,
+	// Same for the audience character ("Modo palco").
+	"member.set_character": true,
 }
 
 // ChatKindSystem marks a server-generated announcement (track change, member

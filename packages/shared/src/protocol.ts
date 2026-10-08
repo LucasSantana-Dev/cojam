@@ -124,3 +124,19 @@ export type MemberPlatformPub = {
   clientId: string;
   platform: 'spotify' | 'apple' | 'youtube';
 };
+
+// Audience characters ("Modo palco"): a fixed roster of 12, ids 1..12, repeats
+// allowed. The id is the whole payload: never an image or a free string.
+export const CHARACTER_COUNT = 12;
+
+export type CharacterId = number; // integer, 1..CHARACTER_COUNT
+
+// MemberCharacterPub: a member picked another character (member.set_character).
+// Clients overlay it on the presence entry with this clientId; not RoomState, no
+// version guard. A member who never chose is shown with defaultCharacter(userId)
+// (FNV-1a 32 bit of the userId bytes, mod 12, plus 1), identical on server and web.
+export type MemberCharacterPub = {
+  type: 'member.character';
+  clientId: string;
+  characterId: CharacterId;
+};
