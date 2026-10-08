@@ -351,7 +351,7 @@ export function QueuePanel({ roomId, canControl }: QueuePanelProps) {
             <div data-testid="queue-title" className="fq-title">{track.title}</div>
             <div className="fq-artist">{track.artist}</div>
             {missing && (
-              <span className="fq-missing" role="img" aria-label={`Sem versão no ${missing}`} title={`Sem versão no ${missing}: toca pelo YouTube`}>
+              <span className="fq-missing" role="img" aria-label={`Sem versão no ${missing}`} title={`Sem versão no ${missing}`}>
                 Sem versão no {missing}
               </span>
             )}
