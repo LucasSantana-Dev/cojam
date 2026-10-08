@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { RoomsDirectory } from './RoomsDirectory';
 
 export const metadata: Metadata = {
-  title: 'Salas públicas',
+  title: 'Salas ao vivo',
   description: 'Salas abertas do CoJam tocando agora. Escolha uma e ouça junto.',
   alternates: { canonical: '/rooms' },
 };

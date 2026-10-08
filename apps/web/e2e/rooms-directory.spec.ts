@@ -50,18 +50,18 @@ test('/rooms lists public rooms only, filters by search and reorders by sort', a
   const visitor = await (await browser.newContext()).newPage();
   await proxyConnectionToken(visitor);
   await visitor.goto('/rooms');
-  await expect(visitor.getByRole('heading', { name: 'Salas públicas' })).toBeVisible();
+  await expect(visitor.getByRole('heading', { name: 'Salas ao vivo' })).toBeVisible();
 
   // The directory polls every 15s; both public rooms must appear within one.
-  const alphaCard = visitor.locator('.live-room-card').filter({ hasText: alphaLabel });
-  const betaCard = visitor.locator('.live-room-card').filter({ hasText: betaLabel });
+  const alphaCard = visitor.locator('.r4s-room').filter({ hasText: alphaLabel });
+  const betaCard = visitor.locator('.r4s-room').filter({ hasText: betaLabel });
   await expect(alphaCard).toBeVisible({ timeout: 20_000 });
   await expect(betaCard).toBeVisible();
   await expect(visitor.getByText(secret, { exact: false })).toHaveCount(0);
 
   // Default sort is most people: Alpha (2) before Beta (1).
   const order = async () =>
-    (await visitor.locator('.live-room-card__name').allTextContents()).filter(
+    (await visitor.locator('.r4s-room__name').allTextContents()).filter(
       (n) => n === alphaLabel || n === betaLabel,
     );
   expect(await order()).toEqual([alphaLabel, betaLabel]);
