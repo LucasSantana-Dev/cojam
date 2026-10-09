@@ -14,6 +14,7 @@ import { setRadio, nowPlayingAdvance } from '@/lib/realtime';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { MoreVertIcon, MusicNoteIcon, SkipNextIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
+import { SkipVoteButton } from './SkipVoteButton';
 import { TransportUI } from './TransportUI';
 import { UnavailableTrack } from './UnavailableTrack';
 import { PlayFailedTrack } from './PlayFailedTrack';
@@ -157,6 +158,9 @@ export function NowPlayingCard({
 
   const hasTools = tools(() => {}).length > 0;
 
+  // Vote to skip, for every member (the host also has the direct skip).
+  const skipVote = track && !preview ? <SkipVoteButton roomId={roomId} variant="r4" /> : null;
+
   // Same row as the transport, for the states that have none: next (controllers
   // only).
   const fallbackRow = (
@@ -175,7 +179,7 @@ export function NowPlayingCard({
           </button>
         )}
       </div>
-      <span className="tp__side tp__side--end" aria-hidden="true" />
+      <span className="tp__side tp__side--end">{skipVote}</span>
     </div>
   );
 
@@ -240,7 +244,7 @@ export function NowPlayingCard({
         </div>
 
         {showTransport ? (
-          <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl && !preview} />
+          <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl && !preview} trailing={skipVote} />
         ) : (
           fallbackRow
         )}

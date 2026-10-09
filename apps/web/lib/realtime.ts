@@ -7,6 +7,7 @@ import { fetchConnectionToken, getLastTokenFetchError, getStoredProofToken, clea
 import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
 import { isCharacterId } from './characters';
+import { skipVoteKey } from './skipVote';
 import type { ChatDeletePub, ChatMessage, ChatMessagePub, Emote, MemberPlatformPub, MemberCharacterPub, ReactionEmotePub, ReactionWootPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 import { EMOTES } from '@cojam/shared';
 
@@ -939,6 +940,17 @@ export async function nowPlayingSet(roomId: string, trackId: string) {
 export async function nowPlayingAdvance(roomId: string, afterId: string) {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('now_playing.advance', { roomId, afterId });
+}
+
+// Vote to skip the playing track (now_playing.vote_skip). The server stamps who
+// voted and its voter keys cannot be mapped back to this client, so the pressed
+// state is the local myVotes entry under skipVoteKey(trackId), written only on
+// RPC success (same contract as queue votes, #188). `vote` is explicit, never a
+// blind toggle, so a client that lost its local state cannot invert the vote.
+export async function nowPlayingVoteSkip(roomId: string, nowPlayingId: string, vote: boolean) {
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
+  await centrifuge.rpc('now_playing.vote_skip', { roomId, nowPlayingId, vote });
+  useStore.getState().markVoted(skipVoteKey(nowPlayingId), vote);
 }
 
 // now_playing.skip_unplayable: a controller's client reports that the playing

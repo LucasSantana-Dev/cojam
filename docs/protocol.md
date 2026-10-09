@@ -16,6 +16,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `now_playing.set` | `{ roomId, trackId: string }` | `RoomState` |
 | `now_playing.advance` | `{ roomId, afterId: string }` | `RoomState` |
 | `now_playing.skip_unplayable` | `{ roomId, trackId: string }` | `RoomState` |
+| `now_playing.vote_skip` | `{ roomId, nowPlayingId: string, vote?: boolean }` | `RoomState` |
 | `track.search` | `{ query: string, prefer?: string[] }` | `SearchResult[]` |
 | `track.depth` | `{ roomId, isrc: string, title: string, artist: string }` | `TrackDepth` |
 | `track.lyrics` | `{ roomId, artist: string, title: string, album: string, durationMs: number }` | `LyricsResult` |
@@ -271,6 +272,7 @@ still enforced.
 |---|---|
 | `queue.add` | any member |
 | `queue.vote` | any member (guests included) |
+| `now_playing.vote_skip` | any member (guests included) |
 | `chat.send`, `chat.history` | any member |
 | `chat.delete` | host or owner (others get a code-400 UserError) |
 | `room.kick` | host or owner (others get a code-400 UserError); the owner cannot be kicked |
@@ -316,6 +318,24 @@ publishes the full state; a dedicated per-caller rate limit (10 burst, one token
 toggle wars. Voting is member-gated but never host-only, and counts are a reorder suggestion for
 the host, not an automatic reorder: the web client renders counts plus a listeners-pick marker and
 the host acts on them with `queue.reorder`.
+
+`now_playing.vote_skip` (vote to skip, `{ roomId, nowPlayingId, vote? }`) lets any member vote to
+skip the playing track; the host keeps the direct skip (`now_playing.advance`). It rides the queue
+voting flag (`FEATURE_QUEUE_VOTING`; `ErrorMethodNotFound` when off) and the `queue.vote` rate-limit
+bucket, and is membership-gated like the other member RPCs. `nowPlayingId` must be the track the
+caller sees playing: any other id is rejected with a UserError ("a música já mudou"), so a vote
+never lands on the next track. `vote` omitted toggles; `true`/`false` set the value (idempotent).
+Votes are the voter keys of `queue.vote`, kept in `RoomState.skipVotes` (absent when empty) and
+cleared whenever `nowPlayingId` changes. The threshold counts the **distinct listeners present**
+(identity, so two tabs of one account count once, the same collapse the room page uses for "N
+ouvindo"): `need = max(ceil(n/2), min(2, n))`, i.e. n=1 needs 1, n=2 needs 2, n=3 needs 2, n=4
+needs 2, n=5 needs 3. Only votes from currently present voters count, and the check re-runs when a
+listener leaves, so a departure can complete the vote. On reaching it the server advances exactly
+like `now_playing.advance` (same dedup against auto-advance and the host skip, transport
+re-anchored to 0), posts the system chat line "Música pulada pela sala", logs `skip_by_vote`
+(`room_id`, `votes`, `n`) and counts `music_jam_skips_by_vote_total` (votes cast:
+`music_jam_skip_votes_total`). The client derives its pressed state locally (the voter keys cannot
+be mapped back to a client) and the "Pular 1/2" denominator from its own listener count.
 
 ## Server → channel publications
 
@@ -521,6 +541,7 @@ type RoomState = {
   transport?: TransportState; // shared play/pause/seek position (FEATURE_SYNC)
   createdAt?: number;       // unix ms at room creation, server-stamped (absent on older rooms)
   votes?: { [trackId: string]: string[] }; // server-stamped voter keys per track (FEATURE_QUEUE_VOTING)
+  skipVotes?: string[]; // voter keys who want the playing track skipped; cleared on every track change
   public?: boolean;         // directory opt-in (FEATURE_PUBLIC_ROOMS); absent = private
   name?: string;            // optional host-set room label shown in the directory
 };
@@ -556,7 +577,7 @@ Reconnect: centrifuge recovery + client re-issues `room.join` on reconnect; serv
 
 ## Authorization
 
-Mutating RPCs (`history.readd`, `queue.clear`, `queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.set`, `now_playing.advance`, `now_playing.skip_unplayable`, `playlist.import`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`, `room.claim_host`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms` / `member.set_character` / `member.characters` / `reaction.woot` / `reaction.emote`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
+Mutating RPCs (`history.readd`, `queue.clear`, `queue.add`, `queue.remove`, `queue.reorder`, `queue.vote`, `now_playing.vote_skip`, `now_playing.set`, `now_playing.advance`, `now_playing.skip_unplayable`, `playlist.import`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`, `room.claim_host`, `room.kick`, `room.rebind`, `transport.play`, `transport.pause`, `transport.seek`) and the chat RPCs (`chat.send`, `chat.history`, `chat.delete`, and `member.set_platform` / `member.platforms` / `member.set_character` / `member.characters` / `reaction.woot` / `reaction.emote`, which are membership-gated but never mutate `RoomState`) require the caller to be a **member** of the target room. A client becomes a member by subscribing to the room's `room:<id>` channel or by calling `room.join`; membership is dropped on disconnect. Subscribing is the reconnect-safe path (centrifuge re-subscribes automatically). A non-member mutating RPC is rejected with `ErrorPermissionDenied` before dispatch. `room.join` enrolls and is always allowed. This prevents an unauthenticated client from mutating an arbitrary room by guessing its id. Enforced at the transport boundary (where the client id is known); `HandleRPC` stays transport-independent.
 
 ### Room ids and room creation
 
@@ -564,7 +585,7 @@ A room id must match `^[0-9A-Z]{1,12}$`: the 12 uppercase base36 chars the web g
 
 `room.join` draws from a per-caller rate limit (10 burst, one token per 2s). Creating a room draws from a separate budget (10 burst, one token per minute; `ROOM_CREATE_RATE_BURST` overrides the burst), charged both per caller and per client IP (the IP of the websocket upgrade, resolved like the HTTP limiters: IPv4 per address, IPv6 per /64); a creation is denied when either bucket is empty, and a denial charges neither. It is charged only when the target room exists neither in memory nor in the store, so joining an existing room never spends it. Both reject with a code-400 UserError. The caller key is the same as the other per-caller limits (`user:<userID>`, else `client:<clientID>`).
 
-State-fanout mutations (`history.readd`, `queue.clear`, `queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `now_playing.skip_unplayable`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`) share one per-caller bucket (20 burst, one token per second), since every accepted call republishes the full `RoomState`. `queue.vote`, `transport.*`, the chat and moderation RPCs, and `playlist.import` keep their own buckets.
+State-fanout mutations (`history.readd`, `queue.clear`, `queue.add`, `queue.remove`, `queue.reorder`, `now_playing.set`, `now_playing.advance`, `now_playing.skip_unplayable`, `radio.set`, `room.set_public`, `room.set_admin`, `room.transfer_host`) share one per-caller bucket (20 burst, one token per second), since every accepted call republishes the full `RoomState`. `queue.vote` and `now_playing.vote_skip` (one shared vote bucket), `transport.*`, the chat and moderation RPCs, and `playlist.import` keep their own buckets.
 
 ### Trust model (#180)
 

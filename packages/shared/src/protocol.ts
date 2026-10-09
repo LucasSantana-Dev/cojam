@@ -91,6 +91,10 @@ export type RoomState = {
   // trackId -> server-stamped voter keys ("user:<userID>" or
   // "client:<clientID>"); clients never send these (F4 queue voting).
   votes?: { [trackId: string]: string[] };
+  // Voter keys (same format as `votes`) who want the playing track skipped
+  // (now_playing.vote_skip). Belongs to the current nowPlayingId only: the
+  // server clears it on every track change. Absent when nobody voted.
+  skipVotes?: string[];
   // Host-set directory opt-in (FEATURE_PUBLIC_ROOMS); absent = private.
   public?: boolean;
   // Optional host-set room label shown in the public directory. Not to be
