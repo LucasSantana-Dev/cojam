@@ -1,4 +1,4 @@
-// Audience characters ("Modo palco"): a fixed roster of 13, ids 1..13, repeats
+// Audience characters ("Modo palco"): a fixed roster of 14, ids 1..14, repeats
 // allowed. The wire carries only the id (packages/shared protocol.ts); the art
 // lives in public/palco/characters. Render it with integer scaling and
 // image-rendering: pixelated only.
@@ -24,6 +24,7 @@ export const CHARACTER_LABELS: readonly string[] = [
   'Cabelos grisalhos cacheados e cardigã bege',
   'Boné, dreads e cadeira de rodas',
   'Cachos pretos volumosos e blusa vinho',
+  'Cabelo loiro bagunçado e óculos cor-de-rosa',
 ];
 
 // First names, in roster order (docs/design/modo-palco.md section 7). The
@@ -42,14 +43,15 @@ export const CHARACTER_NAMES: readonly string[] = [
   'Dona Cida',
   'Biel',
   'Mel',
+  'Nico',
 ];
 
 export function isCharacterId(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= CHARACTER_COUNT;
 }
 
-// FNV-1a 32 bit of the UTF-8 bytes, mod 12 (CHARACTER_DEFAULT_POOL, so 13 is
-// pickable but never a default), plus 1. Same function as the
+// FNV-1a 32 bit of the UTF-8 bytes, mod 12 (CHARACTER_DEFAULT_POOL, so 13 and
+// 14 are pickable but never a default), plus 1. Same function as the
 // server's DefaultCharacter (apps/server/internal/hub/character.go); both are
 // pinned by the same test vectors.
 export function defaultCharacterId(seed: string): number {

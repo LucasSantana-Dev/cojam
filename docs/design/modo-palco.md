@@ -61,7 +61,7 @@ Variations 01 (bubbles), 04 (tags) and 05 (placards) were drawn over the video r
 
 Owner: "Mas acho que vamos precisar separar os personagens do ambiente pra que a pessoa escolha exatamente quem melhor representa ela, não precisa ser uma personalização absurda e pode permitir repetição".
 
-- A fixed roster of 13 (12 at first, Mel added 2026-10-08), no customisation, repeats allowed.
+- A fixed roster of 14 (12 at first, Mel added 2026-10-08, Nico added 2026-10-09), no customisation, repeats allowed.
 - The picker shows on join and in the avatar menu: "Escolha quem vai pra plateia" and "Pode repetir: outras pessoas podem escolher o mesmo".
 
 ### 4. Style: the owner's GitHub avatar
@@ -102,8 +102,11 @@ Names (owner approved 2026-10-08, roster order). The picker shows the name; the 
 | 11 | Dona Cida | Cabelos grisalhos cacheados e cardigã bege |
 | 12 | Biel | Boné, dreads e cadeira de rodas |
 | 13 | Mel | Cachos pretos volumosos e blusa vinho |
+| 14 | Nico | Cabelo loiro bagunçado e óculos cor-de-rosa |
 
 Character 13 (Mel) joined the roster on 2026-10-08 and is pickable. The default hash still maps to 1..12 only, so nobody's default changed.
+
+Character 14 (Nico) joined on 2026-10-09, also pickable and never a default. A real person asked to be in the roster and sent a photo; the photo stays out of git. The art is an edit of Thiago's approved sprites (07) in the Gemini app: same body, grid, shading and frames, with new hair, skin, pink glasses, nose ring, shirt print and white sneakers. The first two drafts, drawn from scratch, broke the roster pattern (big head, heavy outline) and were rejected. Owner approved the v3 set on 2026-10-09.
 
 Dance: the audience cycles between the round 10 dance, "ombrinho" and "passinho", switching move every 8 beats on a per-person phase. Each loop is 4 frames, one per half beat. A woot still shows arms up; with motion off, idle.
 

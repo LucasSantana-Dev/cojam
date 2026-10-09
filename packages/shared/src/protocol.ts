@@ -154,9 +154,9 @@ export type MemberPlatformPub = {
   platform: 'spotify' | 'youtube';
 };
 
-// Audience characters ("Modo palco"): a fixed roster of 13, ids 1..13, repeats
+// Audience characters ("Modo palco"): a fixed roster of 14, ids 1..14, repeats
 // allowed. The id is the whole payload: never an image or a free string.
-export const CHARACTER_COUNT = 13;
+export const CHARACTER_COUNT = 14;
 
 // Default pool: a member who never chose gets 1 + (FNV-1a mod this). Pinned at
 // 12 so nobody's default changed when character 13 joined the roster; 13 is
