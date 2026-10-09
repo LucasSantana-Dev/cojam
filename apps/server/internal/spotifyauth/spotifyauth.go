@@ -62,7 +62,7 @@ func Token(ctx context.Context) (string, error) {
 	}
 
 	// Fetch new token
-	req, err := http.NewRequestWithContext(ctx, "POST", TokenURL,
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "token"), "POST", TokenURL,
 		strings.NewReader("grant_type=client_credentials"))
 	if err != nil {
 		return "", fmt.Errorf("failed to create token request: %w", err)

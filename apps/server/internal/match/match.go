@@ -17,6 +17,7 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
+	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 )
@@ -79,7 +80,7 @@ func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
 	isrc = strings.ToUpper(isrc)
 	mbURL := fmt.Sprintf("https://musicbrainz.org/ws/2/isrc/%s?fmt=json&inc=artist-credits", url.QueryEscape(isrc))
 
-	req, err := http.NewRequest("GET", mbURL, nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(context.Background(), "isrc"), "GET", mbURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -172,7 +173,7 @@ func youtubeSearch(ctx context.Context, query string) (cands []YouTubeCandidate,
 
 	searchURL := youtubeSearchURL + "?" + q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "search"), "GET", searchURL, nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to create request: %w", redactErr(err))
 	}
@@ -233,7 +234,7 @@ func fillDurations(ctx context.Context, apiKey string, candidates []YouTubeCandi
 	q.Set("part", "contentDetails,status")
 	q.Set("id", strings.Join(ids, ","))
 	q.Set("key", apiKey)
-	req, err := http.NewRequestWithContext(ctx, "GET", youtubeVideosURL+"?"+q.Encode(), nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "lookup"), "GET", youtubeVideosURL+"?"+q.Encode(), nil)
 	if err != nil {
 		slog.Warn("youtube_duration_lookup_failed", "err", redactErr(err).Error())
 		return false
@@ -642,7 +643,7 @@ func ResolveSpotify(ctx context.Context, title, artist, isrc string) (*queue.Sou
 	}
 
 	// Search Spotify
-	searchReq, err := http.NewRequestWithContext(ctx, "GET", spotifySearchURL, nil)
+	searchReq, err := http.NewRequestWithContext(httpx.WithOp(ctx, "lookup"), "GET", spotifySearchURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create search request: %w", err)
 	}
@@ -733,7 +734,7 @@ func SearchSpotify(ctx context.Context, query string, limit int) ([]SearchCandid
 	}
 
 	// Search Spotify
-	searchReq, err := http.NewRequestWithContext(ctx, "GET", spotifySearchURL, nil)
+	searchReq, err := http.NewRequestWithContext(httpx.WithOp(ctx, "search"), "GET", spotifySearchURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create search request: %w", err)
 	}
@@ -788,7 +789,7 @@ func SearchDeezer(ctx context.Context, query string, limit int) ([]SearchCandida
 		limit = 10
 	}
 
-	searchReq, err := http.NewRequestWithContext(ctx, "GET", deezerSearchURL, nil)
+	searchReq, err := http.NewRequestWithContext(httpx.WithOp(ctx, "search"), "GET", deezerSearchURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -857,37 +858,38 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 
 	// Deezer (always available, no config needed)
 	wg.Add(1)
-	go func() {
+	obs.SafeGo("match_search", func() {
 		defer wg.Done()
 		ctx, cancel := context.WithTimeout(ctx, sourceTimeout)
 		defer cancel()
 		results, err := SearchDeezer(ctx, query, limit)
 		if err != nil {
-			// Log but don't fail the whole search
-			slog.Warn("search_deezer_failed", "query", query, "err", err.Error())
+			// Log but don't fail the whole search. The query is user text:
+			// only its length is logged.
+			slog.Warn("search_deezer_failed", "query_len", len(query), "err", redactErr(err).Error())
 			return
 		}
 		mu.Lock()
 		allCandidates = append(allCandidates, results...)
 		mu.Unlock()
-	}()
+	})
 
 	// Spotify (if configured)
 	if spotifyauth.ClientID != "" && spotifyauth.ClientSecret != "" {
 		wg.Add(1)
-		go func() {
+		obs.SafeGo("match_search", func() {
 			defer wg.Done()
 			ctx, cancel := context.WithTimeout(ctx, sourceTimeout)
 			defer cancel()
 			results, err := SearchSpotify(ctx, query, limit)
 			if err != nil {
-				slog.Warn("search_spotify_failed", "query", query, "err", err.Error())
+				slog.Warn("search_spotify_failed", "query_len", len(query), "err", redactErr(err).Error())
 				return
 			}
 			mu.Lock()
 			allCandidates = append(allCandidates, results...)
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -1022,7 +1024,7 @@ func SimilarTracks(ctx context.Context, artist, title string, limit int) ([]queu
 	params.Set("limit", fmt.Sprintf("%d", limit))
 	params.Set("autocorrect", "1")
 
-	req, err := http.NewRequestWithContext(ctx, "GET", lastfmURL+"?"+params.Encode(), nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "similar"), "GET", lastfmURL+"?"+params.Encode(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -1095,7 +1097,7 @@ func FetchLastfmEnrichment(ctx context.Context, artist, title string) (*LastfmEn
 	params.Set("format", "json")
 	params.Set("autocorrect", "1")
 
-	req, err := http.NewRequestWithContext(ctx, "GET", lastfmURL+"?"+params.Encode(), nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "similar"), "GET", lastfmURL+"?"+params.Encode(), nil)
 	if err != nil {
 		// Graceful return on request creation error
 		return result, nil

@@ -50,6 +50,7 @@ FEATURE_MATCHING=true
 ROOM_IDLE_TTL_MINUTES=30               # evict memberless rooms idle this long
 ROOM_PERSIST_IDLE_TTL_MINUTES=0        # delete memberless room ROWS idle this long (0=disabled, opt-in; single-instance only)
 REPORT_RETENTION_DAYS=0                # delete reports and moderation actions older than this (0=keep forever)
+LOG_LEVEL=info                         # debug | info | warn | error (default info)
 YOUTUBE_API_KEY=<key>                  # YouTube matching
 SPOTIFY_CLIENT_ID=<id>                 # Spotify matching (client credentials)
 SPOTIFY_CLIENT_SECRET=<secret>
@@ -101,4 +102,6 @@ It deletes the person's Spotify token row; removes their votes, host role and qu
 
 Set `REPORT_WEBHOOK_URL` to push a minimal summary of each member report (id, kind, room id, category, time; no chat content) to a channel you monitor. Unset means reports are stored and logged only.
 
-The Go server emits structured JSON logs to stdout. Prometheus metrics are served at `/metrics` on a dedicated listener when `METRICS_ADDR` is set (never on the public port).
+The Go server emits structured JSON logs to stdout. Every line carries `service=cojam-server` and `version` (the build stamp). `LOG_LEVEL` (`debug`, `info`, `warn`, `error`; default `info`) sets the minimum level, including for the realtime library's own logs; an unrecognized value logs a config warning and uses `info`. Every HTTP request gets an id: the caller's `X-Request-Id` when it is 8 to 64 URL-safe characters, otherwise a random one. It is echoed in the response header and written as `request_id` on the access log line. Logs carry no client addresses, no search text, no track titles or artists, and no user ids.
+
+Prometheus metrics are served at `/metrics` on a dedicated listener when `METRICS_ADDR` is set (never on the public port). The full series list is in [observability-metrics.md](observability-metrics.md).

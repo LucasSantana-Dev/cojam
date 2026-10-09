@@ -243,3 +243,30 @@ func TestQuotaBreakerStillServesCache(t *testing.T) {
 		t.Fatalf("cached query during outage: ref=%v err=%v", ref, err)
 	}
 }
+
+func TestQuotaTripHookAndOpenFlag(t *testing.T) {
+	resetYouTubeQuota()
+	t.Cleanup(resetYouTubeQuota)
+	var kinds []string
+	oldNow := quotaNow
+	t.Cleanup(func() { quotaNow = oldNow })
+	OnQuotaTrip = func(k string) { kinds = append(kinds, k) }
+	t.Cleanup(func() { OnQuotaTrip = nil })
+	now := time.Date(2026, 7, 15, 20, 0, 0, 0, time.UTC)
+	quotaNow = func() time.Time { return now }
+	if YouTubeQuotaOpen() {
+		t.Fatal("breaker must start closed")
+	}
+	tripYouTubeQuota(now, now.Add(time.Minute), quotaTransient)
+	tripYouTubeQuota(now, now.Add(time.Minute), quotaTransient) // concurrent failure of the same outage
+	if !YouTubeQuotaOpen() {
+		t.Fatal("breaker must report open after a trip")
+	}
+	if len(kinds) != 1 || kinds[0] != "transient" {
+		t.Fatalf("hook calls = %v, want one transient trip", kinds)
+	}
+	now = now.Add(2 * time.Minute)
+	if YouTubeQuotaOpen() {
+		t.Fatal("breaker must close when the pause ends")
+	}
+}

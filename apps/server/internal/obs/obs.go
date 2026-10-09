@@ -10,6 +10,7 @@ import (
 )
 
 type Metrics struct {
+	foundation
 	Registry          *prometheus.Registry
 	RPCDuration       *prometheus.HistogramVec
 	ConnectionsActive prometheus.Gauge
@@ -163,6 +164,7 @@ func New() *Metrics {
 		m.PublishErrors, m.PlayingWithoutTransport, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
 		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject, m.ReportsFiled, m.RetentionPurgedRows)
 
+	m.registerFoundation()
 	return m
 }
 

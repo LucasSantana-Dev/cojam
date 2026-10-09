@@ -15,7 +15,9 @@ import (
 // is omitted because it can carry credentials (the deprecated
 // connection-token form sends one). The client address is omitted too: the
 // rate limiters key on it in memory, and nothing needs it persisted per
-// request, so access logs stay free of personal data.
+// request, so access logs stay free of personal data. request_id (from the
+// requestID middleware, via the logger's context handler) correlates a line
+// with the X-Request-Id the client saw.
 func accessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +31,7 @@ func accessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 					// Hijacked by the websocket handler: the connection was
 					// switched, and the handler returned only when the session
 					// ended, so its duration is not a request latency.
-					logger.Info("http_request",
+					logger.InfoContext(r.Context(), "http_request",
 						"method", r.Method,
 						"path", r.URL.Path,
 						"status", http.StatusSwitchingProtocols,
@@ -39,7 +41,7 @@ func accessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 				if status == 0 {
 					status = http.StatusOK
 				}
-				logger.Info("http_request",
+				logger.InfoContext(r.Context(), "http_request",
 					"method", r.Method,
 					"path", r.URL.Path,
 					"status", status,

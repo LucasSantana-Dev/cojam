@@ -129,9 +129,13 @@ func TestClient_TimeoutsAreBounded(t *testing.T) {
 	if Client.Timeout <= 0 {
 		t.Fatal("Client.Timeout must be set: an unbounded call can hang a goroutine")
 	}
-	tr, ok := Client.Transport.(*http.Transport)
+	wrapped, ok := Client.Transport.(instrumented)
 	if !ok {
-		t.Fatalf("expected *http.Transport, got %T", Client.Transport)
+		t.Fatalf("expected the instrumented transport, got %T", Client.Transport)
+	}
+	tr, ok := wrapped.next.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", wrapped.next)
 	}
 	if tr.TLSHandshakeTimeout <= 0 {
 		t.Error("TLSHandshakeTimeout must be set")

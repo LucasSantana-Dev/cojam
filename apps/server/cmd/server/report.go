@@ -115,7 +115,7 @@ func reportHandler(
 		// stdout widens where reported material lives.
 		metrics.ReportFiled(string(rec.Kind))
 		logger.Warn("report_filed", "room_id", rec.RoomID, "kind", string(rec.Kind),
-			"subject_id", rec.SubjectID, "has_reporter", sub != "")
+			"report_id", rec.ID, "has_reporter", sub != "")
 
 		// Push to the operator after the write is durable. The notifier is
 		// async and swallows its own failures: a dead webhook must never turn a
