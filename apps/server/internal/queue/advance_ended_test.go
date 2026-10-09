@@ -90,7 +90,7 @@ func TestAdvanceIfEndedWideMargin(t *testing.T) {
 		want    bool
 	}{
 		{"video 4:30 still playing", 270_000, false},
-		{"2:29 past the end", dur + 149_000, false},
+		{"1:59 past the end", dur + 119_000, false},
 		{"just under the 2:00 margin", dur + 119_999, false},
 		{"exactly at the margin", dur + 120_000, true},
 		{"2:30 past the end", dur + 150_000, true},
