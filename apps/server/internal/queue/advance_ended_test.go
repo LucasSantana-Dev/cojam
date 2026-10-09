@@ -37,8 +37,8 @@ func TestAdvanceIfEndedStaleTransport(t *testing.T) {
 
 func TestAdvanceIfEndedLeavesLiveAndUnknownAlone(t *testing.T) {
 	rs := playingAt(0, 1_000)
-	if rs.AdvanceIfEnded(1_000 + 223_000) { // at the end, inside the grace
-		t.Fatal("inside the grace window must not advance")
+	if rs.AdvanceIfEnded(1_000 + 223_000) { // at the end, inside the margin
+		t.Fatal("inside the margin window must not advance")
 	}
 	rs = playingAt(0, 1_000)
 	rs.Transport.State = "paused"
@@ -75,14 +75,30 @@ func TestAdvanceIfEndedLastTrackClears(t *testing.T) {
 }
 
 // The catalogue duration of a YouTube-matched track is not the video's: a
-// joiner reconnecting a little past the catalogue end must not skip a longer
-// video that is still playing.
-func TestAdvanceIfEndedWideGrace(t *testing.T) {
-	rs := playingAt(0, 1_000)
-	if rs.AdvanceIfEnded(1_000 + 223_000 + 25_000) { // reconnect 25 s past the catalogue end
-		t.Fatal("25 s past the catalogue end must not advance")
+// joiner arriving while a longer video is still playing must not skip it.
+func TestAdvanceIfEndedWideMargin(t *testing.T) {
+	const dur = 223_000 // 3:43, margin = max(120 s, 111.5 s) = 120 s
+	if got := StaleEndMarginMs(dur); got != 120_000 {
+		t.Fatalf("margin = %d, want 120000", got)
 	}
-	if !rs.AdvanceIfEnded(1_000 + 223_000 + EndedGraceMs) {
-		t.Fatal("past the wide grace must advance")
+	if got := StaleEndMarginMs(600_000); got != 300_000 {
+		t.Fatalf("10 min track margin = %d, want 300000 (half)", got)
+	}
+	cases := []struct {
+		name    string
+		elapsed int64
+		want    bool
+	}{
+		{"video 4:30 still playing", 270_000, false},
+		{"1:59 past the end", dur + 119_000, false},
+		{"just under the 2:00 margin", dur + 119_999, false},
+		{"exactly at the margin", dur + 120_000, true},
+		{"2:30 past the end", dur + 150_000, true},
+	}
+	for _, c := range cases {
+		rs := playingAt(0, 1_000)
+		if got := rs.AdvanceIfEnded(1_000 + c.elapsed); got != c.want {
+			t.Errorf("%s: advanced = %v, want %v", c.name, got, c.want)
+		}
 	}
 }

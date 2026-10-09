@@ -6,6 +6,9 @@ import { useStore } from '@/lib/realtime';
 import { checkAccount } from '@/lib/spotifyAccount';
 import type { RoomState, TrackRef } from '@cojam/shared';
 
+const telemetryMock = vi.hoisted(() => ({ trackError: vi.fn() }));
+vi.mock('@/lib/telemetry', () => telemetryMock);
+
 // Auth/account modules touch localStorage and the Spotify accounts service;
 // the adapter under test is the playback path, so stub both.
 vi.mock('@/lib/spotifyAuth', () => ({
@@ -330,6 +333,7 @@ describe('SpotifyPlayer problem surface (card, not the closed menu)', () => {
     render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} onProblem={onProblem} onPlayError={onPlayError} />);
     await waitFor(() => expect(onPlayError).toHaveBeenCalledWith('t1'));
     expect(onProblem).not.toHaveBeenCalledWith('sdk', undefined);
+    expect(telemetryMock.trackError).toHaveBeenCalledWith('playback_failed', expect.any(Error));
   });
 });
 

@@ -14,6 +14,9 @@ vi.mock('@/lib/realtime', async (importOriginal) => ({
   nowPlayingAdvance: realtimeMocks.nowPlayingAdvance,
 }));
 
+const telemetryMock = vi.hoisted(() => ({ trackError: vi.fn() }));
+vi.mock('@/lib/telemetry', () => telemetryMock);
+
 type YTEvents = {
   onReady?: () => void;
   onStateChange?: (event: { data: number }) => void;
@@ -97,6 +100,16 @@ describe('YouTubePlayer onError wiring', () => {
     expect(capturedEvents?.onError).toBeDefined();
     act(() => capturedEvents!.onError!({ data: code }));
     expect(onPlayError).toHaveBeenCalledWith('t1');
+  });
+
+  it('reports playback_failed for an unplayable video, not for other codes', () => {
+    telemetryMock.trackError.mockClear();
+    render(<YouTubePlayer roomId="r1" onPlayError={vi.fn()} />);
+    act(() => capturedEvents!.onError!({ data: 2 }));
+    expect(telemetryMock.trackError).not.toHaveBeenCalled();
+    act(() => capturedEvents!.onError!({ data: 150 }));
+    expect(telemetryMock.trackError).toHaveBeenCalledWith('playback_failed', expect.any(Error));
+    expect((telemetryMock.trackError.mock.calls[0][1] as Error).message).toBe('youtube error 150');
   });
 
   it('ignores non-unplayable error codes', () => {

@@ -196,6 +196,29 @@ func TestEvents_TrackSkipped(t *testing.T) {
 	}
 }
 
+// A vote-skip that reaches the threshold mid-track records by=vote, with the
+// voter who tipped it as actor, and no by=host for the same advance.
+func TestEvents_TrackSkippedByVote(t *testing.T) {
+	h, sink := eventsHub(t)
+	h.WithVoting(true)
+	h.skipGrace = 0
+	rolesJoin(t, h, "c-o", "owner")
+	evAddTrack(t, h, "one", 200_000, true)
+	evAddTrack(t, h, "two", 200_000, true)
+	first := rolesState(t, h).NowPlayingID
+
+	if _, err := skipVote(h, "c-o", "owner", rolesRoom, first); err != nil {
+		t.Fatalf("vote: %v", err)
+	}
+	if rolesState(t, h).NowPlayingID == first {
+		t.Fatal("one listener's vote must pass the track")
+	}
+	sk := sink.named(events.TrackSkipped)
+	if len(sk) != 1 || sk[0].Props["by"] != "vote" || sk[0].ActorID != "user:owner" {
+		t.Fatalf("vote skip = %+v", sk)
+	}
+}
+
 func TestEvents_TrackLiked(t *testing.T) {
 	h, sink := eventsHub(t)
 	h.wootPublishFn = func(string, []byte) error { return nil }

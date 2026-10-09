@@ -4,6 +4,7 @@
 // the saved choice is adopted right after hydration.
 import { useSyncExternalStore } from 'react';
 import type { ServicePreference } from './pickSource';
+import { trackEvent } from './telemetry';
 
 export const LISTENING_SERVICE_KEY = 'cojam.listeningService';
 
@@ -35,7 +36,10 @@ export function getListeningService(): ServicePreference {
 
 export function setListeningService(next: ServicePreference): void {
   if (!isPreference(next)) return;
+  const changed = getListeningService() !== next;
   current = next;
+  // An explicit switch to a service is the "provider connected" funnel step.
+  if (changed && next !== 'auto') trackEvent('provider_connected');
   try {
     window.localStorage.setItem(LISTENING_SERVICE_KEY, next);
   } catch {

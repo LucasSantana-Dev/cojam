@@ -78,6 +78,7 @@ func (h *Hub) roomRebind(roomID, proof, clientID, userID string) (json.RawMessag
 		}
 		s.Admins = rewriteAdmins(s.Admins, oldSub, userID)
 		s.RewriteVoter("user:"+oldSub, "user:"+userID)
+		s.RewriteSkipVoter("user:"+oldSub, "user:"+userID)
 		h.transferJoinTime(roomID, oldSub, userID)
 		s.Version++ // exactly one bump for the whole rebind (#172)
 		return nil
