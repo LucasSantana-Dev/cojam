@@ -92,7 +92,7 @@ Room idleness is measured by the last change to the row, not the last visit. A r
 
 ### Product events
 
-`FEATURE_PRODUCT_EVENTS` writes anonymous usage events to the `product_events` table (see `docs/observability-metrics.md` and spec 253 section 8). Set `EVENTS_HMAC_KEY` to 32 or more random bytes (`openssl rand -hex 32`) and keep it stable: it keys the hashes of room and actor ids, so changing it makes new events incomparable with old ones. Rows are purged after 13 months (a fixed window, stated on `/privacidade`); the purge runs whenever a database exists, even with the flag off. Dashboards use the read-only `grafana_ro` role from `observability/postgres/grafana-ro.sql`.
+`FEATURE_PRODUCT_EVENTS` writes anonymous usage events to the `product_events` table (see `docs/observability-metrics.md` and spec 253 section 8). Set `EVENTS_HMAC_KEY` to 32 or more random bytes (`openssl rand -hex 32`) and keep it stable: it keys the hashes of room and actor ids, so changing it makes new events incomparable with old ones. `server erase` needs the same key to find a person's rows (it refuses to run without it unless passed `--skip-product-events`), so changing it also makes earlier rows unerasable by identity. Rows are purged after 13 months (a fixed window, stated on `/privacidade`); the purge runs whenever a database exists, even with the flag off. Dashboards use the read-only `grafana_ro` role from `observability/postgres/grafana-ro.sql`.
 
 ### Erasing one person's data (LGPD)
 

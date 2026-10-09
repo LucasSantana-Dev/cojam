@@ -36,6 +36,15 @@ func TestRunErase_RejectsBadInvocations(t *testing.T) {
 		!strings.Contains(errOut.String(), "DATABASE_URL") {
 		t.Fatalf("missing DATABASE_URL: exit %d, stderr %q", code, errOut.String())
 	}
+
+	// Without the server's key the person's product_events rows cannot be
+	// found: refuse rather than report a clean erasure that missed them.
+	out.Reset()
+	errOut.Reset()
+	if code := runErase([]string{"--sub", "abc", "--dry-run"}, env, &out, &errOut); code != 2 ||
+		!strings.Contains(errOut.String(), "EVENTS_HMAC_KEY") {
+		t.Fatalf("missing EVENTS_HMAC_KEY: exit %d, stderr %q", code, errOut.String())
+	}
 }
 
 // #318: a dry run prints counts per table and never the identifiers or any
@@ -54,13 +63,13 @@ func TestRunErase_DryRunPrintsCountsOnly(t *testing.T) {
 
 	var out, errOut bytes.Buffer
 	code := runErase([]string{"--sub", sub, "--name", "Fulana", "--dry-run"},
-		envOf(map[string]string{"DATABASE_URL": isolatedURL}), &out, &errOut)
+		envOf(map[string]string{"DATABASE_URL": isolatedURL, "EVENTS_HMAC_KEY": "erase-cmd-key"}), &out, &errOut)
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr %q", code, errOut.String())
 	}
 	got := out.String()
 	for _, want := range []string{"dry run", "spotify_tokens", "rooms", "reports", "moderation_actions", "rebound_subs",
-		"reporter anonymized: 1"} {
+		"product_events      deleted: 0", "reporter anonymized: 1"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output missing %q:\n%s", want, got)
 		}

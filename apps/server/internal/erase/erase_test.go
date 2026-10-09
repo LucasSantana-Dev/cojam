@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/dbtest"
+	"github.com/LucasSantana-Dev/cojam/server/internal/events"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
@@ -405,5 +406,52 @@ func TestScrubRoom_ScrubsHistory(t *testing.T) {
 	}
 	if ch.QueueEntries != 2 || s.Version != 4 {
 		t.Fatalf("entries=%d version=%d", ch.QueueEntries, s.Version)
+	}
+}
+
+// product_events: the person's rows are found by recomputing actor_hash with
+// the server's key, for the sub and each client id given. Other actors, rows
+// without an actor, and hashes made under another key (a server that ran
+// without EVENTS_HMAC_KEY) stay. Without a hasher the table is not touched.
+func TestRun_ProductEvents(t *testing.T) {
+	pool := dbtest.Isolated(t)
+	ctx := context.Background()
+	key := []byte("erase-test-events-key")
+	h := events.NewHasher(key)
+	stale := events.NewHasher([]byte("some-other-process-key"))
+	mustExec(t, pool, `INSERT INTO product_events (name, room_hash, actor_hash) VALUES
+		('room_joined', 'r', $1), ('track_liked', 'r', $1), ('search', NULL, $2),
+		('room_joined', 'r', $3), ('room_created', 'r', NULL), ('room_joined', 'r', $4)`,
+		h.Actor("user:"+person), h.Actor("client:c-person"), h.Actor("user:"+other), stale.Actor("user:"+person))
+	count := func() (n int) {
+		t.Helper()
+		if err := pool.QueryRow(ctx, "SELECT count(*) FROM product_events").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	if got, err := Run(ctx, pool, baseRequest(), true); err != nil || got.ProductEventsDeleted != 0 || count() != 6 {
+		t.Fatalf("no hasher: deleted %d, left %d (%v); product_events must be untouched", got.ProductEventsDeleted, count(), err)
+	}
+
+	req := baseRequest()
+	req.Events = events.NewHasher(key)
+	dry, err := Run(ctx, pool, req, false)
+	if err != nil || dry.ProductEventsDeleted != 3 || count() != 6 {
+		t.Fatalf("dry run: would delete %d, left %d (%v); want 3 and nothing changed", dry.ProductEventsDeleted, count(), err)
+	}
+	got, err := Run(ctx, pool, req, true)
+	if err != nil || got.ProductEventsDeleted != 3 {
+		t.Fatalf("apply: deleted %d (%v), want 3", got.ProductEventsDeleted, err)
+	}
+	var left int
+	pool.QueryRow(ctx, `SELECT count(*) FROM product_events
+		WHERE actor_hash IS NULL OR actor_hash IN ($1, $2)`, h.Actor("user:"+other), stale.Actor("user:"+person)).Scan(&left)
+	if count() != 3 || left != 3 {
+		t.Fatalf("left %d rows, %d of them the expected survivors; want 3 and 3", count(), left)
+	}
+	if again, err := Run(ctx, pool, req, true); err != nil || again.ProductEventsDeleted != 0 {
+		t.Fatalf("second apply deleted %d (%v), want 0", again.ProductEventsDeleted, err)
 	}
 }

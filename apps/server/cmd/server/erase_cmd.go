@@ -11,6 +11,7 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
 	"github.com/LucasSantana-Dev/cojam/server/internal/erase"
+	"github.com/LucasSantana-Dev/cojam/server/internal/events"
 )
 
 // stringList is a repeatable string flag.
@@ -20,10 +21,13 @@ func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
 const eraseUsage = `usage: server erase --sub <sub> [--name <display name>] [--client-id <id>]...
-                    [--include-subject-reports] (--dry-run | --apply)
+                    [--include-subject-reports] [--skip-product-events]
+                    (--dry-run | --apply)
 
 Erases or anonymizes one person's data for an LGPD deletion request (#318).
-Connects with DATABASE_URL. Stop the server first: a room held in memory
+Connects with DATABASE_URL. EVENTS_HMAC_KEY must be the server's key so the
+person's product_events rows can be found; --skip-product-events is only for
+a server that never had one (its hashes cannot be recomputed). Stop the server first: a room held in memory
 would write the person back on its next change.
 Procedure: docs/runbooks/lgpd-erasure.md.
 `
@@ -39,12 +43,14 @@ func runErase(args []string, getenv func(string) string, stdout, stderr io.Write
 
 	var req erase.Request
 	var clientIDs stringList
-	var dryRun, apply bool
+	var dryRun, apply, skipEvents bool
 	fs.StringVar(&req.Sub, "sub", "", "the person's id (guest id shown in the app, or sb:<uuid>)")
 	fs.StringVar(&req.Name, "name", "", "display name the person used (optional)")
 	fs.Var(&clientIDs, "client-id", "connection id seen in reports or moderation rows (optional, repeatable)")
 	fs.BoolVar(&req.IncludeSubjectReports, "include-subject-reports", false,
 		"also delete reports ABOUT the person (kept by default as evidence)")
+	fs.BoolVar(&skipEvents, "skip-product-events", false,
+		"leave product_events alone (only when EVENTS_HMAC_KEY was never set)")
 	fs.BoolVar(&dryRun, "dry-run", false, "count what would change, change nothing")
 	fs.BoolVar(&apply, "apply", false, "make the changes, in one transaction")
 
@@ -71,6 +77,14 @@ func runErase(args []string, getenv func(string) string, stdout, stderr io.Write
 		fmt.Fprintln(stderr, "erase: DATABASE_URL is not set")
 		return 2
 	}
+	if !skipEvents {
+		key, configured := eventsKey(getenv)
+		if !configured {
+			fmt.Fprintln(stderr, "erase: EVENTS_HMAC_KEY is not set: product_events rows cannot be matched without the server's key (pass --skip-product-events only if the server never had one)")
+			return 2
+		}
+		req.Events = events.NewHasher(key)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -91,11 +105,11 @@ func runErase(args []string, getenv func(string) string, stdout, stderr io.Write
 		}
 		return 1
 	}
-	printEraseCounts(stdout, c, apply)
+	printEraseCounts(stdout, c, apply, req.Events != nil)
 	return 0
 }
 
-func printEraseCounts(w io.Writer, c erase.Counts, applied bool) {
+func printEraseCounts(w io.Writer, c erase.Counts, applied, productEvents bool) {
 	if applied {
 		fmt.Fprintln(w, "mode: apply (committed)")
 	} else {
@@ -109,4 +123,9 @@ func printEraseCounts(w io.Writer, c erase.Counts, applied bool) {
 	fmt.Fprintf(w, "moderation_actions  actor anonymized: %d, subject anonymized: %d, retained with kept reports: %d\n",
 		c.ModerationActorAnonymized, c.ModerationSubjectAnonymized, c.ModerationSubjectRetained)
 	fmt.Fprintf(w, "rebound_subs        retained: %d\n", c.ReboundSubsRetained)
+	if productEvents {
+		fmt.Fprintf(w, "product_events      deleted: %d\n", c.ProductEventsDeleted)
+	} else {
+		fmt.Fprintln(w, "product_events      skipped (--skip-product-events)")
+	}
 }
