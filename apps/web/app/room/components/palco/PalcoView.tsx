@@ -21,7 +21,7 @@ import { useMotion } from '@/lib/motionFlags';
 import { usePalcoMotion, setPalcoMotion } from '@/lib/palcoView';
 import { computeExpectedPosition, serverNow } from '@/lib/playbackSync';
 import {
-  WORLDS, pickWorld, frameStage, playerRect, boothTop, boothMembers, crowdMembers, crowdSlots, memberKey,
+  WORLDS, pickWorld, frameStage, playerRect, boothTop, boothMembers, crowdMembers, crowdSlots, memberKey, tagName, phoneTagMaxWidth,
   newVoters, memberForVoter, memberForClient, placeBubble, placeTag, upNext, boardRect, type Framing, type WorldKind,
 } from '@/lib/palco';
 import { PalcoScene, loadSceneImages, type FrameOut } from './scene';
@@ -570,8 +570,8 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
               );
             })}
             {entries.map(({ m, key, slot }) => (
-              <span key={key} ref={tagRef(key)} className={`palco-tag${isMe(m, clientId) ? ' palco-tag--you' : ''}${slot.row === 1 ? ' palco-tag--back' : ''}`} style={{ maxWidth: framing ? world.spacing * framing.scale - 4 : undefined }}>
-                {isMe(m, clientId) ? 'Você' : memberLabel(m, suffixes)}
+              <span key={key} ref={tagRef(key)} className={`palco-tag${isMe(m, clientId) ? ' palco-tag--you' : ''}${slot.row === 1 ? ' palco-tag--back' : ''}`} style={framing && kind === 'phone' ? { maxWidth: phoneTagMaxWidth(world, framing.scale) } : framing ? { maxWidth: world.spacing * framing.scale - 4 } : undefined}>
+                {isMe(m, clientId) ? 'Você' : kind === 'phone' ? tagName(m.name, suffixes[m.clientId] ?? '') : memberLabel(m, suffixes)}
               </span>
             ))}
           </div>

@@ -95,7 +95,8 @@ export const WORLDS: Record<WorldKind, WorldDef> = {
     rowsToOff: 38,
     frontOff: 0,
     backOff: -16,
-    spacing: 26,
+    // Phones show the front row only, with room for a readable name per person.
+    spacing: 36,
   },
 };
 
@@ -124,6 +125,17 @@ export const FULL_TOP = 28;
 export const CROWD_EXTRA = 40;
 // Compact framing (phone with Fila or Chat open): the screen plus a thin strip.
 export const COMPACT_PAD = 6;
+// ...and, on the vertical stage, a strip of the front row (tags and heads)
+// right under the player, but only when the open panel keeps its room: the
+// strip takes whatever height is left once the panel has PANEL_CHROME (its
+// title, composer and tab gap, measured) plus PANEL_LIST_MIN for its list
+// (owner budget: the chat list stays >= 230 px at 390x844).
+export const COMPACT_CROWD_ROWS = 60;
+export const COMPACT_CROWD_MIN = 18;
+export const PANEL_CHROME = 127;
+export const PANEL_LIST_MIN = 235;
+// World rows a name tag takes above a head in the strip.
+const STRIP_TAG_ROWS = 14;
 // World pixels the scene draws past each side of the art (sky, ground, crowd).
 export const SIDE_EXT = 60;
 
@@ -167,6 +179,8 @@ export interface Framing {
   // Height of the stage area in CSS px (may be less than offered: no empty ground).
   height: number;
   compact: boolean;
+  // Compact phone framing that also shows a strip of the front row.
+  crowd?: boolean;
 }
 
 export function frameStage(world: WorldDef, cw: number, ch: number, compact = false): Framing {
@@ -186,6 +200,17 @@ export function frameStage(world: WorldDef, cw: number, ch: number, compact = fa
   const centre = world.screen.y + world.screen.h / 2;
   const half = player.h / scale / 2;
   const minRows = Math.max(world.screen.h, Math.ceil(player.h / scale)) + 2 * COMPACT_PAD;
+  if (compact && world.kind === 'phone') {
+    // Player flush on top, then as much of the front row as the panel can spare.
+    const playerRows = Math.ceil(player.h / scale);
+    const strip = Math.min(COMPACT_CROWD_ROWS, Math.floor((ch - PANEL_CHROME - PANEL_LIST_MIN) / scale) - playerRows);
+    if (strip >= COMPACT_CROWD_MIN) {
+      const h = playerRows + strip;
+      const feet = world.liveBottom + world.frontOff;
+      const camBottom = Math.min(feet + 2, feet - SPRITE_H - STRIP_TAG_ROWS + strip);
+      return { scale, w, h, ox, camLeft, camTop: camBottom - h, crowdBottom: world.liveBottom, height: h * scale, compact: true, crowd: true };
+    }
+  }
   if (compact || avail < minRows) {
     const h = minRows;
     return { scale, w, h, ox, camLeft, camTop: Math.round(centre - h / 2), crowdBottom: world.liveBottom, height: h * scale, compact: true };
@@ -236,6 +261,7 @@ export function playerRect(world: WorldDef, f: Framing, cw: number): Rect {
   if (w === s.w && h === s.h) return s;
   const cx = world.kind === 'phone' ? cw / 2 : s.x + s.w / 2;
   const x = Math.max(0, Math.min(cw - w, Math.round(cx - w / 2)));
+  if (f.crowd) return { x, y: 0, w, h };
   const y = Math.max(0, Math.min(f.height - h, Math.round(s.y + s.h / 2 - h / 2)));
   return { x, y, w, h };
 }
@@ -243,6 +269,8 @@ export function playerRect(world: WorldDef, f: Framing, cw: number): Rect {
 // On the vertical stage the player covers the booths drawn in the art, so the
 // DJs stand just below it: their head row in world px.
 export function boothTop(world: WorldDef, f: Framing, player: Rect): number {
+  // Compact phone: the strip under the player belongs to the crowd, the DJs step out of view.
+  if (f.crowd) return f.camTop + f.h + 4;
   const below = f.camTop + Math.ceil((player.y + player.h) / f.scale) + 2;
   return world.kind === 'phone' ? Math.max(world.booths[0].top, below) : world.booths[0].top;
 }
@@ -369,7 +397,8 @@ export function crowdSlots(n: number, world: WorldDef, f: Pick<Framing, 'camLeft
   const right = f.camLeft + f.w - SPRITE_W - 4;
   const span = Math.max(0, right - left);
   const frontCap = Math.max(1, Math.floor(span / step) + 1);
-  const backCap = Math.max(0, Math.floor(Math.max(0, span - step / 2) / step) + 1);
+  // The vertical stage has no back row: the rest of the room is "+N na plateia".
+  const backCap = world.kind === 'phone' ? 0 : Math.max(0, Math.floor(Math.max(0, span - step / 2) / step) + 1);
   const shown = Math.min(n, frontCap + backCap);
   const front = Math.min(shown, frontCap);
   const back = shown - front;
@@ -390,6 +419,19 @@ export function crowdSlots(n: number, world: WorldDef, f: Pick<Framing, 'camLeft
       : { x: backXs[k - front], feet: f.crowdBottom + world.backOff, row: 1 };
   });
   return { slots, overflow: n - shown };
+}
+
+// A phone tag shows the first name (plus the session suffix that tells two
+// namesakes apart), so it reads in full at the wider phone spacing.
+export function tagName(name: string, suffix = ''): string {
+  return (name.trim().split(/\s+/)[0] || name) + suffix;
+}
+
+// Phone name tags: as wide as one slot (spacing x scale) less a hairline of
+// air, never under 70 CSS px.
+export const PHONE_TAG_MIN = 70;
+export function phoneTagMaxWidth(world: WorldDef, scale: number): number {
+  return Math.max(PHONE_TAG_MIN, world.spacing * scale - 2);
 }
 
 // --- reactions -----------------------------------------------------------------

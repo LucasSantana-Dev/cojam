@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import type { ChatMessage, RoomState, TrackRef } from '@cojam/shared';
 import { useStore, type Member } from '@/lib/realtime';
@@ -245,6 +245,36 @@ describe('PalcoView', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('name tags', () => {
+    const size = { w: window.innerWidth, h: window.innerHeight };
+    afterEach(() => {
+      Object.assign(window, { innerWidth: size.w, innerHeight: size.h });
+    });
+    const withNames = () => {
+      useStore.getState().setMembers([
+        ...MEMBERS,
+        { clientId: 'c-me', clientIds: ['c-me'], userId: 'u-me', name: 'Maria Eduarda Albuquerque' },
+      ]);
+      useStore.setState({ nameSuffixes: { 'c-me': ' 2' } });
+    };
+
+    it('on phones shows the first name (and the namesake suffix), at least 70 CSS px wide', async () => {
+      Object.assign(window, { innerWidth: 390, innerHeight: 844 });
+      withNames();
+      await mount();
+      const tag = screen.getByText('Maria 2');
+      expect(parseFloat(tag.style.maxWidth)).toBeGreaterThanOrEqual(70);
+      expect(screen.queryByText(/Eduarda/)).toBeNull();
+    });
+
+    it('on the wide stage keeps the full name', async () => {
+      Object.assign(window, { innerWidth: 1440, innerHeight: 900 });
+      withNames();
+      await mount();
+      expect(screen.getByText('Maria Eduarda Albuquerque 2')).toBeTruthy();
+    });
   });
 
   describe('Reagir popup on phones', () => {

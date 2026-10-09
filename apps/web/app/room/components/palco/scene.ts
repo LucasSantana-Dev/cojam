@@ -518,7 +518,7 @@ export class PalcoScene {
       if (!p) {
         const tex = this.chars(e.characterId);
         const z = (dim ? 8 : 9) + i * 0.01;
-        const tint = dim ? 0x6a6194 : 0xffffff;
+        const tint = dim ? 0x9a94c0 : 0xffffff;
         const wide = tex.arms[FACING] ?? tex.dance[FACING] ?? tex.moves[0]?.[0];
         const fresh: Person = {
           key: e.key,
@@ -544,7 +544,7 @@ export class PalcoScene {
         };
         this.people.set(e.key, fresh);
       } else if (p.slot.row !== e.slot.row) {
-        const tint = new Color(e.slot.row === 1 ? 0x6a6194 : 0xffffff);
+        const tint = new Color(e.slot.row === 1 ? 0x9a94c0 : 0xffffff);
         [p.legs, p.up, p.legsA, p.upA].forEach((m) => { if (m) (m.material as MeshBasicMaterial).color = tint; });
         p.slot = e.slot;
       } else {

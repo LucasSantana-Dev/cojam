@@ -3,7 +3,7 @@
 // null when NODE_ENV is "production", so the branch is dead code there.
 //   /room/<ID>?fixture=room  joined room (Pétala, 5 listeners, 4 queued, 3 chat lines)
 //     members get characters (Modo palco); extras use the userId default
-//     add &members=1|2|5|8 and &long=1 for long names (stage review)
+//     add &members=1..14 and &long=1 for long names (stage review)
 //   /room/<ID>?fixture=join  pre-join screen with the room preview
 //   /rooms?fixture=rooms     six public rooms (non-production only, see fixtureRooms)
 //   /?fixture=error          the landing throws on mount, so app/error.tsx shows (see errorFixture)
@@ -90,13 +90,13 @@ const PLATFORMS: Member['platform'][] = ['spotify', 'youtube', 'spotify', 'youtu
 function fixtureMembers(): Member[] {
   const q = new URLSearchParams(window.location.search);
   const n = Number(q.get('members'));
-  if (!n || n < 1 || n > 8) return MEMBERS;
+  if (!n || n < 1 || n > 14) return MEMBERS;
   const long = q.get('long') === '1';
   const out: Member[] = [];
   for (let i = 0; i < n; i++) {
     const base = MEMBERS[i];
-    const name = long ? LONG_NAMES[i] : (base?.name ?? `Pessoa ${i + 1}`);
-    out.push({ clientId: base?.clientId ?? `c-x${i}`, userId: base?.userId ?? `u-x${i}`, name, platform: PLATFORMS[i] });
+    const name = long ? (LONG_NAMES[i] ?? `Pessoa Sobrenome ${i + 1}`) : (base?.name ?? `Pessoa ${i + 1}`);
+    out.push({ clientId: base?.clientId ?? `c-x${i}`, userId: base?.userId ?? `u-x${i}`, name, platform: PLATFORMS[i % PLATFORMS.length] });
   }
   // The viewer must stay in the list (the fixture is "Lucas").
   if (!out.some((m) => m.clientId === 'c-lucas')) out[out.length - 1] = { ...MEMBERS[3], name: long ? 'Luk' : 'Lucas' };
