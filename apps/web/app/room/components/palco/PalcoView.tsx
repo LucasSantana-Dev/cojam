@@ -657,8 +657,8 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
               </div>
             )}
             {onAddOpen && (
-              <button ref={addRef} type="button" className="palco__toggle palco__add" aria-expanded={adding && addOpen} aria-controls="palco-panel" onClick={openAdd}>
-                <span aria-hidden="true">+ </span>Música
+              <button ref={addRef} type="button" className="palco__toggle palco__add" aria-label="Adicionar música" title="Adicionar música" aria-expanded={adding && addOpen} aria-controls="palco-panel" onClick={openAdd}>
+                <span aria-hidden="true">+</span><span className="palco__add-text" aria-hidden="true"> Música</span>
               </button>
             )}
             <button

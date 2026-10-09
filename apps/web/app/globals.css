@@ -4750,6 +4750,10 @@ input:focus, textarea:focus, select:focus {
 .palco__toggle[aria-pressed="false"] { color: var(--color-text-secondary); text-decoration: line-through; }
 .palco__toggle:disabled { opacity: 0.6; cursor: not-allowed; }
 .palco__add { white-space: nowrap; }
+/* Phones: a compact 44x44 plus, so the action row never outgrows 390 px. */
+.palco[data-world="phone"] .palco__add { width: 44px; padding-inline: 0; font-size: 1.25rem; }
+.palco[data-world="phone"] .palco__add-text { display: none; }
+.palco[data-world="phone"] .palco__acts { flex-wrap: wrap; }
 .palco__ctrls { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
 .palco__ctrl {
   display: inline-flex;
