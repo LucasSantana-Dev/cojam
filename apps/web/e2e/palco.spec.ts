@@ -216,3 +216,39 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
     });
   });
 }
+
+// Real users (2026-10-09, iPhone 12): the chat was tiny and a tap zoomed the page.
+// Modo palco, Chat tab, phone: 16px composer, composer inside the view, a list
+// with room, and the player still 200x200 and uncovered with the keyboard up.
+test.describe('Modo palco chat on a phone', () => {
+  test('390x844: 16px composer, on screen, list at least 230 px, player clear', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openPalco(page);
+    await page.getByRole('tab', { name: 'Chat' }).click();
+    const input = page.getByLabel('Mensagem', { exact: true });
+    await expect(input).toBeVisible();
+    expect(parseFloat(await input.evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+    const box = (await input.boundingBox())!;
+    expect(box.y + box.height).toBeLessThanOrEqual(844);
+    // 192 px before the fix (title and divider took the rest); 247 after.
+    expect((await page.locator('.chat-scroll').boundingBox())!.height).toBeGreaterThanOrEqual(230);
+    await page.waitForTimeout(400);
+    await expectPlayerClear(page);
+  });
+
+  test('390x460 with the keyboard: composer on screen, list at least 60 px, player clear', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openPalco(page);
+    await page.getByRole('tab', { name: 'Chat' }).click();
+    const input = page.getByLabel('Mensagem', { exact: true });
+    await page.setViewportSize({ width: 390, height: 460 });
+    await input.focus();
+    await page.waitForTimeout(600);
+    const box = (await input.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(460);
+    // The composer was off screen (y 540) and the list 0 px before the fix.
+    expect((await page.locator('.chat-scroll').boundingBox())!.height).toBeGreaterThanOrEqual(60);
+    await expectPlayerClear(page);
+  });
+});
