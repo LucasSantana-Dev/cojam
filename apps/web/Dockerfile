@@ -1,6 +1,6 @@
 # Multi-stage build for Next.js web app
 # Stage 1: Build
-FROM node:22-alpine AS builder
+FROM public.ecr.aws/docker/library/node:22-alpine AS builder
 
 WORKDIR /build
 
@@ -27,7 +27,7 @@ COPY apps/web ./apps/web
 RUN pnpm --filter web build
 
 # Stage 2: Runtime (minimal Node image; major-pinned to match CI's node 22)
-FROM node:22-alpine
+FROM public.ecr.aws/docker/library/node:22-alpine
 
 WORKDIR /app
 # Bind on all interfaces inside the container; Next standalone reads these.

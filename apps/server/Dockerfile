@@ -1,6 +1,6 @@
 # Multi-stage build for Go server
 # Stage 1: Build
-FROM golang:1.26-alpine AS builder
+FROM public.ecr.aws/docker/library/golang:1.26-alpine AS builder
 
 WORKDIR /build
 
@@ -23,7 +23,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o server ./cmd/server
 
 # Stage 2: Runtime (minimal, pinned; never `latest`)
-FROM alpine:3.23
+FROM public.ecr.aws/docker/library/alpine:3.23
 
 WORKDIR /app
 
