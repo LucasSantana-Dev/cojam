@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CHARACTER_COUNT, CHARACTER_NAMES } from '@/lib/characters';
 import { ledLayout, ledPath, type LedLine, type LedSpec } from '@/lib/palcoLed';
+import { youTagLabel } from '@/lib/palcoYouTag';
 import { pickScale } from '@/lib/palcoScale';
 import { SCENES, SPRITE_FRONT, type SceneArt, type SceneName } from '@/lib/palcoScenes.generated';
 import { PALCO_PAGE_CSS } from './palcoCss';
 
 // The shared page shell for the palco screens (home, 404, erro, and wave 2: band, band-text,
-// join, callback). Two layers, never
+// join, kicked, callback). Two layers, never
 // mixed: the scene art at an INTEGER scale (nearest neighbour), and DOM overlays
 // (name tags, bubble, labels) placed in native coordinates times k, so they stay
 // locked to the art at every width. The art is decorative (alt=""): the page text
@@ -19,9 +20,9 @@ import { PALCO_PAGE_CSS } from './palcoCss';
 // paint a close guess (--kw, --kp in palcoCss); once mounted the measured value
 // replaces it.
 
-export type SceneKind = 'home' | '404' | 'erro' | 'band' | 'band-text' | 'join' | 'callback';
+export type SceneKind = 'home' | '404' | 'erro' | 'band' | 'band-text' | 'join' | 'kicked' | 'callback';
 
-/** The person on the join floor: the picked roster character (live) and its name tag. */
+/** The person on the join floor: the picked roster character (live) and the nickname typed in the form (the tag reads "Você · name"). */
 export interface SceneYou {
   id: number;
   name: string;
@@ -80,7 +81,7 @@ function Overlays({
         {you && stand && (
           <span className="pws-at pws-at--feet" style={vars({ '--x': stand.cx, '--y': stand.feet })}>
             <span className="pws-stack" data-testid="join-you">
-              <span className="pws-tag pws-tag--you">Você · {you.name}</span>
+              <span className="pws-tag pws-tag--you">{youTagLabel(you.name)}</span>
               {/* eslint-disable-next-line @next/next/no-img-element -- native pixel art, whole-number scale only */}
               <img
                 className="pws-sprite"
@@ -97,7 +98,7 @@ function Overlays({
       </>
     );
   }
-  if (kind === 'band' || kind === 'band-text' || kind === 'callback') {
+  if (kind === 'band' || kind === 'band-text' || kind === 'kicked' || kind === 'callback') {
     return led ? <Led art={art} spec={led} /> : null;
   }
   if (kind === 'home') {

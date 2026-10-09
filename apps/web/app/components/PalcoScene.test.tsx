@@ -43,7 +43,7 @@ describe('PalcoScene', () => {
 });
 
 describe('PalcoScene wave 2', () => {
-  it.each(['band', 'band-text', 'join', 'callback'] as const)('%s ships blank-screen art for both widths', (kind) => {
+  it.each(['band', 'band-text', 'join', 'kicked', 'callback'] as const)('%s ships blank-screen art for both widths', (kind) => {
     const { container } = render(<PalcoScene kind={kind} />);
     expect(container.querySelectorAll('img').length).toBe(2);
     expect(SCENES[`${kind}-wide`].src).toBe(`/palco/scenes/${kind}-wide.png`);
@@ -68,6 +68,16 @@ describe('PalcoScene wave 2', () => {
     const at = wide.querySelector('.pws-at--feet') as HTMLElement;
     expect(at.style.getPropertyValue('--x')).toBe(String(SCENES['join-wide'].stand!.cx));
     expect(at.style.getPropertyValue('--y')).toBe(String(SCENES['join-wide'].stand!.feet));
+  });
+
+  it('tags the join sprite with the typed nickname, "Você" alone when empty', () => {
+    const { container, rerender } = render(<PalcoScene kind="join" you={{ id: 14, name: '' }} />);
+    const tag = () => Array.from(container.querySelectorAll('.pws-tag--you')).map((t) => t.textContent);
+    expect(tag()).toEqual(['Você', 'Você']);
+    rerender(<PalcoScene kind="join" you={{ id: 14, name: ' Lu ' }} />);
+    expect(tag()).toEqual(['Você · Lu', 'Você · Lu']);
+    rerender(<PalcoScene kind="join" you={{ id: 14, name: 'Maria Eduarda Albuquerque Souza' }} />);
+    expect(tag()[0]).toBe('Você · Maria Eduarda A…');
   });
 
   it('shows nobody on the floor without a pick', () => {

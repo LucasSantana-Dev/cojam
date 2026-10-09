@@ -1,7 +1,7 @@
 """Native-grid palco scenes for the palco screens (mirrors lib/palco.ts + scene.ts rules).
 
 Wave 1: home, 404, erro. Wave 2: band (rooms, account), band-text (termos, privacidade),
-join, callback and the 1200x630 share card (og-1200).
+join, kicked, callback and the 1200x630 share card (og-1200).
 
 Scene art only: name tags, bubbles, "Voce", "Previa da sala", the LED text on the stage
 screen and the picked character on the join floor are DOM over the PNG (see
@@ -262,6 +262,16 @@ im = world_image('phone')
 crowd_rows(im, 'phone', 262, seed=4)
 fill_screen(im, 'phone', lambda scr: None)
 emit(im, 'join-phone', 'phone', 4, 40, 195, 240, stand=(91, 272))
+
+# Kicked (removed from the room): the join stage with NO crowd rows and nobody on the floor, the
+# festival is over. Wide is centred (no form plate beside it, so the left-hand join camera would
+# expose the plain side extension on the right). The screen is blank, FIM / FORA DA SALA is LED text in the DOM.
+im = world_image('wide')
+fill_screen(im, 'wide', lambda scr: None)
+emit(im, 'kicked-wide', 'wide', -60, -24, 480, 300)
+im = world_image('phone')
+fill_screen(im, 'phone', lambda scr: None)
+emit(im, 'kicked-phone', 'phone', 4, 40, 195, 240)
 
 # Spotify callback: lights a little down. Wide keeps the crowd, phone is the bare floor.
 im = world_image('wide', dim=0.8)
