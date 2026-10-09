@@ -73,3 +73,22 @@ A YouTube 403 counts as `quota` only when the body says `quotaExceeded` or `dail
 | `music_jam_product_events_total` | `name` | Funnel events, allowlisted names only. |
 | `music_jam_web_vitals` | `name` | Core Web Vitals histogram (LCP and INP in ms, CLS unitless). |
 | `music_jam_telemetry_rejected_total` | `reason` | Telemetry posts rejected. A spike means a misbehaving client. |
+| `music_jam_sync_drift_seconds` | `player`, `platform` | Absolute playback drift (actual minus expected position) sampled by browsers, buckets 0.25, 0.5, 1, 2, 5, 10, 30, 120 s. `player`: `youtube`, `spotify`. `platform`: `mobile`, `desktop`. |
+| `music_jam_sync_drift_samples_total` | `player`, `platform`, `hidden` | Drift samples received. `hidden` is `true` when the tab was in the background. All combinations start at 0. |
+
+`telemetry_rejected_total` reasons: `rate_limited`, `malformed` (not JSON, or a `sample` with an unknown field), `unknown_type`, `unknown_name`, `invalid_sample` (bad enum, out-of-range drift or rtt, missing flag).
+
+### Sync drift sample
+
+Sent by the browser as `{"type":"sample","name":"sync_drift","driftMs":-420,"player":"youtube","canSeek":true,"hidden":false,"rttMs":38,"platform":"mobile"}`. No room id, track id, URL or user data; the server rejects any other field. `driftMs` is signed (negative means the player is behind) and clamped to +/-600000; only its absolute value is observed. `canSeek` and `rttMs` are accepted and validated but not labels (cardinality), so they are not queryable today.
+
+Cadence per listener: about 3 s after each track change, then every 30 s while a track plays with a transport, plus one about 1.5 s after a corrective seek and one about 2 s after the page comes back. Never faster than one per 3 s, under the endpoint's 20 burst / 3 s bucket. Players that cannot seek (Spotify free) are sampled too. Individual samples are logged at debug level only.
+
+Useful queries: p95 drift `histogram_quantile(0.95, sum by (le, player, platform) (rate(music_jam_sync_drift_seconds_bucket[1h])))`; share of background samples `sum(rate(music_jam_sync_drift_samples_total{hidden="true"}[1h])) / sum(rate(music_jam_sync_drift_samples_total[1h]))`.
+
+### Turning it on in production
+
+- Web: `COJAM_FEATURE_TELEMETRY=true` (runtime, via `/env.js`, default off). Drift also needs `COJAM_FEATURE_SYNC=true`, since sampling rides the sync loop's transport.
+- Server: no flag. `POST /api/telemetry` is always mounted; with the web flag off nothing is sent.
+
+`track_added`, `provider_connected` (events) and `ws_terminal`, `playback_failed` (errors) are now emitted by the client: after a successful `queue.add`, after the Spotify callback exchange or an explicit "Ouvir no" switch, on a non-zero terminal disconnect code that is not a kick, and on a YouTube unplayable error or a Spotify `playback_error`.

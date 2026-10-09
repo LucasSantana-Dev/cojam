@@ -186,3 +186,70 @@ func TestCallerKey(t *testing.T) {
 		})
 	}
 }
+
+func TestTelemetry_SyncDriftAccepted(t *testing.T) {
+	h, m := newHandler()
+	body := `{"type":"sample","name":"sync_drift","driftMs":-1500,"player":"youtube","canSeek":true,"hidden":false,"rttMs":40,"platform":"mobile"}`
+	if rec := postTelemetry(t, h, body); rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+	mfs, err := m.Registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sum float64
+	var count uint64
+	var samples float64
+	var zeroInit int
+	for _, mf := range mfs {
+		switch mf.GetName() {
+		case "music_jam_sync_drift_seconds":
+			for _, mm := range mf.GetMetric() {
+				if mm.GetHistogram().GetSampleCount() > 0 {
+					sum += mm.GetHistogram().GetSampleSum()
+					count += mm.GetHistogram().GetSampleCount()
+				} else {
+					zeroInit++
+				}
+			}
+		case "music_jam_sync_drift_samples_total":
+			for _, mm := range mf.GetMetric() {
+				samples += mm.GetCounter().GetValue()
+				if mm.GetCounter().GetValue() == 0 {
+					zeroInit++
+				}
+			}
+		}
+	}
+	if count != 1 || sum != 1.5 {
+		t.Errorf("histogram count=%d sum=%v, want 1 and 1.5 (absolute seconds)", count, sum)
+	}
+	if samples != 1 {
+		t.Errorf("samples=%v, want 1", samples)
+	}
+	// 3 histogram series + 7 counter series are still at zero.
+	if zeroInit != 3+7 {
+		t.Errorf("zero-initialised series=%d, want 10", zeroInit)
+	}
+}
+
+func TestTelemetry_SyncDriftRejections(t *testing.T) {
+	h, _ := newHandler()
+	ok := `"type":"sample","name":"sync_drift","driftMs":10,"player":"spotify","canSeek":false,"hidden":true,"rttMs":5,"platform":"desktop"`
+	for name, body := range map[string]string{
+		"unknown field": `{` + ok + `,"roomId":"abc"}`,
+		"bad player":    `{"type":"sample","name":"sync_drift","driftMs":10,"player":"x","canSeek":false,"hidden":true,"rttMs":5,"platform":"desktop"}`,
+		"bad platform":  `{"type":"sample","name":"sync_drift","driftMs":10,"player":"spotify","canSeek":false,"hidden":true,"rttMs":5,"platform":"tv"}`,
+		"huge drift":    `{"type":"sample","name":"sync_drift","driftMs":9999999,"player":"spotify","canSeek":false,"hidden":true,"rttMs":5,"platform":"desktop"}`,
+		"missing flags": `{"type":"sample","name":"sync_drift","driftMs":1,"player":"spotify","rttMs":5,"platform":"desktop"}`,
+		"unknown name":  `{"type":"sample","name":"other","driftMs":1}`,
+		"negative rtt":  `{"type":"sample","name":"sync_drift","driftMs":1,"player":"spotify","canSeek":true,"hidden":true,"rttMs":-1,"platform":"desktop"}`,
+	} {
+		if rec := postTelemetry(t, h, body); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d", name, rec.Code)
+		}
+	}
+	if rec := postTelemetry(t, h, `{`+ok+`}`); rec.Code != http.StatusNoContent {
+		t.Errorf("valid sample: expected 204, got %d", rec.Code)
+	}
+}
