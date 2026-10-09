@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { shouldResumeInBackground, attachResumeListeners, advanceWithRetry } from './backgroundPlayback';
+import { shouldResumeInBackground, attachResumeListeners, advanceWithRetry, RESUME_DEBOUNCE_MS } from './backgroundPlayback';
 
 describe('shouldResumeInBackground', () => {
   const base = { hidden: true, transportState: 'playing', muted: false };
@@ -19,22 +19,28 @@ describe('shouldResumeInBackground', () => {
 });
 
 describe('attachResumeListeners', () => {
-  it('fires on shown, thaw, pageshow, focus and online; not on hidden; cleans up', () => {
+  it('fires on shown, thaw, pageshow and online; not on hidden or focus; debounces; cleans up', () => {
+    vi.useFakeTimers();
     const cb = vi.fn();
     const off = attachResumeListeners(cb);
     Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('focus'));
     expect(cb).not.toHaveBeenCalled();
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('pageshow')); // same burst: collapsed
+    expect(cb).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(RESUME_DEBOUNCE_MS + 1);
     document.dispatchEvent(new Event('resume'));
-    window.dispatchEvent(new Event('pageshow'));
-    window.dispatchEvent(new Event('focus'));
+    vi.advanceTimersByTime(RESUME_DEBOUNCE_MS + 1);
     window.dispatchEvent(new Event('online'));
-    expect(cb).toHaveBeenCalledTimes(5);
+    expect(cb).toHaveBeenCalledTimes(3);
     off();
-    window.dispatchEvent(new Event('focus'));
-    expect(cb).toHaveBeenCalledTimes(5);
+    vi.advanceTimersByTime(RESUME_DEBOUNCE_MS + 1);
+    window.dispatchEvent(new Event('online'));
+    expect(cb).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
   });
 });
 
@@ -85,5 +91,15 @@ describe('playback path never pauses on visibility', () => {
   it('sanity: the root exists', () => {
     expect(statSync(root).isDirectory()).toBe(true);
     expect(readdirSync(join(root, 'lib')).length).toBeGreaterThan(0);
+  });
+});
+
+describe('resyncRoom', () => {
+  it('never calls room.join (it would reset host seniority) and is a no-op outside a room', async () => {
+    const src = readFileSync(join(__dirname, 'realtime.ts'), 'utf8');
+    const body = src.slice(src.indexOf('export function resyncRoom'), src.indexOf('// --- Guest-to-account upgrade'));
+    expect(body).not.toMatch(/room\.join|\.rpc\(/);
+    const { resyncRoom } = await import('./realtime');
+    expect(() => resyncRoom()).not.toThrow();
   });
 });

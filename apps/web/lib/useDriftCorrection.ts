@@ -267,11 +267,11 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     };
   }, [activePlayer, transport, syncEnabled, handlePastEnd]);
 
-  // The page came back (shown, thawed, online): adopt the server state, then
-  // check the player against it immediately. Never pauses anything.
+  // The page came back (shown, thawed, online): wake a dropped socket, then
+  // check the player immediately. Never pauses anything, never re-joins.
   useEffect(() => {
     return attachResumeListeners(() => {
-      void resyncRoom();
+      resyncRoom();
       checkNowRef.current?.();
     });
   }, []);

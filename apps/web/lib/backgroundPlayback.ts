@@ -32,27 +32,36 @@ export function shouldResumeInBackground(args: {
 }
 
 // Calls onResume whenever the page may have just come back: tab shown, thawed
-// from a freeze, restored from the back/forward cache, window focused, network
-// back. Returns the cleanup.
+// from a freeze, restored from the back/forward cache, network back. Calls
+// closer than RESUME_DEBOUNCE_MS apart collapse into one (several events fire
+// together). Window focus is left out on purpose: it fires on every alt-tab.
+// Returns the cleanup.
+export const RESUME_DEBOUNCE_MS = 2000;
+
 export function attachResumeListeners(
   onResume: () => void,
   doc: Document = document,
   win: Window = window,
 ): () => void {
+  let last = -Infinity;
+  const fire = () => {
+    const now = Date.now();
+    if (now - last < RESUME_DEBOUNCE_MS) return;
+    last = now;
+    onResume();
+  };
   const onVisibility = () => {
-    if (doc.visibilityState === 'visible') onResume();
+    if (doc.visibilityState === 'visible') fire();
   };
   doc.addEventListener('visibilitychange', onVisibility);
-  doc.addEventListener('resume', onResume);
-  win.addEventListener('pageshow', onResume);
-  win.addEventListener('focus', onResume);
-  win.addEventListener('online', onResume);
+  doc.addEventListener('resume', fire);
+  win.addEventListener('pageshow', fire);
+  win.addEventListener('online', fire);
   return () => {
     doc.removeEventListener('visibilitychange', onVisibility);
-    doc.removeEventListener('resume', onResume);
-    win.removeEventListener('pageshow', onResume);
-    win.removeEventListener('focus', onResume);
-    win.removeEventListener('online', onResume);
+    doc.removeEventListener('resume', fire);
+    win.removeEventListener('pageshow', fire);
+    win.removeEventListener('online', fire);
   };
 }
 

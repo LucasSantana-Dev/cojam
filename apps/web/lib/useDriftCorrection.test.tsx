@@ -628,7 +628,7 @@ describe('useDriftCorrection when the queue has ended', () => {
       });
       const before = player.play.mock.calls.length;
       await act(async () => {
-        window.dispatchEvent(new Event('focus'));
+        window.dispatchEvent(new Event('online'));
       });
       expect(player.play.mock.calls.length).toBe(before + 1);
       unmount();
