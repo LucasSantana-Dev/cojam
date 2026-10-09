@@ -23,7 +23,7 @@ test('a picked character shows on the join screen, in the stage for everyone, an
 
   await openRoom(lucas, roomId);
   const picker = lucas.getByRole('radiogroup', { name: 'Escolha quem vai pra plateia' });
-  await expect(picker.getByRole('radio')).toHaveCount(13);
+  await expect(picker.getByRole('radio')).toHaveCount(14);
   await picker.getByRole('radio', { name: /^Luana, / }).click();
   await expect(picker.getByRole('radio', { name: /^Luana, / })).toHaveAttribute('aria-checked', 'true');
   // The choice survives a reload (localStorage).
@@ -52,7 +52,7 @@ test('a picked character shows on the join screen, in the stage for everyone, an
 });
 
 test('the join button is reachable by wheel on a short wide window', async ({ page }) => {
-  // A 1200x600 desktop window: the join card (13 portraits) is taller than the
+  // A 1200x600 desktop window: the join card (14 portraits) is taller than the
   // viewport, so the join screen must scroll instead of clipping the button.
   await page.setViewportSize({ width: 1200, height: 600 });
   await openRoom(page, `E2EJ${Date.now().toString(36).toUpperCase()}`);

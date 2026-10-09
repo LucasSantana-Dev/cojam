@@ -29,6 +29,7 @@ describe('defaultCharacterId', () => {
     }
     expect(seen.size).toBe(CHARACTER_DEFAULT_POOL);
     expect(seen.has(13)).toBe(false);
+    expect(seen.has(14)).toBe(false);
   });
 
   it('hashes UTF-8 bytes, not UTF-16 units', () => {
@@ -42,13 +43,17 @@ describe('roster', () => {
     expect(CHARACTER_NAMES).toHaveLength(CHARACTER_COUNT);
     expect(CHARACTER_NAMES[12]).toBe('Mel');
     expect(CHARACTER_LABELS[12]).toBe('Cachos pretos volumosos e blusa vinho');
+    expect(CHARACTER_NAMES[13]).toBe('Nico');
+    expect(CHARACTER_LABELS[13]).toBe('Cabelo loiro bagunçado e óculos cor-de-rosa');
     expect(portraitSrc(3)).toBe('/palco/characters/03-portrait.png');
     expect(portraitSrc(12)).toBe('/palco/characters/12-portrait.png');
   });
-  it.each([0, 14, 1.5, -1, NaN, '3'])('rejects %j', (v) => expect(isCharacterId(v)).toBe(false));
-  it('accepts 13 as a pick but it is never a default', () => {
+  it.each([0, 15, 1.5, -1, NaN, '3'])('rejects %j', (v) => expect(isCharacterId(v)).toBe(false));
+  it('accepts 13 and 14 as picks but they are never a default', () => {
     expect(isCharacterId(13)).toBe(true);
+    expect(isCharacterId(14)).toBe(true);
     expect(portraitSrc(13)).toBe('/palco/characters/13-portrait.png');
+    expect(portraitSrc(14)).toBe('/palco/characters/14-portrait.png');
   });
 });
 

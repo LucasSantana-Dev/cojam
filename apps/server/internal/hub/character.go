@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-// Audience character per member ("Modo palco"). A fixed roster of 13; repeats
+// Audience character per member ("Modo palco"). A fixed roster of 14; repeats
 // are allowed. Like the listening service, the choice is changeable without a
 // reconnect (a reconnect would run the host handoff): member.set_character
 // stores it per connection, publishes a member.character event on the room
@@ -15,11 +15,11 @@ import (
 // Metadata only: an id, never an image or a free string.
 
 // CharacterCount is the size of the roster; valid ids are 1..CharacterCount.
-const CharacterCount = 13
+const CharacterCount = 14
 
 // DefaultCharacterPool is the modulus of the default hash. It stays 12 so no
-// existing default changed when character 13 joined: 13 is pickable, never a
-// default. Web twin: CHARACTER_DEFAULT_POOL in packages/shared.
+// existing default changed when characters 13 and 14 joined: they are
+// pickable, never a default. Web twin: CHARACTER_DEFAULT_POOL in packages/shared.
 const DefaultCharacterPool = 12
 
 // validCharacter reports whether id is a roster id.
