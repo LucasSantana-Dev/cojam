@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"sort"
 	"time"
+
+	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 )
 
 // Retention for reports and moderation actions (#319).
@@ -135,7 +137,7 @@ func (r *Retention) Start(interval time.Duration) (stop func()) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() {
+	obs.SafeGo("report_retention", func() {
 		defer close(done)
 		r.Sweep(ctx, time.Now())
 		ticker := time.NewTicker(interval)
@@ -148,7 +150,7 @@ func (r *Retention) Start(interval time.Duration) (stop func()) {
 				r.Sweep(ctx, now)
 			}
 		}
-	}()
+	})
 	return func() {
 		cancel()
 		<-done

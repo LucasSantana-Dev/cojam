@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 )
 
 // A stored report nobody reads is the same as no reporting route (spec 3.2).
@@ -125,13 +127,13 @@ func (n *WebhookNotifier) Notify(r Report, category string) {
 		n.logger.Warn("report_webhook_dropped", "report_id", r.ID, "reason", "too many in flight")
 		return
 	}
-	go func() {
+	obs.SafeGo("report_notify", func() {
 		defer func() { <-n.sem }()
 		if err := n.post(r, category); err != nil {
 			// The URL is not logged: webhook URLs commonly embed a secret.
 			n.logger.Error("report_webhook_failed", "report_id", r.ID, "err", scrubURLErr(err))
 		}
-	}()
+	})
 }
 
 func (n *WebhookNotifier) post(r Report, category string) error {

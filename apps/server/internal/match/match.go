@@ -17,6 +17,7 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
+	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 )
@@ -857,37 +858,38 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 
 	// Deezer (always available, no config needed)
 	wg.Add(1)
-	go func() {
+	obs.SafeGo("match_search", func() {
 		defer wg.Done()
 		ctx, cancel := context.WithTimeout(ctx, sourceTimeout)
 		defer cancel()
 		results, err := SearchDeezer(ctx, query, limit)
 		if err != nil {
-			// Log but don't fail the whole search
-			slog.Warn("search_deezer_failed", "query", query, "err", err.Error())
+			// Log but don't fail the whole search. The query is user text:
+			// only its length is logged.
+			slog.Warn("search_deezer_failed", "query_len", len(query), "err", redactErr(err).Error())
 			return
 		}
 		mu.Lock()
 		allCandidates = append(allCandidates, results...)
 		mu.Unlock()
-	}()
+	})
 
 	// Spotify (if configured)
 	if spotifyauth.ClientID != "" && spotifyauth.ClientSecret != "" {
 		wg.Add(1)
-		go func() {
+		obs.SafeGo("match_search", func() {
 			defer wg.Done()
 			ctx, cancel := context.WithTimeout(ctx, sourceTimeout)
 			defer cancel()
 			results, err := SearchSpotify(ctx, query, limit)
 			if err != nil {
-				slog.Warn("search_spotify_failed", "query", query, "err", err.Error())
+				slog.Warn("search_spotify_failed", "query_len", len(query), "err", redactErr(err).Error())
 				return
 			}
 			mu.Lock()
 			allCandidates = append(allCandidates, results...)
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()

@@ -674,12 +674,12 @@ func (h *Hub) launchEnrich(fn func()) bool {
 		}
 		return false
 	}
-	go func() {
+	obs.SafeGo("hub_enrich", func() {
 		defer func() { <-h.enrichPending }()
 		h.enrichSem <- struct{}{}
 		defer func() { <-h.enrichSem }()
 		fn()
-	}()
+	})
 	return true
 }
 
@@ -1350,7 +1350,7 @@ func (h *Hub) StartRoomEvictor() func() {
 	}
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	obs.SafeGo("hub_evict", func() {
 		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -1363,7 +1363,7 @@ func (h *Hub) StartRoomEvictor() func() {
 				h.evictPersistedIdleRooms(now)
 			}
 		}
-	}()
+	})
 	// Blocks until an in-flight sweep returns, so shutdown can close the
 	// store's pool right after (as report retention does).
 	return func() {
@@ -1605,7 +1605,11 @@ func (h *Hub) publish(roomID string, state json.RawMessage) error {
 	if err != nil {
 		return err
 	}
+	start := time.Now()
 	_, err = h.node.Publish("room:"+roomID, payload)
+	if h.metrics != nil {
+		h.metrics.ObservePublish(time.Since(start))
+	}
 	return err
 }
 
@@ -1834,7 +1838,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil
 		})
 		if joinErr == nil && joinRefillSeed != nil && h.similar != nil && h.refillAllowed(req.RoomID) {
-			go h.refillRadio(req.RoomID, joinRefillSeed)
+			obs.SafeGo("hub_radio", func() { h.refillRadio(req.RoomID, joinRefillSeed) })
 		}
 		return joinRes, joinErr
 
@@ -2073,7 +2077,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		if err != nil {
 			// Log error but return empty array instead of failing the RPC
 			if h.logger != nil {
-				h.logger.Error("search_failed", "query", req.Query, "err", err.Error())
+				h.logger.Error("search_failed", "query_len", len(req.Query), "err", err.Error())
 			}
 			return json.Marshal([]SearchResult{})
 		}
@@ -2567,7 +2571,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		}
 		res, err := h.claimHost(req.RoomID, userID)
 		if err == nil && h.logger != nil {
-			h.logger.Info("room_host_claimed", "room_id", req.RoomID, "by", userID)
+			h.logger.Info("room_host_claimed", "room_id", req.RoomID, "role", "host")
 		}
 		return res, err
 
@@ -2708,9 +2712,9 @@ func (h *Hub) enrichQuery(logEvent, title, artist string, configured bool, empty
 		if h.logger != nil {
 			// A timeout or cancel is an upstream being slow, not a bug.
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				h.logger.Warn(logEvent, "title", title, "artist", artist, "err", err.Error())
+				h.logger.Warn(logEvent, "err", err.Error())
 			} else {
-				h.logger.Error(logEvent, "title", title, "artist", artist, "err", err.Error())
+				h.logger.Error(logEvent, "err", err.Error())
 			}
 		}
 		return json.Marshal(empty)
@@ -2836,7 +2840,7 @@ func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipL
 
 	// After successful mutate, trigger refill if needed (async, outside the lock)
 	if err == nil && refillSeed != nil && h.similar != nil && h.refillAllowed(roomID) {
-		go h.refillRadio(roomID, refillSeed)
+		obs.SafeGo("hub_radio", func() { h.refillRadio(roomID, refillSeed) })
 	}
 
 	if err == nil && skipped != nil {
@@ -3039,7 +3043,7 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 	similar, err := h.similar(ctx, seed.Artist, seed.Title, radioCandidates)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Error("radio_fetch_failed", "room_id", roomID, "track", seed.Title, "artist", seed.Artist, "err", err.Error())
+			h.logger.Error("radio_fetch_failed", "room_id", roomID, "err", err.Error())
 		}
 		return
 	}
@@ -3104,6 +3108,6 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 	if err != nil && h.logger != nil {
 		h.logger.Error("radio_append_failed", "room_id", roomID, "err", err.Error())
 	} else if err == nil && len(similar) > 0 && h.logger != nil {
-		h.logger.Info("radio_refill", "room_id", roomID, "track", seed.Title, "artist", seed.Artist, "appended", len(similar))
+		h.logger.Info("radio_refill", "room_id", roomID, "appended", len(similar))
 	}
 }

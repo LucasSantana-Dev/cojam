@@ -79,3 +79,12 @@ func TestOpDefaultsToOther(t *testing.T) {
 		t.Fatalf("op = %q, want other", got.op)
 	}
 }
+
+func TestDoJSONErrorOmitsURL(t *testing.T) {
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://127.0.0.1:1/search?q=secret-song-title", nil)
+	var v any
+	err := DoJSON(req, &v)
+	if err == nil || strings.Contains(err.Error(), "secret-song-title") {
+		t.Fatalf("error must not carry the URL: %v", err)
+	}
+}

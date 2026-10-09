@@ -300,7 +300,7 @@ func fetchTrackDepth(ctx context.Context, key, isrc, title, artist string) (*Tra
 			musicbrainzURL, url.PathEscape(base.ID))
 		if err := mbGet(ctx, u, &full); err != nil {
 			complete = false
-			slog.Warn("trackdepth_lookup_failed", "title", title, "artist", artist, "err", err.Error())
+			slog.Warn("trackdepth_lookup_failed", "err", err.Error())
 		} else {
 			merged = append(merged, &full)
 		}
@@ -319,7 +319,7 @@ func fetchTrackDepth(ctx context.Context, key, isrc, title, artist string) (*Tra
 			u := fmt.Sprintf("%s/release/%s?fmt=json&inc=labels", musicbrainzURL, url.PathEscape(rid))
 			if err := mbGet(ctx, u, &rel); err != nil {
 				complete = false
-				slog.Warn("trackdepth_label_failed", "title", title, "artist", artist, "err", err.Error())
+				slog.Warn("trackdepth_label_failed", "err", err.Error())
 			} else {
 				for _, li := range rel.LabelInfo {
 					if li.Label.Name != "" {

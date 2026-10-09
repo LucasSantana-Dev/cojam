@@ -3,6 +3,7 @@ package hub
 import (
 	"time"
 
+	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
@@ -105,10 +106,10 @@ func (h *Hub) reconcileHeartbeat(roomID string) {
 		every = videoHeartbeatEvery
 	}
 	h.hbWG.Add(1)
-	go func() {
+	obs.SafeGo("hub_heartbeat", func() {
 		defer h.hbWG.Done()
 		h.heartbeatLoop(roomID, every, stop)
-	}()
+	})
 }
 
 // stopHeartbeat ends the room's ticker if one is running.

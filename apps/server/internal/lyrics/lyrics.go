@@ -134,7 +134,7 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 	} else if !isNotFound(err) {
 		// A 404 is the normal duration-mismatch miss; anything else (decode
 		// failure, 5xx, timeout) is worth a log before falling through.
-		slog.Warn("lyrics_get_failed", "artist", artist, "title", title, "err", err.Error())
+		slog.Warn("lyrics_get_failed", "err", err.Error())
 		getErr = err
 	}
 

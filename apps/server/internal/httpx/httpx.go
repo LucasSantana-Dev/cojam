@@ -6,10 +6,12 @@ package httpx
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -55,7 +57,7 @@ func (e *StatusError) Error() string { return fmt.Sprintf("upstream status %d", 
 func DoJSON(req *http.Request, v any) error {
 	resp, err := Client.Do(req)
 	if err != nil {
-		return err
+		return redactURL(err)
 	}
 	defer resp.Body.Close()
 
@@ -68,4 +70,15 @@ func DoJSON(req *http.Request, v any) error {
 	}
 
 	return json.NewDecoder(io.LimitReader(resp.Body, MaxResponseBytes)).Decode(v)
+}
+
+// redactURL drops the request URL from a transport error: *url.Error embeds
+// it, and the URL carries user search text (title, artist, query) and API keys.
+// The cause stays wrapped, so errors.Is(err, context.DeadlineExceeded) still holds.
+func redactURL(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
+	}
+	return err
 }
