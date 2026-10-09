@@ -25,6 +25,25 @@ describe('PrivacyPage', () => {
     expect(container.textContent).toContain('[[CONTROLADOR: nome]]');
   });
 
+  it('discloses the product events: what is recorded, what is not, basis, retention, objection', () => {
+    const { container } = render(<PrivacyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('Eventos de uso pseudonimizados');
+    expect(text).toContain('Entender como o CoJam é usado e melhorar o produto');
+    expect(text).toMatch(/Legítimo interesse \(IX\)/);
+    expect(text).toContain('13 meses');
+    expect(text).toContain('Nunca registrado nesses eventos');
+    for (const never of ['endereço IP', 'nome de exibição', 'mensagens de chat', 'o texto das buscas', 'o código da sala em claro']) {
+      expect(text).toContain(never);
+    }
+    expect(text).toContain('Oposição aos eventos de uso');
+  });
+
+  it('no longer promises that only counts are collected', () => {
+    const { container } = render(<PrivacyPage />);
+    expect(container.textContent).not.toMatch(/apenas contagens|só contagens|somente contagens/i);
+  });
+
   it('is indexable with a canonical', () => {
     expect(metadata.alternates?.canonical).toBe('/privacidade');
     expect(metadata.robots).toMatchObject({ index: true });
