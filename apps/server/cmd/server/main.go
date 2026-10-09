@@ -383,7 +383,7 @@ func main() {
 			}
 		})
 		h.WithMatcher(cachedMatcher)
-		h.WithYouTubeQuota(match.YouTubeQuotaUntil)
+		h.WithYouTubeQuota(match.YouTubeQuotaUntil).WithYouTubeQuotaNotice(match.YouTubeQuotaNoticeUntil)
 		logger.Info("matcher_enabled", "provider", "youtube")
 	} else {
 		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")

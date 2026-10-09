@@ -240,8 +240,11 @@ type Hub struct {
 	matcher         Matcher
 	// ytQuotaUntil reports when the YouTube search quota resets (zero time =
 	// available). Nil without a YouTube matcher.
-	ytQuotaUntil    func() time.Time
-	quotaWake       quotaTimer
+	ytQuotaUntil func() time.Time
+	quotaWake    quotaTimer
+	// ytQuotaNotice is the part of the pause worth telling clients about (the
+	// daily quota). Nil falls back to ytQuotaUntil.
+	ytQuotaNotice   func() time.Time
 	spotifyMatcher  Matcher
 	searcher        Searcher
 	playlistFetcher PlaylistFetcher
@@ -526,6 +529,14 @@ func (h *Hub) WithMatcher(m Matcher) *Hub {
 // launches no YouTube lookups.
 func (h *Hub) WithYouTubeQuota(until func() time.Time) *Hub {
 	h.ytQuotaUntil = until
+	return h
+}
+
+// WithYouTubeQuotaNotice narrows what is stamped on outbound state to the
+// daily quota: a short rate-limit pause still pauses searches (WithYouTubeQuota)
+// but shows clients no "esgotada hoje" notice.
+func (h *Hub) WithYouTubeQuotaNotice(until func() time.Time) *Hub {
+	h.ytQuotaNotice = until
 	return h
 }
 
@@ -1488,9 +1499,9 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 	// gets persisted below) never carries them.
 	outbound := *room.State
 	outbound.RadioAvailable = h.similar != nil
-	outbound.YouTubeQuotaUntil = h.quotaUntilMs()
-	if outbound.YouTubeQuotaUntil != 0 {
-		h.armQuotaTimer()
+	outbound.YouTubeQuotaUntil = h.noticeUntilMs()
+	if !h.quotaUntil().IsZero() {
+		h.armQuotaTimer() // any pause: owed lookups retry when it ends
 	}
 	data, err := json.Marshal(&outbound)
 	room.mu.Unlock()

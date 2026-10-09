@@ -90,6 +90,9 @@ func TestQuotaBreakerTransientPausesAboutAMinute(t *testing.T) {
 	if got, want := YouTubeQuotaUntil(), now.Add(time.Minute); !got.Equal(want) {
 		t.Fatalf("until = %v, want %v (not midnight Pacific)", got, want)
 	}
+	if !YouTubeQuotaNoticeUntil().IsZero() {
+		t.Fatal("a transient pause must not produce a client notice")
+	}
 	now = now.Add(61 * time.Second)
 	_, _ = ResolveYouTube(context.Background(), "Song", "Artist", "")
 	if *searches != 2 {
@@ -170,6 +173,9 @@ func TestQuotaBreakerTripsOn429AndSkipsCalls(t *testing.T) {
 	}
 	if *searches != 1 {
 		t.Fatalf("searches = %d, want 1", *searches)
+	}
+	if !YouTubeQuotaNoticeUntil().Equal(until) {
+		t.Fatalf("daily quota notice = %v, want %v", YouTubeQuotaNoticeUntil(), until)
 	}
 
 	// Open breaker: no more calls, for any query, and the error stays typed.

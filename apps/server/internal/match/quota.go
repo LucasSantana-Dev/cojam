@@ -25,6 +25,7 @@ var quotaNow = time.Now
 type quotaBreaker struct {
 	mu    sync.Mutex
 	until time.Time
+	daily bool // the open breaker is the daily quota, not a short pause
 }
 
 var ytQuota quotaBreaker
@@ -35,6 +36,18 @@ func YouTubeQuotaUntil() time.Time {
 	ytQuota.mu.Lock()
 	defer ytQuota.mu.Unlock()
 	if !ytQuota.until.After(quotaNow()) {
+		return time.Time{}
+	}
+	return ytQuota.until
+}
+
+// YouTubeQuotaNoticeUntil is YouTubeQuotaUntil for the daily quota only: the
+// time to tell clients "esgotada hoje". A short rate-limit pause pauses
+// searches but returns the zero time here.
+func YouTubeQuotaNoticeUntil() time.Time {
+	ytQuota.mu.Lock()
+	defer ytQuota.mu.Unlock()
+	if !ytQuota.daily || !ytQuota.until.After(quotaNow()) {
 		return time.Time{}
 	}
 	return ytQuota.until
@@ -55,7 +68,7 @@ func tripYouTubeQuota(now, until time.Time, kind quotaKind) time.Time {
 	ytQuota.mu.Lock()
 	already := ytQuota.until.After(now)
 	if !already || until.After(ytQuota.until) {
-		ytQuota.until = until
+		ytQuota.until, ytQuota.daily = until, kind == quotaDaily
 	}
 	until = ytQuota.until
 	ytQuota.mu.Unlock()
@@ -82,7 +95,7 @@ func tripFor(err error, now time.Time) (time.Time, bool) {
 // resetYouTubeQuota closes the breaker (tests).
 func resetYouTubeQuota() {
 	ytQuota.mu.Lock()
-	ytQuota.until = time.Time{}
+	ytQuota.until, ytQuota.daily = time.Time{}, false
 	ytQuota.mu.Unlock()
 }
 

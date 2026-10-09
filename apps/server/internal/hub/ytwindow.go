@@ -36,9 +36,14 @@ func (h *Hub) quotaUntil() time.Time {
 	return time.Time{}
 }
 
-// quotaUntilMs is quotaUntil as unix ms for the wire (0 = available).
-func (h *Hub) quotaUntilMs() int64 {
-	if u := h.quotaUntil(); !u.IsZero() {
+// noticeUntilMs is the quota reset as unix ms for the wire (0 = nothing to
+// show). Only the daily quota counts when a notice view is wired.
+func (h *Hub) noticeUntilMs() int64 {
+	u := h.quotaUntil()
+	if h.ytQuotaNotice != nil && !u.IsZero() {
+		u = h.ytQuotaNotice()
+	}
+	if u.After(time.Now()) {
 		return u.UnixMilli()
 	}
 	return 0

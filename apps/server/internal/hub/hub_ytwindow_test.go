@@ -284,3 +284,41 @@ func TestYouTubeQuotaStampedOnOutboundState(t *testing.T) {
 		t.Fatal("shared room state must not carry the quota stamp")
 	}
 }
+
+// A short pause pauses searches but is not stamped for clients; the daily
+// quota is. The wake-up timer is armed for both so owed lookups retry.
+func TestYouTubeQuotaTransientPauseNotStamped(t *testing.T) {
+	until := time.Now().Add(time.Hour)
+	var daily atomic.Bool
+	h := NewHub(nil).WithMatcher(func(context.Context, string, string, string) (*queue.SourceRef, error) {
+		return nil, nil
+	}).WithYouTubeQuota(func() time.Time { return until }).WithYouTubeQuotaNotice(func() time.Time {
+		if daily.Load() {
+			return until
+		}
+		return time.Time{}
+	})
+	defer h.BeginShutdown()
+	stamp := func() int64 {
+		data, err := h.mutate(winRoom, func(s *queue.RoomState) error { s.Version++; return nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out queue.RoomState
+		_ = json.Unmarshal(data, &out)
+		return out.YouTubeQuotaUntil
+	}
+	if got := stamp(); got != 0 {
+		t.Fatalf("transient pause stamped %d, want 0", got)
+	}
+	h.quotaWake.mu.Lock()
+	armed := h.quotaWake.timer != nil
+	h.quotaWake.mu.Unlock()
+	if !armed {
+		t.Fatal("wake-up timer should be armed for a pause")
+	}
+	daily.Store(true)
+	if got := stamp(); got != until.UnixMilli() {
+		t.Fatalf("daily quota stamped %d, want %d", got, until.UnixMilli())
+	}
+}
