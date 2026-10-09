@@ -57,6 +57,45 @@ export function trackVital(name: string, value: number): void {
   send({ type: 'vital', name, value });
 }
 
+export const DRIFT_CLAMP_MS = 600_000;
+
+export type DriftSample = {
+  driftMs: number;
+  player: 'youtube' | 'spotify';
+  canSeek: boolean;
+  hidden: boolean;
+  rttMs: number;
+};
+
+// Coarse device class for slicing drift. Pointer first (an iPad asking for a
+// desktop UA still has a coarse pointer), then the UA as a fallback.
+export function detectPlatform(): 'mobile' | 'desktop' {
+  if (typeof window === 'undefined') return 'desktop';
+  try {
+    if (window.matchMedia?.('(pointer: coarse)').matches) return 'mobile';
+  } catch {
+    /* fall through to the UA check */
+  }
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ? 'mobile' : 'desktop';
+}
+
+// One playback drift measurement: actual minus expected position. Fields are
+// exactly the server's strict schema: no room id, track id, URL or user data.
+export function trackSyncDrift(sample: DriftSample): void {
+  const driftMs = Math.max(-DRIFT_CLAMP_MS, Math.min(DRIFT_CLAMP_MS, Math.round(sample.driftMs)));
+  send({
+    type: 'sample',
+    name: 'sync_drift',
+    driftMs,
+    player: sample.player,
+    canSeek: sample.canSeek,
+    hidden: sample.hidden,
+    rttMs: Math.max(0, Math.round(sample.rttMs)),
+    platform: detectPlatform(),
+  });
+}
+
 // `detail` carries the error type and message only. Never a stack trace and
 // never a URL: room IDs are capabilities, so a URL leaks one.
 export function trackError(name: ClientErrorName, err?: unknown): void {

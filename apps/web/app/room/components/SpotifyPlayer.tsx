@@ -14,6 +14,7 @@ import {
 import { getRuntimeEnv, pickEnv } from '@/lib/runtimeEnv';
 import { SpotifyIcon } from '@/app/components/icons';
 import type { IPlayer } from '@/lib/playerInterface';
+import { trackError } from '@/lib/telemetry';
 import { detectSpotifyCanSeek, createEndedDetector, createSpotifyEndDetector, type SpotifyEndState } from '@/lib/playerUtils';
 
 // Minimal structural types for the Spotify Web Playback SDK surface we use.
@@ -99,6 +100,7 @@ const noopSubscribe = () => () => {};
  * Spotify player adapter implementing IPlayer interface.
  */
 class SpotifyPlayerAdapter implements IPlayer {
+  readonly kind = 'spotify' as const;
   private player: SpotifySDKPlayer;
   private deviceId: string;
   private endedCallbacks: Array<() => void> = [];
@@ -386,6 +388,7 @@ export function SpotifyPlayer({
         player.addListener('autoplay_failed', () => setProblem('autoplay'));
         // Per track (restricted or unplayable), not an init failure.
         player.addListener('playback_error', () => {
+          trackError('playback_failed', new Error('spotify playback_error'));
           const st = useStore.getState().state;
           if (st?.nowPlayingId) onPlayErrorRef.current?.(st.nowPlayingId);
         });

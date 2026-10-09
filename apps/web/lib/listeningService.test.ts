@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+const telemetryMock = vi.hoisted(() => ({ trackEvent: vi.fn() }));
+vi.mock('./telemetry', () => telemetryMock);
+
 async function load() {
   vi.resetModules();
   return import('./listeningService');
 }
 
 describe('listening service preference', () => {
-  beforeEach(() => window.localStorage.clear());
+  beforeEach(() => {
+    window.localStorage.clear();
+    telemetryMock.trackEvent.mockClear();
+  });
 
   it('defaults to auto', async () => {
     const m = await load();
@@ -33,6 +39,17 @@ describe('listening service preference', () => {
     window.localStorage.setItem('cojam.listeningService', 'apple');
     const m = await load();
     expect(m.getListeningService()).toBe('auto');
+  });
+
+  it('reports provider_connected on a switch to a service, not on auto or a repeat', async () => {
+    const m = await load();
+    m.setListeningService('spotify');
+    expect(telemetryMock.trackEvent).toHaveBeenCalledWith('provider_connected');
+    m.setListeningService('spotify');
+    m.setListeningService('auto');
+    expect(telemetryMock.trackEvent).toHaveBeenCalledTimes(1);
+    m.setListeningService('youtube');
+    expect(telemetryMock.trackEvent).toHaveBeenCalledTimes(2);
   });
 
   it('survives blocked storage', async () => {
