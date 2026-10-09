@@ -53,6 +53,7 @@ import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 import { ServiceBadge } from '@/app/components/ServiceBadge';
 import { serviceOptions, ServiceFallbackNote } from '../components/ListeningServicePicker';
 import { SpotifyProblemNote } from '../components/SpotifyProblemNote';
+import { YouTubeQuotaNote } from '../components/YouTubeQuotaNote';
 import type { SpotifyConnectErrorKind } from '@/lib/spotifyConnectError';
 import { fixtureKind, applyRoomFixture, fixturePlayer } from '@/lib/devFixture';
 import dynamic from 'next/dynamic';
@@ -590,6 +591,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onRetry={spotifyProblem.retry}
         onUseYouTube={f.youtube ? () => setListeningService('youtube') : undefined}
       />
+    ) : platform === 'youtube' && store.state?.youtubeQuotaUntil ? (
+      // Spotify listeners are unaffected by the YouTube search quota.
+      <YouTubeQuotaNote until={store.state.youtubeQuotaUntil} />
     ) : nowPlaying && fallbackWanted && resolved.reason ? (
       <ServiceFallbackNote fallback={{ wanted: fallbackWanted, playing: activeSource, reason: resolved.reason }} />
     ) : null;

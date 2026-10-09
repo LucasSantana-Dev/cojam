@@ -145,9 +145,20 @@ func redactErr(err error) error {
 // YouTubeSearchContext is YouTubeSearch bound to ctx, so the matcher's own
 // deadline also bounds the HTTP calls.
 func YouTubeSearchContext(ctx context.Context, query string) ([]YouTubeCandidate, error) {
+	cands, _, err := youtubeSearch(ctx, query)
+	return cands, err
+}
+
+// youtubeSearch is YouTubeSearchContext that also reports whether every
+// candidate got its duration (the best-effort videos.list call succeeded), so
+// the persistent cache never stores a result with durations missing.
+func youtubeSearch(ctx context.Context, query string) (cands []YouTubeCandidate, complete bool, err error) {
 	apiKey := os.Getenv("YOUTUBE_API_KEY")
 	if apiKey == "" {
-		return nil, ErrNotConfigured
+		return nil, false, ErrNotConfigured
+	}
+	if until := YouTubeQuotaUntil(); !until.IsZero() {
+		return nil, false, quotaExhaustedErr(until)
 	}
 
 	q := url.Values{}
@@ -161,12 +172,15 @@ func YouTubeSearchContext(ctx context.Context, query string) ([]YouTubeCandidate
 
 	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", redactErr(err))
+		return nil, false, fmt.Errorf("failed to create request: %w", redactErr(err))
 	}
 
 	var result YouTubeSearchResult
 	if err := httpx.DoJSON(req, &result); err != nil {
-		return nil, fmt.Errorf("request failed: %w", redactErr(err))
+		if until, ok := tripFor(err, quotaNow()); ok {
+			return nil, false, quotaExhaustedErr(until)
+		}
+		return nil, false, fmt.Errorf("request failed: %w", redactErr(err))
 	}
 
 	candidates := make([]YouTubeCandidate, 0, len(result.Items))
@@ -183,8 +197,8 @@ func YouTubeSearchContext(ctx context.Context, query string) ([]YouTubeCandidate
 		})
 	}
 
-	fillDurations(ctx, apiKey, candidates)
-	return candidates, nil
+	complete = fillDurations(ctx, apiKey, candidates)
+	return candidates, complete, nil
 }
 
 // youtubeVideosResult is the videos.list contentDetails response.
@@ -205,9 +219,9 @@ type youtubeVideosResult struct {
 // call (1 quota unit for all of them; search.list does not carry durations).
 // Best effort: on any failure the durations stay 0 (unknown) and the caller
 // falls back to title confidence alone.
-func fillDurations(ctx context.Context, apiKey string, candidates []YouTubeCandidate) {
+func fillDurations(ctx context.Context, apiKey string, candidates []YouTubeCandidate) (ok bool) {
 	if len(candidates) == 0 {
-		return
+		return true
 	}
 	ids := make([]string, 0, len(candidates))
 	for _, c := range candidates {
@@ -220,12 +234,13 @@ func fillDurations(ctx context.Context, apiKey string, candidates []YouTubeCandi
 	req, err := http.NewRequestWithContext(ctx, "GET", youtubeVideosURL+"?"+q.Encode(), nil)
 	if err != nil {
 		slog.Warn("youtube_duration_lookup_failed", "err", redactErr(err).Error())
-		return
+		return false
 	}
 	var res youtubeVideosResult
 	if err := httpx.DoJSON(req, &res); err != nil {
+		tripFor(err, quotaNow())
 		slog.Warn("youtube_duration_lookup_failed", "err", redactErr(err).Error())
-		return
+		return false
 	}
 	type dur struct {
 		ms      int64
@@ -242,6 +257,7 @@ func fillDurations(ctx context.Context, apiKey string, candidates []YouTubeCandi
 		d := byID[candidates[i].VideoID]
 		candidates[i].DurationMs, candidates[i].Live, candidates[i].Blocked = d.ms, d.live, d.blocked
 	}
+	return true
 }
 
 // parseISO8601DurationMs parses the YouTube "P1DT2H3M4S" form. "P0D" (a live
@@ -391,11 +407,25 @@ func searchYouTubeCached(ctx context.Context, query string) ([]YouTubeCandidate,
 	if ok && time.Now().Before(e.expiresAt) {
 		return append([]YouTubeCandidate(nil), e.cands...), nil
 	}
-	cands, err := YouTubeSearchContext(ctx, query)
+	// L2: the persistent cache, so a deploy does not repay the quota.
+	if cands, ok := searchStoreGet(ctx, key); ok {
+		putSearchL1(key, cands)
+		return cands, nil
+	}
+	cands, complete, err := youtubeSearch(ctx, query)
 	if err != nil {
 		return nil, err
 	}
+	putSearchL1(key, cands)
+	if complete {
+		searchStorePut(ctx, key, cands)
+	}
+	return cands, nil
+}
+
+func putSearchL1(key string, cands []YouTubeCandidate) {
 	searchCache.Lock()
+	defer searchCache.Unlock()
 	if len(searchCache.m) >= CacheMaxEntries {
 		now := time.Now()
 		for k, v := range searchCache.m {
@@ -408,8 +438,6 @@ func searchYouTubeCached(ctx context.Context, query string) ([]YouTubeCandidate,
 		}
 	}
 	searchCache.m[key] = searchEntry{cands: append([]YouTubeCandidate(nil), cands...), expiresAt: time.Now().Add(CacheTTL)}
-	searchCache.Unlock()
-	return cands, nil
 }
 
 // Bounds for the matcher cache. TTL applies to hits and misses alike: both go

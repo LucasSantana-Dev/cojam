@@ -13,10 +13,10 @@ import (
 )
 
 // TestPlaylistImportEnrichesOnlyAddedTracks pins the partial-full fix: when an
-// import only partially fits (queue near capacity), enrichment must run for
-// exactly the tracks that were added, not for pre-existing queue entries.
-// The old last-N heuristic (addedCount from len(tracks), ignoring remaining
-// capacity) re-enriched already-queued tracks; this test fails on that code.
+// import only partially fits (queue near capacity), the YouTube lookups are
+// bounded by the matching window (now playing plus the next two), never by the
+// size of the import or of the queue. The added tracks land far behind the
+// window, so only the head of the queue is looked up.
 func TestPlaylistImportEnrichesOnlyAddedTracks(t *testing.T) {
 	h := NewHub(nil) // no matcher yet: prefill must not enrich
 
@@ -70,7 +70,7 @@ func TestPlaylistImportEnrichesOnlyAddedTracks(t *testing.T) {
 		mu.Lock()
 		n := len(enriched)
 		mu.Unlock()
-		if n >= 2 {
+		if n >= youtubeMatchWindow {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -84,8 +84,8 @@ func TestPlaylistImportEnrichesOnlyAddedTracks(t *testing.T) {
 	got := append([]string(nil), enriched...)
 	mu.Unlock()
 	sort.Strings(got)
-	want := []string{"New-0", "New-1"}
+	want := []string{"Old-0", "Old-1", "Old-2"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("enriched %v; want exactly %v (over-enrichment touches pre-existing tracks)", got, want)
+		t.Fatalf("enriched %v; want exactly the window %v (nothing behind it)", got, want)
 	}
 }

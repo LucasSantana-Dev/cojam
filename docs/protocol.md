@@ -507,6 +507,7 @@ type RoomState = {
   admins?: string[];        // userIDs with full queue and transport control, set by room.set_admin
   radioEnabled: boolean;    // refill the queue with similar tracks when it runs dry
   radioAvailable?: boolean; // server capability, stamped on every state, never persisted: false = radio cannot work here (no FEATURE_RADIO / LASTFM_API_KEY), hide or disable the toggle. Absent on older servers.
+  youtubeQuotaUntil?: number; // server condition, stamped on every state, never persisted: unix ms until which the daily YouTube search quota is spent (new tracks get no YouTube source until then; resets at midnight America/Los_Angeles). Absent when searches work.
   version: number;          // monotonic, bumps per mutation; clients drop stale
   transport?: TransportState; // shared play/pause/seek position (FEATURE_SYNC)
   createdAt?: number;       // unix ms at room creation, server-stamped (absent on older rooms)
@@ -584,3 +585,18 @@ Rules: state carries metadata only, never audio. Each client plays the head trac
   triggers a skip, and a track loaded from storage is looked up once before it can be judged. The skip
   never triggers a radio refill, a refill seeds only from the last playable track, and refills are capped
   at one per room per 30 s.
+
+## YouTube matching window and quota
+
+- YouTube search costs 100 of the 10,000 daily quota units, so the server looks up a YouTube source only for
+  the now-playing track and the next two in queue order. Tracks further back keep an empty
+  `sources.youtube` until they enter the window (queue.add, playlist.import, radio refill, advance, vote,
+  reorder, remove, history.readd and room restore all re-evaluate it). Spotify matching stays eager. A
+  track outside the window is never treated as sourceless by the auto skip.
+- Search results are cached in Postgres (`youtube_search_cache`, 30 days, 24 h for an empty result), so a
+  deploy does not repay the quota.
+- When the API answers 429, or 403 with reason quotaExceeded, dailyLimitExceeded or rateLimitExceeded, the
+  server stops searching until the next midnight in America/Los_Angeles and logs one WARN
+  `youtube_quota_exhausted`. `RoomState.youtubeQuotaUntil` (unix ms) carries that instant while it is in the
+  future; clients show a notice to YouTube listeners and format the local hour themselves. Tracks whose
+  lookup failed on the quota are retried on the first room activity after the reset.

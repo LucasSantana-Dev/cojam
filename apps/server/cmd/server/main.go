@@ -351,6 +351,16 @@ func main() {
 		h.WithStore(pgStore)
 		logger.Info("persistence_enabled", "store", "postgres")
 
+		// YouTube search results survive a deploy (search.list is 100 quota
+		// units a call). Without a database the in-memory cache stands alone.
+		ytSearchStore := match.NewPostgresSearchStore(pool)
+		match.SetSearchStore(ytSearchStore)
+		if n, err := ytSearchStore.Purge(ctx); err != nil {
+			logger.Warn("youtube_search_cache_purge_failed", "err", err.Error())
+		} else if n > 0 {
+			logger.Info("youtube_search_cache_purged", "rows", n)
+		}
+
 		// Schedule pool close on shutdown
 		shutdownHooks = append(shutdownHooks, func() {
 			pool.Close()
@@ -373,6 +383,7 @@ func main() {
 			}
 		})
 		h.WithMatcher(cachedMatcher)
+		h.WithYouTubeQuota(match.YouTubeQuotaUntil).WithYouTubeQuotaNotice(match.YouTubeQuotaNoticeUntil)
 		logger.Info("matcher_enabled", "provider", "youtube")
 	} else {
 		logger.Info("matcher_disabled", "feature", featureEnabled("FEATURE_MATCHING", true), "has_key", os.Getenv("YOUTUBE_API_KEY") != "")

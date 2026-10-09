@@ -71,6 +71,7 @@ func (h *Hub) WithAutoSkipSourceless(on bool) *Hub {
 // is promoted and pending grace timers are dropped.
 func (h *Hub) BeginShutdown() {
 	h.roles.shuttingDown.Store(true)
+	h.stopQuotaTimer()
 	h.roles.graceMu.Lock()
 	for id, e := range h.roles.graces {
 		e.timer.Stop()
@@ -250,18 +251,18 @@ func (h *Hub) transferHost(roomID, callerID, targetID string) (json.RawMessage, 
 	return res, err
 }
 
-// enrichBookkeeping returns how many source lookups queue.add / import /
+// enrichBookkeeping returns how many eager source lookups queue.add / import /
 // radio will launch for t, so the track can be marked pending in the same
-// mutation that adds it (before any lookup can finish).
+// mutation that adds it (before any lookup can finish). Only Spotify is eager:
+// YouTube lookups are claimed lazily by markYouTubeWindowLocked once the track
+// is inside the matching window, so they are not counted here.
 func (h *Hub) enrichBookkeeping(t *queue.TrackRef) {
 	n := 0
-	if h.matcher != nil && t.Sources.YouTube == nil {
-		n++
-	}
 	if h.spotifyMatcher != nil && t.Sources.Spotify == nil {
 		n++
 	}
 	t.EnrichPending = n
+	t.YTLookup, t.YTQuota, t.YTAttempts = false, false, 0
 	// No matcher at all: nothing can ever resolve a source, which is a
 	// definitive answer rather than an unknown one.
 	t.EnrichChecked = h.matcher == nil && h.spotifyMatcher == nil
@@ -282,14 +283,35 @@ func (h *Hub) launchTrackEnrich(roomID, trackID string, fn func() (certain bool)
 // rather than cleanly missing, which blocks the auto skip for that track: an
 // outage must not drain a queue.
 func (h *Hub) enrichDone(roomID, trackID string, certain bool) {
+	h.enrichSettle(roomID, trackID, certain, false)
+}
+
+// enrichSettle is enrichDone for a lookup that may have failed on the YouTube
+// quota. A quota failure keeps the track unchecked and owed (YTQuota), and
+// bumps the version so the room republishes with the quota notice stamped.
+func (h *Hub) enrichSettle(roomID, trackID string, certain, quota bool) {
+	// Owed only while the breaker really is open: a matcher reporting quota
+	// with nothing to wait for would otherwise be retried in a hot loop.
+	quota = quota && !h.quotaUntil().IsZero()
 	_, _ = h.mutate(roomID, func(s *queue.RoomState) error {
 		if t := s.Track(trackID); t != nil {
 			if t.EnrichPending > 0 {
 				t.EnrichPending--
 			}
-			if !certain {
+			switch {
+			case quota:
 				t.EnrichUncertain = true
-			} else {
+				t.YTLookup, t.YTQuota = false, true
+				if t.YTAttempts > 0 {
+					t.YTAttempts-- // a quota refusal is not a failed attempt
+				}
+				s.Version++
+			case !certain:
+				t.EnrichUncertain = true
+				if t.YTLookup && t.YTAttempts < youtubeMaxAttempts {
+					t.YTLookup = false // the next mutation re-claims it
+				}
+			default:
 				t.EnrichChecked = true
 			}
 		}
@@ -347,14 +369,12 @@ func (h *Hub) autoSkipSourceless(roomID string) {
 }
 
 // relaunchEnrich re-runs the source lookups for a track whose bookkeeping was
-// just reset by enrichBookkeeping.
+// just reset by enrichBookkeeping. YouTube follows the matching window.
 func (h *Hub) relaunchEnrich(roomID string, tr queue.TrackRef) {
-	if h.matcher != nil && tr.Sources.YouTube == nil {
-		h.launchTrackEnrich(roomID, tr.ID, func() bool { return h.enrichYouTube(roomID, tr.ID, tr) })
-	}
 	if h.spotifyMatcher != nil && tr.Sources.Spotify == nil {
 		h.launchTrackEnrich(roomID, tr.ID, func() bool { return h.enrichSpotify(roomID, tr.ID, tr) })
 	}
+	h.ensureYouTubeWindow(roomID)
 }
 
 // refillAllowed caps radio refills at one per room per refillMinGap, so no

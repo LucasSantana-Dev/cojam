@@ -78,6 +78,11 @@ export type RoomState = {
   // can actually refill a radio queue (FEATURE_RADIO + a Last.fm key). When
   // false, hide or disable the radio toggle. Absent on servers that predate it.
   radioAvailable?: boolean;
+  // Server condition (not room state, never persisted): unix ms until which the
+  // server's daily YouTube search quota is spent, so new tracks get no YouTube
+  // source. Absent when searches work. Show a notice to YouTube listeners and
+  // compute the local reset hour in the browser.
+  youtubeQuotaUntil?: number;
   version: number;
   transport?: TransportState;
   // Server clock (unix ms) at room creation, server-stamped. Absent on rooms
