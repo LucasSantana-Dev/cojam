@@ -2227,10 +2227,13 @@ textarea.age-gate__input { resize: vertical; }
 .chat-sys__text { flex: 1; min-width: 0; font-size: 0.75rem; line-height: 1.3; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-sys + .chat-msg, .chat-msg + .chat-sys { margin-top: 0.15rem; }
 .chat-form { display: flex; align-items: center; gap: 0.2rem; margin-top: 0.25rem; padding: 0.35rem 0.4rem 0.35rem 0.9rem; border-radius: 0.9rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); }
-.chat-form:focus-within { border-color: oklch(0.62 0.2 298 / 0.8); }
+/* One ring, on the pill (the visible control). Scoped to the input so the emoji
+   and send buttons keep their own keyboard ring instead of doubling up. 1px
+   border + 1px shadow = 2px at accent, as DESIGN.md asks for focus. */
+.chat-form:has(.chat-form__input:focus) { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
 .chat-form__input { flex: 1; min-width: 0; min-height: 2.5rem; background: none; border: 0; color: var(--color-text-primary); font-size: 1rem; }
 .chat-form__input::placeholder { color: var(--color-text-muted); }
-.chat-form__input:focus { outline: none; }
+.chat-form__input:focus, .chat-form__input:focus-visible { outline: none; box-shadow: none; background: none; border-radius: 0; }
 .chat-form__send { flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--r4-violet-fill); color: oklch(0.99 0.004 292); box-shadow: 0 0 18px -4px var(--r4-glow); transition: transform var(--dur-micro) var(--ease-out-quart); }
 .chat-form__send:active:not(:disabled) { transform: scale(0.92); }
 .chat-form__send:disabled { opacity: 0.75; box-shadow: none; cursor: not-allowed; }
