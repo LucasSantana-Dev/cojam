@@ -153,6 +153,10 @@ type RoomState struct {
 	// client-supplied. Kept off TrackRef so client-supplied tracks need no
 	// extra scrubbing; pruned when a track leaves the queue.
 	Votes map[string][]string `json:"votes,omitempty"`
+	// SkipVotes are the server-stamped voter keys (same format as Votes) who
+	// want the playing track skipped (now_playing.vote_skip). It belongs to the
+	// current NowPlayingID only: setNowPlayingID clears it on every track change.
+	SkipVotes []string `json:"skipVotes,omitempty"`
 	// Public is the host-set directory opt-in (FEATURE_PUBLIC_ROOMS). The zero
 	// value is private, so rooms persisted before this field existed stay
 	// private unless a host explicitly opts in via room.set_public.
@@ -171,10 +175,82 @@ func (rs *RoomState) setNowPlayingID(id string) {
 		return
 	}
 	rs.NowPlayingID = id
+	rs.SkipVotes = nil // votes belong to the track they were cast on
 	if rs.Transport != nil {
 		rs.Transport.PositionMs = 0
 		rs.Transport.UpdatedAtServerMs = time.Now().UnixMilli()
 	}
+}
+
+// SetSkipVote records (vote true) or retracts (vote false) voter's wish to skip
+// the playing track. Set semantics: repeating the same value is a no-op.
+// Bumps Version only when the set changed; reports whether it did.
+func (rs *RoomState) SetSkipVote(voter string, vote bool) bool {
+	for i, v := range rs.SkipVotes {
+		if v != voter {
+			continue
+		}
+		if vote {
+			return false
+		}
+		rs.SkipVotes = append(rs.SkipVotes[:i:i], rs.SkipVotes[i+1:]...)
+		if len(rs.SkipVotes) == 0 {
+			rs.SkipVotes = nil
+		}
+		rs.Version++
+		return true
+	}
+	if !vote {
+		return false
+	}
+	rs.SkipVotes = append(rs.SkipVotes, voter)
+	rs.Version++
+	return true
+}
+
+// HasSkipVote reports whether voter currently votes to skip.
+func (rs *RoomState) HasSkipVote(voter string) bool {
+	for _, v := range rs.SkipVotes {
+		if v == voter {
+			return true
+		}
+	}
+	return false
+}
+
+// PruneSkipVotes drops skip votes whose voter is not in present (a listener
+// who left no longer counts). Bumps Version only when something was dropped.
+func (rs *RoomState) PruneSkipVotes(present map[string]bool) bool {
+	kept := make([]string, 0, len(rs.SkipVotes))
+	for _, v := range rs.SkipVotes {
+		if present[v] {
+			kept = append(kept, v)
+		}
+	}
+	if len(kept) == len(rs.SkipVotes) {
+		return false
+	}
+	if len(kept) == 0 {
+		kept = nil
+	}
+	rs.SkipVotes = kept
+	rs.Version++
+	return true
+}
+
+// SkipVotesNeeded is how many skip votes pass the track for n distinct
+// listeners present: half of them rounded up, but never fewer than 2 once two
+// or more people are in the room (one voter cannot skip for a group), and 1
+// when alone. n <= 0 needs nothing.
+func SkipVotesNeeded(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	need := (n + 1) / 2
+	if n >= 2 && need < 2 {
+		need = 2
+	}
+	return need
 }
 
 // Add appends a track to the queue, generates an ID, stamps the server-side
@@ -395,28 +471,37 @@ func (rs *RoomState) AdvanceAfter(afterID string) error {
 	return nil
 }
 
-// EndedGraceMs is how far past a track's duration a playing transport may run
-// before the server treats the track as ended. It keeps a joiner from racing
-// the host's own end-of-track advance, which lands within about a second.
+// MinStaleEndMarginMs is the floor of how far past a track's catalogue
+// duration a playing transport must run before the server treats the track as
+// abandoned. See StaleEndMarginMs.
+const MinStaleEndMarginMs = 120_000
+
+// StaleEndMarginMs is the margin added to a catalogue duration before the
+// server-side join-time guess calls a track ended: max(2 minutes, duration/2).
 //
-// It is also deliberately wide: the catalogue duration of a YouTube-matched
-// track is not the video's (the match can be a longer music video), so a
-// joiner reconnecting 5 s past a 3:48 catalogue entry must not skip a 4:30
-// video that is still playing. Only a transport that ran this far past the
-// catalogue end is treated as abandoned. The server cannot know the real video
-// length (only the player can), so a video more than 30 s longer than its
-// catalogue entry can still be cut on a late join; the matcher keeps matched
-// videos close to the catalogue length to make that rare.
-const EndedGraceMs = 30_000
+// It is deliberately wide. The catalogue duration (Deezer/Spotify) of a
+// YouTube-matched track is not the video's: matching is by title, so the real
+// music video is often 1-2+ minutes longer (intros, outros). Only the player
+// knows the real length, and clients advance on the player's ENDED event. The
+// server guess exists only to rescue a stale transport (absent host, restored
+// from the store, much later), so it must never cut a video that is still
+// playing for everyone.
+func StaleEndMarginMs(durationMs int64) int64 {
+	if half := durationMs / 2; half > MinStaleEndMarginMs {
+		return half
+	}
+	return MinStaleEndMarginMs
+}
 
 // AdvanceIfEnded moves playback past the now-playing track when a playing
-// transport has run beyond that track's duration (plus EndedGraceMs). Advance
-// is host-only on the client, so a host that vanished (or a server restart that
-// restored the transport from the store) leaves the position growing forever
-// and every listener seeking past the end. The advance re-anchors the
-// transport to position 0 (setNowPlayingID), so one step is enough: a long
-// outage does not skip the whole queue. It never refills radio. Tracks with an
-// unknown duration are left alone. Reports whether the room advanced.
+// transport has run beyond that track's duration plus StaleEndMarginMs
+// (max(2 min, duration/2)). Advance is host-only on the client, so a host that
+// vanished (or a server restart that restored the transport from the store)
+// leaves the position growing forever and every listener seeking past the end.
+// The advance re-anchors the transport to position 0 (setNowPlayingID), so one
+// step is enough: a long outage does not skip the whole queue. It never
+// refills radio. Tracks with an unknown duration are left alone. Reports
+// whether the room advanced.
 func (rs *RoomState) AdvanceIfEnded(nowMs int64) bool {
 	t := rs.Transport
 	if t == nil || t.State != "playing" || rs.NowPlayingID == "" {
@@ -426,7 +511,7 @@ func (rs *RoomState) AdvanceIfEnded(nowMs int64) bool {
 	if tr == nil || tr.DurationMs <= 0 {
 		return false
 	}
-	if t.PositionMs+(nowMs-t.UpdatedAtServerMs) < tr.DurationMs+EndedGraceMs {
+	if t.PositionMs+(nowMs-t.UpdatedAtServerMs) < tr.DurationMs+StaleEndMarginMs(tr.DurationMs) {
 		return false
 	}
 	return rs.AdvanceAfter(rs.NowPlayingID) == nil
@@ -495,4 +580,29 @@ func (rs *RoomState) SetSpotifySource(trackID string, ref SourceRef) error {
 		}
 	}
 	return fmt.Errorf("track not found: %s", trackID)
+}
+
+// RewriteSkipVoter rekeys oldVoter to newVoter in SkipVotes (guest-to-account
+// rebind, #172), dropping the old key when newVoter already voted. No Version
+// bump: the rebind mutation bumps once.
+func (rs *RoomState) RewriteSkipVoter(oldVoter, newVoter string) {
+	foundOld, foundNew := false, false
+	for _, v := range rs.SkipVotes {
+		foundOld = foundOld || v == oldVoter
+		foundNew = foundNew || v == newVoter
+	}
+	if !foundOld {
+		return
+	}
+	out := make([]string, 0, len(rs.SkipVotes))
+	for _, v := range rs.SkipVotes {
+		if v == oldVoter {
+			if foundNew {
+				continue
+			}
+			v = newVoter
+		}
+		out = append(out, v)
+	}
+	rs.SkipVotes = out
 }

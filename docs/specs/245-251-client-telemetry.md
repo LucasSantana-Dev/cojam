@@ -128,6 +128,13 @@ That is a materially better privacy story than any third-party analytics, and it
 should be stated in the policy rather than buried. #253 section 2.4 currently
 says no analytics exist; it must be updated **in the same PR** that lands this.
 
+## 4.1 Addendum: sync drift sample
+
+A fourth type, `sample`, carries one name, `sync_drift`, with a fixed schema
+decoded strictly (unknown fields are rejected). Series, cadence and the enable
+flags live in `docs/observability-metrics.md`. It adds no identifier: no room
+id, track id, URL or user data.
+
 ## 5. What this deliberately does not do
 
 - **No per-user funnels or cohort retention.** Counters cannot answer "did this

@@ -342,3 +342,35 @@ func TestEvents_NothingIdentifyingReachesTheRows(t *testing.T) {
 		}
 	}
 }
+
+// A vote skip is recorded once, as by=vote with the tipping voter, and never
+// also as by=host even when the position says the track ended early.
+func TestEvents_VoteSkipRecordedOnceAsVote(t *testing.T) {
+	sink := &fakeSink{}
+	h := NewHub(nil).WithVoting(true).WithSync(true).WithEvents(sink)
+	h.skipGrace = 0
+	for c, u := range map[string]string{"c1": "u1", "c2": "u2"} {
+		h.RecordClientUserID(c, u)
+		h.Join(c, "VS1")
+	}
+	add := `{"roomId":"VS1","track":{"title":"S","artist":"A","durationMs":200000,"sources":{},"addedBy":"x"}}`
+	res, err := h.HandleRPC("queue.add", []byte(add), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st queue.RoomState
+	_ = json.Unmarshal(res, &st)
+	if _, err := skipVote(h, "c1", "u1", "VS1", st.NowPlayingID); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(sink.named(events.TrackSkipped)); n != 0 {
+		t.Fatalf("a vote below the threshold skipped nothing, got %d events", n)
+	}
+	if _, err := skipVote(h, "c2", "u2", "VS1", st.NowPlayingID); err != nil {
+		t.Fatal(err)
+	}
+	sk := sink.named(events.TrackSkipped)
+	if len(sk) != 1 || sk[0].Props["by"] != "vote" || sk[0].ActorID != "user:u2" || sk[0].RoomID != "VS1" {
+		t.Fatalf("vote skip events = %+v", sk)
+	}
+}

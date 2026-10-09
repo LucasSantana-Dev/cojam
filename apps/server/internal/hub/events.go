@@ -48,13 +48,9 @@ func (h *Hub) actorKey(clientID string) string {
 	return rateLimitKey(clientID, h.userIDOf(clientID))
 }
 
-// Skip reasons for track_skipped.by. "vote" is reserved for the vote-skip
-// path (PR #440, now_playing.vote_skip): once its skip lands, adding the
-// event is the single call
-//
-//	h.emitTrackSkipped(roomID, voterKey, "vote")
-//
-// next to the skip_by_vote branch, nothing else changes.
+// Skip reasons for track_skipped.by. "vote" is recorded by skipVoteStep
+// (skipvote.go) through advanceAfterReport, which passes it as skipBy so the
+// generic host-advance detection does not record the same skip twice.
 const (
 	skipByHost = "host"
 	skipByAuto = "auto"

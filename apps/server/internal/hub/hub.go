@@ -314,6 +314,8 @@ type Hub struct {
 	// throttled. Separate from fanoutLimiter, whose budget protects
 	// third-party API quotas; votes never leave the server.
 	voteLimiter *rateLimiter
+	// skipGrace delays the vote-skip re-check after a leave (see skipvote.go).
+	skipGrace time.Duration
 
 	// chatLimiter rate-limits chat.send per caller (chatMethods): chat is the
 	// canonical spammable RPC, and a per-caller bucket keeps one spammer from
@@ -441,6 +443,7 @@ var mutatingMethods = map[string]bool{
 	"reaction.emote":              true,
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
+	"now_playing.vote_skip":       true,
 }
 
 // knownMethods is the dispatch set. RPC method names are client-supplied, so
@@ -484,6 +487,7 @@ var knownMethods = map[string]bool{
 	"sync.ping":                   true,
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
+	"now_playing.vote_skip":       true,
 }
 
 // metricMethod is the bounded label for method: itself when known, else
@@ -642,6 +646,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		enrichPending:     make(chan struct{}, enrichMaxPending),
 		fanoutLimiter:     newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
 		voteLimiter:       newRateLimiter(voteBurst, voteRefill, time.Now),
+		skipGrace:         skipLeaveGrace,
 		chatLimiter:       newRateLimiter(chatBurst, chatRefill, time.Now),
 		reactionLimiter:   newRateLimiter(reactionBurst, reactionRefill, time.Now),
 		emoteLimiter:      newRateLimiter(1, emoteInterval, time.Now),
@@ -784,6 +789,9 @@ func (h *Hub) Leave(clientID string) {
 		name := h.displayName(clientID)
 		for _, roomID := range rooms {
 			h.announceMembership(roomID, name, "saiu")
+			// A departure shrinks the listener count: votes of people who
+			// left stop counting and the threshold may now be reached.
+			h.reevaluateSkipVotes(roomID)
 		}
 	}
 }
@@ -793,7 +801,6 @@ func (h *Hub) Leave(clientID string) {
 // no-ops. The kicked client's own disconnect still runs Leave afterwards.
 func (h *Hub) leaveRoom(clientID, roomID string) {
 	h.memberMu.Lock()
-	defer h.memberMu.Unlock()
 	delete(h.members[clientID], roomID)
 	if len(h.members[clientID]) == 0 {
 		delete(h.members, clientID)
@@ -802,6 +809,8 @@ func (h *Hub) leaveRoom(clientID, roomID string) {
 	if len(h.roomMembers[roomID]) == 0 {
 		delete(h.roomMembers, roomID)
 	}
+	h.memberMu.Unlock()
+	h.reevaluateSkipVotes(roomID)
 }
 
 // PruneGuestVotes removes the disconnecting guest's voter key from every room
@@ -2015,6 +2024,9 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return fmt.Sprintf("%s pulada: o vídeo não pode tocar fora do YouTube", title)
 		}, "")
 
+	case "now_playing.vote_skip":
+		return h.voteSkipRPC(data, clientID, rlKey)
+
 	case "queue.reorder":
 		var req struct {
 			RoomID  string `json:"roomId"`
@@ -2805,6 +2817,20 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 // actor is the caller's rate-limit key for the track_skipped event ("" when the
 // skip is automatic).
 func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipLine func(title string) string, actor string) (json.RawMessage, error) {
+	res, _, err := h.advanceAfterReport(roomID, afterID, withSkipCheck, skipLine, "", actor)
+	return res, err
+}
+
+// advanceAfterReport is advanceAfterWith that also reports whether this call
+// is the one that moved playback off afterID. Concurrent callers (auto
+// advance, host skip, the vote-skip threshold) race benignly: exactly one sees
+// moved == true, so side effects that must happen once (vote-skip chat line,
+// log, counter, the track_skipped event) key off it.
+//
+// skipBy names an explicit skip for the track_skipped event ("vote"); empty
+// lets the position decide whether a host advance was a skip. Either way at
+// most one event is recorded per skip, and only by the call that moved playback.
+func (h *Hub) advanceAfterReport(roomID, afterID string, withSkipCheck bool, skipLine func(title string) string, skipBy, actor string) (res json.RawMessage, moved bool, err error) {
 	if skipLine == nil {
 		skipLine = func(title string) string {
 			return fmt.Sprintf("%s não está disponível no seu serviço e foi pulada", title)
@@ -2829,9 +2855,10 @@ func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipL
 	// RPC; the position tells them apart).
 	skippedEarly := false
 
-	res, err := mutate(roomID, func(s *queue.RoomState) error {
+	res, err = mutate(roomID, func(s *queue.RoomState) error {
 		// Store old NowPlayingID to detect if advance actually changed state
 		oldNowPlayingID := s.NowPlayingID
+		defer func() { moved = oldNowPlayingID == afterID && s.NowPlayingID != afterID }()
 
 		if withSkipCheck {
 			skippedEarly = s.NowPlayingID == afterID && advancedEarly(s, time.Now().UnixMilli())
@@ -2881,7 +2908,9 @@ func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipL
 		h.publishSystemChat(roomID, skipLine(skipped.Title))
 		h.emitTrackSkipped(roomID, "", skipByAuto)
 	}
-	if err == nil && skippedEarly {
+	if err == nil && moved && skipBy != "" {
+		h.emitTrackSkipped(roomID, actor, skipBy)
+	} else if err == nil && moved && skippedEarly {
 		h.emitTrackSkipped(roomID, actor, skipByHost)
 	}
 
@@ -2891,7 +2920,7 @@ func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipL
 		h.publishSystemChat(roomID, fmt.Sprintf("Tocando agora: %s, de %s", announced.Title, announced.Artist))
 	}
 
-	return res, err
+	return res, moved && err == nil, err
 }
 
 // RegisterClient wires a connected client's RPCs to the hub dispatch.

@@ -6,7 +6,9 @@ import { computeNameSuffixes } from './nameSuffix';
 import { fetchConnectionToken, getLastTokenFetchError, getStoredProofToken, clearStoredIdentity } from './auth';
 import { getAccountToken, getAccountSession } from './account';
 import { features } from './features';
+import { trackEvent, trackError } from './telemetry';
 import { isCharacterId } from './characters';
+import { skipVoteKey } from './skipVote';
 import type { ChatDeletePub, ChatMessage, ChatMessagePub, Emote, MemberPlatformPub, MemberCharacterPub, ReactionEmotePub, ReactionWootPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
 import { EMOTES } from '@cojam/shared';
 
@@ -70,6 +72,13 @@ const MAX_CHAT_MESSAGES = 100;
 // treats 4500-4999 as application terminal codes, so no reconnect follows;
 // the room page swaps to an explicit "removed by host" state instead.
 export const DISCONNECT_CODE_KICKED = 4500;
+
+// A 'disconnected' the client did not ask for. Centrifuge 0 is disconnect()
+// called by us (leave room, join cleanup); anything else is the server or the
+// transport ending the session for good (unauthorized, bad request, ...).
+export function isTerminalDisconnect(code: number | undefined): boolean {
+  return typeof code === 'number' && code > 0;
+}
 
 // Client-local system line marking chat history that a server rollover ended.
 // Never sent to the server; the id prefix keeps it from colliding with a
@@ -534,8 +543,13 @@ export async function joinRoom(
     store.setReconnecting(false);
     // room.kick (#181): the server closed this connection with the terminal
     // kicked code; the room page swaps to the "removed by host" state.
-    if ((ctx as { code?: number } | undefined)?.code === DISCONNECT_CODE_KICKED) {
+    const code = (ctx as { code?: number } | undefined)?.code;
+    if (code === DISCONNECT_CODE_KICKED) {
       useStore.getState().setKicked(true);
+    } else if (isTerminalDisconnect(code)) {
+      // The client gave up and will not reconnect on its own. Only the numeric
+      // code goes out, never the free-text reason.
+      trackError('ws_terminal', new Error(`disconnect code ${code}`));
     }
   });
 
@@ -868,6 +882,7 @@ async function attemptRebind(roomId: string) {
 export async function queueAdd(roomId: string, track: Omit<TrackRef, 'id'>) {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('queue.add', { roomId, track });
+  trackEvent('track_added');
 }
 
 // rawRpcMessage is the server's own (English) message text, used for matching.
@@ -939,6 +954,17 @@ export async function nowPlayingSet(roomId: string, trackId: string) {
 export async function nowPlayingAdvance(roomId: string, afterId: string) {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('now_playing.advance', { roomId, afterId });
+}
+
+// Vote to skip the playing track (now_playing.vote_skip). The server stamps who
+// voted and its voter keys cannot be mapped back to this client, so the pressed
+// state is the local myVotes entry under skipVoteKey(trackId), written only on
+// RPC success (same contract as queue votes, #188). `vote` is explicit, never a
+// blind toggle, so a client that lost its local state cannot invert the vote.
+export async function nowPlayingVoteSkip(roomId: string, nowPlayingId: string, vote: boolean) {
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
+  await centrifuge.rpc('now_playing.vote_skip', { roomId, nowPlayingId, vote });
+  useStore.getState().markVoted(skipVoteKey(nowPlayingId), vote);
 }
 
 // now_playing.skip_unplayable: a controller's client reports that the playing
@@ -1192,6 +1218,7 @@ export async function fetchLastfmEnrich(roomId: string, artist: string, title: s
 // Clock sync (U3): measure client-server time offset for synchronized playback
 
 let clockOffsetMs = 0;
+let clockRttMs = 0;
 
 export async function syncPing(): Promise<number> {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
@@ -1211,6 +1238,7 @@ export async function measureClockOffset(samples = 5): Promise<{ offsetMs: numbe
 
   const result = estimateOffset(pingSamples);
   clockOffsetMs = result.offsetMs;
+  clockRttMs = result.rttMs;
   clockOffsetMeasured = true;
   return result;
 }
@@ -1272,6 +1300,10 @@ export function requestClockRemeasure(): void {
   if (now - lastClockRequestAt < CLOCK_REMEASURE_MIN_GAP_MS) return;
   lastClockRequestAt = now;
   measureClockOffsetWithRetry();
+}
+
+export function getClockRttMs(): number {
+  return clockRttMs;
 }
 
 export function getClockOffsetMs(): number {

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const telemetryMock = vi.hoisted(() => ({ trackEvent: vi.fn(), trackError: vi.fn() }));
+vi.mock('./telemetry', () => telemetryMock);
 vi.mock('./realtime', () => ({
   resolveConnectionToken: vi.fn(async () => 'conn'),
 }));
@@ -77,5 +79,21 @@ describe('handleCallback failure mapping', () => {
       vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ accessToken: 'a', expiresIn: 3600 }) }) as Response),
     );
     expect(await handleCallback('c', 's1')).toBe('/room/ABC');
+  });
+
+  it('reports provider_connected only after a successful exchange', async () => {
+    telemetryMock.trackEvent.mockClear();
+    seed();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500 }) as Response));
+    await kindOf(handleCallback('c', 's1'));
+    expect(telemetryMock.trackEvent).not.toHaveBeenCalled();
+
+    seed();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ accessToken: 'a', expiresIn: 3600 }) }) as Response),
+    );
+    await handleCallback('c', 's1');
+    expect(telemetryMock.trackEvent).toHaveBeenCalledWith('provider_connected');
   });
 });

@@ -10,6 +10,7 @@
 // Loaded with next/dynamic (ssr: false) from the room client, so three.js and
 // this file stay out of the round 4 bundle.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { SkipVoteButton } from '../SkipVoteButton';
 import { useStore, onWoot, sendWoot, onEmote, sendEmote, transportPlay, transportPause, nowPlayingAdvance } from '@/lib/realtime';
 import { EMOTES, type Emote } from '@cojam/shared';
 import { SkipNextIcon } from '@/app/components/icons';
@@ -622,6 +623,7 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
               Curtir
               {likeCount > 0 && <span className="palco__likes" aria-label={`${likeCount} curtidas`}>{likeCount}</span>}
             </button>
+            <SkipVoteButton roomId={roomId} variant="palco" />
             {kind === 'phone' ? (
               <div className="palco__react" ref={reactWrapRef}>
                 <button
