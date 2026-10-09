@@ -3788,8 +3788,9 @@ input:focus, textarea:focus, select:focus {
 .r4-joinpanel .join-note { margin-top: 0.75rem; }
 .r4-joinpanel .join-error { margin-top: 0.5rem; color: oklch(0.88 0.1 25); }
 @media (min-width: 72rem) {
-  /* Scrolls, never clips: on a short wide window the join card (13 portraits) is taller than the viewport. */
-  .r4-joinroom { height: 100dvh; min-height: 40rem; overflow-y: auto; }
+  /* Scrolls, never clips: on a short wide window the join card (13 portraits) is taller than the viewport.
+     Needs .room[data-room="r4"] in the selector to beat that rule's overflow: hidden above. */
+  .room[data-room="r4"].r4-joinroom { height: 100dvh; min-height: 40rem; overflow-y: auto; }
   .r4-joinroom .r4-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .r4-joingrid { flex: 1; min-height: 0; }
   .r4-joingrid.has-preview { grid-template-columns: minmax(0, 1fr) minmax(0, 1.18fr); grid-template-rows: minmax(0, 1fr); }
