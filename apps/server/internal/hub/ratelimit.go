@@ -25,7 +25,8 @@ var fanoutMethods = map[string]bool{
 // separate from fanoutMethods: that budget protects third-party API quotas
 // and votes never leave the server.
 var voteMethods = map[string]bool{
-	"queue.vote": true,
+	"queue.vote":            true,
+	"now_playing.vote_skip": true,
 }
 
 // listMethods are unauthenticated directory reads that landing visitors poll.

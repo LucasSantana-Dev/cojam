@@ -141,6 +141,10 @@ type RoomState struct {
 	// client-supplied. Kept off TrackRef so client-supplied tracks need no
 	// extra scrubbing; pruned when a track leaves the queue.
 	Votes map[string][]string `json:"votes,omitempty"`
+	// SkipVotes are the server-stamped voter keys (same format as Votes) who
+	// want the playing track skipped (now_playing.vote_skip). It belongs to the
+	// current NowPlayingID only: setNowPlayingID clears it on every track change.
+	SkipVotes []string `json:"skipVotes,omitempty"`
 	// Public is the host-set directory opt-in (FEATURE_PUBLIC_ROOMS). The zero
 	// value is private, so rooms persisted before this field existed stay
 	// private unless a host explicitly opts in via room.set_public.
@@ -159,10 +163,82 @@ func (rs *RoomState) setNowPlayingID(id string) {
 		return
 	}
 	rs.NowPlayingID = id
+	rs.SkipVotes = nil // votes belong to the track they were cast on
 	if rs.Transport != nil {
 		rs.Transport.PositionMs = 0
 		rs.Transport.UpdatedAtServerMs = time.Now().UnixMilli()
 	}
+}
+
+// SetSkipVote records (vote true) or retracts (vote false) voter's wish to skip
+// the playing track. Set semantics: repeating the same value is a no-op.
+// Bumps Version only when the set changed; reports whether it did.
+func (rs *RoomState) SetSkipVote(voter string, vote bool) bool {
+	for i, v := range rs.SkipVotes {
+		if v != voter {
+			continue
+		}
+		if vote {
+			return false
+		}
+		rs.SkipVotes = append(rs.SkipVotes[:i:i], rs.SkipVotes[i+1:]...)
+		if len(rs.SkipVotes) == 0 {
+			rs.SkipVotes = nil
+		}
+		rs.Version++
+		return true
+	}
+	if !vote {
+		return false
+	}
+	rs.SkipVotes = append(rs.SkipVotes, voter)
+	rs.Version++
+	return true
+}
+
+// HasSkipVote reports whether voter currently votes to skip.
+func (rs *RoomState) HasSkipVote(voter string) bool {
+	for _, v := range rs.SkipVotes {
+		if v == voter {
+			return true
+		}
+	}
+	return false
+}
+
+// PruneSkipVotes drops skip votes whose voter is not in present (a listener
+// who left no longer counts). Bumps Version only when something was dropped.
+func (rs *RoomState) PruneSkipVotes(present map[string]bool) bool {
+	kept := make([]string, 0, len(rs.SkipVotes))
+	for _, v := range rs.SkipVotes {
+		if present[v] {
+			kept = append(kept, v)
+		}
+	}
+	if len(kept) == len(rs.SkipVotes) {
+		return false
+	}
+	if len(kept) == 0 {
+		kept = nil
+	}
+	rs.SkipVotes = kept
+	rs.Version++
+	return true
+}
+
+// SkipVotesNeeded is how many skip votes pass the track for n distinct
+// listeners present: half of them rounded up, but never fewer than 2 once two
+// or more people are in the room (one voter cannot skip for a group), and 1
+// when alone. n <= 0 needs nothing.
+func SkipVotesNeeded(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	need := (n + 1) / 2
+	if n >= 2 && need < 2 {
+		need = 2
+	}
+	return need
 }
 
 // Add appends a track to the queue, generates an ID, stamps the server-side
@@ -483,4 +559,29 @@ func (rs *RoomState) SetSpotifySource(trackID string, ref SourceRef) error {
 		}
 	}
 	return fmt.Errorf("track not found: %s", trackID)
+}
+
+// RewriteSkipVoter rekeys oldVoter to newVoter in SkipVotes (guest-to-account
+// rebind, #172), dropping the old key when newVoter already voted. No Version
+// bump: the rebind mutation bumps once.
+func (rs *RoomState) RewriteSkipVoter(oldVoter, newVoter string) {
+	foundOld, foundNew := false, false
+	for _, v := range rs.SkipVotes {
+		foundOld = foundOld || v == oldVoter
+		foundNew = foundNew || v == newVoter
+	}
+	if !foundOld {
+		return
+	}
+	out := make([]string, 0, len(rs.SkipVotes))
+	for _, v := range rs.SkipVotes {
+		if v == oldVoter {
+			if foundNew {
+				continue
+			}
+			v = newVoter
+		}
+		out = append(out, v)
+	}
+	rs.SkipVotes = out
 }
