@@ -89,8 +89,10 @@ test('host seek converges on the member within the drift threshold', async ({ br
   await expect(ana.getByTestId('video-room')).toBeVisible();
   await expect(lucas.getByTestId('stage')).toBeVisible();
 
-  // Host starts playback; both stubs run.
-  await lucas.getByTestId('video-main-column').getByRole('button', { name: 'Tocar', exact: true }).click();
+  // The server owns the clock from track start: the add alone starts playback
+  // on the shared transport, so the host sees Pausar without pressing Tocar and
+  // both stubs run.
+  await expect(lucas.getByTestId('video-main-column').getByRole('button', { name: 'Pausar', exact: true })).toBeVisible();
   await expect.poll(() => position(ana)).toBeGreaterThan(0);
 
   // Host scrubs to the middle of the 600s video (the slider max comes from the
