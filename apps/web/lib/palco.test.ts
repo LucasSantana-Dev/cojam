@@ -4,7 +4,7 @@ import {
   WORLDS, pickWorld, frameStage, screenRect, playerRect, boothTop, intersects, toCss,
   boothMembers, crowdMembers, crowdSlots, nextTrack, memberForTrack,
   newVoters, memberForVoter, memberForClient, placeBubble, placeTag,
-  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, upNext, boardRect, BOARD_MAX, SPRITE_H, EDGE_COLS, plainSideColours, tagName, phoneTagMaxWidth, type PalcoMember,
+  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, COMPACT_CROWD_MIN, COMPACT_CROWD_ROWS, PANEL_CHROME, PANEL_LIST_MIN, upNext, boardRect, BOARD_MAX, SPRITE_H, EDGE_COLS, plainSideColours, tagName, phoneTagMaxWidth, type PalcoMember,
 } from './palco';
 
 const t = (id: string, addedBy: string, addedByUserId?: string): TrackRef => ({ id, title: id, artist: 'A', addedBy, addedByUserId, sources: {} });
@@ -91,27 +91,38 @@ describe('frameStage', () => {
     expect(short.height).toBe((wide.screen.h + 2 * COMPACT_PAD) * short.scale);
   });
 
-  it('compact phone framing keeps the front row in view under the player, at the same scale', () => {
-    const open = frameStage(phone, 390, 520);
-    const f = frameStage(phone, 390, 520, true);
-    expect(f.scale).toBe(open.scale);
+  it('compact phone framing shows a strip of the front row only when the panel keeps its room', () => {
+    // 390x844: the HUD leaves ~598 px; the stage may grow ~12 px so the chat list keeps >= 230 px.
+    const ch = 598;
+    const f = frameStage(phone, 390, ch, true);
+    expect(f.crowd).toBe(true);
     expect(f.scale).toBe(2);
+    expect(f.height).toBeLessThanOrEqual(ch - PANEL_CHROME - PANEL_LIST_MIN);
     const p = playerRect(phone, f, 390);
-    expect(p.y).toBe(COMPACT_PAD * f.scale);
-    // From the player's bottom to the bottom of the view: at least 110 CSS px of crowd.
-    expect(f.height - (p.y + p.h)).toBeGreaterThanOrEqual(110);
-    // Heads (and their tags) clear of the player, feet inside the view.
+    expect(p).toMatchObject({ y: 0, w: 356, h: 200 });
+    const strip = f.height - (p.y + p.h);
+    expect(strip).toBeGreaterThanOrEqual(COMPACT_CROWD_MIN * f.scale);
+    // Tags clear of the player; the heads start right under them.
     const { slots } = crowdSlots(8, phone, f, 3);
-    const feetCss = toCss(f, 0, slots[0].feet)[1];
     const headCss = toCss(f, 0, slots[0].feet - SPRITE_H)[1];
     expect(headCss - 24).toBeGreaterThanOrEqual(p.y + p.h);
-    expect(feetCss).toBeLessThanOrEqual(f.height);
+    expect(headCss).toBeLessThan(f.height);
     // The DJs step out of the strip rather than stand over the crowd.
     expect(toCss(f, 0, boothTop(phone, f, p))[1]).toBeGreaterThanOrEqual(f.height);
-    for (const [cw, ch] of [[360, 500], [414, 540]] as const) {
-      const g = frameStage(phone, cw, ch, true);
-      expect(g.scale).toBe(2);
-      expect(g.height).toBeLessThanOrEqual(380);
+    // Roomier phones get a taller strip, never past the cap.
+    const tall = frameStage(phone, 390, 760, true);
+    expect(tall.height).toBeGreaterThan(f.height);
+    expect(tall.height).toBeLessThanOrEqual((100 + COMPACT_CROWD_ROWS) * 2);
+  });
+
+  it('compact phone framing falls back to the thin strip (no crowd) on short or small windows', () => {
+    for (const [cw, ch] of [[390, 460 - 71], [360, 498], [390, 300]] as const) {
+      const f = frameStage(phone, cw, ch, true);
+      expect(f.compact).toBe(true);
+      expect(f.crowd).toBeUndefined();
+      expect(f.scale).toBe(2);
+      expect(f.height).toBe((100 + 2 * COMPACT_PAD) * 2);
+      expect(playerRect(phone, f, cw).h).toBeGreaterThanOrEqual(200);
     }
   });
 

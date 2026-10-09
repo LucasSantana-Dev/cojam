@@ -125,11 +125,17 @@ export const FULL_TOP = 28;
 export const CROWD_EXTRA = 40;
 // Compact framing (phone with Fila or Chat open): the screen plus a thin strip.
 export const COMPACT_PAD = 6;
-// ...and, on the vertical stage, the front row of the crowd (heads, tags and
-// bodies) under the player: world rows from the player's bottom pad to the feet.
-export const COMPACT_CROWD_ROWS = 72;
-// Rows of floor kept under the feet there, for the "+N na plateia" chip.
-export const COMPACT_FLOOR = 10;
+// ...and, on the vertical stage, a strip of the front row (tags and heads)
+// right under the player, but only when the open panel keeps its room: the
+// strip takes whatever height is left once the panel has PANEL_CHROME (its
+// title, composer and tab gap, measured) plus PANEL_LIST_MIN for its list
+// (owner budget: the chat list stays >= 230 px at 390x844).
+export const COMPACT_CROWD_ROWS = 60;
+export const COMPACT_CROWD_MIN = 18;
+export const PANEL_CHROME = 127;
+export const PANEL_LIST_MIN = 235;
+// World rows a name tag takes above a head in the strip.
+const STRIP_TAG_ROWS = 14;
 // World pixels the scene draws past each side of the art (sky, ground, crowd).
 export const SIDE_EXT = 60;
 
@@ -173,6 +179,8 @@ export interface Framing {
   // Height of the stage area in CSS px (may be less than offered: no empty ground).
   height: number;
   compact: boolean;
+  // Compact phone framing that also shows a strip of the front row.
+  crowd?: boolean;
 }
 
 export function frameStage(world: WorldDef, cw: number, ch: number, compact = false): Framing {
@@ -193,10 +201,15 @@ export function frameStage(world: WorldDef, cw: number, ch: number, compact = fa
   const half = player.h / scale / 2;
   const minRows = Math.max(world.screen.h, Math.ceil(player.h / scale)) + 2 * COMPACT_PAD;
   if (compact && world.kind === 'phone') {
-    // Player on top, then the front row: the crowd stays in sight under an open panel.
-    const h = Math.ceil(player.h / scale) + COMPACT_PAD + COMPACT_CROWD_ROWS;
-    const feet = world.liveBottom + world.frontOff + COMPACT_FLOOR;
-    return { scale, w, h, ox, camLeft, camTop: feet - h, crowdBottom: world.liveBottom, height: h * scale, compact: true };
+    // Player flush on top, then as much of the front row as the panel can spare.
+    const playerRows = Math.ceil(player.h / scale);
+    const strip = Math.min(COMPACT_CROWD_ROWS, Math.floor((ch - PANEL_CHROME - PANEL_LIST_MIN) / scale) - playerRows);
+    if (strip >= COMPACT_CROWD_MIN) {
+      const h = playerRows + strip;
+      const feet = world.liveBottom + world.frontOff;
+      const camBottom = Math.min(feet + 2, feet - SPRITE_H - STRIP_TAG_ROWS + strip);
+      return { scale, w, h, ox, camLeft, camTop: camBottom - h, crowdBottom: world.liveBottom, height: h * scale, compact: true, crowd: true };
+    }
   }
   if (compact || avail < minRows) {
     const h = minRows;
@@ -248,7 +261,7 @@ export function playerRect(world: WorldDef, f: Framing, cw: number): Rect {
   if (w === s.w && h === s.h) return s;
   const cx = world.kind === 'phone' ? cw / 2 : s.x + s.w / 2;
   const x = Math.max(0, Math.min(cw - w, Math.round(cx - w / 2)));
-  if (f.compact && world.kind === 'phone') return { x, y: COMPACT_PAD * f.scale, w, h };
+  if (f.crowd) return { x, y: 0, w, h };
   const y = Math.max(0, Math.min(f.height - h, Math.round(s.y + s.h / 2 - h / 2)));
   return { x, y, w, h };
 }
@@ -257,7 +270,7 @@ export function playerRect(world: WorldDef, f: Framing, cw: number): Rect {
 // DJs stand just below it: their head row in world px.
 export function boothTop(world: WorldDef, f: Framing, player: Rect): number {
   // Compact phone: the strip under the player belongs to the crowd, the DJs step out of view.
-  if (f.compact && world.kind === 'phone') return f.camTop + f.h + 4;
+  if (f.crowd) return f.camTop + f.h + 4;
   const below = f.camTop + Math.ceil((player.y + player.h) / f.scale) + 2;
   return world.kind === 'phone' ? Math.max(world.booths[0].top, below) : world.booths[0].top;
 }
