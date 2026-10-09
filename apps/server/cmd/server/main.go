@@ -22,6 +22,7 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
+	"github.com/LucasSantana-Dev/cojam/server/internal/events"
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/listenbrainz"
@@ -391,6 +392,14 @@ func main() {
 	} else {
 		logger.Info("persistence_disabled", "store", "memory", "hint", "set DATABASE_URL to persist rooms")
 	}
+
+	// Anonymous product events (owner decision 2026-10-09). After the database
+	// block so the pool is known; stopped before the pool-close hook runs.
+	eventsWriter, stopEvents := setupProductEvents(os.Getenv, logger, metrics, dbPool)
+	productEventSink = eventsWriter
+	h.WithEvents(eventsWriter)
+	shutdownHooks = append([]func(){h.StartPeakFlusher(), stopEvents}, shutdownHooks...)
+
 	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("YOUTUBE_API_KEY") != "" {
 		cachedMatcher := match.NewCachedMatcher(match.ResolveYouTube, func(hit bool) {
 			if hit {
@@ -404,6 +413,8 @@ func main() {
 				}
 				logger.Info("match_cache", "hit", false)
 			}
+			// A source lookup, not a typed search: provider tells them apart.
+			eventsWriter.Emit(events.Event{Name: events.Search, Props: map[string]any{"provider": "youtube", "cache_hit": hit}})
 		})
 		h.WithMatcher(cachedMatcher)
 		h.WithYouTubeQuota(match.YouTubeQuotaUntil).WithYouTubeQuotaNotice(match.YouTubeQuotaNoticeUntil)
@@ -426,6 +437,7 @@ func main() {
 				}
 				logger.Info("spotify_match_cache", "hit", false)
 			}
+			eventsWriter.Emit(events.Event{Name: events.Search, Props: map[string]any{"provider": "spotify", "cache_hit": hit}})
 		})
 		h.WithSpotifyMatcher(spotifyCachedMatcher)
 		logger.Info("spotify_matcher_enabled", "provider", "spotify")

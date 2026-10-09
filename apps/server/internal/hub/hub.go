@@ -15,6 +15,7 @@ import (
 
 	"github.com/centrifugal/centrifuge"
 
+	"github.com/LucasSantana-Dev/cojam/server/internal/events"
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/playlist"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
@@ -237,7 +238,11 @@ type Hub struct {
 	logger          *slog.Logger
 	moderationAudit ModerationAudit
 	metrics         *obs.Metrics
-	matcher         Matcher
+	// events receives anonymous product events (see events.go). Nil = off.
+	events events.Sink
+	// peaks tracks the per-room, per-hour listener peak (listener_peak).
+	peaks   peakTracker
+	matcher Matcher
 	// ytQuotaUntil reports when the YouTube search quota resets (zero time =
 	// available). Nil without a YouTube matcher.
 	ytQuotaUntil func() time.Time
@@ -724,7 +729,11 @@ func (h *Hub) Join(clientID, roomID string) {
 	if memberCount >= 2 {
 		h.observeFirstShared(roomID)
 	}
+	h.observePeak(roomID, memberCount)
 	if !alreadyMember {
+		// "via" (link|public|code) is not knowable here: the server cannot
+		// tell how the client got the id, so the prop is omitted.
+		h.emit(events.Event{Name: events.RoomJoined, RoomID: roomID, ActorID: rateLimitKey(clientID, userID)})
 		h.announceMembership(roomID, h.displayName(clientID), "entrou")
 	}
 	// A room reloaded from the store may already be playing video.
@@ -1275,7 +1284,9 @@ func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 	}
 
 	// If not found, create fresh
+	created := false
 	if state == nil {
+		created = true
 		if !create {
 			h.notFound.add(roomID)
 			return nil, nil
@@ -1310,6 +1321,9 @@ func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 	room := &Room{State: state}
 	room.touch()
 	h.rooms[roomID] = room
+	if created {
+		h.emit(events.Event{Name: events.RoomCreated, RoomID: roomID})
+	}
 	return room, nil
 }
 
@@ -1492,12 +1506,16 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 	// A room that is already playing but has no transport (created before the
 	// server owned the clock, or restored from the store) is the bug signal.
 	absentBefore := room.State.NowPlayingID != "" && room.State.Transport == nil
+	prevPlaying := room.State.NowPlayingID
+	var started events.Event
+	var didStart bool
 	if fn != nil {
 		if err := fn(room.State); err != nil {
 			room.mu.Unlock()
 			return nil, err
 		}
 		h.ensureTransportLocked(roomID, room.State, absentBefore)
+		started, didStart = trackStartedEvent(roomID, prevPlaying, room.State)
 	}
 	// Any mutation can move the YouTube window (add, advance, vote, remove,
 	// restore on join): claim the lookups it needs while still holding the
@@ -1517,6 +1535,9 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 	}
 	data, err := json.Marshal(&outbound)
 	room.mu.Unlock()
+	if didStart {
+		h.emit(started)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1869,6 +1890,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			req.Track.AddedBy = name
 		}
 		req.Track.AddedByUserID = userID
+		req.Track.Origin = queue.OriginManual
 		var addedID string
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
 			if len(s.Queue) >= queue.MaxQueueSize {
@@ -1904,6 +1926,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			if err != nil {
 				return mapQueueErr(err)
 			}
+			tr.Origin = queue.OriginHistory
 			added = *tr
 			h.enrichBookkeeping(tr)
 			return nil
@@ -1968,7 +1991,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return nil, fmt.Errorf("now_playing.advance: roomId required")
 		}
 
-		return h.advanceAfter(req.RoomID, req.AfterID, true)
+		return h.advanceAfterWith(req.RoomID, req.AfterID, true, nil, rlKey)
 
 	case "now_playing.skip_unplayable":
 		// A controller's client reports that the playing track's only source
@@ -1990,7 +2013,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		}
 		return h.advanceAfterWith(req.RoomID, req.TrackID, false, func(title string) string {
 			return fmt.Sprintf("%s pulada: o vídeo não pode tocar fora do YouTube", title)
-		})
+		}, "")
 
 	case "queue.reorder":
 		var req struct {
@@ -2082,6 +2105,8 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			return json.Marshal([]SearchResult{})
 		}
 
+		// Counted, never recorded: no text, no query length, no results.
+		h.emit(events.Event{Name: events.Search, ActorID: rlKey, Props: map[string]any{"provider": "catalog", "cache_hit": false}})
 		return json.Marshal(results)
 
 	case "track.depth":
@@ -2771,12 +2796,15 @@ func radioSeedAfterEmptied(s *queue.RoomState) *queue.TrackRef {
 // now-playing chat line. withSkipCheck is false for the sourceless auto skip,
 // which loops itself.
 func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.RawMessage, error) {
-	return h.advanceAfterWith(roomID, afterID, withSkipCheck, nil)
+	return h.advanceAfterWith(roomID, afterID, withSkipCheck, nil, "")
 }
 
 // advanceAfterWith is advanceAfter with the skip chat line overridable
 // (skipLine nil keeps the sourceless wording).
-func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipLine func(title string) string) (json.RawMessage, error) {
+//
+// actor is the caller's rate-limit key for the track_skipped event ("" when the
+// skip is automatic).
+func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipLine func(title string) string, actor string) (json.RawMessage, error) {
 	if skipLine == nil {
 		skipLine = func(title string) string {
 			return fmt.Sprintf("%s não está disponível no seu serviço e foi pulada", title)
@@ -2796,11 +2824,17 @@ func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipL
 	// enter History, and chat says why it vanished.
 	var skipped *queue.TrackRef
 
+	// track_skipped: a controller advancing before the track could have ended
+	// (the web client's skip button and its end-of-track advance share this
+	// RPC; the position tells them apart).
+	skippedEarly := false
+
 	res, err := mutate(roomID, func(s *queue.RoomState) error {
 		// Store old NowPlayingID to detect if advance actually changed state
 		oldNowPlayingID := s.NowPlayingID
 
 		if withSkipCheck {
+			skippedEarly = s.NowPlayingID == afterID && advancedEarly(s, time.Now().UnixMilli())
 			if err := s.AdvanceAfter(afterID); err != nil {
 				return err
 			}
@@ -2845,6 +2879,10 @@ func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipL
 
 	if err == nil && skipped != nil {
 		h.publishSystemChat(roomID, skipLine(skipped.Title))
+		h.emitTrackSkipped(roomID, "", skipByAuto)
+	}
+	if err == nil && skippedEarly {
+		h.emitTrackSkipped(roomID, actor, skipByHost)
 	}
 
 	// The system message rides chat, not RoomState: no Version bump, no
@@ -3083,6 +3121,7 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 			}
 			seen[key] = true
 			track.AddedBy = "radio"
+			track.Origin = queue.OriginRadio
 			added := s.Add(track)
 			h.enrichBookkeeping(added)
 			appended = append(appended, *added)

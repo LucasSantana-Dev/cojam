@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
+	"github.com/LucasSantana-Dev/cojam/server/internal/events"
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifytoken"
@@ -168,6 +169,11 @@ func spotifyExchangeHandler(
 				logger.Error("spotify_token_store_failed", "err", err.Error())
 			}
 		}
+
+		// Spotify accepted the code: a listener connected the provider. The
+		// actor is the connection identity, hashed by the writer; the token,
+		// scope and redirect never reach the event.
+		emitProductEvent(events.Event{Name: events.ProviderConnected, ActorID: "user:" + sub, Props: map[string]any{"provider": "spotify"}})
 
 		writeSpotifyJSON(w, http.StatusOK, spotifyAccessResponse{
 			AccessToken: reply.AccessToken,
