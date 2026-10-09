@@ -78,7 +78,7 @@ describe('removed-from-room screen (palco, wave 3)', () => {
     const { container } = render(<RoomClient roomId="DWB86HRONU22" />);
     await act(async () => {});
     act(() => useStore.getState().setKicked(true));
-    expect(wide().querySelector('.pws-led')?.getAttribute('data-led')).toBe('FIM / VOCE SAIU DA SALA');
+    expect(wide().querySelector('.pws-led')?.getAttribute('data-led')).toBe('FIM / FORA DA SALA');
     expect(wide().querySelector('img.pws-sprite')).toBeNull();
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Você foi removido da sala');
     expect(screen.getByText('O anfitrião removeu você desta sessão.')).toBeInTheDocument();

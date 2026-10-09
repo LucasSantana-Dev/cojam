@@ -16,7 +16,7 @@ export default function OfflinePage() {
   return (
     <div className="pw">
       <PalcoBrandBar />
-      <PalcoScene kind="callback" led={{ title: 'SEM REDE', scale: 3, sub: 'Sem conexao' }}>
+      <PalcoScene kind="callback" led={{ title: 'SEM REDE', scale: 3, sub: 'Offline' }}>
         <main id="main" className="pw-dock pw-plate">
           <div className="pw-dock__copy">
             <p className="pw-eyebrow">Offline</p>
