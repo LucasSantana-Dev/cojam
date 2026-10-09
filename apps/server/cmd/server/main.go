@@ -361,6 +361,9 @@ func main() {
 		purgeCtx, stopPurge := context.WithCancel(context.Background())
 		go match.PurgeEvery(purgeCtx, 24*time.Hour, ytSearchStore.Purge, func(n int64, err error) {
 			if err != nil {
+				if purgeCtx.Err() != nil {
+					return // shutting down mid-purge: not a failure worth a line
+				}
 				logger.Warn("youtube_search_cache_purge_failed", "err", err.Error())
 			} else if n > 0 {
 				logger.Info("youtube_search_cache_purged", "rows", n)

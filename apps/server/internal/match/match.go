@@ -410,7 +410,7 @@ func searchYouTubeCached(ctx context.Context, query string) ([]YouTubeCandidate,
 	if cands, ok := searchL1(key); ok {
 		return cands, nil
 	}
-	v, err, _ := searchFlight.Do(key, func() (any, error) {
+	ch := searchFlight.DoChan(key, func() (any, error) {
 		// A flight that just finished may have filled L1 already.
 		if cands, ok := searchL1(key); ok {
 			return cands, nil
@@ -434,10 +434,17 @@ func searchYouTubeCached(ctx context.Context, query string) ([]YouTubeCandidate,
 		}
 		return cands, nil
 	})
-	if err != nil {
-		return nil, err
+	// Every waiter leaves on its own context; the flight carries on for the
+	// others (bounded by its own timeout).
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-ch:
+		if r.Err != nil {
+			return nil, r.Err
+		}
+		return append([]YouTubeCandidate(nil), r.Val.([]YouTubeCandidate)...), nil
 	}
-	return append([]YouTubeCandidate(nil), v.([]YouTubeCandidate)...), nil
 }
 
 func searchL1(key string) ([]YouTubeCandidate, bool) {
