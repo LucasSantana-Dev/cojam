@@ -36,7 +36,7 @@ class FakeSpotifySDKPlayer {
   async connect() {
     return true;
   }
-  async getCurrentState() {
+  async getCurrentState(): Promise<unknown> {
     return null;
   }
 }
@@ -330,5 +330,55 @@ describe('SpotifyPlayer problem surface (card, not the closed menu)', () => {
     render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} onProblem={onProblem} onPlayError={onPlayError} />);
     await waitFor(() => expect(onPlayError).toHaveBeenCalledWith('t1'));
     expect(onProblem).not.toHaveBeenCalledWith('sdk', undefined);
+  });
+});
+
+describe('SpotifyPlayer seek refusal', () => {
+  class SeekablePlayer extends FakeSpotifySDKPlayer {
+    async getCurrentState(): Promise<unknown> {
+      return { paused: false, position: 0, track_window: { current_track: { id: 'x', uri: 'spotify:track:x' }, previous_tracks: [] } };
+    }
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    (window as { Spotify?: unknown }).Spotify = { Player: SeekablePlayer };
+    window.__COJAM_ENV__ = { spotifyClientId: 'test-client' };
+    useStore.setState({ state: roomState });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    delete (window as { Spotify?: unknown }).Spotify;
+    delete window.__COJAM_ENV__;
+    useStore.setState({ state: undefined });
+  });
+
+  it('a 403 on seek flips canSeek false, warns once and stops calling the API', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) =>
+      String(url).includes('/seek') ? ({ ok: false, status: 403 } as Response) : ({ ok: true, status: 204 } as Response),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    let player: import('@/lib/playerInterface').IPlayer | null = null;
+    render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} onPlayerReady={(p) => (player = p)} />);
+    await waitFor(() => expect(player).not.toBeNull());
+    expect(player!.canSeek?.()).toBe(true);
+    await player!.seekToMs(5000);
+    expect(player!.canSeek?.()).toBe(false);
+    await player!.seekToMs(6000);
+    const seeks = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/seek'));
+    expect(seeks).toHaveLength(1);
+    expect(warn.mock.calls.filter((c) => String(c[0]).includes('seek refused'))).toHaveLength(1);
+  });
+
+  it('a successful seek keeps canSeek true', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 204 }) as Response));
+    let player: import('@/lib/playerInterface').IPlayer | null = null;
+    render(<SpotifyPlayer authorized={true} onAuthorized={() => {}} onPlayerReady={(p) => (player = p)} />);
+    await waitFor(() => expect(player).not.toBeNull());
+    await player!.seekToMs(5000);
+    expect(player!.canSeek?.()).toBe(true);
   });
 });

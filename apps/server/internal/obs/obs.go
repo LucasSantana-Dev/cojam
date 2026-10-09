@@ -27,6 +27,9 @@ type Metrics struct {
 	RoomsEvicted              prometheus.Counter
 	RoomsPersistedEvicted     prometheus.Counter
 	PublishErrors             prometheus.Counter
+	// PlayingWithoutTransport counts rooms found playing with no transport
+	// (the server-owned clock was missing). Should trend to zero after the fix.
+	PlayingWithoutTransport prometheus.Counter
 
 	// Adoption counters (F1/F4/F8 usage signal).
 	VotesCast        prometheus.Counter
@@ -105,6 +108,10 @@ func New() *Metrics {
 			Name: "music_jam_publish_errors_total",
 			Help: "Total room-channel publication failures.",
 		}),
+		PlayingWithoutTransport: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_room_playing_without_transport_total",
+			Help: "Rooms found with a now-playing track but no transport (sync clock missing). Should be about 0.",
+		}),
 		VotesCast: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "music_jam_votes_cast_total",
 			Help: "Total queue.vote toggles applied (F4 adoption).",
@@ -153,7 +160,7 @@ func New() *Metrics {
 	}
 	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
 		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.RoomsPersistedEvicted,
-		m.PublishErrors, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
+		m.PublishErrors, m.PlayingWithoutTransport, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
 		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject, m.ReportsFiled, m.RetentionPurgedRows)
 
 	return m
@@ -191,8 +198,12 @@ func (m *Metrics) StoreVersionGuardReject() { m.StoreVersionGuardRejected.Inc() 
 // RateLimitReject counts one rate-limited RPC by method.
 func (m *Metrics) RateLimitReject(method string) { m.RateLimitRejected.WithLabelValues(method).Inc() }
 
-func (m *Metrics) RoomEvicted()     { m.RoomsEvicted.Inc() }
-func (m *Metrics) PublishError()    { m.PublishErrors.Inc() }
+func (m *Metrics) RoomEvicted()  { m.RoomsEvicted.Inc() }
+func (m *Metrics) PublishError() { m.PublishErrors.Inc() }
+
+// RoomPlayingWithoutTransport counts one room found playing with no transport.
+func (m *Metrics) RoomPlayingWithoutTransport() { m.PlayingWithoutTransport.Inc() }
+
 func (m *Metrics) VoteCast()        { m.VotesCast.Inc() }
 func (m *Metrics) ChatMessageSent() { m.ChatMessagesSent.Inc() }
 func (m *Metrics) RoomListed()      { m.RoomsListed.Inc() }

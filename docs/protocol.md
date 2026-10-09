@@ -148,7 +148,16 @@ omitted (and no `trackId` switches the track) the server resumes from the paused
 `positionMs`, so pause then play continues instead of restarting.
 `transport.play` optionally switches
 `nowPlayingId` first. All three stamp `transport.updatedAtServerMs` server-side
-and publish the full `RoomState`. `sync.ping` is a read returning the server
+and publish the full `RoomState`. With sync on, the server also owns the clock
+from the moment a track starts on its own (`queue.add` into an empty room,
+advance, skip, history re-add, `room.join` of a room that is playing without a
+transport): any mutation that leaves a now-playing track and no transport stamps
+`{ state: "playing", positionMs: 0, updatedAtServerMs: now }`, so every client
+converges on the same position without anyone pressing play. A room found
+playing without a transport (legacy or restored state) has no known start time,
+so it is anchored at position 0 now; that case is logged as `transport_absent`
+and counted in `music_jam_room_playing_without_transport_total` (should be
+about 0). `sync.ping` is a read returning the server
 clock (unix ms) for client offset estimation.
 
 Transport RPCs draw from their own per-caller limiter (burst 20, one token per

@@ -1489,11 +1489,15 @@ func (h *Hub) mutateNoSkip(roomID string, fn func(*queue.RoomState) error) (json
 func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) error) (json.RawMessage, error) {
 	room.mu.Lock()
 	versionBefore := room.State.Version
+	// A room that is already playing but has no transport (created before the
+	// server owned the clock, or restored from the store) is the bug signal.
+	absentBefore := room.State.NowPlayingID != "" && room.State.Transport == nil
 	if fn != nil {
 		if err := fn(room.State); err != nil {
 			room.mu.Unlock()
 			return nil, err
 		}
+		h.ensureTransportLocked(roomID, room.State, absentBefore)
 	}
 	// Any mutation can move the YouTube window (add, advance, vote, remove,
 	// restore on join): claim the lookups it needs while still holding the
@@ -1554,6 +1558,37 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 		}
 	}
 	return data, nil
+}
+
+// ensureTransportLocked makes the server own the playback clock (P0 desync):
+// with sync on, any room that has a now-playing track also has a transport.
+// Tracks that start on their own (queue.add on an empty room, advance, history
+// re-add) never went through transport.play, so Transport stayed nil, clients
+// skipped drift correction and each device free-ran from its own load time.
+// The anchor is position 0 at the current server time: a new track starts now,
+// and for a room already playing without a transport (backfill on join or the
+// next mutation) the true start is unknown (TrackRef.AddedAt is the add time,
+// not the start), so now is the only honest anchor. Callers hold room.mu.
+// absentBefore reports the room was playing without a transport before the
+// mutation; that is logged and counted so the signal trends to zero.
+func (h *Hub) ensureTransportLocked(roomID string, s *queue.RoomState, absentBefore bool) {
+	if !h.syncEnabled || s.NowPlayingID == "" || s.Transport != nil {
+		return
+	}
+	if absentBefore {
+		if h.logger != nil {
+			h.logger.Warn("transport_absent", "room_id", roomID, "where", "mutate", "now_playing_id", s.NowPlayingID)
+		}
+		if h.metrics != nil {
+			h.metrics.RoomPlayingWithoutTransport()
+		}
+	}
+	s.Transport = &queue.TransportState{
+		State:             "playing",
+		PositionMs:        0,
+		UpdatedAtServerMs: time.Now().UnixMilli(),
+	}
+	s.Version++
 }
 
 func (h *Hub) publish(roomID string, state json.RawMessage) error {
