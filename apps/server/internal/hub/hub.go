@@ -1671,10 +1671,14 @@ func (h *Hub) observeRPC(method string, data []byte, err error, d time.Duration)
 			"room_id", probe.RoomID,
 			"duration_ms", float64(d.Microseconds()) / 1000.0,
 		}
-		if err != nil {
-			h.logger.Error("rpc", append(attrs, "err", err.Error())...)
-		} else {
+		switch rpcMetricStatus(err) {
+		case "ok":
 			h.logger.Info("rpc", attrs...)
+		case "user_error":
+			// The caller's mistake (validation, rate limit, not-host), not a fault.
+			h.logger.Warn("rpc", append(attrs, "err", err.Error())...)
+		default:
+			h.logger.Error("rpc", append(attrs, "err", err.Error())...)
 		}
 	}
 }
