@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -151,33 +150,37 @@ func main() {
 
 	var shutdownHooks []func()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logLevel, logLevelOK := parseLogLevel(os.Getenv("LOG_LEVEL"))
+	logger := newLogger(os.Stdout, logLevel, version)
 	slog.SetDefault(logger)
+	if !logLevelOK {
+		logger.Warn("config", "problem", "LOG_LEVEL must be debug, info, warn or error; using info")
+	}
 
 	fatalCfg, warnCfg := validateProdConfig(os.Getenv)
 	for _, w := range warnCfg {
 		logger.Warn("config", "problem", w)
 	}
 	if len(fatalCfg) > 0 {
-		log.Fatal(formatConfigErrors(fatalCfg))
+		fatal(logger, "config_invalid", "problems", formatConfigErrors(fatalCfg))
 	}
 
 	metrics := obs.New()
 
 	// Create centrifuge node
 	node, err := centrifuge.New(centrifuge.Config{
-		LogLevel: centrifuge.LogLevelInfo,
+		LogLevel: centrifugeLogLevel(logLevel),
 		LogHandler: func(e centrifuge.LogEntry) {
-			logger.Info("centrifuge", "level", int(e.Level), "msg", e.Message, "fields", e.Fields)
+			logger.Log(context.Background(), centrifugeSlogLevel(e.Level), "centrifuge", "level", int(e.Level), "msg", e.Message, "fields", e.Fields)
 		},
 	})
 	if err != nil {
-		log.Fatalf("failed to create centrifuge node: %v", err)
+		fatal(logger, "centrifuge_create_failed", "err", err.Error())
 	}
 
 	// Start node
 	if err := node.Run(); err != nil {
-		log.Fatalf("failed to run centrifuge node: %v", err)
+		fatal(logger, "centrifuge_run_failed", "err", err.Error())
 	}
 
 	// Create hub
@@ -273,11 +276,11 @@ func main() {
 	if raw := os.Getenv("SPOTIFY_TOKEN_KEY"); raw != "" {
 		key, err := base64.StdEncoding.DecodeString(raw)
 		if err != nil {
-			log.Fatalf("SPOTIFY_TOKEN_KEY must be base64-encoded: %v", err)
+			fatal(logger, "spotify_token_key_invalid", "reason", "must be base64-encoded", "err", err.Error())
 		}
 		spotifySealer, err = spotifytoken.NewSealer(key)
 		if err != nil {
-			log.Fatalf("SPOTIFY_TOKEN_KEY must decode to exactly 32 bytes: %v", err)
+			fatal(logger, "spotify_token_key_invalid", "reason", "must decode to exactly 32 bytes", "err", err.Error())
 		}
 	} else {
 		logger.Warn("spotify_token_custody_disabled",
@@ -297,7 +300,7 @@ func main() {
 		// Runtime pool uses DATABASE_URL (typically the hosted provider's pooled URL).
 		pool, err := db.Open(ctx, dbURL)
 		if err != nil {
-			log.Fatalf("failed to open database: %v", err)
+			fatal(logger, "database_open_failed", "err", err.Error())
 		}
 
 		// Migrate via DIRECT_DATABASE_URL when provided: hosted Postgres poolers can
@@ -308,17 +311,17 @@ func main() {
 				migratePool, err := db.Open(ctx, direct)
 				if err != nil {
 					pool.Close()
-					log.Fatalf("failed to open DIRECT_DATABASE_URL for %s: %v", label, err)
+					fatal(logger, "direct_database_open_failed", "step", label, "err", err.Error())
 				}
 				err = migrate(ctx, migratePool)
 				migratePool.Close()
 				if err != nil {
 					pool.Close()
-					log.Fatalf("failed %s: %v", label, err)
+					fatal(logger, "migration_failed", "step", label, "err", err.Error())
 				}
 			} else if err := migrate(ctx, pool); err != nil {
 				pool.Close()
-				log.Fatalf("failed %s: %v", label, err)
+				fatal(logger, "migration_failed", "step", label, "err", err.Error())
 			}
 		}
 		runMigration(db.Migrate, "migrate database")
@@ -331,7 +334,7 @@ func main() {
 			hasAuth, err := db.HasAuthSchema(ctx, pool)
 			if err != nil {
 				pool.Close()
-				log.Fatalf("failed to check for auth schema: %v", err)
+				fatal(logger, "auth_schema_check_failed", "err", err.Error())
 			}
 			if hasAuth {
 				runMigration(db.MigrateSupabase, "migrate supabase schema")
@@ -568,7 +571,7 @@ func main() {
 	// age only (no status column exists, so no legal-hold exemption).
 	reportWindow, err := reportRetention(os.Getenv)
 	if err != nil {
-		log.Fatal(err)
+		fatal(logger, "report_retention_config_invalid", "err", err.Error())
 	}
 	retention := report.NewRetention(reportWindow, retentionBatch,
 		report.RetentionTarget{Table: "reports", Purger: reports},
@@ -687,6 +690,7 @@ func main() {
 	r := chi.NewRouter()
 
 	// Add middleware
+	r.Use(requestID)
 	r.Use(accessLog(logger))
 	r.Use(middleware.Recoverer)
 
@@ -709,7 +713,7 @@ func main() {
 	// the operator; unset means DB and logs only.
 	var reportNotifier report.Notifier
 	if wh, err := report.NewWebhookNotifier(os.Getenv("REPORT_WEBHOOK_URL"), logger); err != nil {
-		log.Fatalf("invalid REPORT_WEBHOOK_URL: %v", err)
+		fatal(logger, "report_webhook_url_invalid", "err", err.Error())
 	} else if wh != nil {
 		reportNotifier = wh
 		logger.Info("report_webhook_enabled")
@@ -782,15 +786,15 @@ func main() {
 		// instead of leaving /readyz green with no metrics.
 		metricsLn, err := net.Listen("tcp", addr)
 		if err != nil {
-			log.Fatalf("metrics listener bind failed on %s: %v", addr, err)
+			fatal(logger, "metrics_listener_bind_failed", "addr", addr, "err", err.Error())
 		}
 		go func() {
 			if err := metricsServer.Serve(metricsLn); err != nil && err != http.ErrServerClosed {
-				logger.Error("metrics listener failed", "addr", addr, "err", err)
+				logger.Error("metrics_listener_failed", "addr", addr, "err", err)
 			}
 		}()
 		shutdownHooks = append(shutdownHooks, func() { metricsServer.Close() })
-		logger.Info("metrics listener started", "addr", addr)
+		logger.Info("metrics_listener_started", "addr", addr)
 	} else {
 		logger.Info("metrics_listener_disabled")
 	}
@@ -806,12 +810,12 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	log.Println("Starting server on :8080")
+	logger.Info("server_starting", "addr", server.Addr)
 
 	// Start server in a goroutine
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			fatal(logger, "server_error", "err", err.Error())
 		}
 	}()
 
@@ -820,19 +824,19 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
-	log.Println("Shutting down server...")
+	logger.Info("server_shutting_down")
 	h.BeginShutdown() // disconnects from here on are the server leaving: promote no one
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("shutdown error: %v", err)
+		logger.Error("shutdown_error", "err", err.Error())
 	}
 
 	// Shutdown centrifuge node
 	if err := node.Shutdown(ctx); err != nil {
-		log.Printf("node shutdown error: %v", err)
+		logger.Error("node_shutdown_error", "err", err.Error())
 	}
 
 	// Call registered shutdown hooks (e.g. pool.Close() for database)
@@ -840,7 +844,7 @@ func main() {
 		hook()
 	}
 
-	log.Println("Server stopped")
+	logger.Info("server_stopped")
 }
 
 // healthzHandler reports liveness plus the build-stamped version (ldflags
