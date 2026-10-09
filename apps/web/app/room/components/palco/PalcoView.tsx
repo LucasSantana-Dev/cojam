@@ -45,6 +45,13 @@ interface PalcoViewProps {
   activePlayer?: IPlayer | null;
   volume?: ReactNode;
   servicePicker?: ReactNode;
+  // "+ Música": add a song without leaving the stage. The room owns the add
+  // state (its QueuePanel hosts the form); palco opens the Fila panel under or
+  // beside the stage, and goes back to the stage when `addOpen` turns off
+  // (a song was added, or Esc).
+  addOpen?: boolean;
+  onAddOpen?: () => void;
+  onAddClose?: () => void;
 }
 
 const BUBBLE_MS = 4500;
@@ -103,7 +110,7 @@ function PalcoTransport({ roomId, activePlayer, nowPlayingId, playing }: { roomI
   );
 }
 
-export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork, canControl = false, activePlayer = null, volume, servicePicker }: PalcoViewProps) {
+export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork, canControl = false, activePlayer = null, volume, servicePicker, addOpen = false, onAddOpen, onAddClose }: PalcoViewProps) {
   const state = useStore((s) => s.state);
   const members = useStore((s) => s.members);
   const clientId = useStore((s) => s.clientId);
@@ -114,6 +121,32 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
   const world = WORLDS[kind];
   const [panel, setPanel] = useState<Panel>('stage');
   const activePanel: Panel = panel === 'chat' && !chat ? 'stage' : panel;
+  // True while the add form was opened from the HUD: closing it returns to the stage.
+  const [adding, setAdding] = useState(false);
+  const sawOpen = useRef(false);
+  useEffect(() => {
+    if (!adding) {
+      sawOpen.current = false;
+    } else if (addOpen) {
+      sawOpen.current = true;
+    } else if (sawOpen.current) {
+      setAdding(false);
+      setPanel('stage');
+    }
+  }, [adding, addOpen]);
+  const addRef = useRef<HTMLButtonElement>(null);
+  const openAdd = () => {
+    setAdding(true);
+    setPanel('queue');
+    onAddOpen?.();
+  };
+  const onPanelKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && adding) {
+      e.stopPropagation();
+      onAddClose?.();
+      addRef.current?.focus();
+    }
+  };
   const compact = kind === 'phone' && activePanel !== 'stage';
   const [size, setSize] = useState<{ cw: number; ch: number } | null>(null);
   const framing: Framing | null = useMemo(() => (size && size.cw > 0 ? frameStage(world, size.cw, size.ch, compact) : null), [world, size, compact]);
@@ -623,6 +656,11 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
                 ))}
               </div>
             )}
+            {onAddOpen && (
+              <button ref={addRef} type="button" className="palco__toggle palco__add" aria-label="Adicionar música" title="Adicionar música" aria-expanded={adding && addOpen} aria-controls="palco-panel" onClick={openAdd}>
+                <span aria-hidden="true">+</span><span className="palco__add-text" aria-hidden="true"> Música</span>
+              </button>
+            )}
             <button
               type="button"
               className="palco__toggle"
@@ -652,7 +690,13 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
                 aria-controls={id === 'stage' ? undefined : 'palco-panel'}
                 tabIndex={activePanel === id ? 0 : -1}
                 className="palco__tab"
-                onClick={() => setPanel(id)}
+                onClick={() => {
+                  if (adding) {
+                    setAdding(false);
+                    onAddClose?.();
+                  }
+                  setPanel(id);
+                }}
               >
                 {label}
               </button>
@@ -662,7 +706,7 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
       </div>
 
       {activePanel !== 'stage' && (
-        <div id="palco-panel" className="palco__panel" role="tabpanel" aria-labelledby={`palco-tab-${activePanel}`}>
+        <div id="palco-panel" className="palco__panel" role="tabpanel" aria-labelledby={`palco-tab-${activePanel}`} onKeyDown={onPanelKey}>
           {activePanel === 'queue' ? queue : chat}
         </div>
       )}
