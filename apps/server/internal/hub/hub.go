@@ -238,6 +238,9 @@ type Hub struct {
 	moderationAudit ModerationAudit
 	metrics         *obs.Metrics
 	matcher         Matcher
+	// ytQuotaUntil reports when the YouTube search quota resets (zero time =
+	// available). Nil without a YouTube matcher.
+	ytQuotaUntil    func() time.Time
 	spotifyMatcher  Matcher
 	searcher        Searcher
 	playlistFetcher PlaylistFetcher
@@ -513,6 +516,15 @@ var hostOnlyMethods = map[string]bool{
 // WithMatcher enables async YouTube-source enrichment on queue.add.
 func (h *Hub) WithMatcher(m Matcher) *Hub {
 	h.matcher = m
+	return h
+}
+
+// WithYouTubeQuota gives the hub a view of the YouTube search circuit breaker:
+// until returns when the quota resets, or the zero time while searches are
+// allowed. While it is in the future the hub stamps it on outbound state and
+// launches no YouTube lookups.
+func (h *Hub) WithYouTubeQuota(until func() time.Time) *Hub {
+	h.ytQuotaUntil = until
 	return h
 }
 
@@ -1463,11 +1475,19 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 			return nil, err
 		}
 	}
+	// Any mutation can move the YouTube window (add, advance, vote, remove,
+	// restore on join): claim the lookups it needs while still holding the
+	// lock, launch them once it is released.
+	launches := h.markYouTubeWindowLocked(room.State)
+	if len(launches) > 0 {
+		defer h.launchYouTubeLookups(roomID, launches)
+	}
 	changed := room.State.Version != versionBefore
 	// Stamp server capabilities on a shallow copy so the shared state (and what
 	// gets persisted below) never carries them.
 	outbound := *room.State
 	outbound.RadioAvailable = h.similar != nil
+	outbound.YouTubeQuotaUntil = h.quotaUntilMs()
 	data, err := json.Marshal(&outbound)
 	room.mu.Unlock()
 	if err != nil {
@@ -1484,6 +1504,7 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 			}
 		} else {
 			stateCopy.RadioAvailable = false // capability, not persisted state
+			stateCopy.YouTubeQuotaUntil = 0
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := h.store.Save(ctx, &stateCopy); err != nil {
@@ -1792,9 +1813,6 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			h.enrichBookkeeping(added)
 			return nil
 		})
-		if err == nil && h.matcher != nil && req.Track.Sources.YouTube == nil {
-			h.launchTrackEnrich(req.RoomID, addedID, func() bool { return h.enrichYouTube(req.RoomID, addedID, req.Track) })
-		}
 		if err == nil && h.spotifyMatcher != nil && req.Track.Sources.Spotify == nil {
 			h.launchTrackEnrich(req.RoomID, addedID, func() bool { return h.enrichSpotify(req.RoomID, addedID, req.Track) })
 		}
@@ -2181,9 +2199,6 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 				track, ok := byID[id]
 				if !ok {
 					continue
-				}
-				if h.matcher != nil && track.Sources.YouTube == nil {
-					h.launchTrackEnrich(req.RoomID, track.ID, func() bool { return h.enrichYouTube(req.RoomID, track.ID, track) })
 				}
 				if h.spotifyMatcher != nil && track.Sources.Spotify == nil {
 					h.launchTrackEnrich(req.RoomID, track.ID, func() bool { return h.enrichSpotify(req.RoomID, track.ID, track) })
@@ -2642,9 +2657,12 @@ func (h *Hub) enrichQuery(logEvent, title, artist string, configured bool, empty
 	return json.Marshal(result)
 }
 
-// enrichYouTube resolves a YouTube source for a freshly added track and
-// republishes the room state (own mutation → version bump → clients accept).
-func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certain bool) {
+// enrichYouTube resolves a YouTube source for a track in the matching window
+// and republishes the room state (own mutation → version bump → clients
+// accept). certain is false when the lookup errored rather than cleanly
+// missing; quota is true when that error was the exhausted YouTube quota,
+// which stays retryable once it resets.
+func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certain, quota bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -2653,7 +2671,7 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certa
 		if h.logger != nil {
 			h.logger.Info("match_miss", "room_id", roomID, "track_id", trackID, "err", fmt.Sprint(err))
 		}
-		return err == nil
+		return err == nil, errors.Is(err, ErrQuotaExhausted)
 	}
 	if h.metrics != nil {
 		h.metrics.ObserveMatchConfidence(ref.Confidence)
@@ -2668,7 +2686,7 @@ func (h *Hub) enrichYouTube(roomID, trackID string, track queue.TrackRef) (certa
 		h.logger.Info("match_applied", "room_id", roomID, "track_id", trackID,
 			"video_id", ref.VideoID, "confidence", ref.Confidence)
 	}
-	return true
+	return true, false
 }
 
 // radioSeedAfterEmptied returns the track to seed a radio refill when an advance
@@ -3015,9 +3033,6 @@ func (h *Hub) refillRadio(roomID string, seed *queue.TrackRef) {
 	if err == nil {
 		for _, tr := range appended {
 			tr := tr
-			if h.matcher != nil && tr.Sources.YouTube == nil {
-				h.launchTrackEnrich(roomID, tr.ID, func() bool { return h.enrichYouTube(roomID, tr.ID, tr) })
-			}
 			if h.spotifyMatcher != nil && tr.Sources.Spotify == nil {
 				h.launchTrackEnrich(roomID, tr.ID, func() bool { return h.enrichSpotify(roomID, tr.ID, tr) })
 			}

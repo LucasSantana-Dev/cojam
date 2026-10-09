@@ -103,8 +103,12 @@ func TestRefillAllowed_OnePerWindow(t *testing.T) {
 
 func TestAutoSkipSourceless_UnknownStateIsLookedUpFirst(t *testing.T) {
 	var lookups int32
-	m := func(context.Context, string, string, string) (*queue.SourceRef, error) {
-		atomic.AddInt32(&lookups, 1)
+	m := func(_ context.Context, title, _, _ string) (*queue.SourceRef, error) {
+		// "next" is inside the YouTube window too; only the stored track's
+		// lookups are under test (exactly one, never a second blind one).
+		if title == "stored" {
+			atomic.AddInt32(&lookups, 1)
+		}
 		return &queue.SourceRef{VideoID: "found", Confidence: 0.9}, nil
 	}
 	h := NewHub(nil).WithAutoSkipSourceless(true).WithMatcher(m)

@@ -78,6 +78,12 @@ type TrackRef struct {
 	// EnrichChecked is true once a lookup ran in this process and cleanly
 	// missed (or no matcher exists at all). Unknown after a restart.
 	EnrichChecked bool `json:"-"`
+	// YTLookup is true once a YouTube lookup was launched for this track in
+	// this process (in flight or finished): the dedupe flag of the lazy
+	// matching window. YTQuota marks a track whose lookup is owed because the
+	// YouTube quota was exhausted; it is retried once the quota resets.
+	YTLookup bool `json:"-"`
+	YTQuota  bool `json:"-"`
 }
 
 // Track kinds (#258). Empty is treated as KindAudio.
@@ -115,9 +121,14 @@ type RoomState struct {
 	// a server capability, not room state: the hub stamps it on every outbound
 	// state and it is never persisted. Clients use it to hide or disable the
 	// radio toggle.
-	RadioAvailable bool            `json:"radioAvailable"`
-	Version        int64           `json:"version"`
-	Transport      *TransportState `json:"transport,omitempty"`
+	RadioAvailable bool `json:"radioAvailable"`
+	// YouTubeQuotaUntil is the unix ms until which the server's YouTube search
+	// quota is exhausted (0 = available). Like RadioAvailable it is a server
+	// condition stamped on every outbound state and never persisted; it lets
+	// clients explain why new tracks have no YouTube source.
+	YouTubeQuotaUntil int64           `json:"youtubeQuotaUntil,omitempty"`
+	Version           int64           `json:"version"`
+	Transport         *TransportState `json:"transport,omitempty"`
 	// CreatedAt is the server clock (unix ms) at room creation, stamped by the
 	// hub when it first creates the room. Zero on rooms persisted before this
 	// existed; clients must tolerate that.

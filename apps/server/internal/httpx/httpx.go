@@ -35,7 +35,17 @@ const MaxResponseBytes int64 = 10 << 20 // 10 MiB
 
 // StatusError is returned by DoJSON for a non-2xx response, so callers can
 // tell a genuine miss (404) from an outage without parsing the message.
-type StatusError struct{ Code int }
+//
+// Body holds the first MaxErrorBodyBytes of the response body so a caller can
+// read a machine-readable reason (YouTube's quotaExceeded). It is never part
+// of Error(), so it cannot leak into logs or RPC errors by accident.
+type StatusError struct {
+	Code int
+	Body []byte
+}
+
+// MaxErrorBodyBytes caps the error body kept on a StatusError.
+const MaxErrorBodyBytes = 2048
 
 func (e *StatusError) Error() string { return fmt.Sprintf("upstream status %d", e.Code) }
 
@@ -50,9 +60,11 @@ func DoJSON(req *http.Request, v any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode/100 != 2 {
-		// Drain body to avoid leaks; don't include body in error message
+		// Keep a small prefix for callers that need the reason, drain the rest
+		// to avoid leaks; the body is not part of the error message.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, MaxErrorBodyBytes))
 		io.Copy(io.Discard, io.LimitReader(resp.Body, MaxResponseBytes))
-		return &StatusError{Code: resp.StatusCode}
+		return &StatusError{Code: resp.StatusCode, Body: body}
 	}
 
 	return json.NewDecoder(io.LimitReader(resp.Body, MaxResponseBytes)).Decode(v)
