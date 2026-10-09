@@ -221,7 +221,7 @@ func (h *Hub) setAdmin(roomID, callerID, targetID string, admin bool) (json.RawM
 		return nil
 	})
 	if err == nil && h.logger != nil {
-		h.logger.Info("room_admin_set", "room_id", roomID, "by", callerID, "target", targetID, "admin", admin)
+		h.logger.Info("room_admin_set", "room_id", roomID, "admin", admin)
 	}
 	return res, err
 }
@@ -246,7 +246,7 @@ func (h *Hub) transferHost(roomID, callerID, targetID string) (json.RawMessage, 
 		return nil
 	})
 	if err == nil && h.logger != nil {
-		h.logger.Info("room_host_transferred", "room_id", roomID, "by", callerID, "target", targetID)
+		h.logger.Info("room_host_transferred", "room_id", roomID)
 	}
 	return res, err
 }
@@ -333,18 +333,18 @@ func (h *Hub) autoSkipSourceless(roomID string) {
 		if !ok {
 			return
 		}
-		var stuckID, title string
+		var stuckID string
 		var relaunch *queue.TrackRef
 		room.mu.Lock()
 		if t := room.State.Track(room.State.NowPlayingID); t != nil && !t.HasSource() && t.EnrichPending == 0 && !t.EnrichUncertain {
 			if t.EnrichChecked {
-				stuckID, title = t.ID, t.Title
+				stuckID = t.ID
 			} else {
 				// Unknown state (loaded from storage after a restart): look
 				// it up once before judging it, never skip blind.
 				h.enrichBookkeeping(t)
 				if t.EnrichChecked {
-					stuckID, title = t.ID, t.Title
+					stuckID = t.ID
 				} else {
 					cp := *t
 					relaunch = &cp
@@ -360,7 +360,7 @@ func (h *Hub) autoSkipSourceless(roomID string) {
 			return
 		}
 		if h.logger != nil {
-			h.logger.Info("auto_skip_sourceless", "room_id", roomID, "track_id", stuckID, "title", title)
+			h.logger.Info("auto_skip_sourceless", "room_id", roomID, "track_id", stuckID)
 		}
 		if _, err := h.advanceAfter(roomID, stuckID, false); err != nil {
 			return

@@ -116,7 +116,7 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 
 	lrcURL := lrclibURL + "?" + q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", lrcURL, nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "lyrics"), "GET", lrcURL, nil)
 	if err != nil {
 		return result, nil // Graceful return on request creation error
 	}
@@ -134,7 +134,7 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 	} else if !isNotFound(err) {
 		// A 404 is the normal duration-mismatch miss; anything else (decode
 		// failure, 5xx, timeout) is worth a log before falling through.
-		slog.Warn("lyrics_get_failed", "artist", artist, "title", title, "err", err.Error())
+		slog.Warn("lyrics_get_failed", "err", err.Error())
 		getErr = err
 	}
 
@@ -143,7 +143,7 @@ func FetchLyrics(ctx context.Context, artist, title, album string, durationMs in
 	sq := url.Values{}
 	sq.Set("artist_name", artist)
 	sq.Set("track_name", title)
-	sreq, err := http.NewRequestWithContext(ctx, "GET", lrclibSearchURL+"?"+sq.Encode(), nil)
+	sreq, err := http.NewRequestWithContext(httpx.WithOp(ctx, "lyrics"), "GET", lrclibSearchURL+"?"+sq.Encode(), nil)
 	if err != nil {
 		return result, nil
 	}

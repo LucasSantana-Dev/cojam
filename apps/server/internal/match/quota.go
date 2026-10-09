@@ -53,6 +53,13 @@ func YouTubeQuotaNoticeUntil() time.Time {
 	return ytQuota.until
 }
 
+// YouTubeQuotaOpen reports whether the breaker is open right now (any kind).
+func YouTubeQuotaOpen() bool { return !YouTubeQuotaUntil().IsZero() }
+
+// OnQuotaTrip, when set, is called once per trip with the kind (daily|transient).
+// main wires it to the music_jam_youtube_quota_trips_total counter.
+var OnQuotaTrip func(kind string)
+
 // quotaExhaustedErr is the error returned while the breaker is open.
 func quotaExhaustedErr(until time.Time) error {
 	return fmt.Errorf("%w until %s", hub.ErrQuotaExhausted, until.UTC().Format(time.RFC3339))
@@ -74,6 +81,9 @@ func tripYouTubeQuota(now, until time.Time, kind quotaKind) time.Time {
 	ytQuota.mu.Unlock()
 	if !already {
 		slog.Warn("youtube_quota_exhausted", "until", until.UTC().Format(time.RFC3339), "kind", kind.String())
+		if OnQuotaTrip != nil {
+			OnQuotaTrip(kind.String())
+		}
 	}
 	return until
 }
