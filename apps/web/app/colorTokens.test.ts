@@ -18,6 +18,8 @@ const APP = path.resolve(__dirname, '..');
 /** Files with no access to the cascade, so a literal is correct there. */
 const EXEMPT_FILES = new Set([
   'app/layout.tsx', //            themeColor is browser metadata, parsed outside CSS
+  'app/manifest.ts', //           web app manifest colours are JSON, parsed outside CSS
+  'app/manifest.test.ts', //      asserts those manifest colours
   'app/opengraph-image.tsx', //   Satori renders at the edge: no cascade, no vars
   'app/global-error.tsx', //      runs after a crash, possibly before CSS loads
   'app/colorTokens.test.ts', //   this file names the colours it forbids

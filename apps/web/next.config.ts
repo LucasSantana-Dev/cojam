@@ -37,6 +37,13 @@ const config: NextConfig = {
   async headers() {
     if (process.env.NODE_ENV !== 'production') return [];
     return [
+      // The service worker must always be revalidated, or a deploy could leave
+      // clients on an old worker. Listed first; Next merges matching rules, so
+      // the security headers below still apply to it.
+      {
+        source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }],
+      },
       {
         source: '/:path*',
         headers: [
