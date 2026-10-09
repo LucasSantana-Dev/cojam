@@ -273,3 +273,33 @@ describe('RoomClient video stage layout (#258)', () => {
     expect(screen.getByTestId('room-main-column')).toBeInTheDocument();
   });
 });
+
+describe('RoomClient with blocked sessionStorage (#385)', () => {
+  beforeEach(() => {
+    realtimeMocks.joinError = null;
+    accountMocks.session = null;
+    delete window.__COJAM_ENV__;
+    useStore.setState({ state: null, signedIn: false, name: '' });
+    const blocked = () => {
+      throw new DOMException('storage blocked', 'SecurityError');
+    };
+    vi.stubGlobal('sessionStorage', {
+      getItem: blocked,
+      setItem: blocked,
+      removeItem: blocked,
+      clear: blocked,
+      key: blocked,
+      length: 0,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('still mounts and ends joined when storage throws', async () => {
+    render(<RoomClient roomId="NEON42" />);
+    await joinAs('Alice');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
