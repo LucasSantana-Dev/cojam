@@ -5,6 +5,7 @@ import './globals.css';
 import { resolveSiteUrl } from '@/lib/siteUrl';
 import { jsonLdScript } from '@/lib/jsonLd';
 import { WebVitals } from '@/app/components/WebVitals';
+import { ServiceWorkerRegister } from '@/app/components/ServiceWorkerRegister';
 
 // Display face: characterful humanist-grotesque with a display optical cut —
 // carries the hero title + oversized backdrop word. Body: clean humanist sans,
@@ -30,6 +31,8 @@ export async function generateMetadata(): Promise<Metadata> {
     title: { default: 'CoJam · ouçam juntos, entre serviços', template: '%s · CoJam' },
     description,
     applicationName: 'CoJam',
+    // Installed (home screen) look on iOS; the manifest covers Android and desktop.
+    appleWebApp: { capable: true, title: 'CoJam', statusBarStyle: 'black-translucent' },
     alternates: { canonical: '/' },
     openGraph: {
       type: 'website',
@@ -47,15 +50,15 @@ export async function generateMetadata(): Promise<Metadata> {
 
 // Without this Next emits no viewport meta and mobile lays out at ~980px, so
 // no responsive CSS applies. Pinch-zoom stays enabled (WCAG 1.4.4).
-// themeColor is --color-surface-0 as sRGB hex; theme-color parsing is not
-// reliably oklch-aware.
+// themeColor is the palco ink (#0d0a17, same as the manifest) as sRGB hex;
+// theme-color parsing is not reliably oklch-aware.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   // Android Chrome resizes the layout viewport for the keyboard (iOS Safari ignores
   // this; useVisualViewportHeight covers it), so the chat composer stays visible.
   interactiveWidget: 'resizes-content',
-  themeColor: '#020202',
+  themeColor: '#0d0a17',
 };
 
 export default async function RootLayout({
@@ -82,6 +85,7 @@ export default async function RootLayout({
       </head>
       <body>
         <WebVitals />
+        <ServiceWorkerRegister />
         <a href="#main" className="sr-only focus:not-sr-only">
           Pular para o conteúdo
         </a>

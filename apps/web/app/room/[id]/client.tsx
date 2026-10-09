@@ -646,7 +646,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   );
 
   const addTrackForm = (
-    <AddTrackForm roomId={roomId} spotifyAuthorized={spotifyAuthorized} />
+    <AddTrackForm roomId={roomId} spotifyAuthorized={spotifyAuthorized} onAdded={palco ? () => setAddOpen(false) : undefined} />
   );
 
   const queuePanel = (
@@ -789,6 +789,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
             activePlayer={activePlayer}
             volume={<VolumeControl />}
             servicePicker={servicePicker}
+            addOpen={addOpen}
+            onAddOpen={() => setAddOpen(true)}
+            onAddClose={() => setAddOpen(false)}
           />
         )}
         {/* Switching between a video and an audio track changes layouts and remounts

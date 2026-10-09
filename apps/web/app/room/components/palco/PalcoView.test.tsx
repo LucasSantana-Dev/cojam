@@ -163,6 +163,30 @@ describe('PalcoView', () => {
     expect(screen.queryByText('antes')).toBeNull();
   });
 
+  it('"+ Música" opens the add form in the Fila panel without leaving palco, and Esc or a finished add returns to the stage', async () => {
+    const onAddOpen = vi.fn();
+    const onAddClose = vi.fn();
+    const view = (addOpen: boolean) => <PalcoView {...props} addOpen={addOpen} onAddOpen={onAddOpen} onAddClose={onAddClose} />;
+    const { rerender } = render(view(false));
+    await waitFor(() => expect(fake.FakeScene.last).not.toBeNull());
+    expect(screen.queryByTestId('queue-slot')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar música' }));
+    expect(onAddOpen).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('palco')).toBeTruthy();
+    expect(screen.getByTestId('queue-slot')).toBeTruthy();
+    rerender(view(true));
+    fireEvent.keyDown(screen.getByTestId('queue-slot'), { key: 'Escape' });
+    expect(onAddClose).toHaveBeenCalledTimes(1);
+    rerender(view(false));
+    expect(screen.queryByTestId('queue-slot')).toBeNull();
+    // A finished add (the room turns addOpen off) also returns to the stage.
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar música' }));
+    rerender(view(true));
+    expect(screen.getByTestId('queue-slot')).toBeTruthy();
+    rerender(view(false));
+    expect(screen.queryByTestId('queue-slot')).toBeNull();
+  });
+
   it('opens Fila and Chat as panels and keeps one at a time', async () => {
     await mount();
     expect(screen.queryByTestId('queue-slot')).toBeNull();
