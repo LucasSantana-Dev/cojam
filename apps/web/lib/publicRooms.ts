@@ -9,6 +9,7 @@
 
 import { Centrifuge } from 'centrifuge';
 import type { PublicRoomSummary } from '@cojam/shared';
+import { fixtureRooms } from './devFixture';
 import { resolveConnectionToken, resolveWsUrl } from './realtime';
 
 const POLL_INTERVAL_MS = 15_000;
@@ -54,6 +55,8 @@ async function getServiceClient(): Promise<Centrifuge> {
 // fetchPublicRooms returns null on any failure so the poller can keep the last
 // good list (a rate-limited or offline poll must not blank the strip).
 async function fetchPublicRooms(): Promise<PublicRoomSummary[] | null> {
+  const fixture = fixtureRooms();
+  if (fixture) return fixture;
   try {
     const client = await getServiceClient();
     const result = await client.rpc('room.list', {});

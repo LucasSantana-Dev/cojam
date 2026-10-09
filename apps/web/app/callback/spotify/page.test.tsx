@@ -70,4 +70,23 @@ describe('Spotify callback page errors', () => {
     fireEvent.click(await screen.findByTestId('spotify-callback-retry'));
     await waitFor(() => expect(retryAuth).toHaveBeenCalledTimes(1));
   });
+
+  const led = (container: HTMLElement) => container.querySelector('.pws__v--wide .pws-led')?.getAttribute('data-led');
+
+  it('says CONECTANDO / SPOTIFY on the stage screen while it works', async () => {
+    at('?code=abc&state=x');
+    handleCallback.mockReturnValue(new Promise(() => {}));
+    const { container } = render(<SpotifyCallback />);
+    expect(led(container)).toBe('CONECTANDO / SPOTIFY');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Conectando o Spotify...');
+  });
+
+  it('says ERRO / SPOTIFY on failure and prints no code', async () => {
+    at('?code=abc&state=x');
+    handleCallback.mockRejectedValue(new SpotifyConnectError('server'));
+    const { container } = render(<SpotifyCallback />);
+    await screen.findByRole('alert');
+    expect(led(container)).toBe('ERRO / SPOTIFY');
+    expect(container.textContent).not.toMatch(/\b(4|5)\d\d\b|error=|code=/i);
+  });
 });

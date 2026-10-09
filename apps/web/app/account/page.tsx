@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { LogoMark } from '@/app/components/Logo';
-import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
+import { PalcoNav, useCreateRoom } from '@/app/components/PalcoNav';
+import { PalcoScene } from '@/app/components/PalcoScene';
+import { PalcoBrandBar, PalcoFooter } from '@/app/components/PalcoShell';
 import { supabaseEnabled } from '@/lib/supabase';
 import {
   getAccountSession,
@@ -24,7 +25,24 @@ const PROVIDER_LABEL: Record<ConnectedProvider, string> = {
 // Runtime env (/env.js) never changes after load; nothing to subscribe to.
 const noopSubscribe = () => () => {};
 
+// Palco screen (wave 2): the band scene reads "CONTA / SUA ENTRADA", the account sits on one plate.
+function AccountShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="pw pwa">
+      <PalcoBrandBar>
+        <PalcoNav create />
+      </PalcoBrandBar>
+      <PalcoScene kind="band" led={{ title: 'CONTA', scale: 2, sub: 'SUA ENTRADA' }} />
+      <main id="main" className="pwa-main">
+        {children}
+      </main>
+      <PalcoFooter />
+    </div>
+  );
+}
+
 export default function AccountPage() {
+  const createRoom = useCreateRoom();
   const [session, setSession] = useState<AccountSession | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [email, setEmail] = useState('');
@@ -101,132 +119,120 @@ export default function AccountPage() {
 
   if (!mounted || !loaded) {
     return (
-      <SintoniaScreen>
-        <main id="main" className="sx-main">
-          <div className="sx-glass sx-card" aria-busy="true">
-            <div className="skeleton-shimmer h-6 rounded" />
-            <div className="skeleton-shimmer h-10 rounded" />
-          </div>
-        </main>
-      </SintoniaScreen>
+      <AccountShell>
+        <div className="pw-plate pwa-card" aria-busy="true">
+          <span className="pwa-skel pwa-skel--title" />
+          <span className="pwa-skel" />
+        </div>
+      </AccountShell>
     );
   }
 
   if (!supabaseEnabled()) {
     return (
-      <SintoniaScreen>
-        <main id="main" className="sx-main">
-          <div className="sx-glass sx-card">
-            <div className="sx-brand">
-              <LogoMark size={20} /> CoJam
-            </div>
-            <h1 className="sx-title">Contas</h1>
-            <SineLine flat />
-            <p className="sx-text">As contas não estão configuradas neste servidor.</p>
-            <div className="sx-actions">
-              <Link href="/" className="btn-ghost">Voltar ao início</Link>
-            </div>
+      <AccountShell>
+        <div className="pw-plate pwa-card">
+          <p className="pw-eyebrow">Contas</p>
+          <h1 className="pw-title">Ainda não tem conta por aqui</h1>
+          <div className="pwa-stack pwa-stack--tight">
+            <p className="pw-text">As contas não estão configuradas neste servidor.</p>
+            <p className="pw-text">Você entra nas salas como convidado, só com o nome.</p>
           </div>
-        </main>
-      </SintoniaScreen>
+          <div className="pwa-actions">
+            <button type="button" className="pw-btn" onClick={createRoom}>Criar sala</button>
+            <Link href="/" className="pw-btn pw-btn--quiet">Voltar ao início</Link>
+          </div>
+        </div>
+      </AccountShell>
     );
   }
 
   return (
-    <SintoniaScreen>
-      <main id="main" className="sx-main">
-        <div className="sx-glass sx-card">
-          <div className="sx-bar">
-            <div className="sx-brand">
-              <LogoMark size={20} /> CoJam
-            </div>
-            <Link href="/" className="sx-link">Início</Link>
-          </div>
-          <h1 className="sx-title">Sua conta</h1>
-          <SineLine flat={!session} />
+    <AccountShell>
+      <div className="pw-plate pwa-card">
+        <p className="pw-eyebrow">Conta</p>
+        <h1 className="pw-title">Sua conta</h1>
 
-          {!session ? (
-            <div className="sx-stack">
-              <form onSubmit={handleSignIn} className="sx-stack">
-                <p className="sx-text">
-                  Entre para guardar seu nome e seus serviços conectados em todos os dispositivos. Quem entra como convidado continua usando as salas sem conta.
-                </p>
-                <input
-                  type="email"
-                  required
-                  placeholder="voce@exemplo.com"
-                  aria-label="E-mail"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="join-input focus-ring-grow"
-                />
-                <button type="submit" disabled={busy || !email.trim()} className="btn-primary sx-block">
-                  {busy ? 'Enviando...' : 'Receber link de acesso por e-mail'}
-                </button>
-              </form>
-              <div className="sx-or" aria-hidden>
-                <span>ou</span>
-              </div>
-              <button type="button" onClick={handleGoogle} disabled={busy} className="btn-ghost sx-block">
-                Continuar com o Google
-              </button>
-            </div>
-          ) : (
-            <div className="sx-stack">
-              <p className="sx-text">
-                Conectado como <strong>{session.email ?? session.userId}</strong>
+        {!session ? (
+          <div className="pwa-stack">
+            <form onSubmit={handleSignIn} className="pwa-stack">
+              <p className="pw-text">
+                Entre para guardar seu nome e seus serviços conectados em todos os dispositivos. Quem entra como convidado continua usando as salas sem conta.
               </p>
-
-              <form onSubmit={handleSaveName} className="sx-stack sx-stack--tight">
-                <label htmlFor="account-display-name" className="sx-label">
-                  Nome de exibição
-                </label>
-                <div className="sx-row">
-                  <input
-                    id="account-display-name"
-                    type="text"
-                    placeholder="Seu nome nas salas"
-                    aria-label="Nome de exibição"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    className="join-input focus-ring-grow"
-                  />
-                  <button type="submit" disabled={busy} className="btn-primary">
-                    Salvar
-                  </button>
-                </div>
-              </form>
-
-              <div className="sx-stack sx-stack--tight">
-                <h2 className="sx-label">Serviços conectados</h2>
-                {services.length === 0 ? (
-                  <p className="sx-text sx-text--muted">
-                    Nenhum ainda. Conecte o Spotify dentro de uma sala e ele aparece aqui.
-                  </p>
-                ) : (
-                  <ul className="sx-list">
-                    {services.map((p) => (
-                      <li key={p}>{PROVIDER_LABEL[p]}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <button type="button" onClick={handleSignOut} disabled={busy} className="btn-ghost sx-block">
-                Sair
+              <input
+                type="email"
+                required
+                placeholder="voce@exemplo.com"
+                aria-label="E-mail"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="pw-input"
+              />
+              <button type="submit" disabled={busy || !email.trim()} className="pw-btn">
+                {busy ? 'Enviando...' : 'Receber link de acesso por e-mail'}
               </button>
+            </form>
+            <div className="pwa-or" aria-hidden>
+              <span>ou</span>
             </div>
-          )}
+            <button type="button" onClick={handleGoogle} disabled={busy} className="pw-btn pw-btn--quiet">
+              Continuar com o Google
+            </button>
+          </div>
+        ) : (
+          <div className="pwa-stack">
+            <p className="pw-text">
+              Conectado como <strong>{session.email ?? session.userId}</strong>
+            </p>
 
-          {error && (
-            <p role="alert" className="sx-feedback sx-feedback--error">{error}</p>
-          )}
-          {message && (
-            <p role="status" className="sx-feedback">{message}</p>
-          )}
-        </div>
-      </main>
-    </SintoniaScreen>
+            <form onSubmit={handleSaveName} className="pwa-stack pwa-stack--tight">
+              <label htmlFor="account-display-name" className="pw-label">
+                Nome de exibição
+              </label>
+              <div className="pwa-row">
+                <input
+                  id="account-display-name"
+                  type="text"
+                  placeholder="Seu nome nas salas"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="pw-input"
+                />
+                <button type="submit" disabled={busy} className="pw-btn">
+                  Salvar
+                </button>
+              </div>
+            </form>
+
+            <div className="pwa-stack pwa-stack--tight">
+              <h2 className="pw-label">Serviços conectados</h2>
+              {services.length === 0 ? (
+                <p className="pw-text">
+                  Nenhum ainda. Conecte o Spotify dentro de uma sala e ele aparece aqui.
+                </p>
+              ) : (
+                <ul className="pwa-list">
+                  {services.map((p) => (
+                    <li key={p}>{PROVIDER_LABEL[p]}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <button type="button" onClick={handleSignOut} disabled={busy} className="pw-btn pw-btn--quiet">
+              Sair
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <p role="alert" className="pw-text pw-error">{error}</p>
+        )}
+        {message && (
+          <p role="status" className="pw-text">{message}</p>
+        )}
+      </div>
+    </AccountShell>
   );
 }

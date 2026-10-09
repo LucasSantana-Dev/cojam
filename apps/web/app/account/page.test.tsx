@@ -22,6 +22,8 @@ vi.mock('@/lib/account', () => ({
   getConnectedServices: vi.fn(async () => []),
 }));
 
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 // next/link outside an app-router render tree; a plain anchor is enough here.
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (

@@ -1,4 +1,4 @@
-// CSS for the "palco on every screen" pages (home, 404, erro). It lives in a string
+// CSS for the "palco on every screen" pages (home, 404, erro, and wave 2). It lives in a string
 // and renders as an inline <style> so global-error.tsx, which replaces the root
 // layout and so loses globals.css and the font variables, looks the same as the
 // rest. Tokens mirror the `.palco` block in globals.css (palcoCss.test.ts pins it).
@@ -54,6 +54,31 @@ export const PALCO_PAGE_CSS = `
   gap: 0.75rem 1.5rem;
 }
 .pw-bar--over { position: absolute; top: 0; left: 0; right: 0; }
+/* A top ink scrim, so the wordmark and the nav stay readable over bright truss and lights. */
+.pw-bar--over::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: -1.5rem;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, oklch(0.14 0.03 292 / 0.86), oklch(0.14 0.03 292 / 0));
+  pointer-events: none;
+}
+.pw-nav { display: flex; align-items: center; gap: 0.5rem 1.5rem; margin-left: auto; }
+.pw-nav__link {
+  display: none;
+  align-items: center;
+  min-height: 2.75rem;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--palco-text);
+}
+.pw-nav__link:hover { text-decoration: underline; text-underline-offset: 0.3em; }
+.pw-nav__link[aria-current="page"] { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.3em; }
+@media (min-width: 48rem) { .pw-nav__link { display: inline-flex; } }
 .pw-brand { display: inline-flex; align-items: center; gap: 0.6rem; min-height: 2.75rem; }
 .pw-brand__word {
   font-family: var(--font-display, system-ui), system-ui, sans-serif;
@@ -112,6 +137,55 @@ export const PALCO_PAGE_CSS = `
 }
 .pw-btn--quiet:hover:not(:disabled) { background: oklch(0.25 0.035 292); }
 .pw-btn--quiet:active:not(:disabled) { box-shadow: 0 1px 0 oklch(0.09 0.02 292); }
+
+/* Fields on a plate: a label, an input, a pressed-state choice, a segmented control. */
+.pw-label { display: block; font-size: 0.9375rem; font-weight: 600; color: var(--palco-text); }
+.pw-input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--palco-line);
+  border-radius: var(--pw-radius);
+  background: oklch(0.1 0.025 292);
+  color: var(--palco-text);
+  font: inherit;
+  font-size: 1rem;
+}
+.pw-input::placeholder { color: oklch(0.72 0.03 292); }
+.pw-input:focus { border-color: var(--pw-violet-text); }
+.pw-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--palco-line);
+  border-radius: var(--pw-radius);
+  background: oklch(0.21 0.03 292);
+  box-shadow: 0 2px 0 oklch(0.09 0.02 292);
+  color: var(--palco-text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pw-choice:hover { background: oklch(0.25 0.035 292); }
+.pw-choice[aria-pressed="true"] { border-color: var(--pw-violet-text); box-shadow: 0 0 0 1px var(--pw-violet-text); }
+.pw-seg { display: inline-flex; padding: 3px; gap: 3px; border: 1px solid var(--palco-line); border-radius: var(--pw-radius); background: var(--palco-plate); }
+.pw-seg button {
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--palco-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pw-seg button[aria-pressed="true"] { background: var(--pw-violet); box-shadow: 0 2px 0 var(--pw-violet-edge); color: oklch(0.99 0.004 292); }
+.pw-error { color: oklch(0.82 0.11 22); }
 
 .pw-footer {
   width: 100%;
@@ -181,6 +255,11 @@ export const PALCO_PAGE_CSS = `
 .pws-at--up { transform: translate(-50%, calc(-100% - 3px)); }
 .pws-at--upleft { transform: translate(0, calc(-100% - 4px)); }
 .pws-at--below { transform: translate(0, 4px); }
+.pws-at--feet { transform: translate(-50%, -100%); }
+.pws-sprite { display: block; width: calc(var(--k) * 20px); height: calc(var(--k) * 48px); max-width: none; image-rendering: pixelated; }
+.pws-led { position: absolute; left: calc(var(--k) * var(--x) * 1px); top: calc(var(--k) * var(--y) * 1px); width: calc(var(--k) * var(--w) * 1px); height: calc(var(--k) * var(--h) * 1px); display: block; shape-rendering: crispEdges; pointer-events: none; }
+.pws-led__t, .pws-led__s--white { fill: oklch(0.95 0.02 292); }
+.pws-led__s--violet { fill: oklch(0.74 0.15 295); }
 .pws-stack { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .pws-tag {
   display: inline-block;

@@ -3,8 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LogoMark } from '@/app/components/Logo';
-import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
+import { PalcoNav } from '@/app/components/PalcoNav';
+import { PalcoScene } from '@/app/components/PalcoScene';
+import { PalcoBrandBar } from '@/app/components/PalcoShell';
+import { ServiceBadge } from '@/app/components/ServiceBadge';
+import type { LedSpec } from '@/lib/palcoLed';
 import { handleCallback, retryAuth } from '@/lib/spotifyAuth';
 import {
   canRetrySpotifyConnect,
@@ -15,6 +18,22 @@ import {
 } from '@/lib/spotifyConnectError';
 
 type CallbackState = 'loading' | 'success' | 'error';
+
+// What the stage screen says in each state. No error codes (DESIGN.md, Copy).
+const SCREEN: Record<CallbackState, LedSpec> = {
+  loading: { title: 'CONECTANDO', scale: 1, sub: 'SPOTIFY', subTone: 'white' },
+  success: { title: 'CONECTADO', scale: 1, sub: 'SPOTIFY', subTone: 'white' },
+  error: { title: 'ERRO', scale: 2, sub: 'SPOTIFY', subTone: 'white' },
+};
+
+// Static, decorative progress: the exchange has no real percentage to show.
+function Progress({ done }: { done: boolean }) {
+  return (
+    <span className="pwc-bar" aria-hidden="true">
+      <span style={{ width: done ? '100%' : '55%' }} />
+    </span>
+  );
+}
 
 export default function SpotifyCallback() {
   const router = useRouter();
@@ -49,70 +68,71 @@ export default function SpotifyCallback() {
   }, [router]);
 
   return (
-    <SintoniaScreen>
-      <main id="main" className="sx-main">
-        <div className="sx-glass sx-card sx-card--narrow sx-center" aria-live={state === 'error' ? undefined : 'polite'}
-          data-testid="spotify-callback"
-        >
-          <div className="sx-brand">
-            <LogoMark size={20} /> CoJam
+    <div className="pw pwc">
+      <PalcoBrandBar>
+        <PalcoNav />
+      </PalcoBrandBar>
+      <PalcoScene kind="callback" led={SCREEN[state]}>
+        <main id="main" className="pw-dock pw-plate pwc-dock">
+          <div
+            className="pw-dock__copy pwc-copy"
+            aria-live={state === 'error' ? undefined : 'polite'}
+            data-testid="spotify-callback"
+          >
+            {state === 'loading' && (
+              <>
+                <p className="pw-eyebrow pwc-eyebrow">
+                  <ServiceBadge source="spotify" size="sm" title="" /> Spotify
+                </p>
+                <h1 className="pw-title">Conectando o Spotify...</h1>
+              </>
+            )}
+
+            {state === 'success' && (
+              <>
+                <p className="pw-eyebrow pwc-eyebrow">
+                  <ServiceBadge source="spotify" size="sm" title="" /> Spotify
+                </p>
+                <h1 className="pw-title">Spotify conectado</h1>
+              </>
+            )}
+
+            {state === 'error' && (
+              <>
+                <p className="pw-eyebrow pwc-eyebrow pwc-eyebrow--error">Spotify · erro</p>
+                <h1 className="pw-title">Não deu para conectar o Spotify</h1>
+                <p className="pw-text" role="alert" data-testid="spotify-callback-error">
+                  {spotifyConnectMessage(kind)}
+                </p>
+              </>
+            )}
           </div>
 
-          {state === 'loading' && (
-            <>
-              <div className="sx-spinner" aria-hidden="true" />
-              <h1 className="sx-title sx-title--sm">Conectando o Spotify...</h1>
-            </>
-          )}
-
-          {state === 'success' && (
-            <>
-              <div className="sx-badge" aria-hidden="true">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              </div>
-              <h1 className="sx-title sx-title--sm">Spotify conectado</h1>
-              <SineLine />
-            </>
-          )}
+          {state !== 'error' && <Progress done={state === 'success'} />}
 
           {state === 'error' && (
-            <>
-              <div className="sx-badge sx-badge--error" aria-hidden="true">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </div>
-              <h1 className="sx-title sx-title--sm">Não deu para conectar o Spotify</h1>
-              <p role="alert" data-testid="spotify-callback-error">
-                {spotifyConnectMessage(kind)}
-              </p>
-              <SineLine flat />
-              <div className="sx-actions sx-actions--center">
-                {canRetrySpotifyConnect(kind) && (
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    data-testid="spotify-callback-retry"
-                    onClick={() => {
-                      retryAuth().catch(() => {
-                        setKind('unknown');
-                      });
-                    }}
-                  >
-                    Tentar de novo
-                  </button>
-                )}
-                <Link href="/" className="btn-ghost">
-                  Voltar ao início
-                </Link>
-              </div>
-            </>
+            <div className="pw-actions">
+              <Link href="/" className="pw-btn pw-btn--quiet">
+                Voltar ao início
+              </Link>
+              {canRetrySpotifyConnect(kind) && (
+                <button
+                  type="button"
+                  className="pw-btn"
+                  data-testid="spotify-callback-retry"
+                  onClick={() => {
+                    retryAuth().catch(() => {
+                      setKind('unknown');
+                    });
+                  }}
+                >
+                  Tentar de novo
+                </button>
+              )}
+            </div>
           )}
-        </div>
-      </main>
-    </SintoniaScreen>
+        </main>
+      </PalcoScene>
+    </div>
   );
 }

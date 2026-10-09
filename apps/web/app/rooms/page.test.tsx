@@ -11,6 +11,8 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+vi.mock('@/lib/telemetry', () => ({ trackEvent: vi.fn() }));
+
 const mocks = vi.hoisted(() => ({
   publicRooms: true,
   listener: null as ((rooms: PublicRoomSummary[]) => void) | null,
@@ -60,6 +62,24 @@ describe('RoomsPage', () => {
     render(<RoomsPage />);
     act(() => mocks.listener!([]));
     expect(screen.getByText(/Nenhuma sala pública no ar/)).toBeInTheDocument();
+    expect(screen.getByText('PALCO LIVRE')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('main')).getByRole('button', { name: 'Criar sala' }));
+    expect(push).toHaveBeenCalledWith(expect.stringMatching(/^\/room\/[0-9A-Z]{12}$/));
+  });
+
+  it('reads AO VIVO only on a live room and shows the listener count', () => {
+    render(<RoomsPage />);
+    act(() => mocks.listener!(rooms));
+    // CCC333 was active a second ago; the other two are older.
+    expect(screen.getAllByText('AO VIVO')).toHaveLength(1);
+    expect(screen.getByText('5 ouvindo')).toBeInTheDocument();
+    expect(screen.getByText('9 ouvindo')).toBeInTheDocument();
+  });
+
+  it('puts the scene band on top with the LED reading AO VIVO', () => {
+    const { container } = render(<RoomsPage />);
+    expect(container.querySelector('.pws--band')).not.toBeNull();
+    expect(container.querySelectorAll('.pws-led').length).toBe(2);
   });
 
   it('lists rooms by most people by default, with kind and join hrefs', () => {
@@ -74,7 +94,8 @@ describe('RoomsPage', () => {
   it('sorts by most recent', () => {
     render(<RoomsPage />);
     act(() => mocks.listener!(rooms));
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'recent' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Mais recentes' }));
+    expect(screen.getByRole('button', { name: 'Mais recentes' })).toHaveAttribute('aria-pressed', 'true');
     expect(names()).toEqual(['CCC333', 'Música Calma', 'Cinema Night']);
   });
 

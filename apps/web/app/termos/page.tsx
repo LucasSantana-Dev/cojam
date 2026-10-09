@@ -13,6 +13,7 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Termos de Uso"
+      led={{ title: 'TERMOS', sub: 'DE USO' }}
       intro="Ao usar o CoJam você concorda com estes termos. Se não concordar, não use o serviço."
     >
       <h2>1. O que é o CoJam</h2>

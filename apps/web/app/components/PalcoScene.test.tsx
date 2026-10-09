@@ -42,6 +42,40 @@ describe('PalcoScene', () => {
   });
 });
 
+describe('PalcoScene wave 2', () => {
+  it.each(['band', 'band-text', 'join', 'callback'] as const)('%s ships blank-screen art for both widths', (kind) => {
+    const { container } = render(<PalcoScene kind={kind} />);
+    expect(container.querySelectorAll('img').length).toBe(2);
+    expect(SCENES[`${kind}-wide`].src).toBe(`/palco/scenes/${kind}-wide.png`);
+    expect(SCENES[`${kind}-phone`].src).toBe(`/palco/scenes/${kind}-phone.png`);
+  });
+
+  it('draws the LED text in the DOM on both widths, at the screen box of the art', () => {
+    const { container } = render(<PalcoScene kind="band" led={{ title: 'AO VIVO', scale: 2, sub: 'SALAS ABERTAS' }} />);
+    const leds = container.querySelectorAll('svg.pws-led');
+    expect(leds.length).toBe(2);
+    leds.forEach((l) => {
+      expect(l.getAttribute('data-led')).toBe('AO VIVO / SALAS ABERTAS');
+      expect(l.getAttribute('aria-hidden')).toBe('true');
+    });
+    expect(leds[0].getAttribute('viewBox')).toBe(`0 0 ${SCENES['band-wide'].screen.w} ${SCENES['band-wide'].screen.h}`);
+  });
+
+  it('stands the picked character at the join spot of each scene', () => {
+    const { container } = render(<PalcoScene kind="join" you={{ id: 14, name: 'Nico' }} />);
+    const wide = container.querySelector('.pws__v--wide')!;
+    expect(wide.querySelector('.pws-sprite')?.getAttribute('src')).toBe('/palco/characters/14-front.png');
+    const at = wide.querySelector('.pws-at--feet') as HTMLElement;
+    expect(at.style.getPropertyValue('--x')).toBe(String(SCENES['join-wide'].stand!.cx));
+    expect(at.style.getPropertyValue('--y')).toBe(String(SCENES['join-wide'].stand!.feet));
+  });
+
+  it('shows nobody on the floor without a pick', () => {
+    const { container } = render(<PalcoScene kind="join" />);
+    expect(container.querySelector('.pws-sprite')).toBeNull();
+  });
+});
+
 describe('PalcoErrorView', () => {
   it('shows the erro copy, no codes, and calls reset', () => {
     const reset = vi.fn();
