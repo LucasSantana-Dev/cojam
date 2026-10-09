@@ -93,6 +93,9 @@ describe('removed-from-room screen (palco, wave 3)', () => {
     act(() => useStore.getState().setKicked(true));
     expect(wide().querySelector('.pws-led')?.getAttribute('data-led')).toBe('FIM / FORA DA SALA');
     expect(wide().querySelector('img.pws-sprite')).toBeNull();
+    // The empty festival ground: the kicked scene art, not the join scene with its crowd.
+    expect(container.querySelector('.pws--kicked')).not.toBeNull();
+    expect(wide().querySelector('img.pws__img')?.getAttribute('src')).toBe('/palco/scenes/kicked-wide.png');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Você foi removido da sala');
     expect(screen.getByText('O anfitrião removeu você desta sessão.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Voltar ao início' })).toHaveAttribute('href', '/');

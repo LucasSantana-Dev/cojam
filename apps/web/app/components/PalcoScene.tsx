@@ -10,7 +10,7 @@ import { SCENES, SPRITE_FRONT, type SceneArt, type SceneName } from '@/lib/palco
 import { PALCO_PAGE_CSS } from './palcoCss';
 
 // The shared page shell for the palco screens (home, 404, erro, and wave 2: band, band-text,
-// join, callback). Two layers, never
+// join, kicked, callback). Two layers, never
 // mixed: the scene art at an INTEGER scale (nearest neighbour), and DOM overlays
 // (name tags, bubble, labels) placed in native coordinates times k, so they stay
 // locked to the art at every width. The art is decorative (alt=""): the page text
@@ -20,7 +20,7 @@ import { PALCO_PAGE_CSS } from './palcoCss';
 // paint a close guess (--kw, --kp in palcoCss); once mounted the measured value
 // replaces it.
 
-export type SceneKind = 'home' | '404' | 'erro' | 'band' | 'band-text' | 'join' | 'callback';
+export type SceneKind = 'home' | '404' | 'erro' | 'band' | 'band-text' | 'join' | 'kicked' | 'callback';
 
 /** The person on the join floor: the picked roster character (live) and the nickname typed in the form (the tag reads "Você · name"). */
 export interface SceneYou {
@@ -98,7 +98,7 @@ function Overlays({
       </>
     );
   }
-  if (kind === 'band' || kind === 'band-text' || kind === 'callback') {
+  if (kind === 'band' || kind === 'band-text' || kind === 'kicked' || kind === 'callback') {
     return led ? <Led art={art} spec={led} /> : null;
   }
   if (kind === 'home') {

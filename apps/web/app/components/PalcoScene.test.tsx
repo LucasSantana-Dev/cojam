@@ -43,7 +43,7 @@ describe('PalcoScene', () => {
 });
 
 describe('PalcoScene wave 2', () => {
-  it.each(['band', 'band-text', 'join', 'callback'] as const)('%s ships blank-screen art for both widths', (kind) => {
+  it.each(['band', 'band-text', 'join', 'kicked', 'callback'] as const)('%s ships blank-screen art for both widths', (kind) => {
     const { container } = render(<PalcoScene kind={kind} />);
     expect(container.querySelectorAll('img').length).toBe(2);
     expect(SCENES[`${kind}-wide`].src).toBe(`/palco/scenes/${kind}-wide.png`);

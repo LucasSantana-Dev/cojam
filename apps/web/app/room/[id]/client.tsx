@@ -466,8 +466,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     return (
       <div className="pw" data-view="kicked">
         <PalcoBrandBar />
-        {/* The join floor with nobody on it: the screen says the show is over for you. */}
-        <PalcoScene kind="join" led={{ title: 'FIM', scale: 3, sub: 'Fora da sala' }}>
+        {/* An empty festival ground, no crowd: the screen says the show is over for you. */}
+        <PalcoScene kind="kicked" led={{ title: 'FIM', scale: 3, sub: 'Fora da sala' }}>
           <main id="main" className="pw-dock pw-plate">
             <div className="pw-dock__copy">
               <p className="pw-eyebrow">Fim da sessão · para você</p>

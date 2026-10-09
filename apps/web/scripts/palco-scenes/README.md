@@ -9,7 +9,8 @@ Run: `python3 -I apps/web/scripts/palco-scenes/compose.py` (needs Pillow). Write
 | `home`, `404`, `erro` | wave 1 | 480x300 / 195x280, 480x250 / 195x240 |
 | `band` | `/rooms`, `/account` | 480x130 / 195x150 |
 | `band-text` | `/termos`, `/privacidade` (a little dimmer) | 480x130 / 195x150 |
-| `join` | pre-join screen, with a `stand` spot for the picked character; also the removed-from-room screen (nobody on the spot) | 480x300 / 195x240 |
+| `join` | pre-join screen, with a `stand` spot for the picked character | 480x300 / 195x240 |
+| `kicked` | removed-from-room screen: the `join` stage with no crowd and nobody on the floor (wide is centred, join keeps the stage left for the form) | 480x300 / 195x240 |
 | `callback` | `/callback/spotify`, `/offline` (both PNGs are precached in `public/sw.js`) | 480x250 / 195x240 |
 | `og-1200` | `app/opengraph-image.tsx`, 400x210 native saved at x3 (1200x630) | 1200x630 |
 
