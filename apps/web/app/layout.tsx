@@ -52,6 +52,9 @@ export async function generateMetadata(): Promise<Metadata> {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Android Chrome resizes the layout viewport for the keyboard (iOS Safari ignores
+  // this; useVisualViewportHeight covers it), so the chat composer stays visible.
+  interactiveWidget: 'resizes-content',
   themeColor: '#020202',
 };
 

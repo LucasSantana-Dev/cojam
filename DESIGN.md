@@ -160,6 +160,7 @@ Top to bottom: top bar, the stage (arch, screen, speakers) with the embed full w
 
 - The embed **stays mounted and visible on every tab**. Under Fila and Chat the stage shrinks to the screen plus a thin strip, never to nothing. This also removes the current phone behaviour where `.video-panel-keep` hides the player under those tabs.
 - 44px targets. The audience band scrolls horizontally if it overflows.
+- **Fields and the keyboard (phones):** every text field computes at least 16px (iOS Safari zooms the page on focus below that; never fix it with `maximum-scale` or `user-scalable=no`, pinch zoom stays). With the composer focused the top bar, the Palco HUD title/controls and the docked tab bar step aside so the keyboard leaves the list room; the player stays at least 200x200 and uncovered. Heights size against `--app-h` (visual viewport, set by `useVisualViewportHeight`) with `100dvh` as fallback, plus `interactive-widget=resizes-content` in the viewport export.
 
 ### Reduced motion
 

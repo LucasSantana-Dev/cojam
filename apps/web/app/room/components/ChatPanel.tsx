@@ -10,6 +10,7 @@ import { memberCharacter, defaultCharacterId } from '@/lib/characters';
 import { CharacterAvatar } from './CharacterAvatar';
 import { EmojiIcon } from '@/app/components/icons';
 import { ptSystemText } from '@/lib/chatSystemText';
+import { useVisualViewportHeight } from '@/lib/useVisualViewportHeight';
 
 // A short, fixed set: a full picker is out of scope, this covers a room's reactions.
 const EMOJIS = ['😂', '😍', '🔥', '👏', '🎶', '❤️', '🙌', '😎', '🥹', '👍', '🤘', '💜'];
@@ -36,6 +37,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
+  useVisualViewportHeight();
   const chat = useStore((s) => s.chat);
   const connected = useStore((s) => s.connected);
   const name = useStore((s) => s.name);
@@ -170,7 +172,7 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
 
   return (
     <div className="panel chat-panel r4-card">
-      <header className="r4-qhead">
+      <header className="r4-qhead chat-head">
         <h3 className="r4-h2">Chat da Sala</h3>
       </header>
 

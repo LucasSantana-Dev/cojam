@@ -3698,7 +3698,7 @@ input:focus, textarea:focus, select:focus {
 .chat-sys + .chat-msg, .chat-msg + .chat-sys { margin-top: 0.15rem; }
 .chat-form { display: flex; align-items: center; gap: 0.2rem; margin-top: 0.25rem; padding: 0.35rem 0.4rem 0.35rem 0.9rem; border-radius: 0.9rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); }
 .chat-form:focus-within { border-color: oklch(0.62 0.2 298 / 0.8); }
-.chat-form__input { flex: 1; min-width: 0; min-height: 2.5rem; background: none; border: 0; color: var(--color-text-primary); font-size: 0.9375rem; }
+.chat-form__input { flex: 1; min-width: 0; min-height: 2.5rem; background: none; border: 0; color: var(--color-text-primary); font-size: 1rem; }
 .chat-form__input::placeholder { color: var(--color-text-muted); }
 .chat-form__input:focus { outline: none; }
 .chat-form__send { flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--r4-violet-fill); color: oklch(0.99 0.004 292); box-shadow: 0 0 18px -4px var(--r4-glow); transition: transform var(--dur-micro) var(--ease-out-quart); }
@@ -3736,7 +3736,6 @@ input:focus, textarea:focus, select:focus {
   .chat-msg__name { font-size: 1.15rem; }
   .chat-msg__text { font-size: 1.1rem; }
   .chat-host { font-size: 1rem; }
-  .chat-form__input { font-size: 0.9375rem; }
   .room[data-room="r4"] .chat-panel, .room[data-room="r4"] .panel.chat-panel { padding-inline: 1.1rem; }
   .r4-ls__name { font-size: 1.4rem; }
   .r4-ls__svc { font-size: 1.0625rem; }
@@ -4804,4 +4803,28 @@ input:focus, textarea:focus, select:focus {
 .palco[data-world="phone"][data-panel="chat"] .palco__bar { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .palco__like, .palco__toggle, .palco__tab, .palco__ctrl { transition: none; }
+}
+
+/* ---- phones: text inputs, chat room and the keyboard -------------------------
+   iOS Safari zooms the page when a focused field computes under 16px, so every
+   field is 16px on phones and touch screens (zero specificity: a class may go
+   bigger, never smaller). The chat title is read by screen readers only (the tab
+   already says "Chat"), the list takes the room the title gave up, and while the
+   composer has focus the chrome that is not the player or the chat steps aside so
+   the keyboard leaves messages to read. --app-h is the visual viewport height
+   (useVisualViewportHeight); 100dvh covers browsers that resize the layout. */
+@media (pointer: coarse), (max-width: 47.999rem) {
+  :where(input, textarea, select) { font-size: 16px; }
+}
+@media (max-width: 47.999rem) {
+  .chat-panel > .chat-head { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .room[data-room="r4"] .chat-scroll { max-height: max(10rem, calc(var(--app-h, 100dvh) - 20rem)); }
+  .room[data-view="palco"] { height: var(--app-h, 100dvh); }
+  .room:has(.chat-form__input:focus) > .room-header { display: none; }
+  .room:has(.chat-form__input:focus) .audio-tabs { display: none; }
+  .palco:has(.chat-form__input:focus) :is(.palco__ctrls, .palco__now) { display: none; }
+  .room:has(.chat-form__input:focus) .chat-panel { padding: 0.5rem 0.5rem 0.25rem; gap: 0.25rem; }
+  .room:has(.chat-form__input:focus) .palco__panel { padding: 0.25rem; }
+  .room[data-room="r4"]:not([data-view="palco"]):has(.chat-form__input:focus) .r4-main { padding-bottom: 0.75rem; }
+  .room[data-room="r4"]:has(.chat-form__input:focus) .chat-scroll { max-height: max(6rem, calc(var(--app-h, 100dvh) - 21rem)); }
 }

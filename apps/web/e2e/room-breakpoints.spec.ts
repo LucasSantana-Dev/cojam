@@ -188,17 +188,16 @@ test.describe('room at 390x844', () => {
     await expect(page.getByTestId('queue-item').first()).toBeHidden();
 
     // Keyboard open: iOS/Android leave roughly half the height. Shrink the
-    // viewport to model it, focus the input, and require it to stay on screen
-    // above the docked tab bar.
+    // viewport to model it, focus the input, and require it to stay on screen.
+    // The docked tab bar steps aside while the composer has focus.
     await page.setViewportSize({ width: 390, height: 420 });
     await input.focus();
     await input.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
     const box = await input.boundingBox();
-    const tabs = await page.locator('.audio-tabs').boundingBox();
     expect(box).not.toBeNull();
     expect(box!.y).toBeGreaterThanOrEqual(0);
     expect(box!.y + box!.height).toBeLessThanOrEqual(420);
-    expect(box!.y + box!.height).toBeLessThanOrEqual(tabs!.y + 1);
+    await expect(page.locator('.audio-tabs')).toBeHidden();
     expect(box!.height).toBeGreaterThanOrEqual(MIN_TARGET);
     expect(await noHorizontalOverflow(page)).toBe(true);
 
@@ -214,5 +213,63 @@ test.describe('room at 390x844', () => {
       await page.getByRole('tab', { name: 'Agora', exact: true }).click();
       await page.screenshot({ path: `${process.env.SHOT_DIR}/after-playing.png` });
     }
+  });
+});
+
+// Real users (2026-10-09, iPhone 12): "muito pequeno" and a zoom on tap. iOS
+// zooms a focused field under 16px; the chat also left a sliver of messages.
+// Dev fixture with the YouTube stand-in, so the pinned player card is real.
+test.describe('chat on a phone', () => {
+  const FIXTURE = '/room/SALABIA?fixture=room&yt=1';
+
+  test('390x844: every field is 16px, the composer is on screen, the list has room', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(FIXTURE);
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    const input = page.getByLabel('Mensagem', { exact: true });
+    await expect(input).toBeVisible();
+    // iOS zooms on focus when a text field computes under 16px.
+    const small = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]), textarea, select')]
+        .filter((el) => el.getClientRects().length > 0)
+        .map((el) => ({ el: el.getAttribute('aria-label') ?? el.className, fs: parseFloat(getComputedStyle(el).fontSize) }))
+        .filter((x) => x.fs < 16),
+    );
+    expect(small).toEqual([]);
+    const box = await input.boundingBox();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+    expect(box!.height).toBeGreaterThanOrEqual(MIN_TARGET);
+    // The chat title is for screen readers only on phones: the tab already says Chat.
+    await expect(page.getByRole('heading', { name: 'Chat da Sala' })).toHaveCount(1);
+    expect((await page.locator('.chat-head').boundingBox())!.height).toBeLessThanOrEqual(1);
+    // Never a viewport lock that blocks pinch zoom (WCAG 1.4.4).
+    const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
+    expect(viewport).not.toMatch(/maximum-scale|user-scalable/);
+    expect(await noHorizontalOverflow(page)).toBe(true);
+  });
+
+  test('390x460 with the keyboard: composer visible, player 200x200 and not under the header', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 460 });
+    await page.goto(FIXTURE);
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    const input = page.getByLabel('Mensagem', { exact: true });
+    await input.focus();
+    await page.waitForTimeout(400);
+    const box = await input.boundingBox();
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(460);
+    // At least two readable lines (floor 100 px; measured about 124).
+    const list = await page.locator('.chat-scroll').boundingBox();
+    expect(list!.height).toBeGreaterThanOrEqual(100);
+    const player = await page.locator('#youtube-player').boundingBox();
+    expect(player!.width).toBeGreaterThanOrEqual(200);
+    expect(player!.height).toBeGreaterThanOrEqual(200);
+    expect(player!.y).toBeGreaterThanOrEqual(0);
+    const covered = await page.evaluate(() => {
+      const r = document.getElementById('youtube-player')!.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return hit && document.getElementById('youtube-player')!.contains(hit) ? null : (hit as HTMLElement | null)?.className ?? 'nothing';
+    });
+    expect(covered).toBeNull();
   });
 });
