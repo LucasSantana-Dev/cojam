@@ -6,6 +6,7 @@ import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
 import { computeExpectedPosition, isExpectedPositionKnown, serverNow } from '@/lib/playbackSync';
 import { secondsToMs, msToSeconds, createEndedDetector } from '@/lib/playerUtils';
+import { advanceWithRetry, shouldResumeInBackground } from '@/lib/backgroundPlayback';
 
 // Minimal structural types for the YouTube IFrame API surface this adapter uses.
 interface YTPlayerInstance {
@@ -288,9 +289,25 @@ export function YouTubePlayer({
             }
             if (event.data === 0 && nowPlayingIdRef.current && !mutedRef.current) {
               // Advance is control-gated on the server: a listener's rejection is expected.
-              nowPlayingAdvance(roomId, nowPlayingIdRef.current).catch((err) => {
-                if (!isPermissionDeniedError(err)) console.warn('[youtube] advance at track end failed:', err);
-              });
+              void advanceWithRetry(
+                nowPlayingAdvance,
+                () => useStore.getState().state?.nowPlayingId,
+                roomId,
+                nowPlayingIdRef.current,
+                isPermissionDeniedError,
+              );
+            }
+            // Paused/cued by the browser or the embed while the page is hidden and
+            // the room plays: restart it from this event, not from a throttled tick.
+            if (
+              shouldResumeInBackground({
+                ytState: event.data,
+                hidden: typeof document !== 'undefined' && document.hidden,
+                transportState: useStore.getState().state?.transport?.state,
+                muted: mutedRef.current,
+              })
+            ) {
+              player.playVideo();
             }
           },
           onError: (event: { data: number }) => {

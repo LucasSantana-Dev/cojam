@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useStore, requestClockRemeasure, nowPlayingAdvance } from './realtime';
+import { useStore, requestClockRemeasure, nowPlayingAdvance, resyncRoom } from './realtime';
+import { attachResumeListeners } from './backgroundPlayback';
 import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, isPastEnd, DRIFT_THRESHOLD_MS, seekCooldownMs, serverNow } from './playbackSync';
 import type { IPlayer } from './playerInterface';
 
@@ -28,9 +29,15 @@ const MAX_PLAYER_DURATION_FACTOR = 3;
 // A drift that moves this far between two measurements is a real jump, not a
 // rebuffer: it resets the seek backoff.
 const BACKOFF_RESET_DRIFT_MS = 8000;
+// While the page is hidden nobody can have paused the player on purpose, so a
+// paused player under a playing room is resumed again every this long (the
+// browser or embed can pause it more than once).
+const HIDDEN_RESUME_RETRY_MS = 5000;
 
 export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: boolean, canAdvance = false) {
   const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // The latest drift check, so a page coming back runs it at once (set below).
+  const checkNowRef = useRef<(() => void) | null>(null);
   const canAdvanceRef = useRef(canAdvance);
   useEffect(() => {
     canAdvanceRef.current = canAdvance;
@@ -131,6 +138,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     // persistent large offset keeps backing off.
     let lastDrift = 0;
     let resumeTried = false;
+    let lastResumeAt = 0;
     // Queue ended: the server leaves the transport "playing" at 0 with nothing
     // now-playing, while an adapter may still hold the finished track. Resuming
     // and seeking it to 0 would replay that song instead of waiting for the
@@ -186,7 +194,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     }
 
     // Start drift correction interval: check ~every 1500ms
-    driftCorrectionIntervalRef.current = setInterval(() => {
+    const check = () => {
       // Re-check the latest state in case it changed since the interval started
       const current = useStore.getState().state?.transport;
       if (!current || current.state !== 'playing') {
@@ -208,8 +216,10 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
       if (activePlayer.isPlaying && !activePlayer.isPlaying()) {
         // Paused while the room plays (e.g. autoplay blocked): try play() once
         // per transport change, never in a loop.
-        if (!resumeTried && activePlayer.isPaused?.()) {
+        const retryHidden = typeof document !== 'undefined' && document.hidden && Date.now() - lastResumeAt > HIDDEN_RESUME_RETRY_MS;
+        if ((!resumeTried || retryHidden) && activePlayer.isPaused?.()) {
           resumeTried = true;
+          lastResumeAt = Date.now();
           activePlayer.play().catch(() => {});
         }
         return;
@@ -239,13 +249,30 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         .catch((err) => {
           console.warn('Failed to get current position for drift check:', err);
         });
-    }, 1500);
+    };
+    driftCorrectionIntervalRef.current = setInterval(check, 1500);
+    // Coming back to the page: the throttled tick may be a minute away, so check
+    // now, with a fresh chance to resume a paused player.
+    checkNowRef.current = () => {
+      resumeTried = false;
+      check();
+    };
 
     return () => {
+      checkNowRef.current = null;
       if (driftCorrectionIntervalRef.current) {
         clearInterval(driftCorrectionIntervalRef.current);
         driftCorrectionIntervalRef.current = null;
       }
     };
   }, [activePlayer, transport, syncEnabled, handlePastEnd]);
+
+  // The page came back (shown, thawed, online): adopt the server state, then
+  // check the player against it immediately. Never pauses anything.
+  useEffect(() => {
+    return attachResumeListeners(() => {
+      void resyncRoom();
+      checkNowRef.current?.();
+    });
+  }, []);
 }

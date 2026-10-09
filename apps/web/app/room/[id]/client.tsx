@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from '
 import Link from 'next/link';
 import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, updatePlatform, updateCharacter, isPermissionDeniedError } from '@/lib/realtime';
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
+import { advanceWithRetry } from '@/lib/backgroundPlayback';
 import { StatusBanner } from '../components/StatusBanner';
 import { NAME_KEY } from '@/lib/guestName';
 
@@ -346,9 +347,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     activePlayer.onEnded(() => {
       const id = useStore.getState().state?.nowPlayingId;
       if (id) {
-        nowPlayingAdvance(roomId, id).catch((err) => {
-          if (!isPermissionDeniedError(err)) console.warn('[player] advance at track end failed:', err);
-        });
+        void advanceWithRetry(nowPlayingAdvance, () => useStore.getState().state?.nowPlayingId, roomId, id, isPermissionDeniedError);
       }
     });
   }, [activePlayer, roomId]);

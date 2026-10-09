@@ -768,6 +768,26 @@ export async function retryConnection() {
   await joinRoom(room.roomId, room.name, room.platform);
 }
 
+// resyncRoom: the page just came back (tab shown, thawed, network back). A
+// background tab can miss publications or lose its socket while its timers are
+// throttled, so adopt the server's state at once instead of waiting for the
+// next publication: reconnect when the client dropped, otherwise re-join (idempotent).
+export async function resyncRoom(): Promise<void> {
+  const room = activeRoom;
+  const conn = centrifuge;
+  if (!room || !conn) return;
+  if (conn.state !== 'connected') {
+    conn.connect(); // no-op while already connecting; the 'connected' handler re-joins
+    return;
+  }
+  try {
+    const res = await conn.rpc('room.join', room);
+    if (res.data) useStore.getState().setState(res.data as RoomState);
+  } catch {
+    /* stay on the current state; the next publication heals */
+  }
+}
+
 // --- Guest-to-account upgrade (room.rebind, #172) ---
 //
 // A guest who signs in keeps what they already did: on every room join, while

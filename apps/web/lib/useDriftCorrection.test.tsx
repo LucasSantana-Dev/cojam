@@ -599,4 +599,52 @@ describe('useDriftCorrection when the queue has ended', () => {
     expect(player.seekToMs).not.toHaveBeenCalled();
     unmount();
   });
+
+  describe('background tab', () => {
+    const setHidden = (hidden: boolean) =>
+      Object.defineProperty(document, 'hidden', { value: hidden, configurable: true });
+    afterEach(() => setHidden(false));
+
+    it('keeps resuming a player the browser paused while the page is hidden', async () => {
+      setHidden(true);
+      const player = { ...makePlayer(), isPlaying: vi.fn(() => false), isPaused: vi.fn(() => true) };
+      useStore.getState().setState(roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() }));
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      const initial = player.play.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      // A visible page tries once; a hidden one keeps trying every few seconds.
+      expect(player.play.mock.calls.length - initial).toBeGreaterThanOrEqual(4);
+      unmount();
+    });
+
+    it('checks the player at once when the page comes back, not at the next tick', async () => {
+      const player = { ...makePlayer(), isPlaying: vi.fn(() => false), isPaused: vi.fn(() => true) };
+      useStore.getState().setState(roomState(1, { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() }));
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1600); // first tick used the one visible resume
+      });
+      const before = player.play.mock.calls.length;
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      expect(player.play.mock.calls.length).toBe(before + 1);
+      unmount();
+    });
+
+    it('never pauses the player when the page is hidden', async () => {
+      const player = makePlayer();
+      useStore.getState().setState(roomState(1, PLAYING));
+      const { unmount } = renderHook(() => useDriftCorrection(player, true));
+      setHidden(true);
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(player.pause).not.toHaveBeenCalled();
+      unmount();
+    });
+  });
 });
