@@ -241,6 +241,7 @@ type Hub struct {
 	// ytQuotaUntil reports when the YouTube search quota resets (zero time =
 	// available). Nil without a YouTube matcher.
 	ytQuotaUntil    func() time.Time
+	quotaWake       quotaTimer
 	spotifyMatcher  Matcher
 	searcher        Searcher
 	playlistFetcher PlaylistFetcher
@@ -1488,6 +1489,9 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 	outbound := *room.State
 	outbound.RadioAvailable = h.similar != nil
 	outbound.YouTubeQuotaUntil = h.quotaUntilMs()
+	if outbound.YouTubeQuotaUntil != 0 {
+		h.armQuotaTimer()
+	}
 	data, err := json.Marshal(&outbound)
 	room.mu.Unlock()
 	if err != nil {

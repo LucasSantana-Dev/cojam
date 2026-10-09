@@ -84,6 +84,9 @@ type TrackRef struct {
 	// YouTube quota was exhausted; it is retried once the quota resets.
 	YTLookup bool `json:"-"`
 	YTQuota  bool `json:"-"`
+	// YTAttempts counts window lookups claimed for this track; a failed one
+	// is re-claimed on the next mutation until it reaches the cap.
+	YTAttempts int `json:"-"`
 }
 
 // Track kinds (#258). Empty is treated as KindAudio.

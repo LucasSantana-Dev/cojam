@@ -177,8 +177,8 @@ func youtubeSearch(ctx context.Context, query string) (cands []YouTubeCandidate,
 
 	var result YouTubeSearchResult
 	if err := httpx.DoJSON(req, &result); err != nil {
-		if isQuotaError(err) {
-			return nil, false, quotaExhaustedErr(tripYouTubeQuota(quotaNow()))
+		if until, ok := tripFor(err, quotaNow()); ok {
+			return nil, false, quotaExhaustedErr(until)
 		}
 		return nil, false, fmt.Errorf("request failed: %w", redactErr(err))
 	}
@@ -238,9 +238,7 @@ func fillDurations(ctx context.Context, apiKey string, candidates []YouTubeCandi
 	}
 	var res youtubeVideosResult
 	if err := httpx.DoJSON(req, &res); err != nil {
-		if isQuotaError(err) {
-			tripYouTubeQuota(quotaNow())
-		}
+		tripFor(err, quotaNow())
 		slog.Warn("youtube_duration_lookup_failed", "err", redactErr(err).Error())
 		return false
 	}

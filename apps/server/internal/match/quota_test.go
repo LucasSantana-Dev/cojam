@@ -52,6 +52,51 @@ func TestNextQuotaResetIsLosAngelesMidnight(t *testing.T) {
 	}
 }
 
+// prodDailyBody is the real production answer: HTTP 429 with reason
+// rateLimitExceeded, where only the message says it is the daily quota.
+const prodDailyBody = `{"error":{"code":429,"message":"Quota exceeded for quota metric 'Search Queries' and limit 'Search Queries per day' of service 'youtube.googleapis.com' for consumer 'project_number:1'.","errors":[{"message":"Quota exceeded for quota metric 'Search Queries' and limit 'Search Queries per day' of service 'youtube.googleapis.com' for consumer 'project_number:1'.","domain":"youtube.quota","reason":"rateLimitExceeded"}],"status":"RESOURCE_EXHAUSTED"}}`
+
+func TestClassifyQuota(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want quotaKind
+	}{
+		{"prod 429 per-day message", &httpx.StatusError{Code: 429, Body: []byte(prodDailyBody)}, quotaDaily},
+		{"403 quotaExceeded", &httpx.StatusError{Code: 403, Body: []byte(`{"error":{"errors":[{"reason":"quotaExceeded"}]}}`)}, quotaDaily},
+		{"429 dailyLimitExceeded", &httpx.StatusError{Code: 429, Body: []byte(`{"error":{"errors":[{"reason":"dailyLimitExceeded"}]}}`)}, quotaDaily},
+		{"429 per minute", &httpx.StatusError{Code: 429, Body: []byte(`{"error":{"message":"Quota exceeded for limit 'Requests per minute'","errors":[{"reason":"rateLimitExceeded"}]}}`)}, quotaTransient},
+		{"429 no body", &httpx.StatusError{Code: 429}, quotaTransient},
+		{"403 rateLimitExceeded", &httpx.StatusError{Code: 403, Body: []byte(`{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}`)}, quotaTransient},
+		{"403 key error", &httpx.StatusError{Code: 403, Body: []byte(`{"error":{"errors":[{"reason":"forbidden"}]}}`)}, quotaNone},
+		{"500", &httpx.StatusError{Code: 500}, quotaNone},
+	}
+	for _, c := range cases {
+		if got := classifyQuotaError(c.err); got != c.want {
+			t.Errorf("%s: kind = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestQuotaBreakerTransientPausesAboutAMinute(t *testing.T) {
+	searches := quotaServer(t, func() (int, string) {
+		return 429, `{"error":{"message":"Too many requests per minute","errors":[{"reason":"rateLimitExceeded"}]}}`
+	})
+	now := time.Date(2026, 7, 15, 20, 0, 0, 0, time.UTC)
+	quotaNow = func() time.Time { return now }
+	if _, err := ResolveYouTube(context.Background(), "Song", "Artist", ""); !errors.Is(err, hub.ErrQuotaExhausted) {
+		t.Fatalf("err = %v", err)
+	}
+	if got, want := YouTubeQuotaUntil(), now.Add(time.Minute); !got.Equal(want) {
+		t.Fatalf("until = %v, want %v (not midnight Pacific)", got, want)
+	}
+	now = now.Add(61 * time.Second)
+	_, _ = ResolveYouTube(context.Background(), "Song", "Artist", "")
+	if *searches != 2 {
+		t.Fatalf("searches = %d, want the API called again after the pause", *searches)
+	}
+}
+
 func TestIsQuotaError(t *testing.T) {
 	body := func(reason string) []byte {
 		return []byte(`{"error":{"code":403,"errors":[{"reason":"` + reason + `"}]}}`)
@@ -111,7 +156,7 @@ func quotaServer(t *testing.T, status func() (int, string)) *int {
 }
 
 func TestQuotaBreakerTripsOn429AndSkipsCalls(t *testing.T) {
-	searches := quotaServer(t, func() (int, string) { return 429, `{"error":{"code":429}}` })
+	searches := quotaServer(t, func() (int, string) { return 429, prodDailyBody })
 	now := time.Date(2026, 7, 15, 20, 0, 0, 0, time.UTC)
 	quotaNow = func() time.Time { return now }
 

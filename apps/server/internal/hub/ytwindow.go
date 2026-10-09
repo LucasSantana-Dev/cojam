@@ -2,6 +2,7 @@ package hub
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
@@ -13,6 +14,10 @@ import (
 // every track at once. Tracks further back stay un-enriched for YouTube until
 // they enter the window; Spotify matching stays eager (no such quota).
 const youtubeMatchWindow = 3
+
+// youtubeMaxAttempts caps how often a window lookup that failed for a reason
+// other than the quota (a 5xx, a timeout, a dropped launch) is re-claimed.
+const youtubeMaxAttempts = 3
 
 // ErrQuotaExhausted is wrapped by a YouTube matcher when the daily search
 // quota is used up (or the circuit breaker is open). The hub keeps the track
@@ -66,10 +71,11 @@ func (h *Hub) markYouTubeWindowLocked(s *queue.RoomState) []queue.TrackRef {
 			t.EnrichUncertain, t.YTQuota = true, true
 			return
 		}
-		if t.YTQuota {
+		if t.YTQuota || t.YTAttempts > 0 {
 			t.EnrichUncertain, t.YTQuota = false, false
 		}
 		t.YTLookup = true
+		t.YTAttempts++
 		t.EnrichPending++
 		launches = append(launches, *t)
 	}
@@ -115,4 +121,75 @@ func (h *Hub) ensureYouTubeWindow(roomID string) {
 	launches := h.markYouTubeWindowLocked(room.State)
 	room.mu.Unlock()
 	h.launchYouTubeLookups(roomID, launches)
+}
+
+// quotaTimer wakes idle rooms at the quota reset: nothing else touches a room
+// nobody is acting in, so its sourceless tracks would stay owed and its
+// clients would keep the notice.
+type quotaTimer struct {
+	mu    sync.Mutex
+	timer *time.Timer
+	at    time.Time
+}
+
+// armQuotaTimer schedules one wake-up at the current quota reset, replacing a
+// timer set for another instant. Harmless without a breaker or after shutdown.
+func (h *Hub) armQuotaTimer() {
+	until := h.quotaUntil()
+	if until.IsZero() || h.roles.shuttingDown.Load() {
+		return
+	}
+	qt := &h.quotaWake
+	qt.mu.Lock()
+	defer qt.mu.Unlock()
+	if qt.timer != nil && qt.at.Equal(until) {
+		return
+	}
+	if qt.timer != nil {
+		qt.timer.Stop()
+	}
+	qt.at = until
+	// A little past the reset so the breaker reads as closed when it fires.
+	qt.timer = time.AfterFunc(time.Until(until)+20*time.Millisecond, h.onQuotaReset)
+}
+
+func (h *Hub) stopQuotaTimer() {
+	qt := &h.quotaWake
+	qt.mu.Lock()
+	if qt.timer != nil {
+		qt.timer.Stop()
+		qt.timer = nil
+	}
+	qt.mu.Unlock()
+}
+
+// onQuotaReset runs at the reset: every live room republishes (the version
+// bump drops the notice on clients) and its window retries the owed lookups.
+// If the breaker was tripped again meanwhile it re-arms instead.
+func (h *Hub) onQuotaReset() {
+	qt := &h.quotaWake
+	qt.mu.Lock()
+	qt.timer = nil
+	qt.mu.Unlock()
+	if h.roles.shuttingDown.Load() {
+		return
+	}
+	if !h.quotaUntil().IsZero() {
+		h.armQuotaTimer()
+		return
+	}
+	h.mu.RLock()
+	ids := make([]string, 0, len(h.rooms))
+	for id := range h.rooms {
+		ids = append(ids, id)
+	}
+	h.mu.RUnlock()
+	for _, id := range ids {
+		_, _ = h.mutate(id, func(s *queue.RoomState) error {
+			if s.Version > 0 {
+				s.Version++
+			}
+			return nil
+		})
+	}
 }

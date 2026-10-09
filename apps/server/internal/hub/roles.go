@@ -71,6 +71,7 @@ func (h *Hub) WithAutoSkipSourceless(on bool) *Hub {
 // is promoted and pending grace timers are dropped.
 func (h *Hub) BeginShutdown() {
 	h.roles.shuttingDown.Store(true)
+	h.stopQuotaTimer()
 	h.roles.graceMu.Lock()
 	for id, e := range h.roles.graces {
 		e.timer.Stop()
@@ -261,7 +262,7 @@ func (h *Hub) enrichBookkeeping(t *queue.TrackRef) {
 		n++
 	}
 	t.EnrichPending = n
-	t.YTLookup, t.YTQuota = false, false
+	t.YTLookup, t.YTQuota, t.YTAttempts = false, false, 0
 	// No matcher at all: nothing can ever resolve a source, which is a
 	// definitive answer rather than an unknown one.
 	t.EnrichChecked = h.matcher == nil && h.spotifyMatcher == nil
@@ -301,9 +302,15 @@ func (h *Hub) enrichSettle(roomID, trackID string, certain, quota bool) {
 			case quota:
 				t.EnrichUncertain = true
 				t.YTLookup, t.YTQuota = false, true
+				if t.YTAttempts > 0 {
+					t.YTAttempts-- // a quota refusal is not a failed attempt
+				}
 				s.Version++
 			case !certain:
 				t.EnrichUncertain = true
+				if t.YTLookup && t.YTAttempts < youtubeMaxAttempts {
+					t.YTLookup = false // the next mutation re-claims it
+				}
 			default:
 				t.EnrichChecked = true
 			}

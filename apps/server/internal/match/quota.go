@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 	_ "time/tzdata" // the zone database for America/Los_Angeles on minimal images
@@ -44,21 +45,38 @@ func quotaExhaustedErr(until time.Time) error {
 	return fmt.Errorf("%w until %s", hub.ErrQuotaExhausted, until.UTC().Format(time.RFC3339))
 }
 
-// tripYouTubeQuota opens the breaker until the next quota reset and logs one
-// WARN per trip (concurrent failures of the same outage log once).
-func tripYouTubeQuota(now time.Time) time.Time {
-	until := nextQuotaReset(now)
+// transientQuotaPause is how long a per-minute rate limit pauses searches.
+const transientQuotaPause = 60 * time.Second
+
+// tripYouTubeQuota opens the breaker until the given time and logs one WARN
+// per trip (concurrent failures of the same outage log once). A later until
+// extends an open breaker; an earlier one never shortens it.
+func tripYouTubeQuota(now, until time.Time, kind quotaKind) time.Time {
 	ytQuota.mu.Lock()
 	already := ytQuota.until.After(now)
-	if !already {
+	if !already || until.After(ytQuota.until) {
 		ytQuota.until = until
 	}
 	until = ytQuota.until
 	ytQuota.mu.Unlock()
 	if !already {
-		slog.Warn("youtube_quota_exhausted", "until", until.UTC().Format(time.RFC3339))
+		slog.Warn("youtube_quota_exhausted", "until", until.UTC().Format(time.RFC3339), "kind", kind.String())
 	}
 	return until
+}
+
+// tripFor classifies err and opens the breaker accordingly: a daily quota
+// until the next midnight Pacific, a transient rate limit for about a minute.
+// It returns the until time and whether err was a quota error at all.
+func tripFor(err error, now time.Time) (time.Time, bool) {
+	kind := classifyQuotaError(err)
+	switch kind {
+	case quotaDaily:
+		return tripYouTubeQuota(now, nextQuotaReset(now), kind), true
+	case quotaTransient:
+		return tripYouTubeQuota(now, now.Add(transientQuotaPause), kind), true
+	}
+	return time.Time{}, false
 }
 
 // resetYouTubeQuota closes the breaker (tests).
@@ -79,34 +97,69 @@ func nextQuotaReset(now time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, loc)
 }
 
-// isQuotaError reports whether err is the YouTube API saying the quota is
-// spent: HTTP 429, or 403 carrying a quota reason in the error body. Other
-// 403s (a bad or restricted key) are not a quota problem.
-func isQuotaError(err error) bool {
-	var se *httpx.StatusError
-	if !errors.As(err, &se) {
-		return false
+type quotaKind int
+
+const (
+	quotaNone quotaKind = iota
+	quotaDaily
+	quotaTransient
+)
+
+func (k quotaKind) String() string {
+	switch k {
+	case quotaDaily:
+		return "daily"
+	case quotaTransient:
+		return "transient"
 	}
-	switch se.Code {
-	case 429:
-		return true
-	case 403:
-		var body struct {
-			Error struct {
-				Errors []struct {
-					Reason string `json:"reason"`
-				} `json:"errors"`
-			} `json:"error"`
-		}
-		if json.Unmarshal(se.Body, &body) != nil {
-			return false
-		}
-		for _, e := range body.Error.Errors {
-			switch e.Reason {
-			case "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded":
-				return true
-			}
-		}
-	}
-	return false
+	return "none"
 }
+
+// classifyQuotaError tells the daily quota apart from a transient rate limit.
+// Google answers both with 429/403 and often reason rateLimitExceeded, so the
+// message decides: "...Search Queries per day" is the daily quota. Daily means
+// reason quotaExceeded or dailyLimitExceeded, or a message naming "per day".
+// Any other 429, or reason rateLimitExceeded, is transient. A 403 without a
+// quota reason (a bad or restricted key) is not a quota problem.
+func classifyQuotaError(err error) quotaKind {
+	var se *httpx.StatusError
+	if !errors.As(err, &se) || (se.Code != 429 && se.Code != 403) {
+		return quotaNone
+	}
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+			Errors  []struct {
+				Reason  string `json:"reason"`
+				Message string `json:"message"`
+			} `json:"errors"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(se.Body, &body)
+	daily, rate := false, false
+	msgs := []string{body.Error.Message}
+	for _, e := range body.Error.Errors {
+		msgs = append(msgs, e.Message)
+		switch e.Reason {
+		case "quotaExceeded", "dailyLimitExceeded":
+			daily = true
+		case "rateLimitExceeded":
+			rate = true
+		}
+	}
+	for _, m := range msgs {
+		if strings.Contains(strings.ToLower(m), "per day") {
+			daily = true
+		}
+	}
+	switch {
+	case daily:
+		return quotaDaily
+	case se.Code == 429 || rate:
+		return quotaTransient
+	}
+	return quotaNone
+}
+
+// isQuotaError reports whether err is any kind of YouTube quota refusal.
+func isQuotaError(err error) bool { return classifyQuotaError(err) != quotaNone }
