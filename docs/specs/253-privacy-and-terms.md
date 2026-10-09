@@ -92,8 +92,10 @@ architecture:
 
 - **No audio or video ever passes through CoJam's servers.** Each listener plays
   on their own account through the provider's own SDK.
-- No analytics or tracking exists today (#251 is unimplemented). If it lands,
-  the policy must change with it, in the same PR.
+- No third-party analytics or tracking exists. First-party product events do
+  (section 8, added 2026-10-09 in the same change that introduced them), kept
+  in CoJam's own Postgres. Any further collection must change the policy in
+  the same PR.
 
 ## 3. Retention, from the configuration
 
@@ -118,6 +120,11 @@ gone.
 
 Do not publish the policy before the setting is applied. A retention promise
 the configuration does not keep is worse than no promise.
+
+Product events (section 8) are kept **13 months**, then purged by the
+retention sweep (`retention_purged_total{table="product_events"}`). The window
+is a constant in `cmd/server/events.go`, not an environment variable, because
+the policy states it.
 
 ## 4. Deletion has to actually work
 
@@ -167,3 +174,78 @@ Shorter, and mostly about setting expectations:
 - Reviewed by someone qualified in Brazilian law **before** external users are
   invited.
 - If #251 analytics lands, the policy is updated in the same PR.
+- The product events description in section 8 and the policy table agree with
+  `docs/observability-metrics.md` (events, props, retention) in the same PR.
+
+## 8. First-party product events (owner decision 2026-10-09)
+
+Decision: "Tabela de eventos propria". Product events live in CoJam's Postgres
+(`product_events`), with no IP, no nickname, no chat text, deleted after 13
+months, read later through aggregated Grafana dashboards. Until now the policy
+promised only counts (the browser telemetry of 245/251, Prometheus counters).
+This section is what makes the wider promise true; `/privacidade` sections 3, 4,
+5 and 8 were updated in the same change.
+
+### 8.1 What is recorded
+
+Eight event names, exact strings in `internal/events`: `room_created`,
+`room_joined`, `track_started`, `track_skipped`, `track_liked`, `search`,
+`provider_connected`, `listener_peak`. Each row is `at`, `name`, `room_hash`,
+`actor_hash` and a small `props` object whose keys and values are an allowlist
+enforced in code (an unknown key or value is dropped before it is buffered).
+
+`room_hash` and `actor_hash` are the first 16 bytes of HMAC-SHA256 over the
+room id or the connection identity, keyed by `EVENTS_HMAC_KEY`. Room ids are
+capabilities (spec 245 section 2.5), so the clear value is never stored.
+
+### 8.2 What is not recorded
+
+IP address, display name, chat text, search text, track titles and artists, the
+clear room id, the clear guest identifier, Spotify tokens or scopes.
+
+### 8.3 Pseudonymised, not anonymous
+
+The same input always yields the same hash, which is what lets a dashboard
+count distinct rooms and people. Whoever holds the key and a candidate id can
+recompute the hash, so under LGPD these are **pseudonymised personal data**, not
+anonymised data (art. 13 paragraph 4 and art. 12). The policy says so in plain
+words. Guests without room auth get a per-connection actor, so they are not
+linkable across visits; users with an anonymous or account sub are stable.
+
+### 8.4 Balancing test (legitimo interesse, art. 7 IX and art. 10)
+
+Drafted by engineering to hand to the reviewer. Not reviewed by a lawyer.
+
+- **Purpose.** Understand how CoJam is used (do rooms get created and shared,
+  do tracks play, do people skip, which provider) so the product can be
+  improved. Legitimate, specific and stated on the policy.
+- **Necessity.** Aggregate Prometheus counters already answer "how many". They
+  cannot answer "how many distinct rooms" or "what share of rooms ever had a
+  second listener" without a per-room identifier, and they vanish on restart.
+  The data collected is the minimum for those questions: a pseudonymous room
+  and actor, an event name and enum props. No content, no identity, no IP.
+- **Balancing and safeguards.** Impact on the person is low: the data is
+  behavioural at the level of "a track started", cannot be tied to a name or an
+  IP from the table alone, and is never used to profile, target or sell.
+  Safeguards: keyed hashing; allowlisted props; 13 month retention with an
+  automatic purge; RLS on with no policy for anyone but a read-only role that
+  sees only the table's non-id columns; access through aggregated dashboards.
+  Reasonable expectation: a shared listening room is a social product and its
+  operator measuring room and track counts is expected, but the policy states
+  it up front. A minor-specific concern (ECA Digital) is limited by the same
+  minimisation: nothing recorded reveals who a minor is.
+- **Objection.** The policy gives the contact for objection (art. 18
+  paragraph 2). Honouring it needs the person's identifier to find their
+  hashes; the operational procedure is a `[[CONFIRMAR]]` item on the page, not
+  yet implemented (a suppression list would be the mechanism).
+- **Open items for the reviewer.** Whether pseudonymised events need a DPIA
+  line in the records of processing; whether the minimum age text must mention
+  events for the public directory; whether a longer or shorter window fits.
+
+### 8.5 Operations
+
+`EVENTS_HMAC_KEY` must be set in production (32 or more random bytes). Without
+it each boot uses a random key and hashes do not compare across restarts.
+`FEATURE_PRODUCT_EVENTS=false` turns the writer off; the purge still runs
+whenever a database exists, so earlier rows keep the 13 month promise. The
+dashboard role is `observability/postgres/grafana-ro.sql`.

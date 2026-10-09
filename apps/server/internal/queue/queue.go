@@ -69,6 +69,11 @@ type TrackRef struct {
 	// existing queues and older clients keep working unchanged.
 	Kind string `json:"kind,omitempty"`
 
+	// Origin records how the track reached the queue (OriginManual, OriginRadio,
+	// OriginHistory), for the track_started product event. Server-only: never
+	// serialized, so never persisted or published; unknown after a restart.
+	Origin string `json:"-"`
+
 	// EnrichPending counts source lookups still in flight for this track and
 	// EnrichUncertain records that one failed with an error (not a clean
 	// miss). Server-only bookkeeping for the sourceless auto skip: never
@@ -88,6 +93,13 @@ type TrackRef struct {
 	// is re-claimed on the next mutation until it reaches the cap.
 	YTAttempts int `json:"-"`
 }
+
+// Track origins (TrackRef.Origin).
+const (
+	OriginManual  = "manual"
+	OriginRadio   = "radio"
+	OriginHistory = "history"
+)
 
 // Track kinds (#258). Empty is treated as KindAudio.
 const (

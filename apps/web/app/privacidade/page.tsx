@@ -82,6 +82,16 @@ export default function PrivacyPage() {
             <td>Cumprimento de obrigação legal ou regulatória (II). <code>[[REVISAR: base]]</code></td>
           </tr>
           <tr>
+            <td>
+              Eventos de uso pseudonimizados: sala criada, entrada em sala, faixa iniciada, pulada ou
+              curtida, busca (sem o texto), serviço conectado e pico de ouvintes por hora. Cada
+              evento guarda a data, o nome do evento, identificadores embaralhados da sala e de quem
+              agiu, e poucas informações genéricas (por exemplo, o serviço de música)
+            </td>
+            <td>Entender como o CoJam é usado e melhorar o produto</td>
+            <td>Legítimo interesse (IX). <code>[[REVISAR: base]]</code></td>
+          </tr>
+          <tr>
             <td>Endereço IP e dados de conexão em registros técnicos do servidor e do provedor de rede</td>
             <td>Segurança, limite de abuso e operação</td>
             <td>Legítimo interesse (IX)</td>
@@ -93,6 +103,28 @@ export default function PrivacyPage() {
         propósito. O que você escrever livremente no chat ou no nome de exibição é de sua
         responsabilidade.
       </p>
+      <p><strong>Eventos de uso: o que é e o que não é registrado</strong></p>
+      <p>
+        Os eventos de uso ficam em uma tabela do banco de dados do próprio CoJam. Os
+        identificadores da sala e de quem agiu são embaralhados no servidor com uma chave que só o
+        servidor conhece (HMAC-SHA256): quem consulta os painéis vê códigos que não revelam a sala
+        nem a pessoa e que não dá para reverter sem essa chave. Como a mesma entrada sempre gera o
+        mesmo código, o CoJam consegue contar quantas salas e pessoas diferentes houve, e por isso
+        esses dados seguem sendo tratados como dados pessoais pseudonimizados.
+      </p>
+      <ul>
+        <li>
+          <strong>Registrado:</strong> que a sala foi criada ou alguém entrou nela; que uma faixa
+          começou, foi pulada ou foi curtida, e por qual serviço de música; que uma busca
+          aconteceu; que um serviço foi conectado; e o maior número de pessoas em uma sala em cada
+          hora.
+        </li>
+        <li>
+          <strong>Nunca registrado nesses eventos:</strong> endereço IP, nome de exibição, mensagens
+          de chat, o texto das buscas, o título ou o artista das faixas, o código da sala em claro
+          e o seu identificador de convidado em claro.
+        </li>
+      </ul>
 
       <h2>4. Retenção</h2>
       <ul>
@@ -117,6 +149,11 @@ export default function PrivacyPage() {
         <li>
           <strong>Denúncias e registros de moderação:</strong> hoje não há prazo de exclusão
           definido no código. <code>[[PRAZO DE RETENÇÃO DE DENÚNCIAS]]</code>
+        </li>
+        <li>
+          <strong>Eventos de uso:</strong> 13 meses. Depois disso são apagados automaticamente,
+          sem necessidade de pedido. Só são consultados em painéis agregados
+          (contagens e médias), por uma conta de banco de dados somente leitura.
         </li>
         <li>
           <strong>Dados no seu navegador:</strong> ver seção 7. Você pode apagá-los quando quiser
@@ -145,9 +182,10 @@ export default function PrivacyPage() {
       <p>
         Esses serviços têm políticas próprias. Sua relação com o Spotify e o YouTube é
         regida pelos termos deles. Não há ferramentas de análise ou rastreamento de terceiros no
-        CoJam. Existe uma telemetria própria, <strong>desativada por padrão</strong>; quando
-        ligada, envia contagens de eventos e erros ao próprio servidor do CoJam, sem fornecedor
-        externo.
+        CoJam: os eventos de uso (seção 3) ficam no banco de dados do próprio CoJam e nenhum
+        fornecedor externo os recebe. Existe também uma telemetria do navegador,{' '}
+        <strong>desativada por padrão</strong>; quando ligada, envia contagens de eventos e erros
+        ao próprio servidor do CoJam.
       </p>
 
       <h2>6. Transferência internacional</h2>
@@ -178,6 +216,14 @@ export default function PrivacyPage() {
       </p>
       <p>
         Para pedir a exclusão, use o código da seção <a href="#excluir-seus-dados">Excluir seus dados</a>.
+      </p>
+      <p>
+        <strong>Oposição aos eventos de uso.</strong> Como o tratamento dos eventos de uso se
+        baseia em legítimo interesse, você pode se opor a ele (LGPD art. 18, §2º) escrevendo para{' '}
+        <code>[[EMAIL DE CONTATO DPO]]</code>. Os eventos não guardam nome nem IP, então para
+        localizar os seus precisamos do código da seção{' '}
+        <a href="#excluir-seus-dados">Excluir seus dados</a>; sem ele não há como separar os seus
+        eventos dos de outras pessoas. <code>[[CONFIRMAR: procedimento para atender a oposição]]</code>
       </p>
       <p>
         Como o serviço é de convidados, não podemos localizar dados sem esses indicadores. Parte

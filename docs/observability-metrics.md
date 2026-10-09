@@ -15,7 +15,7 @@ Every series the Go server exposes on `/metrics` (the `METRICS_ADDR` listener on
 | `music_jam_db_pool_acquire_total` | | Successful acquires (counter). |
 | `music_jam_db_pool_acquire_seconds_total` | | Cumulative time spent acquiring (counter). |
 | `music_jam_db_pool_empty_acquire_total` | | Acquires that waited because no connection was idle (counter). Rising means the pool is too small. |
-| `music_jam_goroutine_panics_total` | `where` | Panics recovered in a background goroutine (`hub_enrich`, `hub_evict`, `hub_heartbeat`, `hub_radio`, `match_search`, `report_notify`, `report_retention`, `moderation_audit`, `search_purge`). Should stay 0; each also logs `goroutine_panic` with a trimmed stack. |
+| `music_jam_goroutine_panics_total` | `where` | Panics recovered in a background goroutine (`hub_enrich`, `hub_evict`, `hub_heartbeat`, `hub_radio`, `events_writer`, `match_search`, `report_notify`, `report_retention`, `moderation_audit`, `search_purge`). Should stay 0; each also logs `goroutine_panic` with a trimmed stack. |
 
 ## Rooms and realtime
 
@@ -63,7 +63,7 @@ A YouTube 403 counts as `quota` only when the body says `quotaExceeded` or `dail
 | `music_jam_rooms_set_public_total` | `public` | `room.set_public` toggles, by target visibility. |
 | `music_jam_rooms_shared_total` | | Rooms that gained a first non-creator member. |
 | `music_jam_reports_filed_total` | `kind` | Member reports filed (`message`, `member`, `room`). |
-| `music_jam_retention_purged_total` | `table` | Rows deleted by the retention sweep (`reports`, `moderation_actions`). |
+| `music_jam_retention_purged_total` | `table` | Rows deleted by the retention sweep (`reports`, `moderation_actions`, `product_events`). |
 
 ## Client telemetry
 
@@ -92,3 +92,35 @@ Useful queries: p95 drift `histogram_quantile(0.95, sum by (le, player, platform
 - Server: no flag. `POST /api/telemetry` is always mounted; with the web flag off nothing is sent.
 
 `track_added`, `provider_connected` (events) and `ws_terminal`, `playback_failed` (errors) are now emitted by the client: after a successful `queue.add`, after the Spotify callback exchange or an explicit "Ouvir no" switch, on a non-zero terminal disconnect code that is not a kick, and on a YouTube unplayable error or a Spotify `playback_error`.
+
+## Product events (first-party table)
+
+Distinct from the browser funnel above (`music_jam_product_events_total`, Prometheus counts only): these are rows in Postgres, `product_events`, written by the server. Owner decision 2026-10-09; the privacy page (`/privacidade`, sections 3, 4, 5 and 8) and spec 253 section 8 describe them to users. Code: `apps/server/internal/events`, emit points in `apps/server/internal/hub/events.go`.
+
+| Series | Labels | Meaning |
+| --- | --- | --- |
+| `music_jam_events_written_total` | `name` | Events inserted into `product_events`, by event name. |
+| `music_jam_events_dropped_total` | `reason` | Events discarded: `buffer_full` (5000 waiting rows), `db_error` (insert failed or shutdown flush timed out), `disabled` (`FEATURE_PRODUCT_EVENTS` off or no database). Anything but `disabled` above 0 is worth a look. |
+
+Table `product_events` (migration `0008_product_events.sql`): `id bigserial`, `at timestamptz`, `name text`, `room_hash text`, `actor_hash text`, `props jsonb`. Indexes `(name, at)` and `(at)`. RLS on, no policies. `room_hash` and `actor_hash` are the first 16 bytes (32 hex) of HMAC-SHA256 keyed by `EVENTS_HMAC_KEY` over `room:<room id>` and `actor:<identity>`; NULL when unknown. Never stored: IP, nickname, chat, search text, clear room id. Rows older than 13 months (396 days) are purged hourly by the retention sweep.
+
+| Event | Props | Emitted from | Actor |
+| --- | --- | --- | --- |
+| `room_created` | | `getOrLoadRoom`, when the room existed in neither memory nor store | none |
+| `room_joined` | (`via` is omitted: the server cannot know it) | `Hub.Join`, on a new membership | `user:<id>` or `client:<connection id>` |
+| `track_started` | `provider` `youtube`/`spotify`/`other`, `source` `manual`/`radio`/`autoplay`/`history` | `mutateRoom`, whenever `NowPlayingID` changes to a track | none |
+| `track_skipped` | `by` `host`/`auto`/`vote` | `advanceAfterReport` | voter for `vote`, caller for `host`, none for `auto` |
+| `track_liked` | | `reactionWoot` | `user:<id>` or `client:<id>` |
+| `search` | `provider` `catalog` (typed search, `track.search`) or `youtube`/`spotify` (source lookup via the matcher, `cache_hit` meaningful), `cache_hit` bool | `dispatch` and the matcher callbacks in `main.go` | caller for `catalog`, none for lookups |
+| `provider_connected` | `provider` `spotify` | `spotifyExchangeHandler`, after Spotify accepts the code | `user:<connection sub>` |
+| `listener_peak` | `n` | `peakTracker`, once per room per UTC hour | none |
+
+Semantics worth knowing before building a panel:
+
+- `provider` on `track_started` is the only source the track carries when it starts; "other" means both or neither. The service a listener plays on is chosen per client ("Ouvir no") and unknown to the server.
+- `source` `manual` means the room was idle and someone queued or re-picked the track; `autoplay` means it followed another track; `radio` and `history` come from the track's origin.
+- `track_skipped` `by=host` is an advance more than 15 s before the catalogue end of a track with a known duration and a transport (the web skip button and the end-of-track advance share one RPC). Without a transport (sync off) or a duration nothing is recorded. `by=auto` covers the sourceless auto skip and `now_playing.skip_unplayable`. `by=vote` is recorded when the vote threshold advances playback (`skipVoteStep` passes `skipBy`), once per skip and only by the call that moved playback, so it is never also counted as `host`.
+- `listener_peak.n` is the highest number of concurrent members seen at a join during the hour (one connection counts once), stamped with the start of that hour. A room that nobody rejoins is flushed within about 5 minutes after its hour ends, and at shutdown.
+- Guests without room auth get `actor_hash` per connection, so a returning guest is a new actor. With `FEATURE_ROOM_AUTH` the actor is the stable anonymous or account sub.
+
+Configuration: `FEATURE_PRODUCT_EVENTS` (default on when `DATABASE_URL` is set, always off in in-memory mode), `EVENTS_HMAC_KEY` (32+ random bytes; unset generates a random key per boot and logs `events_hmac_key_unset`, so hashes do not match across restarts). Dashboards read through the `grafana_ro` role (`observability/postgres/grafana-ro.sql`, verified by `observability/postgres/test-grafana-ro.sh`).

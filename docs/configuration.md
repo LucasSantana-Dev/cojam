@@ -50,6 +50,8 @@ FEATURE_MATCHING=true
 ROOM_IDLE_TTL_MINUTES=30               # evict memberless rooms idle this long
 ROOM_PERSIST_IDLE_TTL_MINUTES=0        # delete memberless room ROWS idle this long (0=disabled, opt-in; single-instance only)
 REPORT_RETENTION_DAYS=0                # delete reports and moderation actions older than this (0=keep forever)
+EVENTS_HMAC_KEY=<32+ random bytes>     # keys the room/actor hashes of product events; unset = random per boot (hashes not stable across restarts)
+FEATURE_PRODUCT_EVENTS=true            # first-party product events table; default on with DATABASE_URL, always off in memory mode
 LOG_LEVEL=info                         # debug | info | warn | error (default info)
 YOUTUBE_API_KEY=<key>                  # YouTube matching
 SPOTIFY_CLIENT_ID=<id>                 # Spotify matching (client credentials)
@@ -64,6 +66,7 @@ Read in `apps/server/cmd/server/main.go`. Same truthy and falsy values as the we
 | Flag | Default |
 | --- | --- |
 | `FEATURE_MATCHING`, `FEATURE_PLAYLIST_IMPORT`, `FEATURE_RADIO`, `FEATURE_TRACK_DEPTH`, `FEATURE_LYRICS` | on |
+| `FEATURE_PRODUCT_EVENTS` | on with `DATABASE_URL`, off without |
 | `FEATURE_SYNC`, `FEATURE_QUEUE_VOTING`, `FEATURE_ROOM_CHAT`, `FEATURE_PUBLIC_ROOMS`, `FEATURE_VIDEO`, `FEATURE_ROOM_AUTH`, `FEATURE_SUPABASE_AUTH`, `FEATURE_LISTENBRAINZ`, `FEATURE_LASTFM_ENRICH` | off |
 
 > [!IMPORTANT]
@@ -86,6 +89,10 @@ Both retention windows default to **keep forever**. Deleting data is an owner de
 The purge is by age only. Neither table has a status or resolution column, so a report tied to an open case is purged on the same schedule as any other: holding one longer (legal hold) is not supported, and the window has to be long enough for ECA Digital reporting duties (#259). That length is a question for legal review.
 
 Room idleness is measured by the last change to the row, not the last visit. A room someone opened within the in-memory window (`ROOM_IDLE_TTL_MINUTES`) without changing anything is still held in memory, and a later change saves it again.
+
+### Product events
+
+`FEATURE_PRODUCT_EVENTS` writes anonymous usage events to the `product_events` table (see `docs/observability-metrics.md` and spec 253 section 8). Set `EVENTS_HMAC_KEY` to 32 or more random bytes (`openssl rand -hex 32`) and keep it stable: it keys the hashes of room and actor ids, so changing it makes new events incomparable with old ones. Rows are purged after 13 months (a fixed window, stated on `/privacidade`); the purge runs whenever a database exists, even with the flag off. Dashboards use the read-only `grafana_ro` role from `observability/postgres/grafana-ro.sql`.
 
 ### Erasing one person's data (LGPD)
 
