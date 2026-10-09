@@ -166,7 +166,7 @@ Owner on part 2: "os personagens estão com braços gigantes, não dá pra ver o
 ### Other
 
 - A second room view to test: 390 and 1440, reduced motion, each drawer, a room of 1, 6 and many listeners.
-- The audience row has a size limit that is not decided yet (compress, wrap or scroll).
+- The audience row has a size limit that is not decided yet (compress, wrap or scroll). Phones (decision of 2026-10-09, "Menos gente, mais espaço"): front row only, 36 world px apart, first names in full, no dimmed back row, the rest as "+N na plateia"; with Fila or Chat open the crowd strip stays under the player. The wide stage keeps its two rows.
 - The AI mockups are tone references. Pixel art in the build will differ from them.
 
 ## Revisit when
