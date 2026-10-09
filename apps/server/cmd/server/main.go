@@ -22,6 +22,7 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
+	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/listenbrainz"
 	"github.com/LucasSantana-Dev/cojam/server/internal/lyrics"
@@ -166,6 +167,11 @@ func main() {
 	}
 
 	metrics := obs.New()
+	// Outbound provider calls, the YouTube quota breaker: observed without the
+	// callers holding a *Metrics.
+	httpx.SetObserver(metrics.ObserveProvider)
+	match.OnQuotaTrip = metrics.YouTubeQuotaTrip
+	metrics.RegisterYouTubeQuotaGauge(match.YouTubeQuotaOpen)
 
 	// Create centrifuge node
 	node, err := centrifuge.New(centrifuge.Config{
@@ -352,7 +358,8 @@ func main() {
 		}
 		pgStore := store.NewPostgres(pool).
 			WithVersionGuardObserver(func() { metrics.StoreVersionGuardReject() })
-		h.WithStore(pgStore)
+		h.WithStore(store.Timed(pgStore, metrics.ObserveStoreSave))
+		metrics.RegisterPoolStats(pool)
 		logger.Info("persistence_enabled", "store", "postgres")
 
 		// YouTube search results survive a deploy (search.list is 100 quota
@@ -363,15 +370,17 @@ func main() {
 		// before the pool closes. Startup work uses its own context: ctx
 		// above is the 30 s startup deadline.
 		purgeCtx, stopPurge := context.WithCancel(context.Background())
-		go match.PurgeEvery(purgeCtx, 24*time.Hour, ytSearchStore.Purge, func(n int64, err error) {
-			if err != nil {
-				if purgeCtx.Err() != nil {
-					return // shutting down mid-purge: not a failure worth a line
+		obs.SafeGo("search_purge", func() {
+			match.PurgeEvery(purgeCtx, 24*time.Hour, ytSearchStore.Purge, func(n int64, err error) {
+				if err != nil {
+					if purgeCtx.Err() != nil {
+						return // shutting down mid-purge: not a failure worth a line
+					}
+					logger.Warn("youtube_search_cache_purge_failed", "err", err.Error())
+				} else if n > 0 {
+					logger.Info("youtube_search_cache_purged", "rows", n)
 				}
-				logger.Warn("youtube_search_cache_purge_failed", "err", err.Error())
-			} else if n > 0 {
-				logger.Info("youtube_search_cache_purged", "rows", n)
-			}
+			})
 		})
 		shutdownHooks = append(shutdownHooks, stopPurge)
 
@@ -548,7 +557,7 @@ func main() {
 	// only a stdout line, which is not queryable and dies with the container.
 	// Recorded asynchronously so a slow write never blocks a moderation action.
 	h.WithModerationAudit(func(action, roomID, actorUserID, subjectID string) {
-		go func() {
+		obs.SafeGo("moderation_audit", func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			rec := report.Action{
@@ -562,7 +571,7 @@ func main() {
 			if err := audit.Record(ctx, rec); err != nil {
 				logger.Error("moderation_audit_failed", "err", err.Error(), "action", action)
 			}
-		}()
+		})
 	})
 
 	// Retention for reports and moderation actions (#319). REPORT_RETENTION_DAYS
