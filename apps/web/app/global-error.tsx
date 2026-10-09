@@ -1,10 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
+import { PalcoErrorView } from '@/app/components/PalcoErrorView';
+import { LogoMark } from '@/app/components/Logo';
+import { PALCO_TOKENS } from '@/app/components/palcoCss';
 import { trackError } from '@/lib/telemetry';
 
 // Replaces the layout entirely, so it renders its own <html>/<body> and cannot
-// rely on globals.css being applied. Hence the inline styles.
+// rely on globals.css or the font variables. The palco page CSS ships inline with
+// the scene (palcoCss.ts); fonts fall back to system-ui. Home is a plain <a> on
+// purpose: a full reload is what a failed root needs.
 export default function GlobalError({
   error,
   reset,
@@ -19,46 +24,23 @@ export default function GlobalError({
 
   return (
     <html lang="pt-BR">
-      <body
-        style={{
-          margin: 0,
-          minHeight: '100dvh',
-          display: 'grid',
-          placeItems: 'center',
-          background: '#020202',
-          color: '#f5f5f5',
-          fontFamily: 'system-ui, sans-serif',
-          padding: '1.5rem',
-        }}
-      >
-        <div style={{ maxWidth: '28rem', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>
-            O CoJam não carregou
-          </h1>
-          <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '1.25rem' }}>
-            Algo deu errado antes de o app começar.
-          </p>
-          <button
-            type="button"
-            onClick={reset}
-            style={{
-              padding: '0.5rem 1rem',
-              borderRadius: '0.5rem',
-              border: '1px solid #333',
-              background: '#141414',
-              color: 'inherit',
-              cursor: 'pointer',
-              font: 'inherit',
-            }}
-          >
-            Recarregar
-          </button>
-          {error.digest && (
-            <p style={{ marginTop: '1.25rem', fontSize: '0.75rem', opacity: 0.4 }}>
-              ref {error.digest}
-            </p>
-          )}
-        </div>
+      <body style={{ margin: 0, background: PALCO_TOKENS.ink }}>
+        <PalcoErrorView
+          brand={
+            // eslint-disable-next-line @next/next/no-html-link-for-pages -- root layout failed: reload, do not client-navigate
+            <a href="/" className="pw-brand" aria-label="CoJam, início">
+              <LogoMark size={36} />
+              <span className="pw-brand__word">CoJam</span>
+            </a>
+          }
+          home={
+            // eslint-disable-next-line @next/next/no-html-link-for-pages -- see above
+            <a href="/" className="pw-btn pw-btn--quiet">
+              Voltar ao início
+            </a>
+          }
+          reset={reset}
+        />
       </body>
     </html>
   );

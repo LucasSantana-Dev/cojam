@@ -3,16 +3,33 @@
 import { useState, useEffect, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { CheckIcon } from '@/app/components/icons';
+import { PalcoBrand, PalcoFooter } from '@/app/components/PalcoShell';
+import { PalcoScene } from '@/app/components/PalcoScene';
 import { LiveRoomsSlot } from '@/app/components/LiveRoomsStrip';
 import { LiveCounter } from '@/app/components/LiveCounter';
-import { R4Brand, R4Footer } from '@/app/components/R4Shell';
-import { RoomPreview } from '@/app/components/RoomPreview';
 import { supabaseEnabled } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/roomId';
 import { MINIMUM_AGE } from '@/lib/ageGate';
 import { readGuestName, saveGuestName } from '@/lib/guestName';
 import { trackEvent } from '@/lib/telemetry';
+import { errorFixture } from '@/lib/devFixture';
+
+// Pixel portraits (characters/NN-portrait.png, 64px, shown 1:1 so the grid holds).
+const portrait = (id: number) => `/palco/characters/${String(id).padStart(2, '0')}-portrait.png`;
+const STEP_FACES: Record<string, number[]> = { '01': [12], '02': [], '03': [4, 9, 11] };
+const CTA_FACES = [2, 6, 3, 12];
+
+function Faces({ ids }: { ids: number[] }) {
+  if (ids.length === 0) return null;
+  return (
+    <span className="pwh-faces" aria-hidden="true">
+      {ids.map((id) => (
+        // eslint-disable-next-line @next/next/no-img-element -- 64px pixel art shown 1:1; next/image would resample it
+        <img key={id} src={portrait(id)} alt="" width={64} height={64} loading="lazy" decoding="async" />
+      ))}
+    </span>
+  );
+}
 
 const STEPS = [
   { n: '01', t: 'Digite seu nome e crie a sala', chips: ['Grátis', 'Sem cadastro'], d: 'Sem instalar nada e sem conta. A sala nasce privada: só entra quem tem o link.' },
@@ -75,6 +92,8 @@ export default function Home() {
   const [typedName, setTypedName] = useState<string | null>(null);
   const nameInput = typedName ?? savedName;
   const router = useRouter();
+  // Dev only (?fixture=error): throw after mount so error.tsx can be reviewed.
+  const fixtureBoom = useSyncExternalStore(noopSubscribe, errorFixture, () => false);
   // Accounts are optional and resolved at runtime (via /env.js); the server
   // snapshot keeps SSR and the first client render in agreement.
   const accountsEnabled = useSyncExternalStore(noopSubscribe, supabaseEnabled, () => false);
@@ -83,6 +102,8 @@ export default function Home() {
   useEffect(() => {
     trackEvent('landing_view');
   }, []);
+
+  if (fixtureBoom) throw new Error('fixture: error screen preview');
 
   const createRoom = () => {
     trackEvent('room_create');
@@ -108,14 +129,14 @@ export default function Home() {
     }
   };
 
-  // Round 4 (#325): near-black ground with violet ambient light, the room's
-  // panels and type. Everything is plain markup: no scroll-reveal, so every
-  // section is visible without JS or animation.
+  // Palco on every screen (decision 13): the night of the festival as ground, the
+  // published palco scene at an integer scale, plates and hard-edged buttons for the
+  // interface. Plain markup, no scroll-reveal: every section is visible without JS.
   return (
-    <div className="r4s">
-      <header className="r4s-bar r4s-bar--landing">
-        <R4Brand tagline />
-        <nav className="r4s-nav" aria-label="Primary">
+    <div className="pw pwh">
+      <header className="pw-bar">
+        <PalcoBrand />
+        <nav className="pwh-nav" aria-label="Primary">
           <a href="#how">Como funciona</a>
           <a href="#previa">Veja ao vivo</a>
           <a href="#faq">Dúvidas</a>
@@ -124,71 +145,82 @@ export default function Home() {
           </a>
           {accountsEnabled && <Link href="/account">Entrar</Link>}
         </nav>
-        <button type="button" onClick={createRoom} className="r4s-btn r4s-btn--sm r4s-bar__cta">
+        <button type="button" onClick={createRoom} className="pw-btn pwh-bar__cta">
           Começar uma sala
         </button>
       </header>
 
-      <main id="main" className="r4s-main r4s-main--landing">
-        <section className="r4s-hero" aria-labelledby="hero-title">
-          <div className="r4s-hero__copy">
-            <h1 id="hero-title" className="r4s-hero__title">
-              <span className="r4s-line">Seus amigos.</span>
-              <span className="r4s-line">Suas plataformas.</span>
-              <span className="r4s-line">
-                Uma <span className="r4s-accent">sala</span>.
-              </span>
-            </h1>
-            <p className="r4s-lede r4s-hero__sub">
-              A fila é de quem está na sala, não de um algoritmo. Cada pessoa toca na própria conta
-              de streaming, e o CoJam só sincroniza os metadados.
-            </p>
+      <main id="main" className="pwh-main">
+        <PalcoScene kind="home" hero id="previa" testId="hero-device">
+          <section className="pwh-hero" aria-labelledby="hero-title">
+            <div className="pwh-hero__copy pw-plate">
+              <LiveCounter pill className="pwh-livecount" />
+              <h1 id="hero-title" className="pw-title pwh-hero__title">
+                <span className="pwh-line">Seus amigos.</span>
+                <span className="pwh-line">Suas plataformas.</span>
+                <span className="pwh-line">Uma sala.</span>
+              </h1>
+              <p className="pw-text pwh-hero__sub">
+                A fila é de quem está na sala, não de um algoritmo. Cada pessoa toca na própria conta
+                de streaming, e o CoJam só sincroniza os metadados.
+              </p>
 
-            <div className="r4s-create r4s-glow">
-              <form onSubmit={createNamedRoom} className="r4s-create__form">
-                <label htmlFor="hero-name" className="r4s-label">Seu nome</label>
-                <input
-                  id="hero-name"
-                  type="text"
-                  autoComplete="nickname"
-                  maxLength={40}
-                  placeholder="Digite seu nome"
-                  value={nameInput}
-                  onChange={(e) => setTypedName(e.target.value)}
-                  className="r4s-input"
-                />
-                <button type="submit" disabled={!nameInput.trim()} className="r4s-btn">
-                  Criar sala
-                </button>
-              </form>
-              <form onSubmit={joinRoom} className="r4s-create__form r4s-create__form--join">
-                <label htmlFor="hero-room-code" className="r4s-label">Tem um código?</label>
-                <input
-                  id="hero-room-code"
-                  type="text"
-                  placeholder="Código"
-                  value={roomId}
-                  onChange={(e) => setRoomId(e.target.value)}
-                  className="r4s-input r4s-input--code"
-                />
-                <button type="submit" disabled={!roomId.trim()} className="r4s-btn r4s-btn--quiet">
-                  Entrar
-                </button>
-              </form>
+              <div className="pwh-create">
+                <form onSubmit={createNamedRoom} className="pwh-create__form">
+                  <label htmlFor="hero-name" className="pwh-label">Seu nome</label>
+                  <input
+                    id="hero-name"
+                    type="text"
+                    autoComplete="nickname"
+                    maxLength={40}
+                    placeholder="Digite seu nome"
+                    value={nameInput}
+                    onChange={(e) => setTypedName(e.target.value)}
+                    className="pwh-input"
+                  />
+                  <button type="submit" disabled={!nameInput.trim()} className="pw-btn">
+                    Criar sala
+                  </button>
+                </form>
+                <form onSubmit={joinRoom} className="pwh-create__form pwh-create__form--join">
+                  <label htmlFor="hero-room-code" className="pwh-label">Tem um código?</label>
+                  <input
+                    id="hero-room-code"
+                    type="text"
+                    placeholder="Código"
+                    value={roomId}
+                    onChange={(e) => setRoomId(e.target.value)}
+                    className="pwh-input pwh-input--code"
+                  />
+                  <button type="submit" disabled={!roomId.trim()} className="pw-btn pw-btn--quiet">
+                    Entrar
+                  </button>
+                </form>
+              </div>
+
+              <p className="pwh-claims">
+                <span>Sem instalar</span>
+                <span>Sem conta para convidados</span>
+                <span>Grátis</span>
+              </p>
             </div>
+          </section>
+        </PalcoScene>
 
-            <LiveCounter pill className="r4s-livecount" />
-
-            <p className="r4s-claims">
-              <span><CheckIcon size={13} /> Sem instalar</span>
-              <span><CheckIcon size={13} /> Sem conta para convidados</span>
-              <span><CheckIcon size={13} /> Grátis</span>
-            </p>
+        {/* The example room the scene above shows: illustrative, so it says so. */}
+        <section className="pwh-now pw-plate" aria-label="Prévia ilustrativa de uma sala tocando agora">
+          <p className="pwh-now__kicker">Tocando agora</p>
+          <p className="pwh-now__track">
+            <span className="pwh-now__title">Pétala</span>
+            <span className="pwh-now__artist">Djavan</span>
+          </p>
+          <span className="pwh-chip pwh-now__by">Bia pediu</span>
+          <div className="pwh-now__progress" aria-hidden="true">
+            <span className="pwh-mono">1:24</span>
+            <span className="pwh-now__bar"><span style={{ width: '40%' }} /></span>
+            <span className="pwh-mono">3:34</span>
           </div>
-
-          <div className="r4s-hero__side" data-testid="hero-device">
-            <RoomPreview />
-          </div>
+          <p className="pwh-now__count"><b className="pwh-mono">7</b> ouvindo junto</p>
         </section>
 
         {/* F1: when FEATURE_PUBLIC_ROOMS is on and the directory returns live
@@ -196,28 +228,32 @@ export default function Home() {
             failure renders nothing and the example room above stands alone. */}
         <LiveRoomsSlot fallback={null} />
 
-        <section id="how" className="r4s-section" aria-labelledby="how-title">
-          <h2 id="how-title" className="r4s-h2 r4s-h2--grad">Como funciona em 3 passos</h2>
-          <ol className="r4s-steps">
+        <section id="how" className="pwh-section" aria-labelledby="how-title">
+          <h2 id="how-title" className="pw-title pwh-h2">Como funciona em 3 passos</h2>
+          <ol className="pwh-steps">
             {STEPS.map((s) => (
-              <li key={s.n} className="r4s-card r4s-step">
-                <h3 className="r4s-step__title"><span>{s.n} /</span> {s.t}</h3>
-                <p>{s.d}</p>
-                <p className="r4s-step__chips">
-                  {s.chips.map((c) => <span key={c} className="r4s-chip">{c}</span>)}
+              <li key={s.n} className="pw-plate pwh-step">
+                <div className="pwh-step__head">
+                  <span className="pwh-num pwh-mono" aria-hidden="true">{s.n}</span>
+                  <Faces ids={STEP_FACES[s.n] ?? []} />
+                </div>
+                <h3 className="pwh-step__title">{s.t}</h3>
+                <p className="pw-text">{s.d}</p>
+                <p className="pwh-step__chips">
+                  {s.chips.map((c) => <span key={c} className="pwh-chip">{c}</span>)}
                 </p>
               </li>
             ))}
           </ol>
         </section>
 
-        <div className="r4s-lower">
+        <div className="pwh-lower">
           {/* FAQ: native details/summary (keyboard + a11y for free). The same
               array feeds the FAQPage JSON-LD, so markup and structured data
               cannot drift. Answers describe CoJam as it ships today. */}
-          <section id="faq" className="r4s-section r4s-faq" aria-labelledby="faq-title">
-            <h2 id="faq-title" className="r4s-h2">Dúvidas</h2>
-            <div className="r4s-faq__list">
+          <section id="faq" className="pwh-section pwh-faq" aria-labelledby="faq-title">
+            <h2 id="faq-title" className="pw-title pwh-h2">Dúvidas</h2>
+            <div className="pwh-faq__list">
               {FAQ.map((item) => (
                 <details key={item.q} className="faq-item">
                   <summary>{item.q}</summary>
@@ -231,17 +267,20 @@ export default function Home() {
             />
           </section>
 
-          <section className="r4s-final r4s-glow" aria-labelledby="final-title">
-            <h2 id="final-title" className="r4s-final__title">Crie uma sala em um clique.</h2>
-            <button type="button" onClick={createRoom} className="r4s-btn">
+          <section className="pwh-final pw-plate" aria-labelledby="final-title">
+            <div className="pwh-final__copy">
+              <h2 id="final-title" className="pw-title pwh-final__title">Crie uma sala em um clique.</h2>
+              <p className="pw-text">É grátis, rápido e direto no seu navegador.</p>
+            </div>
+            <Faces ids={CTA_FACES} />
+            <button type="button" onClick={createRoom} className="pw-btn">
               Começar uma sala
             </button>
-            <p className="r4s-final__note">É grátis, rápido e direto no seu navegador.</p>
           </section>
         </div>
       </main>
 
-      <R4Footer />
+      <PalcoFooter />
     </div>
   );
 }

@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { LogoMark } from '@/app/components/Logo';
-import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
+import { PalcoBrand } from '@/app/components/PalcoShell';
+import { PalcoErrorView } from '@/app/components/PalcoErrorView';
 import { trackError } from '@/lib/telemetry';
 
 // Segment boundary; root-layout failures fall through to global-error.tsx.
@@ -20,29 +20,14 @@ export default function Error({
   }, [error]);
 
   return (
-    <SintoniaScreen>
-      <main id="main" className="sx-main">
-        <div className="sx-glass sx-card sx-card--narrow sx-center">
-          <div className="sx-brand">
-            <LogoMark size={20} /> CoJam
-          </div>
-          <h1 className="sx-title sx-title--sm">Deu um problema do nosso lado</h1>
-          <SineLine flat />
-          <p className="sx-text">
-            A sala provavelmente está bem. Tente de novo; se continuar, a fila
-            está segura no servidor.
-          </p>
-          <div className="sx-actions sx-actions--center">
-            <button type="button" onClick={reset} className="btn-primary">
-              Tentar de novo
-            </button>
-            <Link href="/" className="btn-ghost">
-              Voltar ao início
-            </Link>
-          </div>
-          {error.digest && <p className="sx-ref">ref {error.digest}</p>}
-        </div>
-      </main>
-    </SintoniaScreen>
+    <PalcoErrorView
+      brand={<PalcoBrand />}
+      home={
+        <Link href="/" className="pw-btn pw-btn--quiet">
+          Voltar ao início
+        </Link>
+      }
+      reset={reset}
+    />
   );
 }

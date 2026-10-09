@@ -5,6 +5,7 @@
 //     members get characters (Modo palco); extras use the userId default
 //     add &members=1|2|5|8 and &long=1 for long names (stage review)
 //   /room/<ID>?fixture=join  pre-join screen with the room preview
+//   /?fixture=error          the landing throws on mount, so app/error.tsx shows (see errorFixture)
 import { useStore, type Member } from './realtime';
 import { getStoredUserId } from './auth';
 import type { IPlayer } from './playerInterface';
@@ -19,6 +20,15 @@ export function fixtureKind(): FixtureKind | null {
   if (typeof window === 'undefined') return null;
   const k = new URLSearchParams(window.location.search).get('fixture');
   return k === 'room' || k === 'join' ? k : null;
+}
+
+// Dev-only: true on "/?fixture=error". The landing throws after mount so the
+// segment boundary (app/error.tsx) can be seen and screenshotted. Always false
+// in a production build.
+export function errorFixture(): boolean {
+  if (process.env.NODE_ENV === 'production') return false;
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('fixture') === 'error';
 }
 
 // A loud abstract cover as a data URI, so the fixture needs no network.

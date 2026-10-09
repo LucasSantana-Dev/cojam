@@ -1,0 +1,1 @@
+Palco scene generator for the home, 404 and erro art: `python3 -I apps/web/scripts/palco-scenes/compose.py` (needs Pillow). Writes apps/web/public/palco/scenes/*.png and apps/web/lib/palcoScenes.generated.ts.

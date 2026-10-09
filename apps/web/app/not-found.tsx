@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogoMark } from '@/app/components/Logo';
-import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
+import { PalcoBrandBar } from '@/app/components/PalcoShell';
+import { PalcoScene } from '@/app/components/PalcoScene';
 import { generateRoomId } from '@/lib/roomId';
 import { trackEvent } from '@/lib/telemetry';
 
-// Root 404. Same ground and glass surface as the rest of the product; the wave
-// lies flat because there is no signal here.
+// Root 404. Palco screen: the stage screen reads "404 SEM SINAL", the crowd is
+// gone and only you are left on the floor.
 export default function NotFound() {
   const router = useRouter();
   const createRoom = () => {
@@ -16,26 +16,30 @@ export default function NotFound() {
     router.push(`/room/${generateRoomId()}`);
   };
   return (
-    <SintoniaScreen>
-      <main id="main" className="sx-main">
-        <div className="sx-glass sx-card">
-          <div className="sx-brand">
-            <LogoMark size={20} /> CoJam
+    <div className="pw">
+      <PalcoBrandBar />
+      <PalcoScene kind="404">
+        <main id="main" className="pw-dock pw-plate">
+          <div className="pw-dock__copy">
+            <p className="pw-eyebrow">Erro 404 · sem sinal</p>
+            <h1 className="pw-title">Esse palco não existe</h1>
+            <p className="pw-text">
+              O endereço mudou ou a sala acabou. A música continua em outro lugar.
+            </p>
           </div>
-          <p className="sx-eyebrow">Erro 404</p>
-          <h1 className="sx-title">Sem sinal por aqui</h1>
-          <SineLine flat />
-          <p className="sx-text">Essa página não existe ou mudou de endereço. A música continua em outro lugar.</p>
-          <div className="sx-actions">
-            <button type="button" className="btn-primary" onClick={createRoom}>
-              Criar uma sala
-            </button>
-            <Link href="/" className="btn-ghost">
+          <div className="pw-actions">
+            <Link href="/" className="pw-btn pw-btn--quiet">
               Voltar ao início
             </Link>
+            <Link href="/rooms" className="pw-btn pw-btn--quiet">
+              Ver salas ao vivo
+            </Link>
+            <button type="button" className="pw-btn" onClick={createRoom}>
+              Criar uma sala
+            </button>
           </div>
-        </div>
-      </main>
-    </SintoniaScreen>
+        </main>
+      </PalcoScene>
+    </div>
   );
 }
