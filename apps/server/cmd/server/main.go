@@ -188,7 +188,6 @@ func main() {
 		WithChat(featureEnabled("FEATURE_ROOM_CHAT", false)).
 		WithPublicRooms(featureEnabled("FEATURE_PUBLIC_ROOMS", false)).
 		WithVideo(featureEnabled("FEATURE_VIDEO", false))
-	defer h.StopHeartbeats()
 
 	if featureEnabled("FEATURE_SYNC", false) {
 		logger.Info("sync_enabled")
@@ -238,7 +237,9 @@ func main() {
 	// Room-creation budget burst, per identity and per client IP.
 	h.WithRoomCreateBurst(envPositiveInt(os.Getenv, "ROOM_CREATE_RATE_BURST", hub.DefaultRoomCreateBurst))
 
-	shutdownHooks = append(shutdownHooks, h.StartRoomEvictor())
+	// Both write to the store, so they stop (and finish in-flight work) before
+	// the pool-close hook appended further down.
+	shutdownHooks = append(shutdownHooks, h.StartRoomEvictor(), h.StopHeartbeats)
 	logger.Info("room_eviction_enabled", "idle_ttl", roomIdleTTL.String())
 	if roomPersistIdleTTL > 0 {
 		logger.Info("room_persist_eviction_enabled", "idle_ttl", roomPersistIdleTTL.String())

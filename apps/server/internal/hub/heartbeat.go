@@ -104,7 +104,11 @@ func (h *Hub) reconcileHeartbeat(roomID string) {
 	if every <= 0 {
 		every = videoHeartbeatEvery
 	}
-	go h.heartbeatLoop(roomID, every, stop)
+	h.hbWG.Add(1)
+	go func() {
+		defer h.hbWG.Done()
+		h.heartbeatLoop(roomID, every, stop)
+	}()
 }
 
 // stopHeartbeat ends the room's ticker if one is running.
@@ -117,14 +121,17 @@ func (h *Hub) stopHeartbeat(roomID string) {
 	}
 }
 
-// StopHeartbeats ends every running heartbeat (shutdown and tests).
+// StopHeartbeats ends every running heartbeat (shutdown and tests) and waits
+// for in-flight beats, which save to the store, so the pool can close next.
+// The wait runs unlocked: a loop that is ending takes hbMu in endHeartbeat.
 func (h *Hub) StopHeartbeats() {
 	h.hbMu.Lock()
-	defer h.hbMu.Unlock()
 	for id, stop := range h.heartbeats {
 		close(stop)
 		delete(h.heartbeats, id)
 	}
+	h.hbMu.Unlock()
+	h.hbWG.Wait()
 }
 
 // heartbeatCount reports running tickers (tests).

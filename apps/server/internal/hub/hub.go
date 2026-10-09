@@ -274,6 +274,7 @@ type Hub struct {
 	// running per-room tickers (see heartbeat.go).
 	heartbeatEvery time.Duration
 	hbMu           sync.Mutex
+	hbWG           sync.WaitGroup // running heartbeat loops, for StopHeartbeats
 	heartbeats     map[string]chan struct{}
 
 	// publicRoomsEnabled gates the public room directory RPCs
@@ -1348,7 +1349,9 @@ func (h *Hub) StartRoomEvictor() func() {
 		interval = time.Second
 	}
 	stop := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -1361,7 +1364,12 @@ func (h *Hub) StartRoomEvictor() func() {
 			}
 		}
 	}()
-	return func() { close(stop) }
+	// Blocks until an in-flight sweep returns, so shutdown can close the
+	// store's pool right after (as report retention does).
+	return func() {
+		close(stop)
+		<-done
+	}
 }
 
 // evictIdleRooms drops rooms with no connected members that have been idle
