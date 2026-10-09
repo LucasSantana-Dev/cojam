@@ -33,7 +33,7 @@ import { ReportRoomButton } from '../components/ReportRoomButton';
 import { PublicRoomToggle } from '../components/PublicRoomToggle';
 import { AvatarMenu } from '../components/AvatarMenu';
 import { CharacterPicker } from '../components/CharacterPicker';
-import { useStoredCharacter, setStoredCharacter, defaultCharacterId, memberCharacter, CHARACTER_NAMES } from '@/lib/characters';
+import { useStoredCharacter, setStoredCharacter, defaultCharacterId, memberCharacter } from '@/lib/characters';
 import { getStoredUserId } from '@/lib/auth';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
@@ -367,7 +367,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   if (!joined) {
     // Pre-join screen: a palco screen (wave 2, DESIGN.md "Palco on every screen"). The stage
     // screen reads "SALA" and the real room code, the picked character stands on the floor
-    // with a lime "Você" tag and swaps live with the pick, the join form is one plate.
+    // with a lime "Você · <typed nickname>" tag and swaps live with the pick, the join form is one plate.
     const joinOptions = [
       f.spotify && { id: 'spotify' as const, label: 'Spotify' },
       f.youtube && { id: 'youtube' as const, label: 'YouTube' },
@@ -383,7 +383,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           kind="join"
           hero
           led={{ title: 'SALA', scale: 2, sub: roomId, subTone: 'white' }}
-          you={{ id: pickedCharacter, name: CHARACTER_NAMES[pickedCharacter - 1] ?? '' }}
+          you={{ id: pickedCharacter, name: nameInput }}
         >
           <main id="main" className="pwj-main">
             <form onSubmit={handleJoin} className="pw-plate pwj-panel">
