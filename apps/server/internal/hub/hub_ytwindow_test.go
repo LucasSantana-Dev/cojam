@@ -184,42 +184,69 @@ func TestYouTubeWindowOutOfWindowTrackNotChecked(t *testing.T) {
 // retryable (uncertain, so auto skip never drains the queue), and the first
 // activity after the reset retries them.
 func TestYouTubeWindowQuotaRetryAfterReset(t *testing.T) {
-	rec := &ytRecorder{}
 	var mu sync.Mutex
 	var until time.Time
-	h := NewHub(nil).WithAutoSkipSourceless(true).WithMatcher(rec.match).WithYouTubeQuota(func() time.Time {
+	calls := map[string]int{}
+	outage := true
+	// "cached" stands for a query already in the L1/L2 search cache: it
+	// resolves with no API call even while the quota is spent.
+	matcher := func(_ context.Context, title, _, _ string) (*queue.SourceRef, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls[title]++
+		if outage && title != "cached" {
+			return nil, fmt.Errorf("search: %w", ErrQuotaExhausted)
+		}
+		return &queue.SourceRef{VideoID: "v-" + title, Confidence: 0.9}, nil
+	}
+	h := NewHub(nil).WithAutoSkipSourceless(true).WithMatcher(matcher).WithYouTubeQuota(func() time.Time {
 		mu.Lock()
 		defer mu.Unlock()
 		return until
 	})
 
-	// Trip: the first lookup fails on the quota, and the breaker opens.
-	rec.setQuota(true)
 	mu.Lock()
 	until = time.Now().Add(time.Hour)
 	mu.Unlock()
-	winAdd(t, h, "q0", "q1")
-	time.Sleep(100 * time.Millisecond)
-	if n := len(rec.looked()); n != 0 {
-		t.Fatalf("%d lookups launched while the quota is exhausted", n)
-	}
+	winAdd(t, h, "q0", "cached", "q2")
+	waitFor(t, "cached track resolved during the outage", func() bool { return winHasYT(t, h, "cached") })
+	waitFor(t, "uncached tracks owed", func() bool {
+		st := winState(t, h)
+		return st.Queue[0].YTQuota && st.Queue[2].YTQuota
+	})
 	st := winState(t, h)
 	if st.NowPlayingID == "" || st.Queue[0].Title != "q0" {
 		t.Fatalf("sourceless now-playing was skipped during a quota outage: %+v", st.Queue)
 	}
-	if !st.Queue[0].YTQuota || !st.Queue[0].EnrichUncertain {
+	if !st.Queue[0].EnrichUncertain || st.Queue[0].EnrichChecked {
 		t.Fatalf("q0 must be owed and uncertain, got %+v", st.Queue[0])
 	}
 
-	// Reset: the next activity retries both.
-	rec.setQuota(false)
+	// No hot loop: more activity does not re-claim a track the quota refused.
+	for i := 0; i < 3; i++ {
+		if _, err := h.mutate(winRoom, func(s *queue.RoomState) error { s.Version++; return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
 	mu.Lock()
+	for _, title := range []string{"q0", "cached", "q2"} {
+		if calls[title] != 1 {
+			mu.Unlock()
+			t.Fatalf("%s looked up %d times during the outage, want 1", title, calls[title])
+		}
+	}
+	mu.Unlock()
+
+	// Reset: the next activity retries the owed ones.
+	mu.Lock()
+	outage = false
 	until = time.Time{}
 	mu.Unlock()
 	if _, err := h.mutate(winRoom, func(s *queue.RoomState) error { s.Version++; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "retried after reset", func() bool { return winHasYT(t, h, "q0") && winHasYT(t, h, "q1") })
+	waitFor(t, "retried after reset", func() bool { return winHasYT(t, h, "q0") && winHasYT(t, h, "q2") })
 }
 
 // A lookup that fails on the quota stays retryable and republishes the state

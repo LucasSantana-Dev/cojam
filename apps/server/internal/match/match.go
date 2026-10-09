@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
@@ -399,28 +401,53 @@ type searchEntry struct {
 	expiresAt time.Time
 }
 
+// searchFlight collapses concurrent cache misses for the same query into one
+// API call (a playlist of covers, or several rooms queueing the same hit).
+var searchFlight singleflight.Group
+
 func searchYouTubeCached(ctx context.Context, query string) ([]YouTubeCandidate, error) {
 	key := strings.ToLower(query)
+	if cands, ok := searchL1(key); ok {
+		return cands, nil
+	}
+	v, err, _ := searchFlight.Do(key, func() (any, error) {
+		// A flight that just finished may have filled L1 already.
+		if cands, ok := searchL1(key); ok {
+			return cands, nil
+		}
+		// Shared by every waiter, so it must not die with the first caller's
+		// context: keep its values, bound it on its own.
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		// L2: the persistent cache, so a deploy does not repay the quota.
+		if cands, ok := searchStoreGet(fctx, key); ok {
+			putSearchL1(key, cands)
+			return cands, nil
+		}
+		cands, complete, err := youtubeSearch(fctx, query)
+		if err != nil {
+			return nil, err
+		}
+		putSearchL1(key, cands)
+		if complete {
+			searchStorePut(fctx, key, cands)
+		}
+		return cands, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return append([]YouTubeCandidate(nil), v.([]YouTubeCandidate)...), nil
+}
+
+func searchL1(key string) ([]YouTubeCandidate, bool) {
 	searchCache.Lock()
 	e, ok := searchCache.m[key]
 	searchCache.Unlock()
 	if ok && time.Now().Before(e.expiresAt) {
-		return append([]YouTubeCandidate(nil), e.cands...), nil
+		return append([]YouTubeCandidate(nil), e.cands...), true
 	}
-	// L2: the persistent cache, so a deploy does not repay the quota.
-	if cands, ok := searchStoreGet(ctx, key); ok {
-		putSearchL1(key, cands)
-		return cands, nil
-	}
-	cands, complete, err := youtubeSearch(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	putSearchL1(key, cands)
-	if complete {
-		searchStorePut(ctx, key, cands)
-	}
-	return cands, nil
+	return nil, false
 }
 
 func putSearchL1(key string, cands []YouTubeCandidate) {

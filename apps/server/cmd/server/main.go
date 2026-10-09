@@ -355,11 +355,18 @@ func main() {
 		// units a call). Without a database the in-memory cache stands alone.
 		ytSearchStore := match.NewPostgresSearchStore(pool)
 		match.SetSearchStore(ytSearchStore)
-		if n, err := ytSearchStore.Purge(ctx); err != nil {
-			logger.Warn("youtube_search_cache_purge_failed", "err", err.Error())
-		} else if n > 0 {
-			logger.Info("youtube_search_cache_purged", "rows", n)
-		}
+		// Purge expired rows at startup and then daily; stopped on shutdown,
+		// before the pool closes. Startup work uses its own context: ctx
+		// above is the 30 s startup deadline.
+		purgeCtx, stopPurge := context.WithCancel(context.Background())
+		go match.PurgeEvery(purgeCtx, 24*time.Hour, ytSearchStore.Purge, func(n int64, err error) {
+			if err != nil {
+				logger.Warn("youtube_search_cache_purge_failed", "err", err.Error())
+			} else if n > 0 {
+				logger.Info("youtube_search_cache_purged", "rows", n)
+			}
+		})
+		shutdownHooks = append(shutdownHooks, stopPurge)
 
 		// Schedule pool close on shutdown
 		shutdownHooks = append(shutdownHooks, func() {
