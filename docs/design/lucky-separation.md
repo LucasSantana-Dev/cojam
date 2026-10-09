@@ -32,10 +32,10 @@ CoJam and Lucky stay separate products. None of the following may be built:
 
    If it ships, it is CoJam's own app and Lucky never launches it. Screen share ([`0008`, local] WebRTC) never ships inside an Activity.
 
-Out of scope here, and the owner's call:
+Two calls were left to the owner. The owner answered both on 2026-10-09:
 
-- whether Lucky gets a one-way `/cojam` command for Lucky's own retention, judged by Lucky's metrics;
-- whether CoJam adopts Discord OAuth as its account system, on CoJam's own application.
+- **No `/cojam` command in Lucky.** This is reopened only by the Lucky gate trigger below.
+- **Discord OAuth as CoJam's account system: later.** The decision waits for Phase 3, and only runs if the Brazilian community seeding passes its gate. If it ever ships, it uses CoJam's own Discord application, never Lucky's.
 
 ## Check: Discord video in Brazil (2026-10-08)
 
