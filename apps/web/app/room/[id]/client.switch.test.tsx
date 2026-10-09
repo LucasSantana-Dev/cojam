@@ -139,15 +139,19 @@ describe('RoomClient switching "Ouvir no" between live players', () => {
     // YouTube chosen: the Spotify adapter stops driving, the Spotify SDK is told it is inactive
     act(() => setListeningService('youtube'));
     await waitFor(() => expect(h.youtube).not.toBeNull());
-    expect(h.spotify?.active).toBe(false);
-    expect(lastDrift()).toBeNull();
+    // The handoff lands over more than one commit on a slow runner (#386): wait
+    // for each state instead of asserting right after the act.
+    await waitFor(() => {
+      expect(h.spotify?.active).toBe(false);
+      expect(lastDrift()).toBeNull();
+    });
     act(() => h.youtube!.onPlayerReady!(youtube));
-    expect(lastDrift()).toBe(youtube);
+    await waitFor(() => expect(lastDrift()).toBe(youtube));
 
     // back to Spotify: its adapter is still alive, so it becomes active again
     act(() => setListeningService('spotify'));
     await waitFor(() => expect(h.spotify?.active).toBe(true));
-    expect(lastDrift()).toBe(spotify);
+    await waitFor(() => expect(lastDrift()).toBe(spotify));
   });
 
   it('a Spotify player that announces itself while another service was active does not hijack it, but recovers on switch', async () => {
@@ -169,7 +173,7 @@ describe('RoomClient switching "Ouvir no" between live players', () => {
     act(() => setListeningService('youtube'));
     await waitFor(() => expect(h.youtube).not.toBeNull());
     act(() => h.youtube!.onPlayerReady!(youtube));
-    expect(lastDrift()).toBe(youtube);
+    await waitFor(() => expect(lastDrift()).toBe(youtube));
     act(() => setListeningService('spotify'));
     // YouTube unmounts (clearing it) and the Spotify adapter never announced: nothing drives.
     await waitFor(() => expect(lastDrift()).toBeNull());
