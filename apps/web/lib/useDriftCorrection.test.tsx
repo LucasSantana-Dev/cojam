@@ -16,7 +16,7 @@ vi.mock('./realtime', async (importActual) => ({
 const makePlayer = () => ({
   play: vi.fn(async () => {}),
   pause: vi.fn(async () => {}),
-  seekToMs: vi.fn(async () => {}),
+  seekToMs: vi.fn<(ms: number) => Promise<void>>(async () => {}),
   getCurrentPositionMs: vi.fn(async () => 0),
   getDurationMs: vi.fn(async () => 180_000),
   canSeek: vi.fn(() => true),
@@ -646,5 +646,31 @@ describe('useDriftCorrection when the queue has ended', () => {
       expect(player.pause).not.toHaveBeenCalled();
       unmount();
     });
+  });
+});
+
+describe('useDriftCorrection with a server-created transport', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useStore.setState({ state: null });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('a late joiner seeks to the expected position of a transport nobody pressed play on', () => {
+    const player = makePlayer();
+    const seeks: number[] = [];
+    player.seekToMs.mockImplementation(async (ms: number) => { seeks.push(ms); });
+    // The server auto-anchored the track at 0, 40 s ago (queue.add into an empty room).
+    const auto: TransportState = { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() - 40_000 };
+    useStore.getState().setState(roomState(1, auto));
+    const { unmount } = renderHook(() => useDriftCorrection(player, true));
+
+    expect(player.play).toHaveBeenCalled();
+    expect(player.seekToMs).toHaveBeenCalledTimes(1);
+    const target = seeks[0];
+    expect(Math.abs(target - 40_000)).toBeLessThan(2000);
+    unmount();
   });
 });

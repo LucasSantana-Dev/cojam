@@ -104,6 +104,7 @@ class SpotifyPlayerAdapter implements IPlayer {
   private endedCallbacks: Array<() => void> = [];
   private positionCallbacks: Array<(ms: number) => void> = [];
   private canSeekValue: boolean = false;
+  private seekForbiddenLogged = false;
   private positionPollInterval: NodeJS.Timeout | null = null;
   private endedDetector = createEndedDetector();
   private stateEndDetector = createSpotifyEndDetector();
@@ -151,10 +152,19 @@ class SpotifyPlayerAdapter implements IPlayer {
     if (!this.canSeekValue) return;
     const token = await getAccessToken();
     if (!token) return;
-    await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${positionMs}`, {
+    const res = await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${positionMs}`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}` },
     });
+    // 403 means this account cannot seek (free tier or a restriction). Stop
+    // trying so the drift loop does not hammer a call that will never work.
+    if (res && !res.ok && res.status === 403) {
+      this.canSeekValue = false;
+      if (!this.seekForbiddenLogged) {
+        this.seekForbiddenLogged = true;
+        console.warn('[spotify] seek refused (403), drift correction disabled for this player');
+      }
+    }
   }
 
   async getCurrentPositionMs(): Promise<number> {
