@@ -9,7 +9,7 @@
 
 import { pickEnv, getRuntimeEnv } from './runtimeEnv';
 import { resolveConnectionToken } from './realtime';
-import { trackError } from './telemetry';
+import { trackError, trackEvent } from './telemetry';
 import { SpotifyConnectError, kindFromExchangeStatus } from './spotifyConnectError';
 
 export type SpotifySession = {
@@ -193,6 +193,7 @@ export async function handleCallback(code: string, state: string | null): Promis
     scope: data.scope,
   });
   reconnectRequired = false;
+  trackEvent('provider_connected');
   sessionStorage.removeItem(VERIFIER_KEY);
   const returnTo = safeReturnPath(sessionStorage.getItem(RETURN_KEY));
   sessionStorage.removeItem(RETURN_KEY);

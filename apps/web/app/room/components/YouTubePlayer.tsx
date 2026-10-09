@@ -7,6 +7,7 @@ import type { IPlayer } from '@/lib/playerInterface';
 import { computeExpectedPosition, isExpectedPositionKnown, serverNow } from '@/lib/playbackSync';
 import { secondsToMs, msToSeconds, createEndedDetector } from '@/lib/playerUtils';
 import { advanceWithRetry, shouldResumeInBackground } from '@/lib/backgroundPlayback';
+import { trackError } from '@/lib/telemetry';
 
 // Minimal structural types for the YouTube IFrame API surface this adapter uses.
 interface YTPlayerInstance {
@@ -88,6 +89,7 @@ function loadYouTubeAPI(onReady: () => void) {
  * YouTube IFrame API measures time in seconds; we convert to/from milliseconds.
  */
 class YouTubePlayerAdapter implements IPlayer {
+  readonly kind = 'youtube' as const;
   private ytPlayer: YTPlayerInstance;
   private endedCallbacks: Array<() => void> = [];
   private positionCallbacks: Array<(ms: number) => void> = [];
@@ -312,6 +314,7 @@ export function YouTubePlayer({
           },
           onError: (event: { data: number }) => {
             if (isUnplayableYtError(event.data) && nowPlayingIdRef.current) {
+              trackError('playback_failed', new Error(`youtube error ${event.data}`));
               if (mutedRef.current) onMutedErrorRef.current?.(nowPlayingIdRef.current);
               else onPlayErrorRef.current?.(nowPlayingIdRef.current);
             }

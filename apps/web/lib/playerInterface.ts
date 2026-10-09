@@ -3,6 +3,9 @@
  * All methods return Promises for consistency; positions and durations are in milliseconds.
  */
 export interface IPlayer {
+  /** Optional: which provider this adapter drives; used by drift telemetry. */
+  readonly kind?: 'youtube' | 'spotify';
+
   /**
    * Start playback.
    */

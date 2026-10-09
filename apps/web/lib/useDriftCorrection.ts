@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useStore, requestClockRemeasure, nowPlayingAdvance, resyncRoom } from './realtime';
+import { useStore, requestClockRemeasure, nowPlayingAdvance, resyncRoom, getClockRttMs } from './realtime';
+import { createDriftSampler } from './driftSampler';
+import { trackSyncDrift } from './telemetry';
+import { resolveClientFeatures } from './useRuntimeFeatures';
 import { attachResumeListeners } from './backgroundPlayback';
 import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, isPastEnd, DRIFT_THRESHOLD_MS, seekCooldownMs, serverNow } from './playbackSync';
 import type { IPlayer } from './playerInterface';
@@ -33,6 +36,12 @@ const BACKOFF_RESET_DRIFT_MS = 8000;
 // paused player under a playing room is resumed again every this long (the
 // browser or embed can pause it more than once).
 const HIDDEN_RESUME_RETRY_MS = 5000;
+// Telemetry: how long after a corrective seek or a page resume the forced
+// drift sample waits, so the player has settled and the measurement is honest.
+const SAMPLE_AFTER_SEEK_MS = 1500;
+const SAMPLE_AFTER_RESUME_MS = 2000;
+// How often the sampler is asked whether a sample is owed (cheap, no player read).
+const SAMPLE_POLL_MS = 1000;
 
 export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: boolean, canAdvance = false) {
   const driftCorrectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -43,6 +52,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     canAdvanceRef.current = canAdvance;
   }, [canAdvance]);
   const advancedRef = useRef<{ id: string; at: number } | null>(null);
+  const samplerRef = useRef(createDriftSampler());
   const transport = useStore(
     useShallow((s) => {
       const t = s.state?.transport;
@@ -241,6 +251,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
             if (Date.now() - lastSeekAt < seekCooldownMs(consecutiveSeeks)) return;
             lastSeekAt = Date.now();
             consecutiveSeeks++;
+            samplerRef.current.force(SAMPLE_AFTER_SEEK_MS);
             activePlayer.seekToMs(expected).catch((err) => {
               console.warn('Drift correction seek failed:', err);
             });
@@ -267,11 +278,56 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     };
   }, [activePlayer, transport, syncEnabled, handlePastEnd]);
 
+  // Drift telemetry (sync_drift): a sample while a track plays with a
+  // transport. Independent of the correction loop so players that cannot seek
+  // (Spotify free) are measured too. Off unless the telemetry flag is on.
+  const isPlayingTransport = transport?.state === 'playing' && transport.hasTrack;
+  useEffect(() => {
+    if (!activePlayer || !activePlayer.kind || !isPlayingTransport) return;
+    if (!resolveClientFeatures().telemetry) return;
+    const player = activePlayer;
+    const kind = activePlayer.kind;
+    const sampler = samplerRef.current;
+    let busy = false;
+    const timer = setInterval(() => {
+      const st = useStore.getState().state;
+      const current = st?.transport;
+      if (busy || !current || current.state !== 'playing') return;
+      if (!sampler.due(st?.nowPlayingId ?? null)) return;
+      const now = serverNow();
+      // Same guards as the correction loop: an unknown clock or a player that is
+      // not yet playing yields a meaningless position.
+      if (!isExpectedPositionKnown(current, now)) return;
+      if (player.isPlaying && !player.isPlaying()) return;
+      const expected = computeExpectedPosition(current, now);
+      busy = true;
+      player
+        .getCurrentPositionMs()
+        .then((actual) => {
+          if (!Number.isFinite(actual)) return;
+          sampler.sent();
+          trackSyncDrift({
+            driftMs: actual - expected,
+            player: kind,
+            canSeek: player.canSeek(),
+            hidden: typeof document !== 'undefined' && document.hidden,
+            rttMs: getClockRttMs(),
+          });
+        })
+        .catch(() => {})
+        .finally(() => {
+          busy = false;
+        });
+    }, SAMPLE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [activePlayer, isPlayingTransport]);
+
   // The page came back (shown, thawed, online): wake a dropped socket, then
   // check the player immediately. Never pauses anything, never re-joins.
   useEffect(() => {
     return attachResumeListeners(() => {
       resyncRoom();
+      samplerRef.current.force(SAMPLE_AFTER_RESUME_MS);
       checkNowRef.current?.();
     });
   }, []);

@@ -4,9 +4,12 @@
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore, isPermissionDeniedError, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
-  chatUnavailableNotice, updatePlatform, updateCharacter, onWoot, sendWoot, onEmote, sendEmote,
+  chatUnavailableNotice, queueAdd, updatePlatform, updateCharacter, onWoot, sendWoot, onEmote, sendEmote,
 } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
+
+const telemetryMock = vi.hoisted(() => ({ trackEvent: vi.fn(), trackError: vi.fn() }));
+vi.mock('./telemetry', () => telemetryMock);
 
 // Centrifuge/auth/account mocks for the joinRoom lifecycle tests (B9/B10/B11).
 // The mock records instances so tests can drive 'connected' events and
@@ -669,6 +672,44 @@ describe('host moderation (#181)', () => {
     instance.emit('disconnected', { code: DISCONNECT_CODE_KICKED, reason: 'removed by host' });
     expect(useStore.getState().kicked).toBe(true);
     expect(useStore.getState().connected).toBe(false);
+  });
+
+  it('reports ws_terminal for a terminal disconnect, but not for a kick or our own disconnect', async () => {
+    telemetryMock.trackError.mockClear();
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    instance.emit('disconnected', { code: DISCONNECT_CODE_KICKED, reason: 'removed by host' });
+    instance.emit('disconnected', { code: 0, reason: 'disconnect called' });
+    instance.emit('disconnected');
+    expect(telemetryMock.trackError).not.toHaveBeenCalled();
+
+    instance.emit('disconnected', { code: 3000, reason: 'a free-text reason with details' });
+    expect(telemetryMock.trackError).toHaveBeenCalledTimes(1);
+    const [name, err] = telemetryMock.trackError.mock.calls[0];
+    expect(name).toBe('ws_terminal');
+    expect((err as Error).message).toBe('disconnect code 3000');
+  });
+
+  it('reports track_added after a successful queue.add only', async () => {
+    telemetryMock.trackEvent.mockClear();
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+    const track = { title: 'x', artist: 'y', durationMs: 1, sources: {}, addedBy: 'a' } as never;
+
+    const rpc = instance.rpc.bind(instance);
+    instance.rpc = (method: string, payload: unknown) =>
+      method === 'queue.add' ? Promise.reject(new Error('nope')) : rpc(method, payload);
+    await expect(queueAdd('room-1', track)).rejects.toThrow('nope');
+    expect(telemetryMock.trackEvent).not.toHaveBeenCalled();
+
+    instance.rpc = rpc;
+    await queueAdd('room-1', track);
+    expect(telemetryMock.trackEvent).toHaveBeenCalledWith('track_added');
   });
 
   it('does not mark kicked for ordinary disconnects', async () => {

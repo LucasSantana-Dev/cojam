@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -39,6 +42,32 @@ var (
 		"playback_failed": true, "token_refresh_failed": true,
 	}
 )
+
+// syncDriftPayload is decoded strictly: unknown fields are a rejection, so the
+// schema cannot quietly grow to carry ids or user data.
+type syncDriftPayload struct {
+	Type     string  `json:"type"`
+	Name     string  `json:"name"`
+	DriftMs  float64 `json:"driftMs"`
+	Player   string  `json:"player"`
+	CanSeek  *bool   `json:"canSeek"`
+	Hidden   *bool   `json:"hidden"`
+	RttMs    float64 `json:"rttMs"`
+	Platform string  `json:"platform"`
+}
+
+func validSyncDrift(p syncDriftPayload) bool {
+	if p.Name != "sync_drift" || p.CanSeek == nil || p.Hidden == nil {
+		return false
+	}
+	if math.IsNaN(p.DriftMs) || math.Abs(p.DriftMs) > obs.MaxDriftMs {
+		return false
+	}
+	if math.IsNaN(p.RttMs) || p.RttMs < 0 || p.RttMs > 600000 {
+		return false
+	}
+	return slices.Contains(obs.DriftPlayers, p.Player) && slices.Contains(obs.DriftPlatforms, p.Platform)
+}
 
 type telemetryPayload struct {
 	Type   string  `json:"type"`
@@ -128,6 +157,7 @@ func truncateRunes(s string, n int) string {
 // vital and folds it into the existing Prometheus surface. See
 // docs/specs/245-251-client-telemetry.md for why this is not Sentry.
 func telemetryHandler(metrics *obs.Metrics, logger *slog.Logger, limiter *callerLimiter) http.HandlerFunc {
+	obs.EnsureDrift(metrics)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !limiter.allow(callerKey(r), time.Now()) {
 			metrics.TelemetryRejected("rate_limited")
@@ -135,14 +165,40 @@ func telemetryHandler(metrics *obs.Metrics, logger *slog.Logger, limiter *caller
 			return
 		}
 
+		raw, err := io.ReadAll(io.LimitReader(r.Body, telemetryMaxBody))
 		var p telemetryPayload
-		if err := json.NewDecoder(io.LimitReader(r.Body, telemetryMaxBody)).Decode(&p); err != nil {
+		if err == nil {
+			err = json.Unmarshal(raw, &p)
+		}
+		if err != nil {
 			metrics.TelemetryRejected("malformed")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		switch p.Type {
+		case "sample":
+			var d syncDriftPayload
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&d); err != nil {
+				metrics.TelemetryRejected("malformed")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if d.Name != "sync_drift" {
+				metrics.TelemetryRejected("unknown_name")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if !validSyncDrift(d) {
+				metrics.TelemetryRejected("invalid_sample")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			metrics.SyncDrift(d.Player, d.Platform, *d.Hidden, d.DriftMs)
+			logger.Debug("sync_drift", "player", d.Player, "platform", d.Platform,
+				"hidden", *d.Hidden, "driftMs", d.DriftMs)
 		case "event":
 			if !telemetryEvents[p.Name] {
 				metrics.TelemetryRejected("unknown_name")
