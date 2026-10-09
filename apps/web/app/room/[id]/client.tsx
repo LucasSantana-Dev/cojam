@@ -6,7 +6,7 @@ import { useStore, useMyUserId, joinRoom, nowPlayingAdvance, updatePlatform, upd
 import { useDriftCorrection } from '@/lib/useDriftCorrection';
 import { advanceWithRetry } from '@/lib/backgroundPlayback';
 import { StatusBanner } from '../components/StatusBanner';
-import { NAME_KEY } from '@/lib/guestName';
+import { readGuestName, saveGuestName } from '@/lib/guestName';
 
 // The chosen name is persisted for the session (lib/guestName) so a full-page
 // redirect (Spotify OAuth) and the landing's name+create both auto-rejoin
@@ -234,7 +234,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       setJoinError('');
       try {
         await joinRoom(roomId, name, platformRef.current);
-        sessionStorage.setItem(NAME_KEY, name);
+        saveGuestName(name);
         setJoined(true);
       } catch (error) {
         console.error('Failed to join:', error);
@@ -275,7 +275,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // Auto-rejoin after a full-page nav (e.g. Spotify OAuth) using the saved name.
   useEffect(() => {
     if (joined) return;
-    const saved = sessionStorage.getItem(NAME_KEY);
+    const saved = readGuestName();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sync of external sessionStorage state into a connection side effect (join) on mount, not a render-driven state update
     if (saved) doJoin(saved);
   }, [joined, doJoin]);
