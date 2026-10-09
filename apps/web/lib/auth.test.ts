@@ -30,12 +30,13 @@ describe('auth module', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe('fetchConnectionToken', () => {
     it('fetches and returns token when feature is available', async () => {
       const mockLS = mockLocalStorage();
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
       
@@ -56,7 +57,7 @@ describe('auth module', () => {
     it('sends userId in the POST body when userId is stored', async () => {
       const mockLS = mockLocalStorage();
       mockLS.setItem('cojam_uid', 'stored-user-789');
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
       
@@ -78,7 +79,7 @@ describe('auth module', () => {
       const mockLS = mockLocalStorage();
       mockLS.setItem('cojam_uid', 'stored-user-789');
       mockLS.setItem('cojam_token', 'previous-jwt');
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
 
@@ -102,7 +103,7 @@ describe('auth module', () => {
 
     it('returns null on 501 response (feature off)', async () => {
       const mockLS = mockLocalStorage();
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
       
@@ -120,7 +121,7 @@ describe('auth module', () => {
 
     it('returns null on 404 response', async () => {
       const mockLS = mockLocalStorage();
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
       
@@ -142,7 +143,7 @@ describe('auth module', () => {
       const mockLS = mockLocalStorage();
       mockLS.setItem('cojam_uid', 'stored-user-789');
       mockLS.setItem('cojam_token', 'previous-jwt');
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
 
@@ -168,7 +169,7 @@ describe('auth module', () => {
 
     it('does not fall back to GET on other errors', async () => {
       const mockLS = mockLocalStorage();
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
 
@@ -185,7 +186,7 @@ describe('auth module', () => {
 
     it('returns null on network error', async () => {
       const mockLS = mockLocalStorage();
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
       
@@ -200,7 +201,7 @@ describe('auth module', () => {
 
     it('does not throw or persist when network error occurs', async () => {
       const mockLS = mockLocalStorage();
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
       
@@ -215,7 +216,7 @@ describe('auth module', () => {
 
     it('does not throw when window is undefined (SSR)', async () => {
       const mockLS = mockLocalStorage();
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       const originalWindow = (global as any).window;
       // Simulate SSR by removing window from the global scope.
       delete (global as any).window;
@@ -235,7 +236,7 @@ describe('auth module', () => {
 
     it('derives HTTP base URL when not provided with window.location', async () => {
       const mockLS = mockLocalStorage();
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
       (global as any).window.location = { origin: 'http://app.local:3000' };
@@ -259,7 +260,7 @@ describe('auth module', () => {
   describe('failure tracking (#190)', () => {
     const setupStorage = () => {
       const mockLS = mockLocalStorage();
-      (global as any).localStorage = mockLS;
+      vi.stubGlobal('localStorage', mockLS);
       (global as any).window = (global as any).window || {};
       (global as any).window.localStorage = mockLS;
     };
