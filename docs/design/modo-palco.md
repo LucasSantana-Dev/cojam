@@ -150,6 +150,7 @@ Owner on part 2: "os personagens estão com braços gigantes, não dá pra ver o
 - 12 portraits plus 24 body sprites (12 front, 12 back), the stage background and its animated layers, all on one grid and one palette.
 - Generation is one character per call, then quantised and checked for a front and back match before review. The generation scripts are local; the committed outputs are the final PNGs and a short note on grid size and palette.
 - Assets are committed in the repo (small). The `.claude/design/refs/` mockups stay gitignored.
+- Emotes are 16x16 with the shared palco palette. `emotes/uau.png` was redone on 2026-10-09: the owner judged the first one rough at 16 px. It was generated in the Gemini app with the four approved emotes and `rindo.png` as references, keeps the rindo face and changes only the expression, and was pixelized with the rindo palette. The owner picked it from a review sheet.
 
 ### YouTube ToS constraints
 
