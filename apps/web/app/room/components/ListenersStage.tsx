@@ -106,6 +106,7 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
   const [transferTo, setTransferTo] = useState<RoleMember | null>(null);
   const [busy, setBusy] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [kickError, setKickError] = useState<string | null>(null);
   const f = useRuntimeFeatures();
   const report = useReportDialog();
   const members = useStore((s) => s.members);
@@ -175,11 +176,14 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
 
   const handleKick = (member: { clientId: string; clientIds?: string[]; name: string }) => {
     // One person can hold several connections; room.kick takes one clientId.
-    // A ghost connection answers "not in this room": warn only if every call failed.
+    // A ghost connection answers "not in this room": tell the host only if every
+    // call failed. Shown at the panel level: the kick button lives outside the
+    // role menu, and guests have no menu at all.
+    setKickError(null);
     Promise.allSettled((member.clientIds ?? [member.clientId]).map((id) => kickMember(roomId, id))).then((results) => {
       const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
       if (failed.length === results.length) {
-        console.warn('[moderation] kick failed:', rpcErrorMessage(failed[0].reason, 'unknown error'));
+        setKickError(rpcErrorMessage(failed[0].reason, 'Não foi possível remover da sala.'));
       }
     });
   };
@@ -223,6 +227,11 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
         </span>
         <span className="sr-only">{members.length === 1 ? '1 ouvindo' : `${members.length} ouvindo`}</span>
       </header>
+      {kickError && (
+        <p role="alert" className="r4-ls__menu-err">
+          {kickError}
+        </p>
+      )}
 
       <div ref={boxRef} data-count={visible.length} className={`r4-ls${running ? ' is-running' : ''}${tuned ? ' is-tuned' : ''}`} role="group" aria-label="Quem está ouvindo">
         {visible.map((member, i) => {
