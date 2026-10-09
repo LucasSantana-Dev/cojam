@@ -16,7 +16,7 @@ Read this before touching any UI. It is the committed source for the identity: t
 
 **Signature: the sine wave.** The N3 mark knocks a sine wave out of its green disc. The same wave, as one thin white line, links the listener avatars in the room stage and the landing phone (`ListenersWave.tsx`) and between landing sections (`SectionWave.tsx`). It is the only connection element in the product.
 
-**The room is different (decision 12, round 4).** The live room is a polished desktop app: a near-black page lit by soft violet ambient light, three columns of solid dark panels, anchored on `.claude/design/refs/r4-mockup-1-approved.png` (owner: "1 definitivamente"). The cover colour is not its ground. Everything below about the sintonia ground, glass and cover-colour surfaces applies to the landing and every other screen; the room section ("The room") says what differs. Moving the other screens to the room's ground is an open follow-up, not decided.
+**The room is different (decision 12, round 4).** The live room is a polished desktop app: a near-black page lit by soft violet ambient light, three columns of solid dark panels, anchored on `.claude/design/refs/r4-mockup-1-approved.png` (owner: "1 definitivamente"). The cover colour is not its ground. Everything below about the sintonia ground, glass and cover-colour surfaces applies to the landing and every other screen; the room section ("The room") says what differs. **Every other screen is the palco (decision 13, 2026-10-09):** outside the live room the ground is the palco festival at night, drawn from the shipped palco art at its native grid, with crisp HUD plates on top. See "Palco on every screen". Until a screen's wave ships it keeps the sintonia glass described below.
 
 **Fixed base (do not reopen without the owner):** the N3 mark, violet actions, green for LIVE only, Bricolage Grotesque plus Instrument Sans, PT-BR voice.
 
@@ -25,7 +25,7 @@ Read this before touching any UI. It is the committed source for the identity: t
 - Coloured or recoloured logo variants.
 - Art sources from outside the social-app genre (concrete poetry, boat lettering, aparelhagem).
 - Aurora, glass-with-blur and glow decoration.
-- three.js grounds (tried, removed in #341; the dependency is gone).
+- three.js as a decorative ground (tried, removed in #341). The palco scene engine is the only three.js use, and its scene layer draws only native-grid palco art (HUD tags over it are DOM).
 
 ## The 5 sintonia rules
 
@@ -35,7 +35,7 @@ Source of truth: the block comment "Cor da faixa: sintonia" in `apps/web/app/glo
 2. **Colour roles.** Cover palette is ground only. Violet is actions only. White is text. Green is LIVE only.
 3. **One connection element.** The logo's sine wave, linking listener avatars, breathing on the shared beat clock (`lib/beatClock.ts`, 100 bpm, aligned by the synced room clock) while playing. Flat when paused.
 4. **One surface.** Glass: black at 34%, 16% white hairline, 0.9rem radius, no blur.
-5. **Motion at rest** is only ground drift and wave breathing.
+5. **Motion at rest** is only ground drift and wave breathing. (Sintonia screens only, until their palco wave ships; palco screens follow "Palco on every screen".)
 
 ## Colour roles
 
@@ -46,6 +46,8 @@ Source of truth: the block comment "Cor da faixa: sintonia" in `apps/web/app/glo
 | Text | White (off-white tokens below) | Always white on the ground. |
 | LIVE | Green `--color-accent-2` and `--logo-core-*` | Only the LIVE pill, eq bars and live dots. `scripts/check_web_drift.sh` fails green outside its `LIVE_SELECTORS` allowlist and in components. |
 | Success | `--color-status-ok`, violet hue | Not green: success is not LIVE. |
+
+**Palco screens (decision 13):** ground `--palco-ink` and the palco art, the cover palette is not used, lime `--palco-you` marks "you" and progress only. Violet and green keep the rules above.
 
 **Exceptions (owner approved, #325):** on the landing and the other sintonia screens, nothing outside the ground uses the cover palette. In the room (round 4) the one exception is the now-playing cover's own halo (`.r4-cover__halo`, the same image blurred behind itself, as in the anchor). The room's queue row for the playing track is a violet-tinted surface, not a cover-tinted one. Nothing else.
 
@@ -123,7 +125,7 @@ Festival at night. Dark violet sky with stars and a skyline of lighting towers. 
 
 Characters are separate from the scene, so each person picks who represents them best.
 
-- **A fixed roster of 12.** No customisation. **Repeats are allowed**: two people may pick the same character.
+- **A fixed roster of 14** (12 at first, then Mel and Nico; `modo-palco.md` section 7). No customisation. **Repeats are allowed**: two people may pick the same character.
 - **Portrait bust** per character, in the farm-sim portrait style of the owner's GitHub avatar (three-quarter view, warm dark outline, soft shading, no dithering). Used by the picker, chat and menus.
 - **Full-body sprite, front and back**, big head, in the earlier full-body style. Used in the audience. Front and back must be the same person (hair, clothes, accessories, build); a pair that does not match is rejected before it ships.
 - **Picker**, shown on join and in the avatar menu. Title "Escolha quem vai pra plateia", helper "Pode repetir: outras pessoas podem escolher o mesmo". Portrait grid, one selected, keyboard operable, 44px targets, selection shown by outline plus a check, not by colour alone.
@@ -172,7 +174,7 @@ Under `prefers-reduced-motion` (`useMotion`): beams, wave screens, crowd and spr
 - **Not isometric.** Flat frontal stage view.
 - **No chibi bodies.** Big head, believable body.
 - **No front and back mismatch.** One character, one person, both views.
-- No customisation beyond the fixed roster of 12.
+- No customisation beyond the fixed roster.
 
 ### v1 and later
 
@@ -187,15 +189,35 @@ Under `prefers-reduced-motion` (`useMotion`): beams, wave screens, crowd and spr
 | Dusk | var 03 | later |
 | Close camera | var 04 | not planned (enlarged tags cover the screen) |
 
+## Palco on every screen
+
+Decision 13 in [`docs/design/identity-decisions.md`](docs/design/identity-decisions.md); brief [`docs/design/identity-brief.md`](docs/design/identity-brief.md); boards on canvas pages E (wave 1) and F (wave 2) of https://claude.ai/artifact/4rLNVHdYRDjjvn3SFLYLpT. Applies to every screen outside the live room.
+
+| Wave | Screens |
+|---|---|
+| 1 | Home, 404, erro (`error.tsx`, `global-error.tsx`) |
+| 2 | Salas ao vivo, join screen, conta, termos and privacidade, Spotify callback, share card 1200x630 |
+
+- **Two layers, never mixed.** Scene: palco art at its native size, integer scale (x2, x3, x4), `image-rendering: pixelated`, nothing smoothed, rotated or off the grid. HUD: plates, buttons and text, crisp vector, separate from the scene. Pixel rules as in "Modo palco".
+- **Ground:** `--palco-ink`, the night of the scene. No cover colour, no `GroundStack`, no glass, no blur, no glow.
+- **Plate:** every surface is `--palco-plate` with a 1px `--palco-line` border. Buttons add a hard 2px darker base edge (a key, never a glow). Wave 1 sets one radius for plates and buttons, 6px; this is new (the shipped palco tags use 4px, `.palco-bubble` already uses 6px with a 2px base edge). Text `--palco-text`, at least 4.5:1 on the plate.
+- **Colour roles hold:** violet actions and focus only; lime (`--palco-you`) for "you" and progress only; green for AO VIVO only. Name tags are the audience's tags.
+- **Type:** Bricolage for titles, Instrument Sans for text, buttons and name tags, for numbers, LED boards, codes and times the system monospace stack of the "A seguir" board (`.palco-board`: `ui-monospace, SFMono-Regular, Menlo, monospace`). One stack, no webfont.
+- **The stage screen tells the story:** home shows a room playing (video or cover); 404 shows "404 SEM SINAL", an empty crowd and only you ("cadê todo mundo?"); erro shows low light, a flat line, "SEM SOM" and everyone waiting. On pages without a hero the scene is a band (stage bottom, speakers, crowd heads) with the page name on the LED.
+- **The YouTube screen rule applies** wherever a real player is on the screen: nothing covers it.
+- **Motion:** the scene moves only through the palco engine (three.js on the native grid: crowd, beams). The HUD never moves at rest. No CSS animation on sprites. Reduced motion, server render and first paint show one still frame. A static scene image is a valid v1 for a wave.
+- **Scenes are composed from the shipped art** (stage plates, sky, crowd, characters in `apps/web/public/palco/`), never redrawn. Generator for the boards: `.claude/design/palco-app/` (local); a build ports what it needs into the repo.
+- **Error screens show no codes** (Copy rule), even where a board showed a reference.
+
 ## Surfaces
 
-One treatment on the landing and the other screens (the room has its own, above): `--glass` fill, `--glass-line` 1px hairline, `--glass-radius`, `backdrop-filter: none`. On sintonia screens the page tokens are remapped (`.room[data-tint="room"][data-bg="sintonia"]`, `.landing[data-bg="sintonia"]`, `.sx`) so existing components pick up the glass without per-component overrides.
+Transitional: the sintonia glass below stays on each non-room screen only until its palco wave ships ("Palco on every screen"), then it is removed from that screen. One treatment on the landing and the other screens (the room has its own, above): `--glass` fill, `--glass-line` 1px hairline, `--glass-radius`, `backdrop-filter: none`. On sintonia screens the page tokens are remapped (`.room[data-tint="room"][data-bg="sintonia"]`, `.landing[data-bg="sintonia"]`, `.sx`) so existing components pick up the glass without per-component overrides.
 
 **PWA.** CoJam is installable (`app/manifest.ts`, standalone, `#0d0a17` theme and background, both the palco ink; `viewport.themeColor` matches). Icons in `apps/web/public/icons/` (192, 512, and a 512 maskable with the mark inside the 80% safe zone) are generated from the real N3 paths by `apps/web/scripts/gen-pwa-icons.mjs`; the mark is never recoloured. `/offline` ("Sem sinal") is the only thing the service worker serves from cache. Caching rule: `docs/pwa.md`.
 
 ## Motion
 
-- **Budget: at most 2 moving things at rest**, ground drift and wave breathing on the landing and sintonia screens; in the room only the listener arcs. Everything else moves only on a user or scroll event.
+- **Budget: at most 2 moving things at rest**, ground drift and wave breathing on the landing and sintonia screens (until their palco wave ships); on palco screens only the palco engine (crowd and beams); in the room only the listener arcs. Everything else moves only on a user or scroll event.
 - **Moments:** `ScrollStory.tsx` (pinned "Como funciona", GSAP ScrollTrigger, the only pinned section), `SectionWave.tsx` and `ListenersWave.tsx` (the wave), the cover flip into the stage on a track change (`useCoverFlight`, and the ground wash opening from `.np-cover`).
 - **Loops** are CSS transform only, and pause when the tab is hidden or the ground is off screen.
 - **Reduced motion** (`lib/motionFlags.ts`, `useMotion`): no scroll story (steps render as a grid), no flip, no drift (one static ground frame), no tint fade. The wave stays visible, already drawn. Server render and first client render are the static baseline; motion enhances after hydration.
@@ -210,7 +232,7 @@ One treatment on the landing and the other screens (the room has its own, above)
 
 ## Contrast
 
-White text on the ground must keep at least 4.5:1. The ground is normalised in OKLCH (lightness window `TINT_L_MIN` 0.36 to `TINT_L_MAX` 0.5, `MIN_CONTRAST` 5.6 in `lib/trackColor.ts`). Measured floor over 72 hues, 4 lightness and 3 chroma levels: 5.61:1 (max 12.11:1), per #341. Secondary and muted text are white at 0.93 to 0.97 alpha and stay above 4.5:1. Glass and scrim only darken, so text on them is at least that ratio.
+White text on the ground must keep at least 4.5:1. The ground is normalised in OKLCH (lightness window `TINT_L_MIN` 0.36 to `TINT_L_MAX` 0.5, `MIN_CONTRAST` 5.6 in `lib/trackColor.ts`). Measured floor over 72 hues, 4 lightness and 3 chroma levels: 5.61:1 (max 12.11:1), per #341. Secondary and muted text are white at 0.93 to 0.97 alpha and stay above 4.5:1. Glass and scrim only darken, so text on them is at least that ratio. Palco screens: `--palco-text` on `--palco-plate` keeps at least 4.5:1, and each wave PR states the measured ratio.
 
 ## Copy
 
@@ -218,9 +240,9 @@ PT-BR everywhere a user can see it: room, join errors, relative times, /account,
 
 ## Add a new surface
 
-1. Render inside `SintoniaScreen` (non-room screens) or under `.landing` with `data-bg="sintonia"`. Do not paint your own page background. Room panels follow "The room" instead.
-2. Use the glass tokens for panels. No blur, no extra shadows beyond what exists.
-3. Text is white. Actions are `--color-accent`. Do not use green unless it is a LIVE indicator, and then add its selector to `LIVE_SELECTORS` in `scripts/check_web_drift.sh`.
+1. Non-room screens follow "Palco on every screen": the palco scene as ground, HUD plates on top. Until the shared palco page shell exists (wave 1), render inside `SintoniaScreen` or under `.landing` with `data-bg="sintonia"`. Do not paint your own page background. Room panels follow "The room" instead.
+2. Palco screens: plates as in "Palco on every screen", text `--palco-text`. Sintonia screens (not yet moved): the glass tokens for panels. No blur, no extra shadows beyond what exists.
+3. Text is white (`--palco-text` on palco screens). Actions are `--color-accent`. Do not use green unless it is a LIVE indicator, and then add its selector to `LIVE_SELECTORS` in `scripts/check_web_drift.sh`.
 4. Do not use the cover palette anywhere except the ground (one exception: see Colour roles).
 5. Add no new loop at rest. If you add motion, gate it on `useMotion()` and give it a reduced-motion state.
 6. Effects keyed on props from a re-rendering parent: stable deps only (see the pitfall above).
