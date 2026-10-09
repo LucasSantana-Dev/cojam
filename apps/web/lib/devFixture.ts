@@ -4,6 +4,7 @@
 //   /room/<ID>?fixture=room  joined room (Pétala, 5 listeners, 4 queued, 3 chat lines)
 //     members get characters (Modo palco); extras use the userId default
 //     add &members=1|2|5|8 and &long=1 for long names (stage review)
+//     add &skip=1 (one vote from Bia) or &skip=me (your vote) for the Pular button
 //   /room/<ID>?fixture=join  pre-join screen with the room preview
 //   /rooms?fixture=rooms     six public rooms (non-production only, see fixtureRooms)
 //   /?fixture=error          the landing throws on mount, so app/error.tsx shows (see errorFixture)
@@ -47,6 +48,12 @@ function track(id: string, title: string, artist: string, addedBy: string, art: 
   return { id, title, artist, durationMs, addedBy, artworkUrl: art, sources: { youtube: { videoId: `fx${id}`, confidence: 1 }, spotify: { trackUri: `spotify:track:${id}`, confidence: 1 } } };
 }
 
+// ?skip=1|me seeds a skip vote on the playing track (dev fixture only).
+function skipParam(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('skip');
+}
+
 export function fixtureState(): RoomState {
   const queue: TrackRef[] = [
     track('t1', 'Pétala', 'Djavan', 'Bia', cover('oklch(0.64 0.21 35)', 'oklch(0.58 0.2 262)', 'oklch(0.8 0.17 85)', 'oklch(0.6 0.12 165)')),
@@ -67,6 +74,7 @@ export function fixtureState(): RoomState {
     version: 5,
     createdAt: NOW() - 12 * 60 * 1000,
     transport: { state: 'playing', positionMs: 84000, updatedAtServerMs: NOW() },
+    ...(skipParam() ? { skipVotes: [skipParam() === 'me' ? 'user:u-lucas' : 'user:u-bia'] } : {}),
     votes: { t2: ['user:u-caio', 'user:u-dani'], t3: ['user:u-maju'], t4: ['user:u-bia'], t5: ['user:u-bia', 'user:u-dani'] },
   };
 }
@@ -139,7 +147,7 @@ export function applyRoomFixture(kind: FixtureKind): void {
   s.setState(fixtureState());
   s.setMembers(fixtureMembers());
   s.setCharacterOverrides(FIXTURE_CHARACTERS);
-  s.setMyVotes({ t3: true });
+  s.setMyVotes({ t3: true, ...(skipParam() === 'me' ? { 'skip:t1': true } : {}) });
   if (kind === 'room') s.setChat(chatLines());
   // The removed-from-room screen (room.kick), for screenshots.
   if (kind === 'kicked') s.setKicked(true);

@@ -158,7 +158,9 @@ export function NowPlayingCard({
 
   const hasTools = tools(() => {}).length > 0;
 
-  // Vote to skip, for every member (the host also has the direct skip).
+  // Vote to skip, for every member (the host also has the direct skip). Sits in
+  // the meta row under the title: the transport row has no room beside the
+  // controls.
   const skipVote = track && !preview ? <SkipVoteButton roomId={roomId} variant="r4" /> : null;
 
   // Same row as the transport, for the states that have none: next (controllers
@@ -179,7 +181,7 @@ export function NowPlayingCard({
           </button>
         )}
       </div>
-      <span className="tp__side tp__side--end">{skipVote}</span>
+      <span className="tp__side tp__side--end" aria-hidden="true" />
     </div>
   );
 
@@ -228,9 +230,10 @@ export function NowPlayingCard({
                   <p className="r4-now__artist">{track.artist}</p>
                 </div>
               )}
-              {ok && (
+              {(ok || skipVote) && (
                 <div className="r4-now__meta">
-                  <span className="r4-chip">{track.addedBy} pediu</span>
+                  {ok && <span className="r4-chip">{track.addedBy} pediu</span>}
+                  {skipVote}
                 </div>
               )}
             </>
@@ -244,7 +247,7 @@ export function NowPlayingCard({
         </div>
 
         {showTransport ? (
-          <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl && !preview} trailing={skipVote} />
+          <TransportUI roomId={roomId} activePlayer={activePlayer} canControl={hostControl && !preview} />
         ) : (
           fallbackRow
         )}
