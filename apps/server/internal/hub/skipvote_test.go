@@ -27,6 +27,7 @@ func TestSkipVotesNeeded(t *testing.T) {
 func skipRoom(t *testing.T, roomID string, tracks int, users map[string]string) (*Hub, string) {
 	t.Helper()
 	h := NewHub(nil).WithVoting(true)
+	h.skipGrace = 0 // checks run inline
 	for client, user := range users {
 		h.RecordClientUserID(client, user)
 		h.Join(client, roomID)
@@ -259,5 +260,28 @@ func TestVoteSkip_RebindRewritesVoter(t *testing.T) {
 	s.RewriteSkipVoter("user:old", "user:new")
 	if len(s.SkipVotes) != 1 || s.SkipVotes[0] != "user:new" {
 		t.Fatalf("rewrite dedupe: %v", s.SkipVotes)
+	}
+}
+
+// A connection blip (leave then rejoin inside the grace period) must not make
+// one standing vote pass the track for a room that did not change.
+func TestVoteSkip_BlipWithinGrace(t *testing.T) {
+	h, first := skipRoom(t, "SKIPBLIP", 2, map[string]string{"c0": "u0", "c1": "u1"})
+	h.skipGrace = 80 * time.Millisecond
+	if _, err := skipVote(h, "c0", "u0", "SKIPBLIP", first); err != nil {
+		t.Fatal(err)
+	}
+	h.Leave("c1")
+	h.Join("c1", "SKIPBLIP")
+	time.Sleep(250 * time.Millisecond)
+	snap := roomSnapshot(t, h, "SKIPBLIP")
+	if snap.NowPlayingID != first || len(snap.SkipVotes) != 1 {
+		t.Fatalf("a blip must not advance or drop votes: %+v", snap)
+	}
+	// A real departure still counts once the grace passes.
+	h.Leave("c1")
+	time.Sleep(250 * time.Millisecond)
+	if snap := roomSnapshot(t, h, "SKIPBLIP"); snap.NowPlayingID == first {
+		t.Fatal("after the grace, the lone listener's vote must pass the track")
 	}
 }

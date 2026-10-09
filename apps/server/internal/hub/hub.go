@@ -309,6 +309,8 @@ type Hub struct {
 	// throttled. Separate from fanoutLimiter, whose budget protects
 	// third-party API quotas; votes never leave the server.
 	voteLimiter *rateLimiter
+	// skipGrace delays the vote-skip re-check after a leave (see skipvote.go).
+	skipGrace time.Duration
 
 	// chatLimiter rate-limits chat.send per caller (chatMethods): chat is the
 	// canonical spammable RPC, and a per-caller bucket keeps one spammer from
@@ -639,6 +641,7 @@ func NewHub(node *centrifuge.Node) *Hub {
 		enrichPending:     make(chan struct{}, enrichMaxPending),
 		fanoutLimiter:     newRateLimiter(fanoutBurst, fanoutRefill, time.Now),
 		voteLimiter:       newRateLimiter(voteBurst, voteRefill, time.Now),
+		skipGrace:         skipLeaveGrace,
 		chatLimiter:       newRateLimiter(chatBurst, chatRefill, time.Now),
 		reactionLimiter:   newRateLimiter(reactionBurst, reactionRefill, time.Now),
 		emoteLimiter:      newRateLimiter(1, emoteInterval, time.Now),

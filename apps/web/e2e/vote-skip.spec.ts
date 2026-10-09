@@ -28,9 +28,19 @@ async function addTrack(page: Page, title: string, artist: string) {
 }
 
 test('two listeners vote to skip and the track advances', async ({ browser }) => {
-  const roomId = `E2ES${Date.now().toString(36).toUpperCase()}`;
-  const a = await (await browser.newContext()).newPage();
-  const b = await (await browser.newContext()).newPage();
+  // <= 12 chars (ValidRoomID); the random tail keeps parallel workers apart.
+  const roomId = `S${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+  // The YouTube embed is held pending on purpose: where it cannot load (CI has
+  // no route to youtube.com) the host's client reports the video unplayable and
+  // skips the track about 2 s later (useSkipUnplayable), which would race the
+  // votes. A request that never answers neither plays nor errors.
+  const newPage = async () => {
+    const ctx = await browser.newContext();
+    await ctx.route(/youtube\.com|ytimg\.com|googlevideo\.com|youtube-nocookie\.com/, () => {});
+    return ctx.newPage();
+  };
+  const a = await newPage();
+  const b = await newPage();
 
   await join(a, roomId, 'Ana');
   await join(b, roomId, 'Beto');

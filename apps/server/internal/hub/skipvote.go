@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/centrifugal/centrifuge"
+	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
@@ -69,13 +70,29 @@ func (h *Hub) voteSkipRPC(data []byte, clientID, voter string) (json.RawMessage,
 	return h.skipVoteStep(req.RoomID, req.NowPlayingID, voter, req.Vote)
 }
 
-// reevaluateSkipVotes re-runs the vote after a membership change. It is a
-// cheap no-op for a room that is not resident or has no skip votes, and never
-// creates a room.
+// skipLeaveGrace is how long a departure waits before the vote is re-checked.
+// A listener's connection blips (reconnect, tab reload) look like a leave and a
+// join; counting the blip would drop n for a moment and let one standing vote
+// pass the track for a room that never changed. Anonymous and account
+// identities survive the reconnect, so the returning listener is counted again
+// when the check runs. Tests shrink it (0 runs the check inline).
+const skipLeaveGrace = 5 * time.Second
+
+// reevaluateSkipVotes re-runs the vote after a membership change, once the
+// grace period has passed. It is a cheap no-op for a room that is not resident
+// or has no skip votes, and never creates a room.
 func (h *Hub) reevaluateSkipVotes(roomID string) {
 	if !h.votingEnabled {
 		return
 	}
+	if h.skipGrace > 0 {
+		time.AfterFunc(h.skipGrace, func() { h.reevaluateSkipVotesNow(roomID) })
+		return
+	}
+	h.reevaluateSkipVotesNow(roomID)
+}
+
+func (h *Hub) reevaluateSkipVotesNow(roomID string) {
 	h.mu.RLock()
 	room, ok := h.rooms[roomID]
 	h.mu.RUnlock()

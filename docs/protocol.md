@@ -330,7 +330,7 @@ cleared whenever `nowPlayingId` changes. The threshold counts the **distinct lis
 (identity, so two tabs of one account count once, the same collapse the room page uses for "N
 ouvindo"): `need = max(ceil(n/2), min(2, n))`, i.e. n=1 needs 1, n=2 needs 2, n=3 needs 2, n=4
 needs 2, n=5 needs 3. Only votes from currently present voters count, and the check re-runs when a
-listener leaves, so a departure can complete the vote. On reaching it the server advances exactly
+listener leaves (after a 5 s grace, so a reconnect blip never counts as a departure), so a real departure can complete the vote. On reaching it the server advances exactly
 like `now_playing.advance` (same dedup against auto-advance and the host skip, transport
 re-anchored to 0), posts the system chat line "Música pulada pela sala", logs `skip_by_vote`
 (`room_id`, `votes`, `n`) and counts `music_jam_skips_by_vote_total` (votes cast:
