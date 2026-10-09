@@ -768,6 +768,17 @@ export async function retryConnection() {
   await joinRoom(room.roomId, room.name, room.platform);
 }
 
+// resyncRoom: the page just came back (tab shown, thawed, network back). Only
+// wakes a dropped socket; the 'connected' handler then re-joins and adopts the
+// server state. It never calls room.join itself: the server stamps a join time
+// on every join (longest-present host promotion, #166), and there is no
+// read-only state RPC. A live socket keeps receiving publications, and the
+// drift loop's immediate check covers the player.
+export function resyncRoom(): void {
+  if (!activeRoom || !centrifuge) return;
+  if (centrifuge.state !== 'connected') centrifuge.connect(); // no-op while connecting
+}
+
 // --- Guest-to-account upgrade (room.rebind, #172) ---
 //
 // A guest who signs in keeps what they already did: on every room join, while
