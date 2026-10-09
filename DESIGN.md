@@ -190,6 +190,8 @@ Under `prefers-reduced-motion` (`useMotion`): beams, wave screens, crowd and spr
 
 One treatment on the landing and the other screens (the room has its own, above): `--glass` fill, `--glass-line` 1px hairline, `--glass-radius`, `backdrop-filter: none`. On sintonia screens the page tokens are remapped (`.room[data-tint="room"][data-bg="sintonia"]`, `.landing[data-bg="sintonia"]`, `.sx`) so existing components pick up the glass without per-component overrides.
 
+**PWA.** CoJam is installable (`app/manifest.ts`, standalone, `#0d0a17` theme and background, both the palco ink; `viewport.themeColor` matches). Icons in `apps/web/public/icons/` (192, 512, and a 512 maskable with the mark inside the 80% safe zone) are generated from the real N3 paths by `apps/web/scripts/gen-pwa-icons.mjs`; the mark is never recoloured. `/offline` ("Sem sinal") is the only thing the service worker serves from cache. Caching rule: `docs/pwa.md`.
+
 ## Motion
 
 - **Budget: at most 2 moving things at rest**, ground drift and wave breathing on the landing and sintonia screens; in the room only the listener arcs. Everything else moves only on a user or scroll event.
