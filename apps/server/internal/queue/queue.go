@@ -383,28 +383,37 @@ func (rs *RoomState) AdvanceAfter(afterID string) error {
 	return nil
 }
 
-// EndedGraceMs is how far past a track's duration a playing transport may run
-// before the server treats the track as ended. It keeps a joiner from racing
-// the host's own end-of-track advance, which lands within about a second.
+// MinStaleEndMarginMs is the floor of how far past a track's catalogue
+// duration a playing transport must run before the server treats the track as
+// abandoned. See StaleEndMarginMs.
+const MinStaleEndMarginMs = 120_000
+
+// StaleEndMarginMs is the margin added to a catalogue duration before the
+// server-side join-time guess calls a track ended: max(2 minutes, duration/2).
 //
-// It is also deliberately wide: the catalogue duration of a YouTube-matched
-// track is not the video's (the match can be a longer music video), so a
-// joiner reconnecting 5 s past a 3:48 catalogue entry must not skip a 4:30
-// video that is still playing. Only a transport that ran this far past the
-// catalogue end is treated as abandoned. The server cannot know the real video
-// length (only the player can), so a video more than 30 s longer than its
-// catalogue entry can still be cut on a late join; the matcher keeps matched
-// videos close to the catalogue length to make that rare.
-const EndedGraceMs = 30_000
+// It is deliberately wide. The catalogue duration (Deezer/Spotify) of a
+// YouTube-matched track is not the video's: matching is by title, so the real
+// music video is often 1-2+ minutes longer (intros, outros). Only the player
+// knows the real length, and clients advance on the player's ENDED event. The
+// server guess exists only to rescue a stale transport (absent host, restored
+// from the store, much later), so it must never cut a video that is still
+// playing for everyone.
+func StaleEndMarginMs(durationMs int64) int64 {
+	if half := durationMs / 2; half > MinStaleEndMarginMs {
+		return half
+	}
+	return MinStaleEndMarginMs
+}
 
 // AdvanceIfEnded moves playback past the now-playing track when a playing
-// transport has run beyond that track's duration (plus EndedGraceMs). Advance
-// is host-only on the client, so a host that vanished (or a server restart that
-// restored the transport from the store) leaves the position growing forever
-// and every listener seeking past the end. The advance re-anchors the
-// transport to position 0 (setNowPlayingID), so one step is enough: a long
-// outage does not skip the whole queue. It never refills radio. Tracks with an
-// unknown duration are left alone. Reports whether the room advanced.
+// transport has run beyond that track's duration plus StaleEndMarginMs
+// (max(2 min, duration/2)). Advance is host-only on the client, so a host that
+// vanished (or a server restart that restored the transport from the store)
+// leaves the position growing forever and every listener seeking past the end.
+// The advance re-anchors the transport to position 0 (setNowPlayingID), so one
+// step is enough: a long outage does not skip the whole queue. It never
+// refills radio. Tracks with an unknown duration are left alone. Reports
+// whether the room advanced.
 func (rs *RoomState) AdvanceIfEnded(nowMs int64) bool {
 	t := rs.Transport
 	if t == nil || t.State != "playing" || rs.NowPlayingID == "" {
@@ -414,7 +423,7 @@ func (rs *RoomState) AdvanceIfEnded(nowMs int64) bool {
 	if tr == nil || tr.DurationMs <= 0 {
 		return false
 	}
-	if t.PositionMs+(nowMs-t.UpdatedAtServerMs) < tr.DurationMs+EndedGraceMs {
+	if t.PositionMs+(nowMs-t.UpdatedAtServerMs) < tr.DurationMs+StaleEndMarginMs(tr.DurationMs) {
 		return false
 	}
 	return rs.AdvanceAfter(rs.NowPlayingID) == nil
