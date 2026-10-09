@@ -1,0 +1,209 @@
+# promtool test rules observability/prometheus/rules/tests/cojam-alerts.test.yml
+rule_files:
+  - ../cojam-alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    name: server down fires only after 5 minutes
+    input_series:
+      - series: 'up{job="cojam-server"}'
+        values: '1x5 0x15'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: CoJamServerDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: CoJamServerDown
+        exp_alerts:
+          - exp_labels: {severity: critical, service: cojam-server, job: cojam-server}
+            exp_annotations:
+              summary: "O servidor do CoJam não responde"
+              description: "O Prometheus não consegue ler as métricas do cojam-server há 5 minutos. As salas e o login estão fora do ar ou o container caiu."
+              runbook: "docs/observability.md#cojamserverdown"
+
+  - interval: 1m
+    name: rpc errors fire above 5 percent
+    input_series:
+      # 10 percent errors (10 of 100 per minute)
+      - series: 'music_jam_rpc_duration_seconds_count{job="cojam-server",method="queue.add",status="error"}'
+        values: '0+10x30'
+      - series: 'music_jam_rpc_duration_seconds_count{job="cojam-server",method="queue.add",status="ok"}'
+        values: '0+90x30'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: CoJamRpcErrors
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: CoJamRpcErrors
+        exp_alerts:
+          - exp_labels: {severity: warning, service: cojam-server}
+            exp_annotations:
+              summary: "Mais de 5% das ações nas salas estão falhando"
+              description: "Mais de 5% das chamadas RPC terminaram em erro do servidor (status=error, não conta erro de uso) por 10 minutos, com pelo menos 5 falhas. Costuma ser banco fora, deploy ruim ou provedor caído."
+              runbook: "docs/observability.md#cojamrpcerrors"
+
+  - interval: 1m
+    name: rpc errors ignore low ratio and user errors
+    input_series:
+      - series: 'music_jam_rpc_duration_seconds_count{job="cojam-server",method="queue.add",status="error"}'
+        values: '0+1x30'
+      - series: 'music_jam_rpc_duration_seconds_count{job="cojam-server",method="queue.add",status="ok"}'
+        values: '0+99x30'
+      - series: 'music_jam_rpc_duration_seconds_count{job="cojam-server",method="queue.add",status="user_error"}'
+        values: '0+500x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CoJamRpcErrors
+        exp_alerts: []
+
+  - interval: 1m
+    name: rpc errors ignore tiny traffic
+    input_series:
+      # 50 percent but only 3 errors in 10 minutes
+      - series: 'music_jam_rpc_duration_seconds_count{job="cojam-server",method="queue.add",status="error"}'
+        values: '0x5 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'music_jam_rpc_duration_seconds_count{job="cojam-server",method="queue.add",status="ok"}'
+        values: '0x5 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CoJamRpcErrors
+        exp_alerts: []
+
+  - interval: 1m
+    name: drift p95 above 5 seconds fires
+    input_series:
+      # every sample lands in the 10 s bucket, p95 is well above 5 s
+      - series: 'music_jam_sync_drift_seconds_bucket{job="cojam-server",player="youtube",platform="mobile",le="5"}'
+        values: '0x30'
+      - series: 'music_jam_sync_drift_seconds_bucket{job="cojam-server",player="youtube",platform="mobile",le="10"}'
+        values: '0+6x30'
+      - series: 'music_jam_sync_drift_seconds_bucket{job="cojam-server",player="youtube",platform="mobile",le="+Inf"}'
+        values: '0+6x30'
+      - series: 'music_jam_sync_drift_samples_total{job="cojam-server",player="youtube",platform="mobile",hidden="false"}'
+        values: '0+6x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CoJamDriftHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, service: cojam-server}
+            exp_annotations:
+              summary: "As pessoas estão ouvindo fora de sincronia"
+              description: "O p95 da dessincronia está acima de 5 segundos há 10 minutos, com amostras chegando. Quem ouve junto não está ouvindo a mesma coisa ao mesmo tempo."
+              runbook: "docs/observability.md#cojamdrifthigh"
+
+  - interval: 1m
+    name: drift is quiet when healthy
+    input_series:
+      - series: 'music_jam_sync_drift_seconds_bucket{job="cojam-server",player="spotify",platform="desktop",le="0.5"}'
+        values: '0+6x30'
+      - series: 'music_jam_sync_drift_seconds_bucket{job="cojam-server",player="spotify",platform="desktop",le="+Inf"}'
+        values: '0+6x30'
+      - series: 'music_jam_sync_drift_samples_total{job="cojam-server",player="spotify",platform="desktop",hidden="false"}'
+        values: '0+6x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CoJamDriftHigh
+        exp_alerts: []
+
+  - interval: 1m
+    name: drift is quiet without samples
+    input_series:
+      - series: 'music_jam_sync_drift_seconds_bucket{job="cojam-server",player="spotify",platform="desktop",le="0.5"}'
+        values: '0x30'
+      - series: 'music_jam_sync_drift_seconds_bucket{job="cojam-server",player="spotify",platform="desktop",le="+Inf"}'
+        values: '0x30'
+      - series: 'music_jam_sync_drift_samples_total{job="cojam-server",player="spotify",platform="desktop",hidden="false"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CoJamDriftHigh
+        exp_alerts: []
+
+  - interval: 1m
+    name: youtube quota open is info after 15 minutes
+    input_series:
+      - series: 'music_jam_youtube_quota_open{job="cojam-server"}'
+        values: '0x5 1x30'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: CoJamYouTubeQuotaOpen
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: CoJamYouTubeQuotaOpen
+        exp_alerts:
+          - exp_labels: {severity: info, service: cojam-server}
+            exp_annotations:
+              summary: "A cota do YouTube acabou e o freio está aberto"
+              description: "O servidor parou de buscar no YouTube há 15 minutos porque a cota foi recusada. Buscas novas falham até a cota voltar (zera às 04:00 de Brasília)."
+              runbook: "docs/observability.md#cojamyoutubequotaopen"
+
+  - interval: 1m
+    name: events dropped fires for real reasons
+    input_series:
+      - series: 'music_jam_events_dropped_total{job="cojam-server",reason="buffer_full"}'
+        values: '0x5 3x10'
+      - series: 'music_jam_events_dropped_total{job="cojam-server",reason="disabled"}'
+        values: '0+50x15'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CoJamEventsDropped
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: CoJamEventsDropped
+        exp_alerts:
+          - exp_labels: {severity: warning, service: cojam-server}
+            exp_annotations:
+              summary: "Eventos de produto estão sendo descartados"
+              description: "Nos últimos 15 minutos o servidor descartou eventos de produto (buffer cheio ou erro de banco). Os painéis de negócio estão subcontando. O motivo disabled não conta."
+              runbook: "docs/observability.md#cojameventsdropped"
+
+  - interval: 1m
+    name: events dropped stays quiet when only disabled
+    input_series:
+      - series: 'music_jam_events_dropped_total{job="cojam-server",reason="disabled"}'
+        values: '0+50x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CoJamEventsDropped
+        exp_alerts: []
+
+  - interval: 1m
+    name: panics fire on any recovered panic
+    input_series:
+      - series: 'music_jam_goroutine_panics_total{job="cojam-server",where="hub_enrich"}'
+        values: '0x5 1x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CoJamPanics
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: CoJamPanics
+        exp_alerts:
+          - exp_labels: {severity: critical, service: cojam-server}
+            exp_annotations:
+              summary: "O servidor recuperou um panic em segundo plano"
+              description: "Uma rotina em segundo plano deu panic nos últimos 10 minutos. O servidor continuou de pé, mas é bug de código. Veja a linha goroutine_panic nos logs."
+              runbook: "docs/observability.md#cojampanics"
+
+  - interval: 1m
+    name: playing without transport fires and then resolves
+    input_series:
+      - series: 'music_jam_room_playing_without_transport_total{job="cojam-server"}'
+        values: '0x5 2x80'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CoJamPlayingWithoutTransport
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: CoJamPlayingWithoutTransport
+        exp_alerts:
+          - exp_labels: {severity: warning, service: cojam-server}
+            exp_annotations:
+              summary: "Sala tocando sem relógio de sincronia"
+              description: "Nos últimos 30 minutos o servidor achou sala com música tocando mas sem transporte (relógio de sincronia). É a regressão do #437: a música pode ficar parada no fim ou dessincronizada."
+              runbook: "docs/observability.md#cojamplayingwithouttransport"
+      - eval_time: 60m
+        alertname: CoJamPlayingWithoutTransport
+        exp_alerts: []

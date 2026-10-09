@@ -55,6 +55,28 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
 
+  observability:
+    name: Observability
+    runs-on: ubuntu-latest
+    env:
+      # promtool comes from the GitHub release tarball (pinned + checksum) instead
+      # of the prom/prometheus image: Docker Hub rate-limits anonymous pulls.
+      PROMETHEUS_VERSION: 3.5.0
+      PROMETHEUS_SHA256: e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Dashboards are up to date
+        run: python3 observability/grafana/build_dashboards.py --check
+      - name: Install promtool
+        run: |
+          f="prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/$f"
+          echo "${PROMETHEUS_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP" --strip-components=1 "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - run: promtool check rules observability/prometheus/rules/cojam-*.rules.yml
+      - run: promtool test rules observability/prometheus/rules/tests/cojam-*.test.yml
+
   web:
     name: Web
     runs-on: ubuntu-latest
