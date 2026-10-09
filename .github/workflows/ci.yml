@@ -28,7 +28,7 @@ jobs:
     # internal/db sat at 11% while having tests written for it.
     services:
       postgres:
-        image: postgres:17-alpine
+        image: public.ecr.aws/docker/library/postgres:17-alpine
         env:
           POSTGRES_USER: cojam
           POSTGRES_DB: cojam_test
