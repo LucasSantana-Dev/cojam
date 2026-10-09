@@ -19,7 +19,7 @@ import (
 //	room_created   getOrLoadRoom, when the room did not exist in memory or the store
 //	room_joined    Join, on a new membership (not on a resubscribe of the same pair)
 //	track_started  mutateRoom, whenever a mutation changes NowPlayingID to a track
-//	track_skipped  advanceAfterReport (see emitTrackSkipped)
+//	track_skipped  advanceAfterWith (see emitTrackSkipped)
 //	track_liked    reactionWoot
 //	search         dispatch "track.search"; main.go for matcher lookups
 //	provider_connected  cmd/server spotifyExchangeHandler
@@ -48,9 +48,9 @@ func (h *Hub) actorKey(clientID string) string {
 	return rateLimitKey(clientID, h.userIDOf(clientID))
 }
 
-// Skip reasons for track_skipped.by. "vote" comes from the vote-skip
-// threshold (now_playing.vote_skip, skipvote.go), with the voter who tipped it
-// as actor.
+// Skip reasons for track_skipped.by. "vote" is recorded by skipVoteStep
+// (skipvote.go) through advanceAfterReport, which passes it as skipBy so the
+// generic host-advance detection does not record the same skip twice.
 const (
 	skipByHost = "host"
 	skipByAuto = "auto"

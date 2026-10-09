@@ -196,29 +196,6 @@ func TestEvents_TrackSkipped(t *testing.T) {
 	}
 }
 
-// A vote-skip that reaches the threshold mid-track records by=vote, with the
-// voter who tipped it as actor, and no by=host for the same advance.
-func TestEvents_TrackSkippedByVote(t *testing.T) {
-	h, sink := eventsHub(t)
-	h.WithVoting(true)
-	h.skipGrace = 0
-	rolesJoin(t, h, "c-o", "owner")
-	evAddTrack(t, h, "one", 200_000, true)
-	evAddTrack(t, h, "two", 200_000, true)
-	first := rolesState(t, h).NowPlayingID
-
-	if _, err := skipVote(h, "c-o", "owner", rolesRoom, first); err != nil {
-		t.Fatalf("vote: %v", err)
-	}
-	if rolesState(t, h).NowPlayingID == first {
-		t.Fatal("one listener's vote must pass the track")
-	}
-	sk := sink.named(events.TrackSkipped)
-	if len(sk) != 1 || sk[0].Props["by"] != "vote" || sk[0].ActorID != "user:owner" {
-		t.Fatalf("vote skip = %+v", sk)
-	}
-}
-
 func TestEvents_TrackLiked(t *testing.T) {
 	h, sink := eventsHub(t)
 	h.wootPublishFn = func(string, []byte) error { return nil }
@@ -363,5 +340,37 @@ func TestEvents_NothingIdentifyingReachesTheRows(t *testing.T) {
 				t.Fatalf("row leaks %q: %s", clear, all)
 			}
 		}
+	}
+}
+
+// A vote skip is recorded once, as by=vote with the tipping voter, and never
+// also as by=host even when the position says the track ended early.
+func TestEvents_VoteSkipRecordedOnceAsVote(t *testing.T) {
+	sink := &fakeSink{}
+	h := NewHub(nil).WithVoting(true).WithSync(true).WithEvents(sink)
+	h.skipGrace = 0
+	for c, u := range map[string]string{"c1": "u1", "c2": "u2"} {
+		h.RecordClientUserID(c, u)
+		h.Join(c, "VS1")
+	}
+	add := `{"roomId":"VS1","track":{"title":"S","artist":"A","durationMs":200000,"sources":{},"addedBy":"x"}}`
+	res, err := h.HandleRPC("queue.add", []byte(add), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st queue.RoomState
+	_ = json.Unmarshal(res, &st)
+	if _, err := skipVote(h, "c1", "u1", "VS1", st.NowPlayingID); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(sink.named(events.TrackSkipped)); n != 0 {
+		t.Fatalf("a vote below the threshold skipped nothing, got %d events", n)
+	}
+	if _, err := skipVote(h, "c2", "u2", "VS1", st.NowPlayingID); err != nil {
+		t.Fatal(err)
+	}
+	sk := sink.named(events.TrackSkipped)
+	if len(sk) != 1 || sk[0].Props["by"] != "vote" || sk[0].ActorID != "user:u2" || sk[0].RoomID != "VS1" {
+		t.Fatalf("vote skip events = %+v", sk)
 	}
 }

@@ -109,7 +109,7 @@ Table `product_events` (migration `0008_product_events.sql`): `id bigserial`, `a
 | `room_created` | | `getOrLoadRoom`, when the room existed in neither memory nor store | none |
 | `room_joined` | (`via` is omitted: the server cannot know it) | `Hub.Join`, on a new membership | `user:<id>` or `client:<connection id>` |
 | `track_started` | `provider` `youtube`/`spotify`/`other`, `source` `manual`/`radio`/`autoplay`/`history` | `mutateRoom`, whenever `NowPlayingID` changes to a track | none |
-| `track_skipped` | `by` `host`/`auto`/`vote` | `advanceAfterReport` | caller for `host`, the voter who tipped the threshold for `vote`, none for `auto` |
+| `track_skipped` | `by` `host`/`auto`/`vote` | `advanceAfterReport` | voter for `vote`, caller for `host`, none for `auto` |
 | `track_liked` | | `reactionWoot` | `user:<id>` or `client:<id>` |
 | `search` | `provider` `catalog` (typed search, `track.search`) or `youtube`/`spotify` (source lookup via the matcher, `cache_hit` meaningful), `cache_hit` bool | `dispatch` and the matcher callbacks in `main.go` | caller for `catalog`, none for lookups |
 | `provider_connected` | `provider` `spotify` | `spotifyExchangeHandler`, after Spotify accepts the code | `user:<connection sub>` |
@@ -119,7 +119,7 @@ Semantics worth knowing before building a panel:
 
 - `provider` on `track_started` is the only source the track carries when it starts; "other" means both or neither. The service a listener plays on is chosen per client ("Ouvir no") and unknown to the server.
 - `source` `manual` means the room was idle and someone queued or re-picked the track; `autoplay` means it followed another track; `radio` and `history` come from the track's origin.
-- `track_skipped` `by=host` is an advance more than 15 s before the catalogue end of a track with a known duration and a transport (the web skip button and the end-of-track advance share one RPC). Without a transport (sync off) or a duration nothing is recorded. `by=auto` covers the sourceless auto skip and `now_playing.skip_unplayable`. `by=vote` is the same early-advance check when the `now_playing.vote_skip` threshold advances the track (`hub/skipvote.go`).
+- `track_skipped` `by=host` is an advance more than 15 s before the catalogue end of a track with a known duration and a transport (the web skip button and the end-of-track advance share one RPC). Without a transport (sync off) or a duration nothing is recorded. `by=auto` covers the sourceless auto skip and `now_playing.skip_unplayable`. `by=vote` is recorded when the vote threshold advances playback (`skipVoteStep` passes `skipBy`), once per skip and only by the call that moved playback, so it is never also counted as `host`.
 - `listener_peak.n` is the highest number of concurrent members seen at a join during the hour (one connection counts once), stamped with the start of that hour. A room that nobody rejoins is flushed within about 5 minutes after its hour ends, and at shutdown.
 - Guests without room auth get `actor_hash` per connection, so a returning guest is a new actor. With `FEATURE_ROOM_AUTH` the actor is the stable anonymous or account sub.
 

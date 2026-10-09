@@ -157,7 +157,7 @@ func (h *Hub) skipVoteStep(roomID, expectID, voter string, vote *bool) (json.Raw
 	if !reached {
 		return res, nil
 	}
-	advRes, moved, err := h.advanceAfterReport(roomID, playingID, true, nil, voter, skipByVote)
+	advRes, moved, err := h.advanceAfterReport(roomID, playingID, true, nil, skipByVote, voter)
 	if err != nil {
 		return res, err
 	}

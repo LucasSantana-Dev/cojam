@@ -2817,7 +2817,7 @@ func (h *Hub) advanceAfter(roomID, afterID string, withSkipCheck bool) (json.Raw
 // actor is the caller's rate-limit key for the track_skipped event ("" when the
 // skip is automatic).
 func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipLine func(title string) string, actor string) (json.RawMessage, error) {
-	res, _, err := h.advanceAfterReport(roomID, afterID, withSkipCheck, skipLine, actor, skipByHost)
+	res, _, err := h.advanceAfterReport(roomID, afterID, withSkipCheck, skipLine, "", actor)
 	return res, err
 }
 
@@ -2825,9 +2825,12 @@ func (h *Hub) advanceAfterWith(roomID, afterID string, withSkipCheck bool, skipL
 // is the one that moved playback off afterID. Concurrent callers (auto
 // advance, host skip, the vote-skip threshold) race benignly: exactly one sees
 // moved == true, so side effects that must happen once (vote-skip chat line,
-// log, counter) key off it. An early advance is recorded as track_skipped with
-// actor and by (skipByHost, or skipByVote from the vote-skip threshold).
-func (h *Hub) advanceAfterReport(roomID, afterID string, withSkipCheck bool, skipLine func(title string) string, actor, by string) (res json.RawMessage, moved bool, err error) {
+// log, counter, the track_skipped event) key off it.
+//
+// skipBy names an explicit skip for the track_skipped event ("vote"); empty
+// lets the position decide whether a host advance was a skip. Either way at
+// most one event is recorded per skip, and only by the call that moved playback.
+func (h *Hub) advanceAfterReport(roomID, afterID string, withSkipCheck bool, skipLine func(title string) string, skipBy, actor string) (res json.RawMessage, moved bool, err error) {
 	if skipLine == nil {
 		skipLine = func(title string) string {
 			return fmt.Sprintf("%s não está disponível no seu serviço e foi pulada", title)
@@ -2905,8 +2908,10 @@ func (h *Hub) advanceAfterReport(roomID, afterID string, withSkipCheck bool, ski
 		h.publishSystemChat(roomID, skipLine(skipped.Title))
 		h.emitTrackSkipped(roomID, "", skipByAuto)
 	}
-	if err == nil && skippedEarly {
-		h.emitTrackSkipped(roomID, actor, by)
+	if err == nil && moved && skipBy != "" {
+		h.emitTrackSkipped(roomID, actor, skipBy)
+	} else if err == nil && moved && skippedEarly {
+		h.emitTrackSkipped(roomID, actor, skipByHost)
 	}
 
 	// The system message rides chat, not RoomState: no Version bump, no
