@@ -140,3 +140,26 @@ func (p *PostgresSearchStore) Purge(ctx context.Context) (int64, error) {
 	}
 	return tag.RowsAffected(), nil
 }
+
+// PurgeEvery runs purge now and then every interval until ctx ends, so a
+// long-lived process keeps the table small (startup alone is not enough).
+// onDone, if set, sees each result (logging).
+func PurgeEvery(ctx context.Context, interval time.Duration, purge func(context.Context) (int64, error), onDone func(rows int64, err error)) {
+	run := func() {
+		n, err := purge(ctx)
+		if onDone != nil {
+			onDone(n, err)
+		}
+	}
+	run()
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			run()
+		}
+	}
+}

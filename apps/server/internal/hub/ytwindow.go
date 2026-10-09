@@ -57,9 +57,10 @@ func (h *Hub) noticeUntilMs() int64 {
 // auto skip never sees a now-playing track as "checked" before its lookup is
 // accounted for.
 //
-// While the quota is exhausted nothing is launched; in-window tracks are
-// marked uncertain and owed (YTQuota) so the auto skip does not drain the
-// queue and the first mutation after the reset retries them.
+// While the quota is exhausted a track is still looked up once (cached
+// searches need no API call); one refused by the quota is owed (YTQuota),
+// uncertain so the auto skip does not drain the queue, and retried by the
+// first mutation after the reset.
 func (h *Hub) markYouTubeWindowLocked(s *queue.RoomState) []queue.TrackRef {
 	if h.matcher == nil || len(s.Queue) == 0 {
 		return nil
@@ -72,10 +73,15 @@ func (h *Hub) markYouTubeWindowLocked(s *queue.RoomState) []queue.TrackRef {
 		if t.Sources.YouTube != nil || t.YTLookup {
 			return
 		}
-		if exhausted {
-			t.EnrichUncertain, t.YTQuota = true, true
+		if exhausted && t.YTQuota {
+			// Already refused by the quota: wait for the reset instead of
+			// re-claiming on every mutation.
+			t.EnrichUncertain = true
 			return
 		}
+		// During an outage a fresh track is still claimed: the matcher serves
+		// it from the L1/L2 search cache when it can, and only a real cache
+		// miss fails on the quota (settled as owed, see enrichSettle).
 		if t.YTQuota || t.YTAttempts > 0 {
 			t.EnrichUncertain, t.YTQuota = false, false
 		}
