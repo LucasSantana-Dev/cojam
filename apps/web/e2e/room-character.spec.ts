@@ -50,3 +50,15 @@ test('a picked character shows on the join screen, in the stage for everyone, an
   await expect(stageFace(lucas, 'Lucas')).toHaveAttribute('src', '/palco/characters/09-portrait.png');
   await expect(stageFace(ana, 'Lucas')).toHaveAttribute('src', '/palco/characters/09-portrait.png');
 });
+
+test('the join button is reachable by wheel on a short wide window', async ({ page }) => {
+  // A 1200x600 desktop window: the join card (13 portraits) is taller than the
+  // viewport, so the join screen must scroll instead of clipping the button.
+  await page.setViewportSize({ width: 1200, height: 600 });
+  await openRoom(page, `E2EJ${Date.now().toString(36).toUpperCase()}`);
+  const join = page.getByRole('button', { name: 'Entrar na sala' });
+  await expect(page.locator('.r4-joinroom')).not.toHaveCSS('overflow-y', 'hidden');
+  await page.mouse.move(600, 300);
+  for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 400);
+  await expect(join).toBeInViewport();
+});
