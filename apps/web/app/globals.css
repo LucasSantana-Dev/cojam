@@ -2766,7 +2766,7 @@ textarea.age-gate__input { resize: vertical; }
   background: var(--r4-panel);
   border-top: 1px solid var(--r4-line);
 }
-.palco__now { flex: 1 1 13rem; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; }
+.palco__now { flex: 1 1 8rem; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; }
 .palco__title { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .palco__song { font-weight: 800; font-size: 1.0625rem; }
 .palco__artist { color: var(--color-text-secondary); font-weight: 600; }

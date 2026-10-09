@@ -6,6 +6,7 @@ import (
 	"github.com/centrifugal/centrifuge"
 	"time"
 
+	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
@@ -86,7 +87,10 @@ func (h *Hub) reevaluateSkipVotes(roomID string) {
 		return
 	}
 	if h.skipGrace > 0 {
-		time.AfterFunc(h.skipGrace, func() { h.reevaluateSkipVotesNow(roomID) })
+		time.AfterFunc(h.skipGrace, func() {
+			defer obs.RecoverPanic("hub_skip_vote")
+			h.reevaluateSkipVotesNow(roomID)
+		})
 		return
 	}
 	h.reevaluateSkipVotesNow(roomID)
