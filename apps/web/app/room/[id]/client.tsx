@@ -33,7 +33,7 @@ import { ReportRoomButton } from '../components/ReportRoomButton';
 import { PublicRoomToggle } from '../components/PublicRoomToggle';
 import { AvatarMenu } from '../components/AvatarMenu';
 import { CharacterPicker } from '../components/CharacterPicker';
-import { useStoredCharacter, setStoredCharacter, defaultCharacterId, memberCharacter } from '@/lib/characters';
+import { useStoredCharacter, setStoredCharacter, defaultCharacterId, memberCharacter, CHARACTER_NAMES } from '@/lib/characters';
 import { getStoredUserId } from '@/lib/auth';
 import { OnboardingCard } from '../components/OnboardingCard';
 import { TrackDepthPanel } from '../components/TrackDepthPanel';
@@ -52,6 +52,9 @@ import { useMotion } from '@/lib/motionFlags';
 import { useCoverFlight } from '@/lib/useCoverFlight';
 import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 import { ServiceBadge } from '@/app/components/ServiceBadge';
+import { PalcoNav } from '@/app/components/PalcoNav';
+import { PalcoScene } from '@/app/components/PalcoScene';
+import { PalcoBrandBar } from '@/app/components/PalcoShell';
 import { serviceOptions, ServiceFallbackNote } from '../components/ListeningServicePicker';
 import { SpotifyProblemNote } from '../components/SpotifyProblemNote';
 import { YouTubeQuotaNote } from '../components/YouTubeQuotaNote';
@@ -363,103 +366,62 @@ export function RoomClient({ roomId }: { roomId: string }) {
   };
 
   if (!joined) {
-    // Pre-join screen in the room's language (approved mockup "r4-coer-4"): the
-    // room preview on the left when the client already holds the room's state,
-    // the join panel on the right. Before joining the client usually holds no
-    // room state (the channel is only subscribed by joinRoom), and then the
-    // panel stands alone.
-    const hasPreview = Boolean(store.state) && store.members.length > 0;
+    // Pre-join screen: a palco screen (wave 2, DESIGN.md "Palco on every screen"). The stage
+    // screen reads "SALA" and the real room code, the picked character stands on the floor
+    // with a lime "Você" tag and swaps live with the pick, the join form is one plate.
     const joinOptions = [
       f.spotify && { id: 'spotify' as const, label: 'Spotify' },
       f.youtube && { id: 'youtube' as const, label: 'YouTube' },
     ].filter((o): o is { id: 'spotify' | 'youtube'; label: string } => Boolean(o));
     const chosen = preference === 'auto' ? null : preference;
+    const pickedCharacter = storedCharacter ?? defaultCharacterId(preJoinUserId);
     return (
-      <div className="room r4 r4-joinroom" data-room="r4" data-view="join" style={{ color: 'var(--color-text-primary)' }}>
-        <header className="room-header r4-header">
-          <div className="r4-header__inner">
-            <div className="r4-brand">
-              <span className="r4-brand__logo">
-                <LogoMark size={48} />
-                <span className="r4-brand__word">CoJam</span>
-              </span>
-              <span className="r4-divider" aria-hidden="true" />
+      <div className="pw pwj" data-view="join">
+        <PalcoBrandBar>
+          <PalcoNav />
+        </PalcoBrandBar>
+        <PalcoScene
+          kind="join"
+          hero
+          led={{ title: 'SALA', scale: 2, sub: roomId, subTone: 'white' }}
+          you={{ id: pickedCharacter, name: CHARACTER_NAMES[pickedCharacter - 1] ?? '' }}
+        >
+          <main id="main" className="pwj-main">
+            <form onSubmit={handleJoin} className="pw-plate pwj-panel">
               {/* One H1: the framing sentence plus the room (its name, else its code). */}
-              <h1 className="r4-title__name r4-title__name--join">
-                <span className="join-eyebrow">{roomName ? 'Você vai entrar na ' : 'Você vai entrar na sala '}</span>
-                <span className="join-code" data-testid="join-room-code">{roomName || roomId}</span>
-              </h1>
-              {hasPreview && nowPlaying && isPlaying && (
-                <span className="r4-live">
-                  <span className="r4-live__dot" aria-hidden="true" />
-                  AO VIVO
-                </span>
-              )}
-              {hasPreview && listeners > 0 && (
-                <span className="r4-count">{listeners === 1 ? '1 ouvindo' : `${listeners} ouvindo junto`}</span>
-              )}
-            </div>
-          </div>
-        </header>
-
-        <main id="main" className="room-main r4-main">
-          <div className={`r4-joingrid${hasPreview ? ' has-preview' : ''}`}>
-            {hasPreview && (
-              <div className="r4-stage r4-stack" data-testid="join-preview">
-                <NowPlayingCard
-                  roomId={roomId}
-                  track={nowPlaying}
-                  state="ok"
-                  artwork={artwork}
-                  coverLevel={coverLevel}
-                  onCoverError={() => setCoverFail({ url: artwork, level: coverLevel + 1 })}
-                  isPlaying={isPlaying}
-                  transportState={transportState}
-                  hostControl={false}
-                  hostLabel={false}
-                  activePlayer={null}
-                  radioOn={false}
-                  onOpenDepth={() => {}}
-                  onOpenLyrics={() => {}}
-                  onOpenEnrichment={() => {}}
-                  preview
-                />
-                <ListenersStage roomId={roomId} running={isPlaying} hostUserId={store.state?.hostUserId} readOnly />
-              </div>
-            )}
-
-            <form onSubmit={handleJoin} className="r4-card r4-joinpanel">
-              <h2 className="r4-join__title">Entrar na sala</h2>
-              <p className="r4-join__sub">Ouçam juntos, entre serviços</p>
+              <p className="pw-eyebrow">
+                {roomName ? 'Você vai entrar na ' : 'Você vai entrar na sala '}
+                <span className="pwj-code" data-testid="join-room-code">{roomName || roomId}</span>
+              </p>
+              <h1 className="pw-title pwj-title">Entrar na sala</h1>
 
               <CharacterPicker
                 idPrefix="join-char"
-                value={storedCharacter ?? defaultCharacterId(preJoinUserId)}
+                value={pickedCharacter}
                 onChange={setStoredCharacter}
               />
 
-              <label htmlFor="join-name" className="r4-join__label">Seu nome</label>
+              <label htmlFor="join-name" className="pw-label">Seu nome</label>
               <input
                 id="join-name"
                 type="text"
                 placeholder="Seu nome"
-                aria-label="Seu nome"
                 value={nameInput}
                 onChange={(e) => setNameInput(e.target.value)}
-                className="r4-join__input"
+                className="pw-input"
                 autoComplete="nickname"
                 autoFocus
               />
 
               {joinOptions.length > 1 && (
                 <>
-                  <p className="r4-join__label" id="join-where">Onde você ouve?</p>
-                  <div className="r4-join__svc" role="group" aria-labelledby="join-where">
+                  <p className="pw-label" id="join-where">Onde você ouve?</p>
+                  <div className="pwj-svc" role="group" aria-labelledby="join-where">
                     {joinOptions.map((o) => (
                       <button
                         key={o.id}
                         type="button"
-                        className="r4-join__svcbtn"
+                        className="pw-choice"
                         aria-pressed={chosen === o.id}
                         onClick={() => setListeningService(o.id)}
                       >
@@ -471,7 +433,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 </>
               )}
 
-              <button type="submit" disabled={loading || !nameInput.trim()} className="r4-join__submit">
+              <button type="submit" disabled={loading || !nameInput.trim()} className="pw-btn pwj-submit">
                 {loading ? 'Entrando...' : 'Entrar na sala'}
               </button>
 
@@ -479,7 +441,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                   browser's localStorage only. Hidden from signed-in members and
                   when accounts are not deployed (no remedy to point at). */}
               {accountsEnabled && !store.signedIn && (
-                <p className="join-note">
+                <p className="pw-text pwj-note">
                   Sua identidade fica guardada neste navegador. Entre na sua conta antes de sair
                   da sala para manter seu papel em outros dispositivos.
                 </p>
@@ -487,13 +449,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
               {/* Error state */}
               {joinError && (
-                <p className="join-error" role="alert">
+                <p className="pw-error" role="alert">
                   {joinError}
                 </p>
               )}
             </form>
-          </div>
-        </main>
+          </main>
+        </PalcoScene>
       </div>
     );
   }

@@ -196,7 +196,7 @@ Decision 13 in [`docs/design/identity-decisions.md`](docs/design/identity-decisi
 | Wave | Screens |
 |---|---|
 | 1 | Home, 404, erro (`error.tsx`, `global-error.tsx`) |
-| 2 | Salas ao vivo, join screen, conta, termos and privacidade, Spotify callback, share card 1200x630 |
+| 2 (shipped) | Salas ao vivo, join screen, conta, termos and privacidade, Spotify callback, share card 1200x630. Stage-screen text on these is DOM LED text (`lib/palcoLed.ts`); the live room keeps round 4 and `SintoniaScreen` stays only on the removed-from-room and offline screens |
 
 - **Two layers, never mixed.** Scene: palco art at its native size, integer scale (x2, x3, x4), `image-rendering: pixelated`, nothing smoothed, rotated or off the grid. HUD: plates, buttons and text, crisp vector, separate from the scene. Pixel rules as in "Modo palco".
 - **Ground:** `--palco-ink`, the night of the scene. No cover colour, no `GroundStack`, no glass, no blur, no glow.

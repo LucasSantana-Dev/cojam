@@ -5,11 +5,12 @@
 //     members get characters (Modo palco); extras use the userId default
 //     add &members=1|2|5|8 and &long=1 for long names (stage review)
 //   /room/<ID>?fixture=join  pre-join screen with the room preview
+//   /rooms?fixture=rooms     six public rooms (non-production only, see fixtureRooms)
 //   /?fixture=error          the landing throws on mount, so app/error.tsx shows (see errorFixture)
 import { useStore, type Member } from './realtime';
 import { getStoredUserId } from './auth';
 import type { IPlayer } from './playerInterface';
-import type { ChatMessage, RoomState, TrackRef } from '@cojam/shared';
+import type { ChatMessage, PublicRoomSummary, RoomState, TrackRef } from '@cojam/shared';
 
 const USER_ID_KEY = 'cojam_uid';
 
@@ -140,4 +141,24 @@ export function applyRoomFixture(kind: FixtureKind): void {
   s.setCharacterOverrides(FIXTURE_CHARACTERS);
   s.setMyVotes({ t3: true });
   if (kind === 'room') s.setChat(chatLines());
+}
+
+// Dev-only: "/rooms?fixture=rooms" lists six public rooms without a server, for
+// screenshots of the directory. Always null in a production build.
+export function fixtureRooms(): PublicRoomSummary[] | null {
+  if (process.env.NODE_ENV === 'production') return null;
+  if (typeof window === 'undefined') return null;
+  if (new URLSearchParams(window.location.search).get('fixture') !== 'rooms') return null;
+  const t = NOW();
+  const r = (roomId: string, name: string, memberCount: number, title: string, artist: string, ago = 20_000): PublicRoomSummary => ({
+    roomId, name, memberCount, kind: 'audio', nowPlaying: { title, artist }, lastActiveMs: t - ago,
+  });
+  return [
+    r('SALABIA', 'Sala da Bia', 7, 'Pétala', 'Djavan'),
+    r('PAGODE1', 'Pagode de sexta', 12, 'Tá Vendo Aquela Lua', 'Exaltasamba'),
+    r('INDIE01', 'Indie da madrugada', 4, 'A Night to Remember', 'beabadoobee'),
+    r('SAMBA01', 'Samba no domingo', 3, 'Sufoco', 'Alcione', 9 * 60_000),
+    r('LOFI001', 'Lo-fi pra estudar', 2, 'Forget-Me-Not', 'Laufey'),
+    r('MPB0001', 'MPB com a família', 5, 'Quando a Chuva Passar', 'Ivete Sangalo'),
+  ];
 }

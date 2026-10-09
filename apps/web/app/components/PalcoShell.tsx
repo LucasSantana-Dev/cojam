@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { LogoMark } from '@/app/components/Logo';
 
-// Brand lockup for the palco screens (home, 404, erro): the mark and the wordmark,
-// linking home. The room-side R4Brand stays with the round 4 screens.
+// Brand lockup for the palco screens: the mark and the wordmark,
+// linking home.
 export function PalcoBrand() {
   return (
     <Link href="/" className="pw-brand" aria-label="CoJam, início">
@@ -12,10 +13,11 @@ export function PalcoBrand() {
   );
 }
 
-export function PalcoBrandBar() {
+export function PalcoBrandBar({ children }: { children?: ReactNode }) {
   return (
     <header className="pw-bar pw-bar--over">
       <PalcoBrand />
+      {children}
     </header>
   );
 }

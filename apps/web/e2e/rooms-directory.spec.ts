@@ -55,28 +55,28 @@ test('/rooms lists public rooms only, filters by search and reorders by sort', a
   await expect(visitor.getByRole('heading', { name: 'Salas ao vivo' })).toBeVisible();
 
   // The directory polls every 15s; both public rooms must appear within one.
-  const alphaCard = visitor.locator('.r4s-room').filter({ hasText: alphaLabel });
-  const betaCard = visitor.locator('.r4s-room').filter({ hasText: betaLabel });
+  const alphaCard = visitor.locator('.pwr-room').filter({ hasText: alphaLabel });
+  const betaCard = visitor.locator('.pwr-room').filter({ hasText: betaLabel });
   await expect(alphaCard).toBeVisible({ timeout: 20_000 });
   await expect(betaCard).toBeVisible();
   await expect(visitor.getByText(secret, { exact: false })).toHaveCount(0);
 
   // Default sort is most people: Alpha (2) before Beta (1).
   const order = async () =>
-    (await visitor.locator('.r4s-room__name').allTextContents()).filter(
+    (await visitor.locator('.pwr-room__name').allTextContents()).filter(
       (n) => n === alphaLabel || n === betaLabel,
     );
   expect(await order()).toEqual([alphaLabel, betaLabel]);
 
   // Search narrows to one room.
-  await visitor.getByRole('searchbox', { name: 'Buscar salas' }).fill('beta');
+  await visitor.getByRole('searchbox', { name: 'Buscar por nome' }).fill('beta');
   await expect(betaCard).toBeVisible();
   await expect(alphaCard).toHaveCount(0);
-  await visitor.getByRole('searchbox', { name: 'Buscar salas' }).fill('');
+  await visitor.getByRole('searchbox', { name: 'Buscar por nome' }).fill('');
   await expect(alphaCard).toBeVisible();
 
   // Most recent: Beta was created and made public after Alpha's last
   // activity, so the order flips while the people ranking stays Alpha first.
-  await visitor.getByRole('combobox').selectOption('recent');
+  await visitor.getByRole('button', { name: 'Mais recentes' }).click();
   expect(await order()).toEqual([betaLabel, alphaLabel]);
 });

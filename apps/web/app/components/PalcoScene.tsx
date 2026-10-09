@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { CHARACTER_NAMES } from '@/lib/characters';
+import { CHARACTER_COUNT, CHARACTER_NAMES } from '@/lib/characters';
+import { ledLayout, ledPath, type LedLine, type LedSpec } from '@/lib/palcoLed';
 import { pickScale } from '@/lib/palcoScale';
-import { SCENES, type SceneArt, type SceneName } from '@/lib/palcoScenes.generated';
+import { SCENES, SPRITE_FRONT, type SceneArt, type SceneName } from '@/lib/palcoScenes.generated';
 import { PALCO_PAGE_CSS } from './palcoCss';
 
-// The shared page shell for the palco screens (home, 404, erro). Two layers, never
+// The shared page shell for the palco screens (home, 404, erro, and wave 2: band, band-text,
+// join, callback). Two layers, never
 // mixed: the scene art at an INTEGER scale (nearest neighbour), and DOM overlays
 // (name tags, bubble, labels) placed in native coordinates times k, so they stay
 // locked to the art at every width. The art is decorative (alt=""): the page text
@@ -17,7 +19,13 @@ import { PALCO_PAGE_CSS } from './palcoCss';
 // paint a close guess (--kw, --kp in palcoCss); once mounted the measured value
 // replaces it.
 
-export type SceneKind = 'home' | '404' | 'erro';
+export type SceneKind = 'home' | '404' | 'erro' | 'band' | 'band-text' | 'join' | 'callback';
+
+/** The person on the join floor: the picked roster character (live) and its name tag. */
+export interface SceneYou {
+  id: number;
+  name: string;
+}
 
 const NATIVE_W = { wide: 480, phone: 195 } as const;
 
@@ -31,7 +39,67 @@ function vars(o: Record<string, string | number>): CSSProperties {
   return o as CSSProperties;
 }
 
-function Overlays({ kind, variant, art }: { kind: SceneKind; variant: Variant; art: SceneArt }) {
+function Led({ art, spec }: { art: SceneArt; spec: LedSpec }) {
+  const { screen } = art;
+  const layout = ledLayout(screen.w, screen.h, spec);
+  const lines: Array<[LedLine, string]> = [[layout.title, 'pws-led__t']];
+  if (layout.sub) lines.push([layout.sub, `pws-led__s pws-led__s--${layout.subTone}`]);
+  return (
+    <svg
+      className="pws-led"
+      data-led={[layout.title.text, layout.sub?.text].filter(Boolean).join(' / ')}
+      viewBox={`0 0 ${screen.w} ${screen.h}`}
+      style={vars({ '--x': screen.x, '--y': screen.y, '--w': screen.w, '--h': screen.h })}
+      aria-hidden="true"
+    >
+      {lines.map(([line, cls]) => (
+        <path key={cls} className={cls} d={ledPath(line)} />
+      ))}
+    </svg>
+  );
+}
+
+function Overlays({
+  kind,
+  variant,
+  art,
+  led,
+  you,
+}: {
+  kind: SceneKind;
+  variant: Variant;
+  art: SceneArt;
+  led?: LedSpec;
+  you?: SceneYou;
+}) {
+  if (kind === 'join') {
+    const { stand } = art;
+    return (
+      <>
+        {led && <Led art={art} spec={led} />}
+        {you && stand && (
+          <span className="pws-at pws-at--feet" style={vars({ '--x': stand.cx, '--y': stand.feet })}>
+            <span className="pws-stack" data-testid="join-you">
+              <span className="pws-tag pws-tag--you">Você · {you.name}</span>
+              {/* eslint-disable-next-line @next/next/no-img-element -- native pixel art, whole-number scale only */}
+              <img
+                className="pws-sprite"
+                src={`/palco/characters/${String(you.id).padStart(2, '0')}-front.png`}
+                alt=""
+                width={SPRITE_FRONT.w}
+                height={SPRITE_FRONT.h}
+                draggable={false}
+                data-character={you.id}
+              />
+            </span>
+          </span>
+        )}
+      </>
+    );
+  }
+  if (kind === 'band' || kind === 'band-text' || kind === 'callback') {
+    return led ? <Led art={art} spec={led} /> : null;
+  }
   if (kind === 'home') {
     const { screen } = art;
     return (
@@ -73,9 +141,15 @@ export function PalcoScene({
   hero = false,
   testId,
   id,
+  led,
+  you,
   children,
 }: {
   kind: SceneKind;
+  /** Wave 2: text on the stage screen, drawn in the DOM on the LED font (the page name, the room code). */
+  led?: LedSpec;
+  /** Join: the picked character stands on the floor; changing it swaps the sprite. */
+  you?: SceneYou;
   /** Home only: from 80rem the art sits behind the children instead of above them. */
   hero?: boolean;
   testId?: string;
@@ -101,6 +175,16 @@ export function PalcoScene({
     return () => window.removeEventListener('resize', measure);
   }, []);
 
+  // Every front sprite is a few hundred bytes: fetch them all once, so a new pick
+  // swaps without a blank frame.
+  const hasYou = Boolean(you);
+  useEffect(() => {
+    if (!hasYou) return;
+    for (let i = 1; i <= CHARACTER_COUNT; i++) {
+      new window.Image().src = `/palco/characters/${String(i).padStart(2, '0')}-front.png`;
+    }
+  }, [hasYou]);
+
   const rootStyle: CSSProperties | undefined = k ? vars({ '--kw': k.wide, '--kp': k.phone }) : undefined;
 
   return (
@@ -113,7 +197,7 @@ export function PalcoScene({
             <div key={variant} className={`pws__v pws__v--${variant}`} style={vars({ '--nw': art.w, '--nh': art.h })}>
               {/* eslint-disable-next-line @next/next/no-img-element -- native pixel art, scaled by whole numbers; next/image would resample it */}
               <img className="pws__img" src={art.src} alt="" width={art.w} height={art.h} loading="lazy" decoding="async" />
-              <Overlays kind={kind} variant={variant} art={art} />
+              <Overlays kind={kind} variant={variant} art={art} led={led} you={you} />
             </div>
           );
         })}

@@ -57,7 +57,7 @@ test('the join button is reachable by wheel on a short wide window', async ({ pa
   await page.setViewportSize({ width: 1200, height: 600 });
   await openRoom(page, `E2EJ${Date.now().toString(36).toUpperCase()}`);
   const join = page.getByRole('button', { name: 'Entrar na sala' });
-  await expect(page.locator('.r4-joinroom')).not.toHaveCSS('overflow-y', 'hidden');
+  await expect(page.locator('.pwj')).not.toHaveCSS('overflow-y', 'hidden');
   await page.mouse.move(600, 300);
   for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 400);
   await expect(join).toBeInViewport();

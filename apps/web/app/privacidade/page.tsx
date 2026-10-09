@@ -14,6 +14,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Política de Privacidade"
+      led={{ title: 'PRIVACIDADE', sub: 'SEUS DADOS' }}
       intro="O CoJam coordena salas de escuta compartilhada. Esta política descreve, com base no que o código faz hoje, quais dados pessoais são tratados, por quê, por quanto tempo e como você exerce seus direitos conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018)."
     >
       <h2>1. Controlador e contato</h2>
