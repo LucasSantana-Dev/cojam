@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -213,5 +214,35 @@ func TestKnownMethods_CoverGatedMethods(t *testing.T) {
 				t.Errorf("%s is gated but not in knownMethods", m)
 			}
 		}
+	}
+}
+
+// #387: a caller's mistake (validation, rate limit, not-host) is a UserError and
+// logs at WARN, matching its user_error metric label; anything else stays ERROR.
+func TestObserveRPC_LogLevelByErrorKind(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"user error", userErrorf("not the host"), "WARN"},
+		{"wrapped user error", fmt.Errorf("queue.add: %w", userErrorf("queue full")), "WARN"},
+		{"internal error", errors.New("store: connection refused"), "ERROR"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			h := NewHub(nil).WithObservability(slog.New(slog.NewJSONHandler(&buf, nil)), nil)
+
+			h.observeRPC("queue.add", []byte(`{"roomId":"obs387"}`), tc.err, time.Millisecond)
+
+			var rec map[string]any
+			if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+				t.Fatalf("no JSON log emitted: %v (buf=%q)", err, buf.String())
+			}
+			if rec["level"] != tc.want || rec["err"] != tc.err.Error() {
+				t.Fatalf("level=%v err=%v, want level %s err %q", rec["level"], rec["err"], tc.want, tc.err.Error())
+			}
+		})
 	}
 }
