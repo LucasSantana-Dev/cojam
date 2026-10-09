@@ -86,7 +86,7 @@ export function useReportDialog() {
               Denúncia enviada. Obrigado por ajudar a manter o CoJam seguro.
             </p>
             <div className="age-gate__actions">
-              <button type="button" className="btn-primary" onClick={close}>Fechar</button>
+              <button type="button" className="age-gate__btn" onClick={close}>Fechar</button>
             </div>
           </>
         ) : (
@@ -98,40 +98,40 @@ export function useReportDialog() {
               Você não precisa de conta. Em caso de perigo imediato, ligue 190. Para
               violência contra crianças e adolescentes, ligue 100.
             </p>
-            <label className="age-gate__body" style={{ display: 'block', opacity: 1 }}>
-              <span style={{ display: 'block', marginBottom: '0.25rem' }}>Motivo</span>
+            <label className="age-gate__field">
+              <span className="age-gate__label">Motivo</span>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as ReportCategory)}
                 disabled={status === 'sending'}
-                style={{ width: '100%' }}
+                className="age-gate__input"
               >
                 {REPORT_CATEGORIES.map((c) => (
                   <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
               </select>
             </label>
-            <label className="age-gate__body" style={{ display: 'block', opacity: 1 }}>
-              <span style={{ display: 'block', marginBottom: '0.25rem' }}>Detalhes (opcional)</span>
+            <label className="age-gate__field">
+              <span className="age-gate__label">Detalhes (opcional)</span>
               <textarea
                 value={reason}
                 maxLength={REASON_MAX}
                 rows={3}
                 onChange={(e) => setReason(e.target.value)}
                 disabled={status === 'sending'}
-                style={{ width: '100%' }}
+                className="age-gate__input"
               />
             </label>
             {status === 'error' && (
-              <p role="alert" className="age-gate__body" style={{ color: 'var(--color-status-error-soft)', opacity: 1 }}>
+              <p role="alert" className="age-gate__body age-gate__error">
                 Não foi possível enviar a denúncia. Tente de novo em instantes.
               </p>
             )}
             <div className="age-gate__actions">
-              <button type="submit" className="btn-primary" disabled={status === 'sending'}>
+              <button type="submit" className="age-gate__btn" disabled={status === 'sending'}>
                 {status === 'sending' ? 'Enviando...' : 'Enviar denúncia'}
               </button>
-              <button type="button" className="btn-ghost" onClick={close}>Cancelar</button>
+              <button type="button" className="age-gate__btn age-gate__btn--quiet" onClick={close}>Cancelar</button>
             </div>
           </>
         )}

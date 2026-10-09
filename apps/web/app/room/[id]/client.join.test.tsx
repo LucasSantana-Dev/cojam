@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { RoomClient } from './client';
 import { useStore } from '@/lib/realtime';
+import { saveGuestName } from '@/lib/guestName';
 
 // The pre-join screen is a palco screen (wave 2): the stage screen reads SALA and the real
 // room code, the picked character stands on the floor and swaps live with the pick.
@@ -65,5 +66,25 @@ describe('join screen (palco, wave 2)', () => {
     const { container } = render(<RoomClient roomId="DWB86HRONU22" />);
     expect(container.querySelector('form.pw-plate')).not.toBeNull();
     expect(container.querySelector('.ground-stack')).toBeNull();
+  });
+});
+
+describe('removed-from-room screen (palco, wave 3)', () => {
+  it('is a palco screen: FIM on the stage, an empty floor, one plate with the way home', async () => {
+    sessionStorage.clear();
+    localStorage.clear();
+    useStore.setState({ state: null, signedIn: false, name: '', kicked: false });
+    saveGuestName('Ana');
+    const { container } = render(<RoomClient roomId="DWB86HRONU22" />);
+    await act(async () => {});
+    act(() => useStore.getState().setKicked(true));
+    expect(wide().querySelector('.pws-led')?.getAttribute('data-led')).toBe('FIM / VOCE SAIU DA SALA');
+    expect(wide().querySelector('img.pws-sprite')).toBeNull();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Você foi removido da sala');
+    expect(screen.getByText('O anfitrião removeu você desta sessão.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Voltar ao início' })).toHaveAttribute('href', '/');
+    expect(container.querySelector('main.pw-plate')).not.toBeNull();
+    expect(container.querySelector('.sx')).toBeNull();
+    useStore.setState({ kicked: false });
   });
 });

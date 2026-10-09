@@ -2,7 +2,7 @@
 
 export function OfflineRetry() {
   return (
-    <button type="button" className="btn-primary" onClick={() => window.location.reload()}>
+    <button type="button" className="pw-btn" onClick={() => window.location.reload()}>
       Tentar de novo
     </button>
   );
