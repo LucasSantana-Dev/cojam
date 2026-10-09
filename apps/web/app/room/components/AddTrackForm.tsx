@@ -28,7 +28,7 @@ export function planPlaylistImport(url: string, spotifyAuthed: boolean): Playlis
   return { route: 'server' };
 }
 
-export function AddTrackForm({ roomId, spotifyAuthorized }: { roomId: string; spotifyAuthorized?: boolean }) {
+export function AddTrackForm({ roomId, spotifyAuthorized, onAdded }: { roomId: string; spotifyAuthorized?: boolean; onAdded?: () => void }) {
   const f = useRuntimeFeatures();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchCandidate[]>([]);
@@ -118,6 +118,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized }: { roomId: string; sp
       });
       setSearchQuery('');
       setSearchResults([]);
+      onAdded?.();
     } catch (err) {
       setError(rpcErrorMessage(err, 'Não deu para adicionar esta faixa. Tente de novo.'));
     } finally {
@@ -165,6 +166,7 @@ export function AddTrackForm({ roomId, spotifyAuthorized }: { roomId: string; sp
       setArtist('');
       setVideoId('');
       setSpotifyUri('');
+      onAdded?.();
     } catch (err) {
       setError(rpcErrorMessage(err, 'Não deu para adicionar esta faixa. Tente de novo.'));
     } finally {
