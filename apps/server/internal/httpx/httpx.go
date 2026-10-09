@@ -17,7 +17,7 @@ import (
 // an overall deadline plus dial, TLS-handshake, and response-header sub-limits.
 var Client = &http.Client{
 	Timeout: 8 * time.Second,
-	Transport: &http.Transport{
+	Transport: Instrument(&http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   3 * time.Second,
 			KeepAlive: 30 * time.Second,
@@ -26,7 +26,7 @@ var Client = &http.Client{
 		ResponseHeaderTimeout: 5 * time.Second,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
-	},
+	}),
 }
 
 // MaxResponseBytes caps how much of an upstream response body we read or decode,

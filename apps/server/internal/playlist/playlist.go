@@ -99,7 +99,7 @@ func FetchDeezerPlaylist(ctx context.Context, playlistID string) ([]queue.TrackR
 	}
 
 	url := fmt.Sprintf("%s/%s", deezerPlaylistURL, playlistID)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "playlist"), "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -244,7 +244,7 @@ func FetchSpotifyPlaylist(ctx context.Context, playlistID string) ([]queue.Track
 	}
 	tracks := make([]queue.TrackRef, 0, 100)
 	for page := 0; next != "" && len(tracks) < MaxTracks && page < 10; page++ {
-		req, err := http.NewRequestWithContext(ctx, "GET", next, nil)
+		req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "playlist"), "GET", next, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -336,7 +336,7 @@ func FetchYouTubePlaylist(ctx context.Context, playlistID string) ([]queue.Track
 			q.Set("pageToken", pageToken)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s?%s", youtubePlaylistURL, q.Encode()), nil)
+		req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "playlist"), "GET", fmt.Sprintf("%s?%s", youtubePlaylistURL, q.Encode()), nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}

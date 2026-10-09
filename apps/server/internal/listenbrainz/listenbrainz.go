@@ -75,7 +75,7 @@ func resolveISRC(ctx context.Context, isrc string) (string, error) {
 	isrc = strings.ToUpper(isrc)
 	url := fmt.Sprintf("%s/recording-by-isrc/%s", baseURL, url.QueryEscape(isrc))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "isrc"), "GET", url, nil)
 	if err != nil {
 		return "", err
 	}
@@ -109,7 +109,7 @@ func fetchTags(ctx context.Context, mbid string) ([]string, error) {
 
 	url := fmt.Sprintf("%s/tags/recording/%s", baseURL, url.QueryEscape(mbid))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "lookup"), "GET", url, nil)
 	if err != nil {
 		return []string{}, err
 	}

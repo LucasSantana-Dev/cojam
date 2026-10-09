@@ -82,7 +82,7 @@ func postSpotifyForm(ctx context.Context, form url.Values) (*spotifyTokenReply, 
 	form.Set("client_id", spotifyauth.ClientID)
 	form.Set("client_secret", spotifyauth.ClientSecret)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, spotifyauth.TokenURL,
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "token"), http.MethodPost, spotifyauth.TokenURL,
 		strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err

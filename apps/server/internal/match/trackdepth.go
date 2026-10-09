@@ -185,7 +185,7 @@ func depthCacheKey(isrc, title, artist string) string {
 }
 
 func mbGet(ctx context.Context, rawURL string, v any) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "isrc"), "GET", rawURL, nil)
 	if err != nil {
 		return err
 	}
