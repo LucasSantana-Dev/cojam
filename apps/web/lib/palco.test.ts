@@ -4,7 +4,7 @@ import {
   WORLDS, pickWorld, frameStage, screenRect, playerRect, boothTop, intersects, toCss,
   boothMembers, crowdMembers, crowdSlots, nextTrack, memberForTrack,
   newVoters, memberForVoter, memberForClient, placeBubble, placeTag,
-  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, upNext, boardRect, BOARD_MAX, SPRITE_H, EDGE_COLS, plainSideColours, type PalcoMember,
+  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, upNext, boardRect, BOARD_MAX, SPRITE_H, EDGE_COLS, plainSideColours, tagName, phoneTagMaxWidth, type PalcoMember,
 } from './palco';
 
 const t = (id: string, addedBy: string, addedByUserId?: string): TrackRef => ({ id, title: id, artist: 'A', addedBy, addedByUserId, sources: {} });
@@ -85,8 +85,34 @@ describe('frameStage', () => {
     const p = playerRect(phone, f, 390);
     expect(p.y).toBeGreaterThanOrEqual(0);
     expect(p.y + p.h).toBeLessThanOrEqual(f.height);
-    expect(f.height).toBe((100 + 2 * COMPACT_PAD) * f.scale);
-    expect(frameStage(wide, 1440, 120).compact).toBe(true);
+    const short = frameStage(wide, 1440, 120);
+    expect(short.compact).toBe(true);
+    // The wide stage keeps the thin strip: the screen plus padding.
+    expect(short.height).toBe((wide.screen.h + 2 * COMPACT_PAD) * short.scale);
+  });
+
+  it('compact phone framing keeps the front row in view under the player, at the same scale', () => {
+    const open = frameStage(phone, 390, 520);
+    const f = frameStage(phone, 390, 520, true);
+    expect(f.scale).toBe(open.scale);
+    expect(f.scale).toBe(2);
+    const p = playerRect(phone, f, 390);
+    expect(p.y).toBe(COMPACT_PAD * f.scale);
+    // From the player's bottom to the bottom of the view: at least 110 CSS px of crowd.
+    expect(f.height - (p.y + p.h)).toBeGreaterThanOrEqual(110);
+    // Heads (and their tags) clear of the player, feet inside the view.
+    const { slots } = crowdSlots(8, phone, f, 3);
+    const feetCss = toCss(f, 0, slots[0].feet)[1];
+    const headCss = toCss(f, 0, slots[0].feet - SPRITE_H)[1];
+    expect(headCss - 24).toBeGreaterThanOrEqual(p.y + p.h);
+    expect(feetCss).toBeLessThanOrEqual(f.height);
+    // The DJs step out of the strip rather than stand over the crowd.
+    expect(toCss(f, 0, boothTop(phone, f, p))[1]).toBeGreaterThanOrEqual(f.height);
+    for (const [cw, ch] of [[360, 500], [414, 540]] as const) {
+      const g = frameStage(phone, cw, ch, true);
+      expect(g.scale).toBe(2);
+      expect(g.height).toBeLessThanOrEqual(380);
+    }
   });
 
   it('keeps the player at least 200x200 CSS px and inside the view', () => {
@@ -180,18 +206,43 @@ describe('crowdSlots', () => {
     expect(slots.every((s) => s.feet === f.crowdBottom + wide.frontOff)).toBe(true);
   });
 
-  it('fills a dimmer back row and reports what does not fit', () => {
+  it('fills a dimmer back row on the wide stage and reports what does not fit', () => {
+    const { slots: wideSlots } = crowdSlots(40, wide, f, 0);
+    expect(wideSlots.filter(Boolean).some((s) => s.row === 1)).toBe(true);
+    expect(wide.spacing).toBe(28);
+  });
+
+  it('the phone shows only a front row, 36 world px apart, and counts the rest as overflow', () => {
     const phone = WORLDS.phone;
+    expect(phone.spacing).toBe(36);
+    for (const [cw, ch] of [[390, 520], [360, 480], [414, 540]] as const) {
+      for (const compact of [false, true]) {
+        const pf = frameStage(phone, cw, ch, compact);
+        const { slots, overflow } = crowdSlots(11, phone, pf, 4);
+        const shown = slots.filter(Boolean);
+        expect(shown).toHaveLength(5);
+        expect(shown.every((s) => s.row === 0)).toBe(true);
+        expect(overflow).toBe(6);
+        // You stay on stage, in the middle.
+        expect(slots[4]).toBeDefined();
+        const xs = shown.map((s) => s.x).sort((a, b) => a - b);
+        expect(slots[4].x).toBe(xs[2]);
+        for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBe(36);
+      }
+    }
     const pf = frameStage(phone, 390, 620);
     const { slots, overflow } = crowdSlots(40, phone, pf, 0);
     const shown = slots.filter(Boolean);
-    expect(shown.some((s) => s.row === 1)).toBe(true);
     expect(overflow).toBe(40 - shown.length);
     for (const s of shown) {
       expect(s.x).toBeGreaterThanOrEqual(pf.camLeft);
       expect(s.x + 20).toBeLessThanOrEqual(pf.camLeft + pf.w);
     }
     expect(slots[0].row).toBe(0);
+    expect(tagName('Maria Eduarda Albuquerque', ' 2')).toBe('Maria 2');
+    expect(tagName('  Zé ')).toBe('Zé');
+    expect(phoneTagMaxWidth(phone, 2)).toBe(70);
+    expect(phoneTagMaxWidth(phone, 3)).toBe(106);
   });
 
   it('a room of one is one person, centred', () => {

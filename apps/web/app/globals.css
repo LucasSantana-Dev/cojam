@@ -2592,7 +2592,9 @@ textarea.age-gate__input { resize: vertical; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.palco-tag--back { opacity: 0.85; }
+.palco-tag--back { opacity: 0.95; }
+.palco[data-world="phone"] .palco-tag { padding-inline: 0.25rem; }
+.palco[data-world="phone"] .palco__more { right: 0.25rem; bottom: 0.25rem; }
 .palco-tag--dj { background: oklch(0.25 0.07 292); }
 .palco-tag--you { background: var(--palco-you); border-color: var(--palco-you); color: oklch(0.16 0.03 292); }
 .palco-bubble {
