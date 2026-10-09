@@ -223,7 +223,12 @@ export default function PrivacyPage() {
         <code>[[EMAIL DE CONTATO DPO]]</code>. Os eventos não guardam nome nem IP, então para
         localizar os seus precisamos do código da seção{' '}
         <a href="#excluir-seus-dados">Excluir seus dados</a>; sem ele não há como separar os seus
-        eventos dos de outras pessoas. <code>[[CONFIRMAR: procedimento para atender a oposição]]</code>
+        eventos dos de outras pessoas. Com o código, o pedido segue o mesmo procedimento da
+        exclusão: apagamos os eventos de uso já registrados com ele, junto com os demais dados
+        ligados ao código. Em alguns casos os eventos são registrados por conexão, sem ligação com
+        o seu código; esses não podem ser localizados e são apagados automaticamente após 13
+        meses. Para que novos eventos não fiquem ligados ao mesmo código, apague os dados do site
+        CoJam no seu navegador depois do pedido: um novo código será gerado.
       </p>
       <p>
         Como o serviço é de convidados, não podemos localizar dados sem esses indicadores. Parte

@@ -244,6 +244,11 @@ Drafted by engineering to hand to the reviewer. Not reviewed by a lawyer.
   passes `--skip-product-events`, for a server that never had one. Future
   rows: a person who objects but keeps using CoJam with the same identity is
   hashed again; stopping that needs a suppression list, not implemented.
+  Owner decision 2026-10-09: no suppression list for now. `/privacidade`
+  section 8 says the objection follows the erasure procedure (which also
+  removes the other data tied to the code), that per-connection events cannot
+  be found, and that clearing CoJam's site data in the browser gives a new
+  code so new events are not linked to the old one.
 - **Guests without an account.** A guest without room auth is hashed as
   `client:<connection id>`, a new value per connection that the person cannot
   see or give us. Their rows cannot be matched for erasure unless the operator
@@ -254,9 +259,10 @@ Drafted by engineering to hand to the reviewer. Not reviewed by a lawyer.
   line in the records of processing; whether the minimum age text must mention
   events for the public directory; whether a longer or shorter window fits;
   whether erasing past rows is enough to honour an objection from someone who
-  keeps using CoJam, or a suppression list (8.4, Objection) is required; whether
-  the `/privacidade` section 8 `[[CONFIRMAR]]` on the objection procedure can
-  now point to the erasure flow, with the guest limitation stated.
+  keeps using CoJam (with the advice to clear site data), or a suppression list
+  (8.4, Objection) is required; whether handling an objection through the full
+  erasure, which also removes votes and attribution, is proportionate or an
+  events-only path is needed.
 
 ### 8.5 Operations
 

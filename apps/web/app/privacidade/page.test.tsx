@@ -39,6 +39,15 @@ describe('PrivacyPage', () => {
     expect(text).toContain('Oposição aos eventos de uso');
   });
 
+  it('states how an objection is handled, its limit and how to stop future events', () => {
+    const { container } = render(<PrivacyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('apagamos os eventos de uso já registrados com ele');
+    expect(text).toContain('registrados por conexão');
+    expect(text).toContain('apague os dados do site CoJam no seu navegador');
+    expect(text).not.toContain('procedimento para atender a oposição');
+  });
+
   it('no longer promises that only counts are collected', () => {
     const { container } = render(<PrivacyPage />);
     expect(container.textContent).not.toMatch(/apenas contagens|só contagens|somente contagens/i);
