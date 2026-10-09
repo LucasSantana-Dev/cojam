@@ -31,7 +31,7 @@ Read this before touching any UI. It is the committed source for the identity: t
 
 Source of truth: the block comment "Cor da faixa: sintonia" in `apps/web/app/globals.css`.
 
-1. **One ground.** One fixed ground behind everything, the same component (`GroundStack.tsx`) on landing and every other screen (the live room has its own, see "The room"). It uses two colours of the cover (the dominant one and its nearest neighbour, at most about 60 degrees apart, `groundPair` in `lib/trackColor.ts`) drifting over 36 s and 48 s under one scrim level.
+1. **One ground (superseded by "Palco on every screen").** The cover-colour ground (`GroundStack.tsx`) was removed in wave 3; no screen uses it now. It uses two colours of the cover (the dominant one and its nearest neighbour, at most about 60 degrees apart, `groundPair` in `lib/trackColor.ts`) drifting over 36 s and 48 s under one scrim level.
 2. **Colour roles.** Cover palette is ground only. Violet is actions only. White is text. Green is LIVE only.
 3. **One connection element.** The logo's sine wave, linking listener avatars, breathing on the shared beat clock (`lib/beatClock.ts`, 100 bpm, aligned by the synced room clock) while playing. Flat when paused.
 4. **One surface.** Glass: black at 34%, 16% white hairline, 0.9rem radius, no blur.
@@ -89,7 +89,7 @@ From `:root` in `apps/web/app/globals.css`. Use the token, never a literal.
 
 Code: `apps/web/app/room/[id]/client.tsx`, `NowPlayingCard.tsx`, `ListenersStage.tsx`, `QueuePanel.tsx`, `ChatPanel.tsx`, `TransportUI.tsx`, and the block "Sala, round 4" at the end of `globals.css` (every selector is scoped by `.room[data-room="r4"]` or an `r4-` / `fq-` / `chat-` / `tp` class).
 
-- **Ground:** `--r4-bg` near-black (`oklch(0.105 0.014 292)`) with three static violet radial lights (strongest top right and at the bottom) on `.room[data-room="r4"]::before`. No `GroundStack`, no cover colour, no drift.
+- **Ground:** `--r4-bg` near-black (`oklch(0.105 0.014 292)`) with three static violet radial lights (strongest top right and at the bottom) on `.room[data-room="r4"]::before`. No cover colour, no drift.
 - **Surface:** solid dark panel (`--r4-panel`), 1px hairline (`--r4-line`), `--r4-radius` 1rem, no blur, no shadow. The now-playing card alone carries a violet border glow. Panels hold type tokens remapped for the room (`--color-text-secondary` white at 0.78, muted at 0.66, both above 4.5:1 on the panel).
 - **Layout (fidelity pass, owner: "Não está parecido"):** from 72rem a viewport-fitting app, `100dvh`, no page scroll (floor 40rem of height): top bar (N3 mark, "CoJam", divider, room name, AO VIVO pill, "N ouvindo junto", Convidar pill, own avatar with a service dot that opens the avatar menu), then three columns 1.88fr / 1.17fr / 1fr: now playing over "Ouvindo agora" (fills the rest) | "A seguir" | "Chat da Sala". The queue and the chat scroll inside their panels. There is no status bar, Atividade card, separate add card or page footer. Between 48rem and 72rem two columns; under 48rem one column with Agora / Fila / Chat tabs, 44px targets.
 - **Avatar menu:** name, "Ouvindo no X" + conectado chip, Trocar nome (saves and reloads to rejoin), Trocar serviço (the same listening choice, plus the Spotify connect player, mounted while closed), Seus dados (code, Copiar, link to /privacidade#excluir-seus-dados), Minha conta, Denunciar sala, Pública (host), Privacidade / Termos, Sair da sala. Report and Pública left the top bar.
@@ -196,10 +196,11 @@ Decision 13 in [`docs/design/identity-decisions.md`](docs/design/identity-decisi
 | Wave | Screens |
 |---|---|
 | 1 | Home, 404, erro (`error.tsx`, `global-error.tsx`) |
-| 2 (shipped) | Salas ao vivo, join screen, conta, termos and privacidade, Spotify callback, share card 1200x630. Stage-screen text on these is DOM LED text (`lib/palcoLed.ts`); the live room keeps round 4 and `SintoniaScreen` stays only on the removed-from-room and offline screens |
+| 2 (shipped) | Salas ao vivo, join screen, conta, termos and privacidade, Spotify callback, share card 1200x630. Stage-screen text on these is DOM LED text (`lib/palcoLed.ts`); the live room keeps round 4 |
+| 3 (shipped) | The leftovers: removed-from-room (`join` scene, empty floor, LED `FIM`), `/offline` (`callback` scene, LED `SEM REDE`, scene PNGs precached by `public/sw.js`), and the age-gate and report dialogs as palco plates. `SintoniaScreen`, `GroundStack` and `RoomPreview` are gone |
 
 - **Two layers, never mixed.** Scene: palco art at its native size, integer scale (x2, x3, x4), `image-rendering: pixelated`, nothing smoothed, rotated or off the grid. HUD: plates, buttons and text, crisp vector, separate from the scene. Pixel rules as in "Modo palco".
-- **Ground:** `--palco-ink`, the night of the scene. No cover colour, no `GroundStack`, no glass, no blur, no glow.
+- **Ground:** `--palco-ink`, the night of the scene. No cover colour, no glass, no blur, no glow.
 - **Plate:** every surface is `--palco-plate` with a 1px `--palco-line` border. Buttons add a hard 2px darker base edge (a key, never a glow). Wave 1 sets one radius for plates and buttons, 6px; this is new (the shipped palco tags use 4px, `.palco-bubble` already uses 6px with a 2px base edge). Text `--palco-text`, at least 4.5:1 on the plate.
 - **Colour roles hold:** violet actions and focus only; lime (`--palco-you`) for "you" and progress only; green for AO VIVO only. Name tags are the audience's tags.
 - **Type:** Bricolage for titles, Instrument Sans for text, buttons and name tags, for numbers, LED boards, codes and times the system monospace stack of the "A seguir" board (`.palco-board`: `ui-monospace, SFMono-Regular, Menlo, monospace`). One stack, no webfont.
@@ -240,7 +241,7 @@ PT-BR everywhere a user can see it: room, join errors, relative times, /account,
 
 ## Add a new surface
 
-1. Non-room screens follow "Palco on every screen": the palco scene as ground, HUD plates on top. Until the shared palco page shell exists (wave 1), render inside `SintoniaScreen` or under `.landing` with `data-bg="sintonia"`. Do not paint your own page background. Room panels follow "The room" instead.
+1. Non-room screens follow "Palco on every screen": the palco scene as ground, HUD plates on top. Use the shared palco page shell (`PalcoScene`, `PalcoShell`). Do not paint your own page background. Room panels follow "The room" instead.
 2. Palco screens: plates as in "Palco on every screen", text `--palco-text`. Sintonia screens (not yet moved): the glass tokens for panels. No blur, no extra shadows beyond what exists.
 3. Text is white (`--palco-text` on palco screens). Actions are `--color-accent`. Do not use green unless it is a LIVE indicator, and then add its selector to `LIVE_SELECTORS` in `scripts/check_web_drift.sh`.
 4. Do not use the cover palette anywhere except the ground (one exception: see Colour roles).

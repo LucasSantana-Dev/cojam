@@ -14,13 +14,13 @@ import type { ChatMessage, PublicRoomSummary, RoomState, TrackRef } from '@cojam
 
 const USER_ID_KEY = 'cojam_uid';
 
-export type FixtureKind = 'room' | 'join';
+export type FixtureKind = 'room' | 'join' | 'kicked';
 
 export function fixtureKind(): FixtureKind | null {
   if (process.env.NODE_ENV === 'production') return null;
   if (typeof window === 'undefined') return null;
   const k = new URLSearchParams(window.location.search).get('fixture');
-  return k === 'room' || k === 'join' ? k : null;
+  return k === 'room' || k === 'join' || k === 'kicked' ? k : null;
 }
 
 // Dev-only: true on "/?fixture=error". The landing throws after mount so the
@@ -141,6 +141,8 @@ export function applyRoomFixture(kind: FixtureKind): void {
   s.setCharacterOverrides(FIXTURE_CHARACTERS);
   s.setMyVotes({ t3: true });
   if (kind === 'room') s.setChat(chatLines());
+  // The removed-from-room screen (room.kick), for screenshots.
+  if (kind === 'kicked') s.setKicked(true);
 }
 
 // Dev-only: "/rooms?fixture=rooms" lists six public rooms without a server, for

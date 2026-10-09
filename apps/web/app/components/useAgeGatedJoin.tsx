@@ -75,10 +75,10 @@ export function useAgeGatedJoin(copy: AgeGateCopy = AGE_GATE_COPY_EN) {
         <h2 id="age-gate-title" className="age-gate__title">{copy.title}</h2>
         <p className="age-gate__body">{copy.body}</p>
         <div className="age-gate__actions">
-          <button type="button" className="btn-primary" onClick={confirmAge}>
+          <button type="button" className="age-gate__btn" onClick={confirmAge}>
             {copy.confirm}
           </button>
-          <button type="button" className="btn-ghost" onClick={() => setPendingRoomId(null)}>
+          <button type="button" className="age-gate__btn age-gate__btn--quiet" onClick={() => setPendingRoomId(null)}>
             {copy.cancel}
           </button>
         </div>

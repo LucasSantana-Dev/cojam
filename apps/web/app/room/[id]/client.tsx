@@ -50,7 +50,6 @@ import type { IPlayer } from '@/lib/playerInterface';
 import { queueArtwork } from '../components/QueuePanel';
 import { useMotion } from '@/lib/motionFlags';
 import { useCoverFlight } from '@/lib/useCoverFlight';
-import { SintoniaScreen, SineLine } from '@/app/components/SintoniaScreen';
 import { ServiceBadge } from '@/app/components/ServiceBadge';
 import { PalcoNav } from '@/app/components/PalcoNav';
 import { PalcoScene } from '@/app/components/PalcoScene';
@@ -269,7 +268,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     setFixtureYt(new URLSearchParams(window.location.search).get('yt') === '1');
     setSpotifyAuthorized(true);
     spotifyAdapterRef.current = fixturePlayer;
-    if (kind === 'room') {
+    if (kind === 'room' || kind === 'kicked') {
       setJoined(true);
       setActivePlayer(fixturePlayer);
     }
@@ -465,23 +464,24 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // since the disconnect was deliberate and the connection will not retry.
   if (store.kicked) {
     return (
-      <SintoniaScreen>
-        <main id="main" className="sx-main">
-          <div className="sx-glass sx-card sx-card--narrow sx-center">
-            <div className="sx-brand">
-              <LogoMark size={20} /> CoJam
+      <div className="pw" data-view="kicked">
+        <PalcoBrandBar />
+        {/* The join floor with nobody on it: the screen says the show is over for you. */}
+        <PalcoScene kind="join" led={{ title: 'FIM', scale: 3, sub: 'Fora da sala' }}>
+          <main id="main" className="pw-dock pw-plate">
+            <div className="pw-dock__copy">
+              <p className="pw-eyebrow">Fim da sessão · para você</p>
+              <h1 className="pw-title">Você foi removido da sala</h1>
+              <p className="pw-text">O anfitrião removeu você desta sessão.</p>
             </div>
-            <h1 className="sx-title sx-title--sm">Você foi removido da sala</h1>
-            <SineLine flat />
-            <p className="sx-text">O anfitrião removeu você desta sessão.</p>
-            <div className="sx-actions sx-actions--center">
-              <Link href="/" className="btn-primary">
+            <div className="pw-actions">
+              <Link href="/" className="pw-btn">
                 Voltar ao início
               </Link>
             </div>
-          </div>
-        </main>
-      </SintoniaScreen>
+          </main>
+        </PalcoScene>
+      </div>
     );
   }
 

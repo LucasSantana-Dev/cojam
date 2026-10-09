@@ -3,17 +3,19 @@
 // app code or data. See docs/pwa.md.
 //
 //  - Navigation requests: network-first; on failure serve the precached /offline.
-//  - Precached on install: /offline and the hashed /_next/static files it needs.
-//    Only those precached files are answered from the cache (they are immutable,
-//    content-hashed); every other /_next request goes to the network and the
+//  - Precached on install: /offline, the hashed /_next/static files it needs and its
+//    two scene PNGs. Only those precached files are answered from the cache (they are
+//    immutable or rarely change); every other /_next request goes to the network and the
 //    browser's own HTTP cache.
 //  - Everything else (API, websocket upgrade, Centrifuge, cross-origin YouTube
 //    and Spotify, non-GET): untouched, the worker does not call respondWith.
 //
 // Bump CACHE_VERSION to force a fresh precache; old caches are deleted on activate.
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE = `cojam-offline-${CACHE_VERSION}`;
 const OFFLINE_URL = '/offline';
+// The stage-scene art the offline page paints (wide and phone). Keep in step with app/offline/page.tsx.
+const SCENE_ASSETS = ['/palco/scenes/callback-wide.png', '/palco/scenes/callback-phone.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -24,7 +26,7 @@ self.addEventListener('install', (event) => {
       const html = await res.clone().text();
       await cache.put(OFFLINE_URL, res);
       const assets = new Set(html.match(/\/_next\/static\/[^"'\s\\<>)]+/g) ?? []);
-      await Promise.all([...assets].map((url) => cache.add(url).catch(() => undefined)));
+      await Promise.all([...assets, ...SCENE_ASSETS].map((url) => cache.add(url).catch(() => undefined)));
       await self.skipWaiting();
     })(),
   );
@@ -54,7 +56,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.pathname.startsWith('/_next/static/')) {
+  if (url.pathname.startsWith('/_next/static/') || SCENE_ASSETS.includes(url.pathname)) {
     event.respondWith(
       caches.match(req).then((hit) => hit ?? fetch(req)),
     );
