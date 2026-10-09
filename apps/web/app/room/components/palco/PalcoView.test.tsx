@@ -170,7 +170,7 @@ describe('PalcoView', () => {
     const { rerender } = render(view(false));
     await waitFor(() => expect(fake.FakeScene.last).not.toBeNull());
     expect(screen.queryByTestId('queue-slot')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Música/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar música' }));
     expect(onAddOpen).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('palco')).toBeTruthy();
     expect(screen.getByTestId('queue-slot')).toBeTruthy();
@@ -180,7 +180,7 @@ describe('PalcoView', () => {
     rerender(view(false));
     expect(screen.queryByTestId('queue-slot')).toBeNull();
     // A finished add (the room turns addOpen off) also returns to the stage.
-    fireEvent.click(screen.getByRole('button', { name: /Música/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar música' }));
     rerender(view(true));
     expect(screen.getByTestId('queue-slot')).toBeTruthy();
     rerender(view(false));
