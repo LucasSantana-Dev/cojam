@@ -151,6 +151,7 @@ Owner on part 2: "os personagens estão com braços gigantes, não dá pra ver o
 - Generation is one character per call, then quantised and checked for a front and back match before review. The generation scripts are local; the committed outputs are the final PNGs and a short note on grid size and palette.
 - Assets are committed in the repo (small). The `.claude/design/refs/` mockups stay gitignored.
 - Emotes are 16x16 with the shared palco palette. `emotes/uau.png` was redone on 2026-10-09: the owner judged the first one rough at 16 px. It was generated in the Gemini app with the four approved emotes and `rindo.png` as references, keeps the rindo face and changes only the expression, and was pixelized with the rindo palette. The owner picked it from a review sheet.
+- Exception: `emotes/palmas.png` is 32x32 native, shown at 1x in the same 32 px box. Gemini could not draw two clapping hands on a 16 grid in four tries: it drew about 26 squares across, and downscaling to 16 lost the outline. On 2026-10-09 the owner chose the 32 px version and accepted that its pixels are half the size of the other emotes.
 
 ### YouTube ToS constraints
 
