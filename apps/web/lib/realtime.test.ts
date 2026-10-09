@@ -436,6 +436,40 @@ describe('joinRoom lifecycle (B9/B10/B11)', () => {
     expect(useStore.getState().state?.version).toBe(2);
   });
 
+  it('disconnects the first client on timeout, and again at the start of a retry (#388)', async () => {
+    vi.useFakeTimers();
+    try {
+      const joinPromise = joinRoom('room-1', 'Alice');
+      // Flush the async token resolution so the instance is constructed.
+      await vi.advanceTimersByTimeAsync(0);
+      const instance1 = centrifugeMock.MockCentrifuge.instances[0];
+
+      // Advance past JOIN_TIMEOUT_MS so the race rejects.
+      const assertion = expect(joinPromise).rejects.toThrow(/demorou demais/);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
+
+      // The race-rejection handler must have disconnected the first client.
+      expect(instance1.disconnectCalls).toBeGreaterThan(0);
+      const disconnectAfterTimeout = instance1.disconnectCalls;
+
+      // Retry: joinRoom must disconnect any lingering previous client before
+      // creating a fresh one, so instance1 gets another disconnect call.
+      const retryPromise = joinRoom('room-1', 'Alice');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(instance1.disconnectCalls).toBeGreaterThan(disconnectAfterTimeout);
+      expect(centrifugeMock.MockCentrifuge.instances.length).toBe(2);
+
+      // Resolve the retry so the test does not leave a dangling promise.
+      const instance2 = centrifugeMock.MockCentrifuge.instances[1];
+      instance2.emit('connected');
+      await retryPromise;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('setRoomPublic sends room.set_public with the right payload', async () => {
     const joinPromise = joinRoom('room-1', 'Alice');
     const instance = await lastInstance();

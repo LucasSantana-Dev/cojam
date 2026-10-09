@@ -448,6 +448,11 @@ export async function joinRoom(
     throw new Error('Não foi possível obter uma sessão do servidor (problema no serviço de autenticação). Tente de novo em instantes.');
   }
 
+  // Drop any previous client before creating a new one: on timeout/refused/retry
+  // the old instance stays alive and retrying; disconnecting it prevents ghost
+  // presence and a double room.join when it eventually connects (#388).
+  centrifuge?.disconnect();
+
   centrifuge = new Centrifuge(wsUrl, {
     token,
     getToken: resolveConnectionToken,
@@ -613,28 +618,35 @@ export async function joinRoom(
   centrifuge.on('error', (ctx) => {
     if ((ctx as { type?: string }).type === 'transport') transportFailed = true;
   });
-  await Promise.race([
-    new Promise<void>((resolve) => {
-      centrifuge!.on('connected', () => resolve());
-    }),
-    new Promise<void>((_, reject) => {
-      centrifuge!.on('disconnected', (ctx) => {
-        if ((ctx as { code?: number } | undefined)?.code === 103) {
-          reject(new Error('O servidor recusou a sessão por falta de autorização. Tente entrar de novo.'));
-        }
-      });
-    }),
-    new Promise<void>((_, reject) => {
-      setTimeout(
-        () => reject(new Error(
-          transportFailed
-            ? 'Não foi possível falar com o servidor. Confira sua conexão e tente de novo.'
-            : 'A entrada demorou demais. O servidor está lento para responder. Tente de novo.',
-        )),
-        JOIN_TIMEOUT_MS,
-      );
-    }),
-  ]);
+  try {
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        centrifuge!.on('connected', () => resolve());
+      }),
+      new Promise<void>((_, reject) => {
+        centrifuge!.on('disconnected', (ctx) => {
+          if ((ctx as { code?: number } | undefined)?.code === 103) {
+            reject(new Error('O servidor recusou a sessão por falta de autorização. Tente entrar de novo.'));
+          }
+        });
+      }),
+      new Promise<void>((_, reject) => {
+        setTimeout(
+          () => reject(new Error(
+            transportFailed
+              ? 'Não foi possível falar com o servidor. Confira sua conexão e tente de novo.'
+              : 'A entrada demorou demais. O servidor está lento para responder. Tente de novo.',
+          )),
+          JOIN_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } catch (err) {
+    // The join failed (timeout/unreachable/unauthorized): stop this client so it
+    // does not connect later and create ghost presence or a double room.join (#388).
+    centrifuge?.disconnect();
+    throw err;
+  }
 
   // RPC result IS the RoomState (docs/protocol.md), not wrapped in {state}
   let joinResult;
