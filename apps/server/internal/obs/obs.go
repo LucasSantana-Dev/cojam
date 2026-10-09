@@ -33,7 +33,11 @@ type Metrics struct {
 	PlayingWithoutTransport prometheus.Counter
 
 	// Adoption counters (F1/F4/F8 usage signal).
-	VotesCast        prometheus.Counter
+	VotesCast prometheus.Counter
+	// SkipVotes counts accepted vote-skip votes (not retractions);
+	// SkipsByVote counts tracks the room skipped by reaching the threshold.
+	SkipVotes        prometheus.Counter
+	SkipsByVote      prometheus.Counter
 	ChatMessagesSent prometheus.Counter
 	RoomsListed      prometheus.Counter
 	RoomsSetPublic   *prometheus.CounterVec
@@ -113,6 +117,14 @@ func New() *Metrics {
 			Name: "music_jam_room_playing_without_transport_total",
 			Help: "Rooms found with a now-playing track but no transport (sync clock missing). Should be about 0.",
 		}),
+		SkipVotes: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_skip_votes_total",
+			Help: "Total vote-skip votes cast (retractions not counted).",
+		}),
+		SkipsByVote: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_skips_by_vote_total",
+			Help: "Total tracks skipped because the room reached the vote-skip threshold.",
+		}),
 		VotesCast: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "music_jam_votes_cast_total",
 			Help: "Total queue.vote toggles applied (F4 adoption).",
@@ -161,7 +173,7 @@ func New() *Metrics {
 	}
 	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
 		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.RoomsPersistedEvicted,
-		m.PublishErrors, m.PlayingWithoutTransport, m.VotesCast, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
+		m.PublishErrors, m.PlayingWithoutTransport, m.VotesCast, m.SkipVotes, m.SkipsByVote, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
 		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject, m.ReportsFiled, m.RetentionPurgedRows)
 
 	m.registerFoundation()
@@ -207,6 +219,8 @@ func (m *Metrics) PublishError() { m.PublishErrors.Inc() }
 func (m *Metrics) RoomPlayingWithoutTransport() { m.PlayingWithoutTransport.Inc() }
 
 func (m *Metrics) VoteCast()        { m.VotesCast.Inc() }
+func (m *Metrics) SkipVoteCast()    { m.SkipVotes.Inc() }
+func (m *Metrics) SkipByVote()      { m.SkipsByVote.Inc() }
 func (m *Metrics) ChatMessageSent() { m.ChatMessagesSent.Inc() }
 func (m *Metrics) RoomListed()      { m.RoomsListed.Inc() }
 

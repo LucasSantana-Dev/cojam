@@ -3,10 +3,16 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { TrackRef } from '@cojam/shared';
 import { NowPlayingCard } from './NowPlayingCard';
 
+const flags = vi.hoisted(() => ({ queueVoting: false }));
 vi.mock('@/lib/useRuntimeFeatures', () => ({
-  useRuntimeFeatures: () => ({ sync: false, trackDepth: false, lyrics: false, listenBrainz: false, lastfmEnrich: false }),
+  useRuntimeFeatures: () => ({ sync: false, trackDepth: false, lyrics: false, listenBrainz: false, lastfmEnrich: false, queueVoting: flags.queueVoting }),
 }));
-vi.mock('@/lib/realtime', () => ({ setRadio: vi.fn() }));
+vi.mock('@/lib/realtime', () => ({
+  setRadio: vi.fn(),
+  nowPlayingVoteSkip: vi.fn(),
+  useStore: (sel: (s: unknown) => unknown) =>
+    sel({ state: { nowPlayingId: 't1', skipVotes: ['user:a'] }, members: [{}, {}], myVotes: {} }),
+}));
 
 const track = { id: 't1', title: 'Song', artist: 'Band', addedBy: 'Ana' } as unknown as TrackRef;
 
@@ -65,5 +71,19 @@ describe('NowPlayingCard unavailable track', () => {
   it('hides Próxima from plain listeners', () => {
     renderCard('unavailable', { hostControl: false, onNext: () => {} });
     expect(screen.queryByRole('button', { name: 'Próxima' })).not.toBeInTheDocument();
+  });
+});
+
+describe('NowPlayingCard vote to skip', () => {
+  it('shows Pular next to the controls for a listener when voting is on', () => {
+    flags.queueVoting = true;
+    renderCard('ok', { hostControl: false });
+    expect(screen.getByRole('button', { name: /Pular/ })).toHaveTextContent('Pular 1/2');
+    flags.queueVoting = false;
+  });
+
+  it('hides Pular when voting is off', () => {
+    renderCard('ok');
+    expect(screen.queryByRole('button', { name: /Pular/ })).toBeNull();
   });
 });
