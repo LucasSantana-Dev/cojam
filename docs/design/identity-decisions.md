@@ -82,6 +82,20 @@ Every quote below is from 2026-10-08. After the sintonia room (decisions 8 and 1
 
 Decision: the room is a polished desktop app, near-black ground with soft violet ambient light (not the cover colour), three columns (now playing and listeners, queue, chat), solid dark panels with a hairline and a violet glow only on the now-playing card. The cover-colour ground stays on the landing and other screens until the owner decides on them; that is a follow-up.
 
+### 13. The palco look on every screen (2026-10-08 to 2026-10-09)
+
+This closes the follow-up left open in decision 12. Every quote is the owner's, said directly in chat.
+
+- 2026-10-08, after the palco shipped (#367, #377, #378): "acho que a gente tem que explorar ela pra aplicação inteira".
+- On the palco canvas directions A (palco inteiro), B (cena e interface) and C (cartaz de festival): "Algo entre o A e o B mas não é exatamente isso". That became D, "HUD de festival": crisp dark plates over a native-grid pixel world. D is what the palco shipped with. On its motion prototype: "Estamos na linha certa". On CSS `steps()` sprite bobs: "Essas animações ficaram horriveis".
+- 2026-10-09, the ask: "Precisamos aplicar a mesma estética do palco e que estamos criando de um ambiente coletivo na home, página de erros e etc".
+- Wave 1 (home, 404, erro) went on canvas page E with a guide board; the owner answered "segue para a onda 2 das telas". Wave 2 (salas, entrar, termos, conta, Spotify callback, share card) went on canvas page F; the owner answered "Continua com o desenolvimento da identidade". Canvas: https://claude.ai/artifact/4rLNVHdYRDjjvn3SFLYLpT.
+- Relayed, not quoted: neither answer reviewed the boards surface by surface. Both are read as "proceed" with no objection raised. Each build PR still shows its 390 and 1440 prints to the owner before merge.
+
+Decision: every screen outside the live room uses the palco language. The festival at night is the ground, made from the shipped palco art at its native grid (integer scale, pixelated). Crisp HUD plates sit on top, never pixelated. The stage screen tells each page's story (home: a room playing; 404: "404 SEM SINAL", an empty crowd, only you; erro: low light, a flat line, "SEM SOM"). The cover-colour sintonia ground (`GroundStack`, `SintoniaScreen` glass) leaves these screens. The live room keeps round 4 as default with palco as its toggle (decision 12; `modo-palco.md`). Brief: [`identity-brief.md`](identity-brief.md).
+
+Not adopted: the Pixelify Sans display font from the D canvas (no third webfont), CSS sprite animation, an error reference code on the error screen (the Copy rule forbids codes on error screens; the board showed one).
+
 ## Consequences
 
 - The mark, violet actions, green LIVE, the two fonts and PT-BR are fixed base. Future rounds recombine execution inside sintonia, not the base.
