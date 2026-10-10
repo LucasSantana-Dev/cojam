@@ -78,7 +78,7 @@ Both retention windows default to **keep forever**. Deleting data is an owner de
 
 | Variable | What it deletes | Default |
 | --- | --- | --- |
-| `ROOM_PERSIST_IDLE_TTL_MINUTES` | Persisted room rows (queue, added-by names and ids, votes, host id, room name) with no connected member and no change for this long. Everything a room holds about a person lives in that one row. | `0` (keep). The policy intends 30 days, `43200`. |
+| `ROOM_PERSIST_IDLE_TTL_MINUTES` | Persisted room rows (queue, added-by names and ids, votes, host id, room name) with no connected member and no change for this long. Everything a room holds about a person lives in that one row. | `0` (keep) in code. Production sets `43200` (30 days), which is the retention the privacy policy states. |
 | `REPORT_RETENTION_DAYS` | `reports` and `moderation_actions` rows older than this many days, by `created_at`. | `0` (keep) |
 
 `REPORT_RETENTION_DAYS` must be a whole number from 0 to 36500; anything else refuses to start, because a typo that silently kept data forever would make the policy false. The purge runs once at boot and then hourly. Each `DELETE` is bounded to 5000 rows, oldest first; a run repeats while batches come back full, up to 10 per table, and logs `retention_backlog` if rows past the window remain for the next run. Logs carry counts only, and `music_jam_retention_purged_total{table}` counts deleted rows.

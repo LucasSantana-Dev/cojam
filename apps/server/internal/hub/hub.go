@@ -1731,6 +1731,9 @@ func (h *Hub) runRPC(method string, data []byte, clientID, userID string, limit 
 	return result, err
 }
 
+// slowPing is the duration at which a sync.ping gets an rpc log line.
+const slowPing = 500 * time.Millisecond
+
 // observeRPC records the RPC histogram and the rpc log line under a bounded
 // method label.
 func (h *Hub) observeRPC(method string, data []byte, err error, d time.Duration) {
@@ -1750,6 +1753,11 @@ func (h *Hub) observeRPC(method string, data []byte, err error, d time.Duration)
 		}
 		switch rpcMetricStatus(err) {
 		case "ok":
+			// sync.ping fires every few seconds per client: logged only when
+			// slow. The metric above still counts every call.
+			if method == "sync.ping" && d < slowPing {
+				break
+			}
 			h.logger.Info("rpc", attrs...)
 		case "user_error":
 			// The caller's mistake (validation, rate limit, not-host), not a fault.

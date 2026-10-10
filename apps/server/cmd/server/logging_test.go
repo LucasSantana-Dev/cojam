@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -75,7 +76,7 @@ func TestRequestIDEchoedAndInAccessLog(t *testing.T) {
 
 	// Generated when absent.
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/healthz", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/rooms", nil))
 	id := rec.Header().Get("X-Request-Id")
 	if len(id) != 16 {
 		t.Fatalf("generated id = %q", id)
@@ -86,7 +87,7 @@ func TestRequestIDEchoedAndInAccessLog(t *testing.T) {
 
 	// A well formed caller id is kept; a hostile one is replaced.
 	buf.Reset()
-	req := httptest.NewRequest(http.MethodGet, "/api/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/rooms", nil)
 	req.Header.Set("X-Request-Id", "edge-req_0001")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -95,11 +96,52 @@ func TestRequestIDEchoedAndInAccessLog(t *testing.T) {
 	}
 
 	buf.Reset()
-	req = httptest.NewRequest(http.MethodGet, "/api/healthz", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/rooms", nil)
 	req.Header.Set("X-Request-Id", `x","level":"ERROR`)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if got := rec.Header().Get("X-Request-Id"); strings.Contains(got, `"`) || len(got) != 16 {
 		t.Fatalf("hostile id not replaced: %q", got)
+	}
+}
+
+// The centrifuge "client command error" entry carries the raw command (RPC
+// payload with nicknames, URLs, room ids). Only allowlisted keys are logged;
+// the method is parsed out of the command without keeping its data.
+func TestCentrifugeFields_NoPayload(t *testing.T) {
+	fields := map[string]any{
+		"command": `id:7 rpc:{data:"{\"addedBy\":\"Maria\",\"url\":\"https://example.test/v\",\"roomId\":\"r1\"}" method:"queue.add"}`,
+		"reply":   `id:7 error:{code:103 message:"bad request"}`,
+		"user":    "u-123",
+		"client":  "c-1",
+		"code":    103,
+		"error":   "bad request",
+		"reason":  "x",
+	}
+	got := safeCentrifugeFields(fields)
+	for _, k := range []string{"command", "reply", "user"} {
+		if _, ok := got[k]; ok {
+			t.Fatalf("field %q must not be logged: %v", k, got)
+		}
+	}
+	if got["code"] != 103 || got["client"] != "c-1" || got["error"] != "bad request" || got["reason"] != "x" {
+		t.Fatalf("allowlisted fields lost: %v", got)
+	}
+	if got["method"] != "queue.add" {
+		t.Fatalf("method = %v, want queue.add", got["method"])
+	}
+	line := fmt.Sprint(got)
+	for _, leaked := range []string{"Maria", "example.test", "r1", "addedBy"} {
+		if strings.Contains(line, leaked) {
+			t.Fatalf("payload leaked %q: %s", leaked, line)
+		}
+	}
+}
+
+func TestCentrifugeFields_MethodNotFromPayload(t *testing.T) {
+	// A payload that mimics a method key is escaped inside data and must not match.
+	got := safeCentrifugeFields(map[string]any{"command": `id:1 rpc:{data:"x method:\"evil\""}`})
+	if _, ok := got["method"]; ok {
+		t.Fatalf("method parsed from payload: %v", got)
 	}
 }

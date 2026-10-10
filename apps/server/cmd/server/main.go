@@ -178,7 +178,7 @@ func main() {
 	node, err := centrifuge.New(centrifuge.Config{
 		LogLevel: centrifugeLogLevel(logLevel),
 		LogHandler: func(e centrifuge.LogEntry) {
-			logger.Log(context.Background(), centrifugeSlogLevel(e.Level), "centrifuge", "level", int(e.Level), "msg", e.Message, "fields", e.Fields)
+			logger.Log(context.Background(), centrifugeSlogLevel(e.Level), "centrifuge", "level", int(e.Level), "msg", e.Message, "fields", safeCentrifugeFields(e.Fields))
 		},
 	})
 	if err != nil {

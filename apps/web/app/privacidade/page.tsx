@@ -137,10 +137,9 @@ export default function PrivacyPage() {
           minutos (<code>ROOM_IDLE_TTL_MINUTES</code>, padrão 30).
         </li>
         <li>
-          <strong>Salas gravadas (fila e votos):</strong> hoje o prazo de exclusão de salas
-          gravadas (<code>ROOM_PERSIST_IDLE_TTL_MINUTES</code>) vem desativado por padrão no
-          código, o que significa retenção sem prazo. Prazo pretendido: 30 dias sem uso.{' '}
-          <code>[[CONFIRMAR: prazo aplicado em produção antes da publicação]]</code>
+          <strong>Salas gravadas (fila e votos):</strong> uma sala sem nenhum membro conectado e
+          sem alteração há 30 dias é excluída (<code>ROOM_PERSIST_IDLE_TTL_MINUTES</code>, 43200
+          minutos em produção). O link da sala continua funcionando, mas a sala volta vazia.
         </li>
         <li>
           <strong>Token do Spotify:</strong> guardado criptografado no servidor e expira em 30

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/centrifugal/centrifuge"
@@ -133,4 +134,37 @@ func centrifugeSlogLevel(l centrifuge.LogLevel) slog.Level {
 		return slog.LevelError
 	}
 	return slog.LevelInfo
+}
+
+// centrifugeFieldAllowlist is the set of centrifuge log field keys that are
+// written. Anything else is dropped: "command" and "reply" carry the raw RPC
+// payload (nicknames, URLs, room ids), and new upstream fields are not assumed
+// safe.
+var centrifugeFieldAllowlist = map[string]bool{
+	"client": true,
+	"code":   true,
+	"reason": true,
+	"error":  true,
+	"method": true,
+}
+
+var commandMethodRe = regexp.MustCompile(`(?:^|[ {])method:"([a-z][a-z0-9_.]{0,63})"`)
+
+// safeCentrifugeFields returns the allowlisted fields plus, when the entry has
+// a "command", its RPC method name parsed out of it without keeping any data.
+func safeCentrifugeFields(fields map[string]any) map[string]any {
+	out := make(map[string]any, len(fields))
+	for k, v := range fields {
+		if centrifugeFieldAllowlist[k] {
+			out[k] = v
+		}
+	}
+	if _, ok := out["method"]; !ok {
+		if cmd, ok := fields["command"].(string); ok {
+			if m := commandMethodRe.FindStringSubmatch(cmd); m != nil {
+				out["method"] = m[1]
+			}
+		}
+	}
+	return out
 }
