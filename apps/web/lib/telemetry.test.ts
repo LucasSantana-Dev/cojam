@@ -60,6 +60,33 @@ describe('client telemetry', () => {
       ['error', 'playback_failed'],
     ]);
   });
+
+  it('falls back to fetch with keepalive when sendBeacon returns false', () => {
+    beacon.mockReturnValue(false);
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(new Response());
+    trackEvent('room_join');
+    expect(beacon).toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/telemetry',
+      expect.objectContaining({ method: 'POST', keepalive: true }),
+    );
+  });
+
+  it('trackError sends "Name: message" without the stack', async () => {
+    const err = new Error('something went wrong');
+    trackError('boundary_segment', err);
+    const [{ body }] = await readBeacons(beacon.mock.calls);
+    expect(body.detail).toBe('Error: something went wrong');
+    expect(String(body.detail)).not.toMatch(/\n|\bat\b/);
+  });
+
+  it('never throws even when sendBeacon throws', () => {
+    beacon.mockImplementation(() => {
+      throw new Error('sendBeacon crashed');
+    });
+    expect(() => trackEvent('room_create')).not.toThrow();
+    expect(() => trackError('ws_terminal', new Error('crash'))).not.toThrow();
+  });
 });
 
 describe('detectPlatform', () => {
