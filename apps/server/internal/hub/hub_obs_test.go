@@ -246,3 +246,35 @@ func TestObserveRPC_LogLevelByErrorKind(t *testing.T) {
 		})
 	}
 }
+
+// sync.ping runs every few seconds per client: its ok line is logged only when
+// slow. Other methods and the Warn/Error paths are unchanged; metrics count all.
+func TestObserveRPC_PingQuiet(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		err    error
+		d      time.Duration
+		want   bool
+	}{
+		{"ping fast", "sync.ping", nil, time.Millisecond, false},
+		{"ping slow", "sync.ping", nil, 500 * time.Millisecond, true},
+		{"ping fast user error", "sync.ping", userErrorf("nope"), time.Millisecond, true},
+		{"ping fast internal error", "sync.ping", errors.New("boom"), time.Millisecond, true},
+		{"other fast", "queue.add", nil, time.Millisecond, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			metrics := obs.New()
+			h := NewHub(nil).WithObservability(slog.New(slog.NewJSONHandler(&buf, nil)), metrics)
+			h.observeRPC(tc.method, []byte(`{"roomId":"p1"}`), tc.err, tc.d)
+			if got := buf.Len() > 0; got != tc.want {
+				t.Fatalf("logged=%v, want %v (buf=%q)", got, tc.want, buf.String())
+			}
+			if n := testutil.CollectAndCount(metrics.RPCDuration); n != 1 {
+				t.Fatalf("metric series = %d, want 1 (counting must stay)", n)
+			}
+		})
+	}
+}

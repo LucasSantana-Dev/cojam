@@ -41,11 +41,15 @@ func accessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 				if status == 0 {
 					status = http.StatusOK
 				}
+				dur := time.Since(start)
+				if !shouldLogRequest(r.URL.Path, status, dur) {
+					return
+				}
 				logger.InfoContext(r.Context(), "http_request",
 					"method", r.Method,
 					"path", r.URL.Path,
 					"status", status,
-					"duration_ms", float64(time.Since(start).Microseconds())/1000.0,
+					"duration_ms", float64(dur.Microseconds())/1000.0,
 				)
 			}()
 			next.ServeHTTP(ww, r)
@@ -56,4 +60,23 @@ func accessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 // isUpgrade reports a websocket upgrade request.
 func isUpgrade(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+}
+
+// slowRequest is the duration at which an otherwise quiet request is logged.
+const slowRequest = 500 * time.Millisecond
+
+// quietPaths are the health probes. Probers hit them every few seconds, so
+// they were most of the access log. They are logged only when they fail
+// (status >= 400) or are slow; every other path is always logged.
+var quietPaths = map[string]bool{
+	"/readyz":      true,
+	"/api/healthz": true,
+}
+
+// shouldLogRequest reports whether an access log line is written.
+func shouldLogRequest(path string, status int, d time.Duration) bool {
+	if !quietPaths[path] {
+		return true
+	}
+	return status >= http.StatusBadRequest || d >= slowRequest
 }

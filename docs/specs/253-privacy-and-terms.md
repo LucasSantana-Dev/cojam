@@ -102,9 +102,10 @@ architecture:
 Retention claims must match the code, or the policy is false:
 
 - `ROOM_IDLE_TTL_MINUTES` (default 30) evicts memberless rooms from memory.
-- `ROOM_PERSIST_IDLE_TTL_MINUTES` deletes room **rows**. It is unset in
-  production today, which means `0`, which means disabled, which means
-  **persisted rooms are currently retained indefinitely**.
+- `ROOM_PERSIST_IDLE_TTL_MINUTES` deletes room **rows**. It was unset in
+  production when this spec was drafted, which meant `0`, disabled, so
+  **persisted rooms were retained indefinitely**. Production now sets
+  `43200` (30 days) and the policy page states that as current.
 - Chat is ephemeral and dies with the room in memory. Deploys also end it, by
   decision (ADR-0006).
 

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The access log records method, path, status and duration only: never the
@@ -89,5 +90,50 @@ func TestAccessLog_WebsocketUpgrade(t *testing.T) {
 	rejected := serve(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusForbidden) })
 	if rejected["status"] != float64(http.StatusForbidden) {
 		t.Fatalf("rejected upgrade status = %v, want 403", rejected["status"])
+	}
+}
+
+// Health probes are logged only when they fail or are slow; other paths always.
+func TestShouldLogRequest(t *testing.T) {
+	cases := []struct {
+		name   string
+		path   string
+		status int
+		d      time.Duration
+		want   bool
+	}{
+		{"readyz ok fast", "/readyz", 200, time.Millisecond, false},
+		{"healthz ok fast", "/api/healthz", 200, time.Millisecond, false},
+		{"readyz 503", "/readyz", 503, time.Millisecond, true},
+		{"healthz 400", "/api/healthz", 400, time.Millisecond, true},
+		{"healthz 399", "/api/healthz", 399, time.Millisecond, false},
+		{"readyz slow", "/readyz", 200, 500 * time.Millisecond, true},
+		{"healthz just fast", "/api/healthz", 200, 499 * time.Millisecond, false},
+		{"other path ok fast", "/api/rooms", 200, time.Millisecond, true},
+		{"similar path", "/readyz/x", 200, time.Millisecond, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldLogRequest(tc.path, tc.status, tc.d); got != tc.want {
+				t.Fatalf("shouldLogRequest(%q, %d, %v) = %v, want %v", tc.path, tc.status, tc.d, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAccessLog_QuietProbeEndToEnd(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		lines  int
+	}{{200, 0}, {503, 1}} {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&buf, nil))
+		h := accessLog(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tc.status)
+		}))
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		if got := strings.Count(buf.String(), "http_request"); got != tc.lines {
+			t.Fatalf("status %d: %d lines, want %d", tc.status, got, tc.lines)
+		}
 	}
 }
