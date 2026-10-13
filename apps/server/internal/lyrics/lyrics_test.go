@@ -106,6 +106,30 @@ func TestParseLRCTimestamp_NoTimestamp(t *testing.T) {
 	}
 }
 
+func TestParseLRCTimestamp_InvalidTimestamps(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+	}{
+		{"negative minutes", "[-1:00.00] text"},
+		{"negative seconds", "[00:-1.00] text"},
+		{"NaN seconds", "[00:NaN] text"},
+		{"Inf seconds", "[00:Inf] text"},
+		{"-Inf seconds", "[00:-Inf] text"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			timeMs, text, err := parseLRCTimestamp(tc.line)
+			if err != nil {
+				t.Fatalf("parseLRCTimestamp(%q): unexpected error: %v", tc.line, err)
+			}
+			if timeMs != 0 || text != "" {
+				t.Fatalf("parseLRCTimestamp(%q) = (%d, %q), want (0, \"\")", tc.line, timeMs, text)
+			}
+		})
+	}
+}
+
 func TestFetchLyrics_SyncedOnly(t *testing.T) {
 	response := `{
   "syncedLyrics": "[00:12.34] First line\n[00:45.00] Second line",
