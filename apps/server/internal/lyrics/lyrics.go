@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -83,6 +84,9 @@ func parseLRCTimestamp(line string) (int, string, error) {
 		return 0, "", nil
 	}
 
+	if minutes < 0 || seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+		return 0, "", nil
+	}
 	timeMs := (minutes*60)*1000 + int(seconds*1000)
 	return timeMs, text, nil
 }
