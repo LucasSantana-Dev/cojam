@@ -81,8 +81,8 @@ func parseOrigins(raw string) map[string]bool {
 // envDurationMinutes reads a duration expressed in whole minutes
 // (unset/invalid/<=0 = dflt). Used for ROOM_IDLE_TTL_MINUTES and
 // ROOM_PERSIST_IDLE_TTL_MINUTES.
-func envDurationMinutes(key string, dflt time.Duration) time.Duration {
-	raw := strings.TrimSpace(os.Getenv(key))
+func envDurationMinutes(getenv func(string) string, key string, dflt time.Duration) time.Duration {
+	raw := strings.TrimSpace(getenv(key))
 	if raw == "" {
 		return dflt
 	}
@@ -233,7 +233,7 @@ func main() {
 
 	// Idle-room eviction: rooms with no connected members and no activity past
 	// the TTL are dropped from hub memory; the store reloads them on rejoin.
-	roomIdleTTL := envDurationMinutes("ROOM_IDLE_TTL_MINUTES", 30*time.Minute)
+	roomIdleTTL := envDurationMinutes(os.Getenv, "ROOM_IDLE_TTL_MINUTES", 30*time.Minute)
 	h.WithRoomIdleTTL(roomIdleTTL)
 
 	// Persistent idle-room eviction (#169): stored rows memberless and
@@ -241,7 +241,7 @@ func main() {
 	// (0) — a destructive background job on the operator's only database is
 	// opt-in. Set well above the in-memory TTL; single-instance deployments
 	// only (the membership gate is process-local).
-	roomPersistIdleTTL := envDurationMinutes("ROOM_PERSIST_IDLE_TTL_MINUTES", 0)
+	roomPersistIdleTTL := envDurationMinutes(os.Getenv, "ROOM_PERSIST_IDLE_TTL_MINUTES", 0)
 	h.WithRoomPersistIdleTTL(roomPersistIdleTTL)
 
 	// Room-creation budget burst, per identity and per client IP.
