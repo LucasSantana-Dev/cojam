@@ -207,3 +207,58 @@ tests:
       - eval_time: 60m
         alertname: CoJamPlayingWithoutTransport
         exp_alerts: []
+
+  - interval: 1m
+    name: db pool exhausted fires above 5 percent waits
+    input_series:
+      # 10 percent of acquires wait (2 of 20 per minute)
+      - series: 'music_jam_db_pool_acquire_total{job="cojam-server"}'
+        values: '0+20x30'
+      - series: 'music_jam_db_pool_empty_acquire_total{job="cojam-server"}'
+        values: '0+2x30'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: CoJamDbPoolExhausted
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: CoJamDbPoolExhausted
+        exp_alerts:
+          - exp_labels: {severity: warning, service: cojam-server}
+            exp_annotations:
+              summary: "O pool do Postgres está sem conexão livre"
+              description: "Mais de 5% dos pedidos de conexão ao banco tiveram que esperar por falta de conexão livre por 10 minutos, com pelo menos 5 esperas. O pool é pequeno demais para a carga ou alguma consulta está segurando conexão."
+              runbook: "docs/observability.md#cojamdbpoolexhausted"
+
+  - interval: 1m
+    name: db pool exhausted ignores tiny traffic
+    input_series:
+      # the 2026-10-18 shape: about 1 wait in 21 acquires per 10 minutes
+      - series: 'music_jam_db_pool_acquire_total{job="cojam-server"}'
+        values: '0+2x30'
+      - series: 'music_jam_db_pool_empty_acquire_total{job="cojam-server"}'
+        values: '0+0.2x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CoJamDbPoolExhausted
+        exp_alerts: []
+
+  - interval: 1m
+    name: publish errors fire on any failure after 5 minutes
+    input_series:
+      - series: 'music_jam_publish_errors_total{job="cojam-server"}'
+        values: '0x5 1x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: CoJamPublishErrors
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: CoJamPublishErrors
+        exp_alerts:
+          - exp_labels: {severity: warning, service: cojam-server}
+            exp_annotations:
+              summary: "Mudanças nas salas não estão chegando a quem ouve"
+              description: "O servidor falhou ao publicar no canal da sala nos últimos 10 minutos. A ação foi salva, mas quem está na sala não recebeu a atualização até recarregar. Veja a linha publish_failed nos logs."
+              runbook: "docs/observability.md#cojampublisherrors"
+      - eval_time: 30m
+        alertname: CoJamPublishErrors
+        exp_alerts: []
