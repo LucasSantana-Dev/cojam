@@ -12,12 +12,17 @@ NEXT_PUBLIC_FEATURE_SPOTIFY=false      # default false
 NEXT_PUBLIC_FEATURE_PRESENCE=true      # default true
 NEXT_PUBLIC_SPOTIFY_CLIENT_ID=<id>     # Spotify PKCE (Web Playback)
 NEXT_PUBLIC_WS_URL=ws://localhost:8080/connection/websocket
+NEXT_PUBLIC_SUPABASE_URL=<url>         # Supabase project URL (build-time fallback; runtime override: COJAM_SUPABASE_URL)
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<key>    # Supabase anon key (build-time fallback; runtime override: COJAM_SUPABASE_ANON_KEY)
+SERVER_ORIGIN=http://localhost:8080    # Go server origin for /api/stats/* rewrites; dev/e2e only (production: Caddy routes before Next sees it)
 ```
 
 `NEXT_PUBLIC_*` are inlined at build time. A deployed image is configured at runtime instead, via `COJAM_*` vars served through `/env.js` (no rebuild):
 
 ```bash
 COJAM_WS_URL=wss://example.com/connection/websocket
+COJAM_SITE_URL=https://example.com    # canonical origin for metadata, sitemap and structured data; unset falls back to https://cojam.lucassantana.tech in production
+COJAM_SPOTIFY_CLIENT_ID=<id>          # runtime override for Spotify PKCE client ID; replaces NEXT_PUBLIC_SPOTIFY_CLIENT_ID in a deployed image
 COJAM_FEATURE_<NAME>=true|false        # runtime override per feature flag
 COJAM_SUPABASE_URL=<url>               # accounts; emitted only with the anon key
 COJAM_SUPABASE_ANON_KEY=<key>
