@@ -151,6 +151,31 @@ func TestTelemetryLimiter_RefillsOverTime(t *testing.T) {
 	}
 }
 
+func TestTelemetryLimiter_EvidesIdleKeys(t *testing.T) {
+	l := newTelemetryLimiter()
+	now := time.Now()
+
+	l.allow("1.2.3.4", now)
+
+	l.mu.Lock()
+	_, exists := l.buckets["1.2.3.4"]
+	l.mu.Unlock()
+	if !exists {
+		t.Fatal("bucket must exist after first use")
+	}
+
+	// Advance past both the idle TTL and the sweep interval so sweepLocked fires.
+	future := now.Add(telemetryIdleTTL + telemetrySweepEvery + time.Second)
+	l.allow("9.9.9.9", future)
+
+	l.mu.Lock()
+	_, stillExists := l.buckets["1.2.3.4"]
+	l.mu.Unlock()
+	if stillExists {
+		t.Fatal("idle key must be evicted after idle TTL")
+	}
+}
+
 // callerKey keys IP-based limiters on the real client: CF-Connecting-IP when
 // the request arrived through the local proxy chain (Cloudflare Tunnel ->
 // Caddy -> server, so the peer is a private or loopback address), else the
