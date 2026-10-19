@@ -50,7 +50,7 @@ func TestAccessLog_DefaultStatus(t *testing.T) {
 	h := accessLog(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	}))
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/rooms", nil))
 	var rec map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -103,11 +103,14 @@ func TestShouldLogRequest(t *testing.T) {
 		want   bool
 	}{
 		{"readyz ok fast", "/readyz", 200, time.Millisecond, false},
-		{"healthz ok fast", "/api/healthz", 200, time.Millisecond, false},
+		{"healthz ok fast", "/healthz", 200, time.Millisecond, false},
+		{"api healthz ok fast", "/api/healthz", 200, time.Millisecond, false},
 		{"readyz 503", "/readyz", 503, time.Millisecond, true},
+		{"healthz 503", "/healthz", 503, time.Millisecond, true},
 		{"healthz 400", "/api/healthz", 400, time.Millisecond, true},
 		{"healthz 399", "/api/healthz", 399, time.Millisecond, false},
 		{"readyz slow", "/readyz", 200, 500 * time.Millisecond, true},
+		{"healthz slow", "/healthz", 200, 500 * time.Millisecond, true},
 		{"healthz just fast", "/api/healthz", 200, 499 * time.Millisecond, false},
 		{"other path ok fast", "/api/rooms", 200, time.Millisecond, true},
 		{"similar path", "/readyz/x", 200, time.Millisecond, true},
