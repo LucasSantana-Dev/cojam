@@ -22,8 +22,15 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 )
 
+// OnSearchProviderFail, when set, is called with the provider name each time
+// a search provider returns an error. Use it to increment a metrics counter.
+var OnSearchProviderFail func(provider string)
+
 var (
 	ErrNotConfigured = errors.New("service not configured")
+	// ErrAllProvidersFailed is returned by SearchAll when every attempted
+	// provider failed, signalling a total search outage.
+	ErrAllProvidersFailed = errors.New("all search providers failed")
 
 	// MusicBrainz base URL (package-level for testability)
 	musicbrainzURL = "https://musicbrainz.org/ws/2"
@@ -847,11 +854,15 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 		limit = 10
 	}
 
-	// Collect results from all available sources concurrently
-	// Use WaitGroup + goroutines (errgroup not strictly necessary for this use case)
+	// Collect results from all available sources concurrently.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	allCandidates := make([]SearchCandidate, 0)
+	providerCount := 1 // deezer is always attempted
+	if spotifyauth.ClientID != "" && spotifyauth.ClientSecret != "" {
+		providerCount++
+	}
+	failCount := 0 // incremented under mu
 
 	// Per-source timeout
 	const sourceTimeout = 4 * time.Second
@@ -864,9 +875,13 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 		defer cancel()
 		results, err := SearchDeezer(ctx, query, limit)
 		if err != nil {
-			// Log but don't fail the whole search. The query is user text:
-			// only its length is logged.
 			slog.Warn("search_deezer_failed", "query_len", len(query), "err", redactErr(err).Error())
+			if OnSearchProviderFail != nil {
+				OnSearchProviderFail("deezer")
+			}
+			mu.Lock()
+			failCount++
+			mu.Unlock()
 			return
 		}
 		mu.Lock()
@@ -884,6 +899,12 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 			results, err := SearchSpotify(ctx, query, limit)
 			if err != nil {
 				slog.Warn("search_spotify_failed", "query_len", len(query), "err", redactErr(err).Error())
+				if OnSearchProviderFail != nil {
+					OnSearchProviderFail("spotify")
+				}
+				mu.Lock()
+				failCount++
+				mu.Unlock()
 				return
 			}
 			mu.Lock()
@@ -893,6 +914,9 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 	}
 
 	wg.Wait()
+	if failCount == providerCount {
+		return nil, ErrAllProvidersFailed
+	}
 
 	// Deduplicate by ISRC (when both results have ISRC) or by normalized title+artist
 	// Prefer result with SpotifyURI when merging duplicates

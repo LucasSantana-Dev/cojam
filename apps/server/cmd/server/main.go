@@ -173,6 +173,7 @@ func main() {
 	// callers holding a *Metrics.
 	httpx.SetObserver(metrics.ObserveProvider)
 	match.OnQuotaTrip = metrics.YouTubeQuotaTrip
+	match.OnSearchProviderFail = metrics.SearchProviderFailed
 	metrics.RegisterYouTubeQuotaGauge(match.YouTubeQuotaOpen)
 
 	// Create centrifuge node

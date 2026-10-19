@@ -692,6 +692,69 @@ func TestSearchAll_DoesNotTruncateBeforeRanking(t *testing.T) {
 	}
 }
 
+func TestSearchAll_ErrAllProvidersFailed_BothFail(t *testing.T) {
+	oldDeezerURL := deezerSearchURL
+	oldSpotifyID, oldSpotifySecret := spotifyauth.ClientID, spotifyauth.ClientSecret
+	oldTokenURL, oldSearchURL := spotifyauth.TokenURL, spotifySearchURL
+	oldClient := spotifyauth.Client
+	defer func() {
+		deezerSearchURL = oldDeezerURL
+		spotifyauth.ClientID, spotifyauth.ClientSecret = oldSpotifyID, oldSpotifySecret
+		spotifyauth.TokenURL, spotifySearchURL = oldTokenURL, oldSearchURL
+		spotifyauth.Client = oldClient
+		spotifyauth.ResetCache()
+		OnSearchProviderFail = nil
+	}()
+
+	// Both servers respond with 500 so every provider fails.
+	failSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer failSrv.Close()
+
+	deezerSearchURL = failSrv.URL
+	spotifyauth.ClientID = "id"
+	spotifyauth.ClientSecret = "secret"
+	spotifyauth.TokenURL = failSrv.URL
+	spotifySearchURL = failSrv.URL
+	spotifyauth.Client = http.DefaultClient
+	spotifyauth.ResetCache()
+
+	var providerHits []string
+	OnSearchProviderFail = func(p string) { providerHits = append(providerHits, p) }
+
+	_, err := SearchAll(context.Background(), "song", 5)
+	if err != ErrAllProvidersFailed {
+		t.Fatalf("got err=%v, want ErrAllProvidersFailed", err)
+	}
+	if len(providerHits) != 2 {
+		t.Errorf("OnSearchProviderFail called %d times, want 2; hits=%v", len(providerHits), providerHits)
+	}
+}
+
+func TestSearchAll_NoErrorWhenOnlyOneFails(t *testing.T) {
+	oldDeezerURL := deezerSearchURL
+	defer func() {
+		deezerSearchURL = oldDeezerURL
+	}()
+
+	// Deezer succeeds, Spotify is not configured (only one provider).
+	okSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"title":"Ok","duration":200,"artist":{"name":"A"},"album":{"cover_medium":"https://example.com/img.jpg"}}]}`))
+	}))
+	defer okSrv.Close()
+	deezerSearchURL = okSrv.URL
+
+	results, err := SearchAll(context.Background(), "song", 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("want 1 result, got %d", len(results))
+	}
+}
+
 // SimilarTracks tests
 
 func lastfmStub(t *testing.T, responseJSON string) func() {
