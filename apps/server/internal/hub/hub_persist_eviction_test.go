@@ -153,6 +153,19 @@ func TestEvictPersistedIdleRooms_StoreErrorDoesNotAbort(t *testing.T) {
 	}
 }
 
+// #392: a store error during the persist-eviction sweep must increment the
+// store_errors_total{op="delete_idle"} counter.
+func TestEvictPersistedIdleRooms_StoreErrorCounted(t *testing.T) {
+	metrics := obs.New()
+	rs := &recordingStore{inner: store.NewMemory(), err: errors.New("connection reset")}
+	h := NewHub(nil).WithStore(rs).WithObservability(nil, metrics).WithRoomPersistIdleTTL(time.Hour)
+
+	h.evictPersistedIdleRooms(time.Now())
+	if got := testutil.ToFloat64(metrics.StoreErrors.WithLabelValues("delete_idle")); got != 1 {
+		t.Fatalf("store_errors_total{op=delete_idle} = %v, want 1", got)
+	}
+}
+
 // #169: concurrent joins, leaves, mutations, and sweeps — a race-detector
 // smoke test for the membership snapshot under memberMu.
 func TestEvictPersistedIdleRooms_Concurrent(t *testing.T) {

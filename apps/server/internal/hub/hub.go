@@ -1287,8 +1287,13 @@ func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 		if h.logger != nil {
 			h.logger.Info("room_history_migrated", "room_id", roomID, "history", len(state.History), "queue", len(state.Queue))
 		}
-		if err := h.store.Save(ctx, state); err != nil && h.logger != nil {
-			h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+		if err := h.store.Save(ctx, state); err != nil {
+			if h.logger != nil {
+				h.logger.Error("store_save_failed", "room_id", roomID, "err", err.Error())
+			}
+			if h.metrics != nil {
+				h.metrics.StoreError("save")
+			}
 		}
 	}
 
@@ -1455,6 +1460,9 @@ func (h *Hub) evictPersistedIdleRooms(now time.Time) {
 	if err != nil {
 		if h.logger != nil {
 			h.logger.Error("room_persist_evict_failed", "err", err.Error(), "cutoff", cutoff.UTC(), "ttl", h.roomPersistIdleTTL.String())
+		}
+		if h.metrics != nil {
+			h.metrics.StoreError("delete_idle")
 		}
 		return
 	}
