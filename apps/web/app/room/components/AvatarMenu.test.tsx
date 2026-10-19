@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { ComponentProps } from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { AvatarMenu } from './AvatarMenu';
 
@@ -26,26 +27,31 @@ vi.mock('./ListeningServicePicker', () => ({
 
 import { saveGuestName } from '@/lib/guestName';
 
-const defaults = {
+type Props = ComponentProps<typeof AvatarMenu>;
+
+const defaults: Props = {
   roomId: 'NEON42',
   name: 'Tester',
   seed: 'abc',
   characterId: 1,
   onCharacterChange: vi.fn(),
-  platform: null as null | 'spotify' | 'youtube',
+  platform: null,
   serviceConnected: false,
   guest: false,
   accountsEnabled: false,
   picker: {
-    value: null as null | 'spotify' | 'youtube',
-    effective: null as null | 'spotify' | 'youtube',
+    preference: 'auto',
+    effective: null,
+    spotifyEnabled: false,
+    spotifyConnected: false,
     onChange: vi.fn(),
+    onConnectSpotify: vi.fn(),
   },
   roomItems: null,
   connectors: null,
 };
 
-function renderMenu(props: Partial<typeof defaults> = {}) {
+function renderMenu(props: Partial<Props> = {}) {
   return render(<AvatarMenu {...defaults} {...props} />);
 }
 
