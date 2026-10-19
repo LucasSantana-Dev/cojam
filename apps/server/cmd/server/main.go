@@ -409,22 +409,24 @@ func main() {
 	h.WithEvents(eventsWriter)
 	shutdownHooks = append([]func(){h.StartPeakFlusher(), stopEvents}, shutdownHooks...)
 
-	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("YOUTUBE_API_KEY") != "" {
-		cachedMatcher := match.NewCachedMatcher(match.ResolveYouTube, func(hit bool) {
-			if hit {
-				if metrics != nil {
+	// matchCacheObserver records a hit/miss counter and emits a search event.
+	// A per-lookup Info log is not recorded: hit/miss rates are visible from
+	// the metrics counter without filling the access log.
+	matchCacheObserver := func(provider string) func(bool) {
+		return func(hit bool) {
+			if metrics != nil {
+				if hit {
 					metrics.MatchCacheHit()
-				}
-				logger.Info("match_cache", "hit", true)
-			} else {
-				if metrics != nil {
+				} else {
 					metrics.MatchCacheMiss()
 				}
-				logger.Info("match_cache", "hit", false)
 			}
-			// A source lookup, not a typed search: provider tells them apart.
-			eventsWriter.Emit(events.Event{Name: events.Search, Props: map[string]any{"provider": "youtube", "cache_hit": hit}})
-		})
+			eventsWriter.Emit(events.Event{Name: events.Search, Props: map[string]any{"provider": provider, "cache_hit": hit}})
+		}
+	}
+
+	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("YOUTUBE_API_KEY") != "" {
+		cachedMatcher := match.NewCachedMatcher(match.ResolveYouTube, matchCacheObserver("youtube"))
 		h.WithMatcher(cachedMatcher)
 		h.WithYouTubeQuota(match.YouTubeQuotaUntil).WithYouTubeQuotaNotice(match.YouTubeQuotaNoticeUntil)
 		logger.Info("matcher_enabled", "provider", "youtube")
@@ -434,20 +436,7 @@ func main() {
 
 	// Wire Spotify matcher independently of YouTube matcher
 	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("SPOTIFY_CLIENT_ID") != "" && os.Getenv("SPOTIFY_CLIENT_SECRET") != "" {
-		spotifyCachedMatcher := match.NewCachedMatcher(match.ResolveSpotify, func(hit bool) {
-			if hit {
-				if metrics != nil {
-					metrics.MatchCacheHit()
-				}
-				logger.Info("spotify_match_cache", "hit", true)
-			} else {
-				if metrics != nil {
-					metrics.MatchCacheMiss()
-				}
-				logger.Info("spotify_match_cache", "hit", false)
-			}
-			eventsWriter.Emit(events.Event{Name: events.Search, Props: map[string]any{"provider": "spotify", "cache_hit": hit}})
-		})
+		spotifyCachedMatcher := match.NewCachedMatcher(match.ResolveSpotify, matchCacheObserver("spotify"))
 		h.WithSpotifyMatcher(spotifyCachedMatcher)
 		logger.Info("spotify_matcher_enabled", "provider", "spotify")
 	} else {
