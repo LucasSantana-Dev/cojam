@@ -102,6 +102,35 @@ describe('publicRooms service connection', () => {
     }
   });
 
+  it('disconnects the client after a connect timeout so it cannot auto-reconnect', async () => {
+    vi.useFakeTimers();
+    try {
+      const promise = listPublicRooms();
+      const instance = await lastInstance();
+      // Never emit 'connected': trigger the 10s timeout.
+      await vi.advanceTimersByTimeAsync(10_000);
+      await promise;
+      expect(instance.disconnected).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('disconnects the in-flight client when the last subscriber leaves before connect resolves', async () => {
+    const unsubscribe = subscribePublicRooms(() => {});
+
+    // Wait for the Centrifuge instance to be created, then unsubscribe before
+    // emitting 'connected' so the in-flight connect has not resolved yet.
+    const instance = await lastInstance();
+    unsubscribe();
+
+    // Now let the connect succeed: the module must disconnect the stray client.
+    instance.emit('connected');
+    await vi.waitFor(() => {
+      expect(instance.disconnected).toBe(true);
+    });
+  });
+
   it('polls on subscribe and every 15s while visible, and disconnects when the last subscriber leaves', async () => {
     vi.useFakeTimers();
     try {

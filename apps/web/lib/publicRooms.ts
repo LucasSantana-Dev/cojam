@@ -33,14 +33,29 @@ async function getServiceClient(): Promise<Centrifuge> {
       getToken: resolveConnectionToken,
     });
     client.connect();
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        client.on('connected', () => resolve());
-      }),
-      new Promise<void>((_, reject) => {
-        setTimeout(() => reject(new Error('connect timeout')), CONNECT_TIMEOUT_MS);
-      }),
-    ]);
+    let connectTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          client.on('connected', () => {
+            if (connectTimer !== null) {
+              clearTimeout(connectTimer);
+              connectTimer = null;
+            }
+            resolve();
+          });
+        }),
+        new Promise<void>((_, reject) => {
+          connectTimer = setTimeout(
+            () => reject(new Error('connect timeout')),
+            CONNECT_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (err) {
+      client.disconnect();
+      throw err;
+    }
     serviceClient = client;
     return client;
   })();
@@ -142,6 +157,18 @@ export function subscribePublicRooms(listener: Listener): () => void {
         serviceClient.disconnect();
         serviceClient = null;
       }
+      // If a connect is in-flight, disconnect whatever client it produces so
+      // no stray auto-reconnecting client is left behind.
+      if (connectPromise !== null) {
+        const inFlight = connectPromise;
+        connectPromise = null;
+        inFlight
+          .then((client) => {
+            client.disconnect();
+            if (serviceClient === client) serviceClient = null;
+          })
+          .catch(() => {});
+      }
     }
   };
 }
@@ -159,5 +186,8 @@ export function __resetPublicRoomsForTests(): void {
     serviceClient.disconnect();
     serviceClient = null;
   }
-  connectPromise = null;
+  if (connectPromise !== null) {
+    connectPromise.then((c) => c.disconnect()).catch(() => {});
+    connectPromise = null;
+  }
 }
