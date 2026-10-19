@@ -85,3 +85,30 @@ groups:
           summary: "Sala tocando sem relógio de sincronia"
           description: "Nos últimos 30 minutos o servidor achou sala com música tocando mas sem transporte (relógio de sincronia). É a regressão do #437: a música pode ficar parada no fim ou dessincronizada."
           runbook: "docs/observability.md#cojamplayingwithouttransport"
+
+      - alert: CoJamDbPoolExhausted
+        expr: |
+          (
+            sum(increase(music_jam_db_pool_empty_acquire_total{job="cojam-server"}[10m]))
+              / sum(increase(music_jam_db_pool_acquire_total{job="cojam-server"}[10m]))
+          ) > 0.05
+          and sum(increase(music_jam_db_pool_empty_acquire_total{job="cojam-server"}[10m])) >= 5
+        for: 10m
+        labels:
+          severity: warning
+          service: cojam-server
+        annotations:
+          summary: "O pool do Postgres está sem conexão livre"
+          description: "Mais de 5% dos pedidos de conexão ao banco tiveram que esperar por falta de conexão livre por 10 minutos, com pelo menos 5 esperas. O pool é pequeno demais para a carga ou alguma consulta está segurando conexão."
+          runbook: "docs/observability.md#cojamdbpoolexhausted"
+
+      - alert: CoJamPublishErrors
+        expr: sum(increase(music_jam_publish_errors_total{job="cojam-server"}[10m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: cojam-server
+        annotations:
+          summary: "Mudanças nas salas não estão chegando a quem ouve"
+          description: "O servidor falhou ao publicar no canal da sala nos últimos 10 minutos. A ação foi salva, mas quem está na sala não recebeu a atualização até recarregar. Veja a linha publish_failed nos logs."
+          runbook: "docs/observability.md#cojampublisherrors"
