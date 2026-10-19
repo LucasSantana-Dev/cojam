@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/centrifugal/centrifuge"
 )
 
 func TestParseLogLevel(t *testing.T) {
@@ -143,5 +145,40 @@ func TestCentrifugeFields_MethodNotFromPayload(t *testing.T) {
 	got := safeCentrifugeFields(map[string]any{"command": `id:1 rpc:{data:"x method:\"evil\""}`})
 	if _, ok := got["method"]; ok {
 		t.Fatalf("method parsed from payload: %v", got)
+	}
+}
+
+func TestCentrifugeSlogLevel(t *testing.T) {
+	cases := []struct {
+		in   centrifuge.LogLevel
+		want slog.Level
+	}{
+		{centrifuge.LogLevelTrace, slog.LevelDebug},
+		{centrifuge.LogLevelDebug, slog.LevelDebug},
+		{centrifuge.LogLevelInfo, slog.LevelInfo},
+		{centrifuge.LogLevelWarn, slog.LevelWarn},
+		{centrifuge.LogLevelError, slog.LevelError},
+	}
+	for _, c := range cases {
+		if got := centrifugeSlogLevel(c.in); got != c.want {
+			t.Errorf("centrifugeSlogLevel(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestCentrifugeLogLevel(t *testing.T) {
+	cases := []struct {
+		in   slog.Level
+		want centrifuge.LogLevel
+	}{
+		{slog.LevelDebug, centrifuge.LogLevelDebug},
+		{slog.LevelInfo, centrifuge.LogLevelInfo},
+		{slog.LevelWarn, centrifuge.LogLevelWarn},
+		{slog.LevelError, centrifuge.LogLevelError},
+	}
+	for _, c := range cases {
+		if got := centrifugeLogLevel(c.in); got != c.want {
+			t.Errorf("centrifugeLogLevel(%v) = %v, want %v", c.in, got, c.want)
+		}
 	}
 }
