@@ -33,24 +33,6 @@ var (
 	youtubeVideosURL = "https://www.googleapis.com/youtube/v3/videos"
 )
 
-// MusicBrainzRecording represents a recording from MusicBrainz API
-type MusicBrainzRecording struct {
-	Title       string `json:"title"`
-	Length      int    `json:"length"`
-	ArtistCreds []struct {
-		Artist struct {
-			Name string `json:"name"`
-		} `json:"artist"`
-	} `json:"artist-credit"`
-}
-
-// MusicBrainzResponse wraps the recording data
-type MusicBrainzResponse struct {
-	IsRCs []struct {
-		Recordings []MusicBrainzRecording `json:"recordings"`
-	} `json:"isrcs"`
-}
-
 // TrackDepthCredit represents a person involved in the track (role + name)
 type TrackDepthCredit struct {
 	Role string `json:"role"`
@@ -64,39 +46,6 @@ type TrackDepth struct {
 	Label       string             `json:"label,omitempty"`
 	Tags        []string           `json:"tags"`
 	Source      string             `json:"source"` // Always "musicbrainz"
-}
-
-// MusicBrainzLookupISRC looks up a track by ISRC code
-// Uses a package-level rate limiter (1 req/s)
-func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
-	if isrc == "" {
-		return nil, errors.New("empty ISRC")
-	}
-
-	if err := waitMusicBrainz(context.Background()); err != nil {
-		return nil, err
-	}
-
-	isrc = strings.ToUpper(isrc)
-	mbURL := fmt.Sprintf("https://musicbrainz.org/ws/2/isrc/%s?fmt=json&inc=artist-credits", url.QueryEscape(isrc))
-
-	req, err := http.NewRequestWithContext(httpx.WithOp(context.Background(), "isrc"), "GET", mbURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("User-Agent", mbUserAgent)
-
-	var mbResp MusicBrainzResponse
-	if err := httpx.DoJSON(req, &mbResp); err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	if len(mbResp.IsRCs) == 0 || len(mbResp.IsRCs[0].Recordings) == 0 {
-		return nil, errors.New("no recordings found")
-	}
-
-	return &mbResp.IsRCs[0].Recordings[0], nil
 }
 
 // YouTubeCandidate represents a YouTube search result
