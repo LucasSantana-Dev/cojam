@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -294,6 +295,10 @@ func main() {
 			"reason", "SPOTIFY_TOKEN_KEY unset; Spotify sessions will not survive an access-token expiry")
 	}
 
+	// auditWg tracks in-flight moderation_audit goroutines so shutdown can
+	// drain them before the DB pool closes.
+	var auditWg sync.WaitGroup
+
 	var dbPool *pgxpool.Pool
 	burns := rebind.BurnList(rebind.NewMemory())
 	reports := report.Store(report.NewMemory())
@@ -385,6 +390,10 @@ func main() {
 		})
 		shutdownHooks = append(shutdownHooks, stopPurge)
 
+		// Drain in-flight audit writes before the pool closes so no write
+		// races against pool teardown. Each audit goroutine has a 5s context
+		// timeout, so this wait is bounded.
+		shutdownHooks = append(shutdownHooks, func() { auditWg.Wait() })
 		// Schedule pool close on shutdown
 		shutdownHooks = append(shutdownHooks, func() {
 			pool.Close()
@@ -569,7 +578,9 @@ func main() {
 	// only a stdout line, which is not queryable and dies with the container.
 	// Recorded asynchronously so a slow write never blocks a moderation action.
 	h.WithModerationAudit(func(action, roomID, actorUserID, subjectID string) {
+		auditWg.Add(1)
 		obs.SafeGo("moderation_audit", func() {
+			defer auditWg.Done()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			rec := report.Action{
