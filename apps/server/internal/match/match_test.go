@@ -720,8 +720,14 @@ func TestSearchAll_ErrAllProvidersFailed_BothFail(t *testing.T) {
 	spotifyauth.Client = http.DefaultClient
 	spotifyauth.ResetCache()
 
+	// Providers run in parallel goroutines, so the hook is called concurrently.
+	var mu sync.Mutex
 	var providerHits []string
-	OnSearchProviderFail = func(p string) { providerHits = append(providerHits, p) }
+	OnSearchProviderFail = func(p string) {
+		mu.Lock()
+		defer mu.Unlock()
+		providerHits = append(providerHits, p)
+	}
 
 	_, err := SearchAll(context.Background(), "song", 5)
 	if err != ErrAllProvidersFailed {

@@ -24,6 +24,7 @@ import (
 
 // OnSearchProviderFail, when set, is called with the provider name each time
 // a search provider returns an error. Use it to increment a metrics counter.
+// Providers are queried in parallel, so it must be safe for concurrent use.
 var OnSearchProviderFail func(provider string)
 
 var (
