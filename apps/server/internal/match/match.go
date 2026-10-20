@@ -22,8 +22,16 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 )
 
+// OnSearchProviderFail, when set, is called with the provider name each time
+// a search provider returns an error. Use it to increment a metrics counter.
+// Providers are queried in parallel, so it must be safe for concurrent use.
+var OnSearchProviderFail func(provider string)
+
 var (
 	ErrNotConfigured = errors.New("service not configured")
+	// ErrAllProvidersFailed is returned by SearchAll when every attempted
+	// provider failed, signalling a total search outage.
+	ErrAllProvidersFailed = errors.New("all search providers failed")
 
 	// MusicBrainz base URL (package-level for testability)
 	musicbrainzURL = "https://musicbrainz.org/ws/2"
@@ -32,24 +40,6 @@ var (
 	youtubeSearchURL = "https://www.googleapis.com/youtube/v3/search"
 	youtubeVideosURL = "https://www.googleapis.com/youtube/v3/videos"
 )
-
-// MusicBrainzRecording represents a recording from MusicBrainz API
-type MusicBrainzRecording struct {
-	Title       string `json:"title"`
-	Length      int    `json:"length"`
-	ArtistCreds []struct {
-		Artist struct {
-			Name string `json:"name"`
-		} `json:"artist"`
-	} `json:"artist-credit"`
-}
-
-// MusicBrainzResponse wraps the recording data
-type MusicBrainzResponse struct {
-	IsRCs []struct {
-		Recordings []MusicBrainzRecording `json:"recordings"`
-	} `json:"isrcs"`
-}
 
 // TrackDepthCredit represents a person involved in the track (role + name)
 type TrackDepthCredit struct {
@@ -64,39 +54,6 @@ type TrackDepth struct {
 	Label       string             `json:"label,omitempty"`
 	Tags        []string           `json:"tags"`
 	Source      string             `json:"source"` // Always "musicbrainz"
-}
-
-// MusicBrainzLookupISRC looks up a track by ISRC code
-// Uses a package-level rate limiter (1 req/s)
-func MusicBrainzLookupISRC(isrc string) (*MusicBrainzRecording, error) {
-	if isrc == "" {
-		return nil, errors.New("empty ISRC")
-	}
-
-	if err := waitMusicBrainz(context.Background()); err != nil {
-		return nil, err
-	}
-
-	isrc = strings.ToUpper(isrc)
-	mbURL := fmt.Sprintf("https://musicbrainz.org/ws/2/isrc/%s?fmt=json&inc=artist-credits", url.QueryEscape(isrc))
-
-	req, err := http.NewRequestWithContext(httpx.WithOp(context.Background(), "isrc"), "GET", mbURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("User-Agent", mbUserAgent)
-
-	var mbResp MusicBrainzResponse
-	if err := httpx.DoJSON(req, &mbResp); err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	if len(mbResp.IsRCs) == 0 || len(mbResp.IsRCs[0].Recordings) == 0 {
-		return nil, errors.New("no recordings found")
-	}
-
-	return &mbResp.IsRCs[0].Recordings[0], nil
 }
 
 // YouTubeCandidate represents a YouTube search result
@@ -847,11 +804,15 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 		limit = 10
 	}
 
-	// Collect results from all available sources concurrently
-	// Use WaitGroup + goroutines (errgroup not strictly necessary for this use case)
+	// Collect results from all available sources concurrently.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	allCandidates := make([]SearchCandidate, 0)
+	providerCount := 1 // deezer is always attempted
+	if spotifyauth.ClientID != "" && spotifyauth.ClientSecret != "" {
+		providerCount++
+	}
+	failCount := 0 // incremented under mu
 
 	// Per-source timeout
 	const sourceTimeout = 4 * time.Second
@@ -864,9 +825,13 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 		defer cancel()
 		results, err := SearchDeezer(ctx, query, limit)
 		if err != nil {
-			// Log but don't fail the whole search. The query is user text:
-			// only its length is logged.
 			slog.Warn("search_deezer_failed", "query_len", len(query), "err", redactErr(err).Error())
+			if OnSearchProviderFail != nil {
+				OnSearchProviderFail("deezer")
+			}
+			mu.Lock()
+			failCount++
+			mu.Unlock()
 			return
 		}
 		mu.Lock()
@@ -884,6 +849,12 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 			results, err := SearchSpotify(ctx, query, limit)
 			if err != nil {
 				slog.Warn("search_spotify_failed", "query_len", len(query), "err", redactErr(err).Error())
+				if OnSearchProviderFail != nil {
+					OnSearchProviderFail("spotify")
+				}
+				mu.Lock()
+				failCount++
+				mu.Unlock()
 				return
 			}
 			mu.Lock()
@@ -893,6 +864,9 @@ func SearchAll(ctx context.Context, query string, limit int) ([]SearchCandidate,
 	}
 
 	wg.Wait()
+	if failCount == providerCount {
+		return nil, ErrAllProvidersFailed
+	}
 
 	// Deduplicate by ISRC (when both results have ISRC) or by normalized title+artist
 	// Prefer result with SpotifyURI when merging duplicates

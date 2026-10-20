@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -81,8 +82,8 @@ func parseOrigins(raw string) map[string]bool {
 // envDurationMinutes reads a duration expressed in whole minutes
 // (unset/invalid/<=0 = dflt). Used for ROOM_IDLE_TTL_MINUTES and
 // ROOM_PERSIST_IDLE_TTL_MINUTES.
-func envDurationMinutes(key string, dflt time.Duration) time.Duration {
-	raw := strings.TrimSpace(os.Getenv(key))
+func envDurationMinutes(getenv func(string) string, key string, dflt time.Duration) time.Duration {
+	raw := strings.TrimSpace(getenv(key))
 	if raw == "" {
 		return dflt
 	}
@@ -172,6 +173,7 @@ func main() {
 	// callers holding a *Metrics.
 	httpx.SetObserver(metrics.ObserveProvider)
 	match.OnQuotaTrip = metrics.YouTubeQuotaTrip
+	match.OnSearchProviderFail = metrics.SearchProviderFailed
 	metrics.RegisterYouTubeQuotaGauge(match.YouTubeQuotaOpen)
 
 	// Create centrifuge node
@@ -233,7 +235,7 @@ func main() {
 
 	// Idle-room eviction: rooms with no connected members and no activity past
 	// the TTL are dropped from hub memory; the store reloads them on rejoin.
-	roomIdleTTL := envDurationMinutes("ROOM_IDLE_TTL_MINUTES", 30*time.Minute)
+	roomIdleTTL := envDurationMinutes(os.Getenv, "ROOM_IDLE_TTL_MINUTES", 30*time.Minute)
 	h.WithRoomIdleTTL(roomIdleTTL)
 
 	// Persistent idle-room eviction (#169): stored rows memberless and
@@ -241,7 +243,7 @@ func main() {
 	// (0) — a destructive background job on the operator's only database is
 	// opt-in. Set well above the in-memory TTL; single-instance deployments
 	// only (the membership gate is process-local).
-	roomPersistIdleTTL := envDurationMinutes("ROOM_PERSIST_IDLE_TTL_MINUTES", 0)
+	roomPersistIdleTTL := envDurationMinutes(os.Getenv, "ROOM_PERSIST_IDLE_TTL_MINUTES", 0)
 	h.WithRoomPersistIdleTTL(roomPersistIdleTTL)
 
 	// Room-creation budget burst, per identity and per client IP.
@@ -293,6 +295,10 @@ func main() {
 		logger.Warn("spotify_token_custody_disabled",
 			"reason", "SPOTIFY_TOKEN_KEY unset; Spotify sessions will not survive an access-token expiry")
 	}
+
+	// auditWg tracks in-flight moderation_audit goroutines so shutdown can
+	// drain them before the DB pool closes.
+	var auditWg sync.WaitGroup
 
 	var dbPool *pgxpool.Pool
 	burns := rebind.BurnList(rebind.NewMemory())
@@ -385,6 +391,10 @@ func main() {
 		})
 		shutdownHooks = append(shutdownHooks, stopPurge)
 
+		// Drain in-flight audit writes before the pool closes so no write
+		// races against pool teardown. Each audit goroutine has a 5s context
+		// timeout, so this wait is bounded.
+		shutdownHooks = append(shutdownHooks, func() { auditWg.Wait() })
 		// Schedule pool close on shutdown
 		shutdownHooks = append(shutdownHooks, func() {
 			pool.Close()
@@ -400,22 +410,24 @@ func main() {
 	h.WithEvents(eventsWriter)
 	shutdownHooks = append([]func(){h.StartPeakFlusher(), stopEvents}, shutdownHooks...)
 
-	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("YOUTUBE_API_KEY") != "" {
-		cachedMatcher := match.NewCachedMatcher(match.ResolveYouTube, func(hit bool) {
-			if hit {
-				if metrics != nil {
+	// matchCacheObserver records a hit/miss counter and emits a search event.
+	// A per-lookup Info log is not recorded: hit/miss rates are visible from
+	// the metrics counter without filling the access log.
+	matchCacheObserver := func(provider string) func(bool) {
+		return func(hit bool) {
+			if metrics != nil {
+				if hit {
 					metrics.MatchCacheHit()
-				}
-				logger.Info("match_cache", "hit", true)
-			} else {
-				if metrics != nil {
+				} else {
 					metrics.MatchCacheMiss()
 				}
-				logger.Info("match_cache", "hit", false)
 			}
-			// A source lookup, not a typed search: provider tells them apart.
-			eventsWriter.Emit(events.Event{Name: events.Search, Props: map[string]any{"provider": "youtube", "cache_hit": hit}})
-		})
+			eventsWriter.Emit(events.Event{Name: events.Search, Props: map[string]any{"provider": provider, "cache_hit": hit}})
+		}
+	}
+
+	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("YOUTUBE_API_KEY") != "" {
+		cachedMatcher := match.NewCachedMatcher(match.ResolveYouTube, matchCacheObserver("youtube"))
 		h.WithMatcher(cachedMatcher)
 		h.WithYouTubeQuota(match.YouTubeQuotaUntil).WithYouTubeQuotaNotice(match.YouTubeQuotaNoticeUntil)
 		logger.Info("matcher_enabled", "provider", "youtube")
@@ -425,20 +437,7 @@ func main() {
 
 	// Wire Spotify matcher independently of YouTube matcher
 	if featureEnabled("FEATURE_MATCHING", true) && os.Getenv("SPOTIFY_CLIENT_ID") != "" && os.Getenv("SPOTIFY_CLIENT_SECRET") != "" {
-		spotifyCachedMatcher := match.NewCachedMatcher(match.ResolveSpotify, func(hit bool) {
-			if hit {
-				if metrics != nil {
-					metrics.MatchCacheHit()
-				}
-				logger.Info("spotify_match_cache", "hit", true)
-			} else {
-				if metrics != nil {
-					metrics.MatchCacheMiss()
-				}
-				logger.Info("spotify_match_cache", "hit", false)
-			}
-			eventsWriter.Emit(events.Event{Name: events.Search, Props: map[string]any{"provider": "spotify", "cache_hit": hit}})
-		})
+		spotifyCachedMatcher := match.NewCachedMatcher(match.ResolveSpotify, matchCacheObserver("spotify"))
 		h.WithSpotifyMatcher(spotifyCachedMatcher)
 		logger.Info("spotify_matcher_enabled", "provider", "spotify")
 	} else {
@@ -569,7 +568,9 @@ func main() {
 	// only a stdout line, which is not queryable and dies with the container.
 	// Recorded asynchronously so a slow write never blocks a moderation action.
 	h.WithModerationAudit(func(action, roomID, actorUserID, subjectID string) {
+		auditWg.Add(1)
 		obs.SafeGo("moderation_audit", func() {
+			defer auditWg.Done()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			rec := report.Action{
