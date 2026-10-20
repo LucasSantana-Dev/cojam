@@ -69,6 +69,7 @@ const slowRequest = 500 * time.Millisecond
 // they were most of the access log. They are logged only when they fail
 // (status >= 400) or are slow; every other path is always logged.
 var quietPaths = map[string]bool{
+	"/healthz":     true,
 	"/readyz":      true,
 	"/api/healthz": true,
 }
