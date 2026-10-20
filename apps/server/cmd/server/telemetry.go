@@ -37,6 +37,10 @@ var (
 		"track_added": true, "provider_connected": true,
 	}
 	telemetryVitals = map[string]bool{"LCP": true, "INP": true, "CLS": true}
+	// vitalMaxValue caps each web vital. Values at or above the cap (or < 0)
+	// are rejected: an unbounded value would skew the histogram _sum forever.
+	// LCP and INP are in milliseconds; CLS is unitless.
+	vitalMaxValue = map[string]float64{"LCP": 60_000, "INP": 60_000, "CLS": 10}
 	telemetryErrors = map[string]bool{
 		"boundary_segment": true, "boundary_root": true, "ws_terminal": true,
 		"playback_failed": true, "token_refresh_failed": true,
@@ -209,6 +213,11 @@ func telemetryHandler(metrics *obs.Metrics, logger *slog.Logger, limiter *caller
 		case "vital":
 			if !telemetryVitals[p.Name] {
 				metrics.TelemetryRejected("unknown_name")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if cap := vitalMaxValue[p.Name]; p.Value < 0 || p.Value >= cap {
+				metrics.TelemetryRejected("out_of_range")
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}

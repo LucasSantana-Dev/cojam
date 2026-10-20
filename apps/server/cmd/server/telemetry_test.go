@@ -253,3 +253,33 @@ func TestTelemetry_SyncDriftRejections(t *testing.T) {
 		t.Errorf("valid sample: expected 204, got %d", rec.Code)
 	}
 }
+
+func TestTelemetry_VitalRangeCheck(t *testing.T) {
+	h, _ := newHandler()
+	cases := []struct {
+		name string
+		body string
+		want int
+	}{
+		// Valid: within bounds.
+		{"LCP valid", `{"type":"vital","name":"LCP","value":1500}`, http.StatusNoContent},
+		{"INP valid", `{"type":"vital","name":"INP","value":200}`, http.StatusNoContent},
+		{"CLS valid", `{"type":"vital","name":"CLS","value":0.1}`, http.StatusNoContent},
+		// Invalid: negative values.
+		{"LCP negative", `{"type":"vital","name":"LCP","value":-1}`, http.StatusBadRequest},
+		{"INP negative", `{"type":"vital","name":"INP","value":-0.1}`, http.StatusBadRequest},
+		{"CLS negative", `{"type":"vital","name":"CLS","value":-1}`, http.StatusBadRequest},
+		// Invalid: at or above cap.
+		{"LCP at cap", `{"type":"vital","name":"LCP","value":60000}`, http.StatusBadRequest},
+		{"INP huge", `{"type":"vital","name":"INP","value":1e308}`, http.StatusBadRequest},
+		{"CLS at cap", `{"type":"vital","name":"CLS","value":10}`, http.StatusBadRequest},
+		{"CLS above cap", `{"type":"vital","name":"CLS","value":999}`, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if rec := postTelemetry(t, h, tc.body); rec.Code != tc.want {
+				t.Errorf("got %d, want %d", rec.Code, tc.want)
+			}
+		})
+	}
+}
