@@ -26,6 +26,10 @@ overrides:
   # sharp <0.35.5: librsvg vulnerability (GHSA-wq5f-xc86-pv6w). Reached via next.
   # Stays on the 0.35 line.
   sharp@<0.35.5: '>=0.35.5 <0.36'
+  # vite >=8.0.0 <=8.1.5: launch-editor fs.existsSync() bypass on Windows
+  # (GHSA-587h-7wmj-h5pm). Reached via vitest>@vitest/mocker and
+  # @testing-library/jest-dom>vitest, build/test-time only.
+  vite@<8.1.6: '>=8.1.6 <9'
 auditConfig:
   ignoreGhsas:
     # braces <=3.0.3 stack exhaustion (GHSA-vfj7-8cjw-p6xm). No patched version
