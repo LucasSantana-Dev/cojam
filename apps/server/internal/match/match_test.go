@@ -763,6 +763,12 @@ func TestSearchAll_NoErrorWhenOnlyOneFails(t *testing.T) {
 
 // SimilarTracks tests
 
+func TestLastfmURL_UsesHTTPS(t *testing.T) {
+	if !strings.HasPrefix(lastfmURL, "https://") {
+		t.Errorf("lastfmURL must use HTTPS to protect the API key in transit, got %q", lastfmURL)
+	}
+}
+
 func lastfmStub(t *testing.T, responseJSON string) func() {
 	t.Helper()
 	oldAPIKey := lastfmAPIKey
