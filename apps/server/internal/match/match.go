@@ -541,7 +541,7 @@ var (
 
 	// Last.fm vars
 	lastfmAPIKey = os.Getenv("LASTFM_API_KEY")
-	lastfmURL    = "http://ws.audioscrobbler.com/2.0/"
+	lastfmURL    = "https://ws.audioscrobbler.com/2.0/"
 )
 
 // tokenCacheEntry holds a cached access token with expiry info
