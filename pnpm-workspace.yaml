@@ -30,6 +30,14 @@ overrides:
   # (GHSA-587h-7wmj-h5pm). Reached via vitest>@vitest/mocker and
   # @testing-library/jest-dom>vitest, build/test-time only.
   vite@<8.1.6: '>=8.1.6 <9'
+  # undici <8.12.2: unhandled error on excessive content-encodings causes DoS
+  # (GHSA-xjj6-f33q-929c). Reached via vitest>jsdom and jsdom directly,
+  # test-time only.
+  undici@<8.12.2: '>=8.12.2'
+  # zod <4.6.6: memory exhaustion on oversized constrained collections
+  # (GHSA-mrhx-c7xc-m3w5). Reached via eslint-config-next>eslint-plugin-react-hooks,
+  # lint-time only.
+  zod@<4.6.6: '>=4.6.6'
 auditConfig:
   ignoreGhsas:
     # braces <=3.0.3 stack exhaustion (GHSA-vfj7-8cjw-p6xm). No patched version
