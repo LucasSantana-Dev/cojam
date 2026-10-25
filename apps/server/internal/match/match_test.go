@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifyauth"
 )
@@ -1045,5 +1046,20 @@ func TestNewCachedMatcher_ExpiredEntryReResolves(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatalf("expected every expired lookup to re-resolve (3 calls), got %d", calls)
+	}
+}
+
+func TestFetchLastfmEnrichment_UsesLookupOp(t *testing.T) {
+	defer lastfmStub(t, `{"track":{"name":"Bohemian Rhapsody","artist":"Queen","playcount":"1","listeners":"1","tags":{"tag":[]}}}`)()
+
+	var gotOp string
+	httpx.SetObserver(func(_, op, _ string, _ time.Duration) { gotOp = op })
+	t.Cleanup(func() { httpx.SetObserver(nil) })
+
+	if _, err := FetchLastfmEnrichment(context.Background(), "Queen", "Bohemian Rhapsody"); err != nil {
+		t.Fatalf("FetchLastfmEnrichment: %v", err)
+	}
+	if gotOp != "lookup" {
+		t.Errorf("op = %q, want %q", gotOp, "lookup")
 	}
 }

@@ -1071,7 +1071,7 @@ func FetchLastfmEnrichment(ctx context.Context, artist, title string) (*LastfmEn
 	params.Set("format", "json")
 	params.Set("autocorrect", "1")
 
-	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "similar"), "GET", lastfmURL+"?"+params.Encode(), nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "lookup"), "GET", lastfmURL+"?"+params.Encode(), nil)
 	if err != nil {
 		// Graceful return on request creation error
 		return result, nil
