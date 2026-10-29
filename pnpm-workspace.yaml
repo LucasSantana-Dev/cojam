@@ -30,6 +30,15 @@ overrides:
   # (GHSA-587h-7wmj-h5pm). Reached via vitest>@vitest/mocker and
   # @testing-library/jest-dom>vitest, build/test-time only.
   vite@<8.1.6: '>=8.1.6 <9'
+  # zod <4.6.6: ReDoS via .min()/.max() on constrained collections
+  # (GHSA-mrhx-c7xc-m3w5). Reached via eslint-config-next>eslint-plugin-react-hooks,
+  # lint-time only.
+  zod@<4.6.6: '>=4.6.6 <5'
+  # undici >=8.0.0 <8.12.2: multiple high CVEs (DoS, cache poisoning, TLS bypass)
+  # (GHSA-xjj6-f33q-929c, GHSA-4w7w-5xrc-9h26, GHSA-2m5v-pch6-74hx,
+  # GHSA-qrxm-fqhp-jwvm). Reached via vitest>jsdom and @testing-library/jest-dom>vitest,
+  # test-time only.
+  undici@>=8.0.0 <8.12.2: '>=8.12.2 <9'
 auditConfig:
   ignoreGhsas:
     # braces <=3.0.3 stack exhaustion (GHSA-vfj7-8cjw-p6xm). No patched version
