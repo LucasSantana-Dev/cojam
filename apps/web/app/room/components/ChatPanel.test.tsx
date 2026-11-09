@@ -199,6 +199,21 @@ describe('ChatPanel auto-scroll (#189)', () => {
     act(() => useStore.getState().addChatMessage(msg('m3', 'third')));
     expect(list.scrollTop).toBe(1000);
   });
+
+  it('keeps following once the list is at its 100-message cap', () => {
+    useStore.setState({ chat: Array.from({ length: 100 }, (_, i) => msg(`m${i}`, `line ${i}`)) });
+    const { container } = render(<ChatPanel roomId="r1" />);
+    const list = scrollList(container);
+    stubMetrics(list, 1000, 200);
+    fireEvent.scroll(list, { target: { scrollTop: 800 } });
+    stubMetrics(list, 1040, 200);
+
+    // The append drops the oldest line: the length stays 100.
+    act(() => useStore.getState().addChatMessage(msg('m100', 'newest')));
+
+    expect(useStore.getState().chat).toHaveLength(100);
+    expect(list.scrollTop).toBe(1040);
+  });
 });
 
 describe('reporting a message (#259)', () => {

@@ -72,7 +72,7 @@ func (h *Hub) publishWoot(roomID, clientID string) error {
 const emoteInterval = 600 * time.Millisecond
 
 var allowedEmotes = map[string]bool{
-	"amei": true, "fogo": true, "rindo": true, "palmas": true, "uau": true, "cantando": true,
+	"amei": true, "fogo": true, "rindo": true, "palmas": true, "uau": true, "cantando": true, "triste": true,
 }
 
 // reactionEmote handles reaction.emote: membership, the allowlist (a bad emote

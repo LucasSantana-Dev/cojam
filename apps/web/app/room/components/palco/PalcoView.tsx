@@ -61,7 +61,7 @@ const EMOTE_MS = 1500;
 const EMOTE_FLOAT = 10;
 const EMOTE_COOLDOWN_MS = 700; // the server allows one per 600 ms per connection; 100 ms margin for network jitter
 const EMOTE_LABEL: Record<Emote, string> = {
-  amei: 'Amei', fogo: 'Fogo', rindo: 'Rindo', palmas: 'Palmas', uau: 'Uau', cantando: 'Cantando',
+  amei: 'Amei', fogo: 'Fogo', rindo: 'Rindo', palmas: 'Palmas', uau: 'Uau', cantando: 'Cantando', triste: 'Triste',
 };
 const LIKE_COOLDOWN_MS = 1500;
 const VARS = ['--palco-sx', '--palco-sy', '--palco-sw', '--palco-sh'] as const;

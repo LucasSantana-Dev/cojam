@@ -383,7 +383,7 @@ Reactions ("Modo palco"): `reaction.woot` is the Curtir button on the playing tr
 
 Every member receives it, the sender included. The web client draws that member's character jumping with arms up (static under reduced motion).
 
-`reaction.emote` is the Reagir bar: one of a fixed set of emotes, `amei`, `fogo`, `rindo`, `palmas`, `uau`, `cantando`; anything else is rejected with a user error. Same contract as `reaction.woot` (ephemeral, membership-gated, no version bump, names the connection only), on its own limit of one emote per 600 ms per connection, separate from chat and Curtir. The server publishes:
+`reaction.emote` is the Reagir bar: one of a fixed set of emotes, `amei`, `fogo`, `rindo`, `palmas`, `uau`, `cantando`, `triste`; anything else is rejected with a user error. Same contract as `reaction.woot` (ephemeral, membership-gated, no version bump, names the connection only), on its own limit of one emote per 600 ms per connection, separate from chat and Curtir. The server publishes:
 
 ```json
 { "type": "reaction.emote", "clientId": "...", "emote": "fogo" }

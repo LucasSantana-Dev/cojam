@@ -30,6 +30,12 @@ overrides:
   # (GHSA-587h-7wmj-h5pm). Reached via vitest>@vitest/mocker and
   # @testing-library/jest-dom>vitest, build/test-time only.
   vite@<8.1.6: '>=8.1.6 <9'
+  # zod <4.6.6: memory exhaustion on oversized constrained collections. Reached via
+  # eslint-config-next>eslint-plugin-react-hooks, lint-time only. Stays on 4.x.
+  zod@<4.6.6: '>=4.6.6 <5'
+  # undici <8.12.2: DoS, cache poisoning and TLS validation bypass. Reached via
+  # @testing-library/jest-dom (test-time only). Stays on 8.x.
+  undici@>=8.0.0 <8.12.2: '>=8.12.2 <9'
 auditConfig:
   ignoreGhsas:
     # braces <=3.0.3 stack exhaustion (GHSA-vfj7-8cjw-p6xm). No patched version
