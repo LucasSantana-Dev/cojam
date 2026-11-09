@@ -1979,6 +1979,8 @@ textarea.age-gate__input { resize: vertical; }
 .r4-vol__mute:hover { background: oklch(1 0 0 / 0.08); color: var(--color-text-primary); }
 .r4-vol__mute[aria-pressed="true"] { color: var(--r4-violet-text); }
 .r4-vol__mute:focus-visible, .r4-vol__range:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+/* The global input:focus fill (surface-3) outranks the class: a click left a grey box behind the slider. */
+.r4-vol__range:focus, .tp__range:focus { background: transparent; }
 /* the slider sits next to the mute button, always visible: a hover popover
    closed in the gap between the button and the slider (owner report 2026-10-08) */
 .r4-vol__pop { flex: 0 1 6.5rem; min-width: 3.5rem; }
