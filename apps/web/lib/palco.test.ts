@@ -4,7 +4,7 @@ import {
   WORLDS, pickWorld, frameStage, screenRect, playerRect, boothTop, intersects, toCss,
   boothMembers, crowdMembers, crowdSlots, nextTrack, memberForTrack,
   newVoters, memberForVoter, memberForClient, placeBubble, placeTag,
-  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, COMPACT_CROWD_MIN, COMPACT_CROWD_ROWS, PANEL_CHROME, PANEL_LIST_MIN, upNext, boardRect, BOARD_MAX, SPRITE_H, EDGE_COLS, plainSideColours, tagName, phoneTagMaxWidth, type PalcoMember,
+  STAGE_TOP, CROWD_EXTRA, COMPACT_PAD, COMPACT_CROWD_MIN, COMPACT_CROWD_ROWS, PANEL_CHROME, PANEL_LIST_MIN, upNext, boardRect, BOARD_MAX, SPRITE_H, EDGE_COLS, plainSideColours, headRow, tagName, phoneTagMaxWidth, type PalcoMember,
 } from './palco';
 
 const t = (id: string, addedBy: string, addedByUserId?: string): TrackRef => ({ id, title: id, artist: 'A', addedBy, addedByUserId, sources: {} });
@@ -347,6 +347,20 @@ describe('"A seguir" board', () => {
   });
 });
 
+describe('headRow', () => {
+  it('finds the first row with an opaque pixel', () => {
+    const px = new Uint8ClampedArray(3 * 5 * 4);
+    px[(3 * 3 + 2) * 4 + 3] = 255; // row 3, column 2
+    expect(headRow(px, 3, 5)).toBe(3);
+  });
+
+  it('is 0 for a standing sprite and for a blank one', () => {
+    const px = new Uint8ClampedArray(2 * 2 * 4);
+    expect(headRow(px, 2, 2)).toBe(0);
+    px[3] = 255;
+    expect(headRow(px, 2, 2)).toBe(0);
+  });
+});
 
 describe('plainSideColours', () => {
   // A 10 x 4 plate: row 0 dark sky, row 1 a bright beam and a tower at the
