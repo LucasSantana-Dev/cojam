@@ -235,6 +235,17 @@ Transitional: the sintonia glass below stays on each non-room screen only until 
 
 White text on the ground must keep at least 4.5:1. The ground is normalised in OKLCH (lightness window `TINT_L_MIN` 0.36 to `TINT_L_MAX` 0.5, `MIN_CONTRAST` 5.6 in `lib/trackColor.ts`). Measured floor over 72 hues, 4 lightness and 3 chroma levels: 5.61:1 (max 12.11:1), per #341. Secondary and muted text are white at 0.93 to 0.97 alpha and stay above 4.5:1. Glass and scrim only darken, so text on them is at least that ratio. Palco screens: `--palco-text` on `--palco-plate` keeps at least 4.5:1, and each wave PR states the measured ratio.
 
+### Static token ratios (WCAG, measured by `lib/tokenContrast.test.ts`)
+
+Required: text-primary and text-secondary ≥ 4.5:1; accent ≥ 3:1 (decorative/large text). text-muted is informational only — changing it is an owner design call.
+
+| Token | surface-0 | surface-1 | surface-2 | surface-3 | Min required |
+|---|---|---|---|---|---|
+| `--color-text-primary` | 18.49:1 | 18.20:1 | 17.71:1 | 16.74:1 | 4.5:1 ✓ |
+| `--color-text-secondary` | 5.69:1 | 5.60:1 | 5.45:1 | 5.15:1 | 4.5:1 ✓ |
+| `--color-text-muted` | 3.17:1 | 3.12:1 | 3.04:1 | 2.87:1 | — (informational) |
+| `--color-accent` | 6.15:1 | 6.06:1 | 5.89:1 | 5.57:1 | 3:1 ✓ |
+
 ## Copy
 
 PT-BR everywhere a user can see it: room, join errors, relative times, /account, error screens. Casing "CoJam". Error messages are fixed strings that never show tokens, codes or response bodies (#342).

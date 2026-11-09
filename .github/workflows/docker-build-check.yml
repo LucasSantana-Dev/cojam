@@ -1,0 +1,43 @@
+name: Docker build check
+
+# Builds both images WITHOUT pushing when a Dockerfile changes, so a broken
+# base image or registry shows up on the PR instead of in the publish job
+# after merge. Publishing stays in publish-*-image.yml (main only).
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/server/Dockerfile'
+      - 'apps/web/Dockerfile'
+      - '.github/workflows/docker-build-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.image }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: server
+            context: apps/server
+            file: apps/server/Dockerfile
+          - image: web
+            context: .
+            file: apps/web/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false

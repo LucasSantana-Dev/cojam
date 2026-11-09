@@ -17,6 +17,12 @@
 //   - rebound_subs.sub: kept. It is the burn list that stops a consumed guest
 //     token from minting connections again; deleting it would revive the
 //     identity, and it links to nothing once the rest is erased.
+//   - product_events.actor_hash: HMAC of "user:<sub>" (and "client:<id>" for
+//     each client id given) under EVENTS_HMAC_KEY, recomputed with the same
+//     events.Hasher the writer uses. Deleted. A guest without room auth is
+//     hashed per connection: unless the operator has that connection id, the
+//     rows cannot be matched. Rows are anonymous by design and expire after
+//     13 months either way.
 //
 // Reports where the person is the subject are evidence kept under a legal
 // obligation (LGPD art. 7 II and art. 16 I) and are retained unless the
@@ -39,6 +45,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/LucasSantana-Dev/cojam/server/internal/events"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 )
 
@@ -59,6 +66,19 @@ type Request struct {
 	// IncludeSubjectReports deletes reports about the person instead of
 	// keeping them as evidence.
 	IncludeSubjectReports bool
+	// Events recomputes product_events.actor_hash. It must be keyed with the
+	// server's EVENTS_HMAC_KEY; nil skips product_events.
+	Events *events.Hasher
+}
+
+// actorHashes are the product_events.actor_hash values for the person: the
+// same "user:" and "client:" keys the hub hashes (hub.rateLimitKey).
+func (r Request) actorHashes() []string {
+	hs := []string{r.Events.Actor("user:" + r.Sub)}
+	for _, c := range r.ClientIDs {
+		hs = append(hs, r.Events.Actor("client:"+c))
+	}
+	return hs
 }
 
 // Validate rejects requests that would match too much.
@@ -93,6 +113,8 @@ type Counts struct {
 	ModerationSubjectRetained   int64
 
 	ReboundSubsRetained int64
+
+	ProductEventsDeleted int64
 }
 
 // RoomChanges is what ScrubRoom changed in one room.
@@ -329,6 +351,10 @@ func Run(ctx context.Context, pool *pgxpool.Pool, req Request, apply bool) (Coun
 		{"rebound_subs", &c.ReboundSubsRetained, true,
 			`SELECT count(*) FROM rebound_subs WHERE sub = $1`, []any{req.Sub}},
 	}...)
+	if req.Events != nil {
+		steps = append(steps, step{"product_events", &c.ProductEventsDeleted, false,
+			`DELETE FROM product_events WHERE actor_hash = ANY($1::text[])`, []any{req.actorHashes()}})
+	}
 
 	for _, st := range steps {
 		if st.query {

@@ -151,6 +151,31 @@ func TestTelemetryLimiter_RefillsOverTime(t *testing.T) {
 	}
 }
 
+func TestTelemetryLimiter_EvidesIdleKeys(t *testing.T) {
+	l := newTelemetryLimiter()
+	now := time.Now()
+
+	l.allow("1.2.3.4", now)
+
+	l.mu.Lock()
+	_, exists := l.buckets["1.2.3.4"]
+	l.mu.Unlock()
+	if !exists {
+		t.Fatal("bucket must exist after first use")
+	}
+
+	// Advance past both the idle TTL and the sweep interval so sweepLocked fires.
+	future := now.Add(telemetryIdleTTL + telemetrySweepEvery + time.Second)
+	l.allow("9.9.9.9", future)
+
+	l.mu.Lock()
+	_, stillExists := l.buckets["1.2.3.4"]
+	l.mu.Unlock()
+	if stillExists {
+		t.Fatal("idle key must be evicted after idle TTL")
+	}
+}
+
 // callerKey keys IP-based limiters on the real client: CF-Connecting-IP when
 // the request arrived through the local proxy chain (Cloudflare Tunnel ->
 // Caddy -> server, so the peer is a private or loopback address), else the
@@ -251,5 +276,35 @@ func TestTelemetry_SyncDriftRejections(t *testing.T) {
 	}
 	if rec := postTelemetry(t, h, `{`+ok+`}`); rec.Code != http.StatusNoContent {
 		t.Errorf("valid sample: expected 204, got %d", rec.Code)
+	}
+}
+
+func TestTelemetry_VitalRangeCheck(t *testing.T) {
+	h, _ := newHandler()
+	cases := []struct {
+		name string
+		body string
+		want int
+	}{
+		// Valid: within bounds.
+		{"LCP valid", `{"type":"vital","name":"LCP","value":1500}`, http.StatusNoContent},
+		{"INP valid", `{"type":"vital","name":"INP","value":200}`, http.StatusNoContent},
+		{"CLS valid", `{"type":"vital","name":"CLS","value":0.1}`, http.StatusNoContent},
+		// Invalid: negative values.
+		{"LCP negative", `{"type":"vital","name":"LCP","value":-1}`, http.StatusBadRequest},
+		{"INP negative", `{"type":"vital","name":"INP","value":-0.1}`, http.StatusBadRequest},
+		{"CLS negative", `{"type":"vital","name":"CLS","value":-1}`, http.StatusBadRequest},
+		// Invalid: at or above cap.
+		{"LCP at cap", `{"type":"vital","name":"LCP","value":60000}`, http.StatusBadRequest},
+		{"INP huge", `{"type":"vital","name":"INP","value":1e308}`, http.StatusBadRequest},
+		{"CLS at cap", `{"type":"vital","name":"CLS","value":10}`, http.StatusBadRequest},
+		{"CLS above cap", `{"type":"vital","name":"CLS","value":999}`, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if rec := postTelemetry(t, h, tc.body); rec.Code != tc.want {
+				t.Errorf("got %d, want %d", rec.Code, tc.want)
+			}
+		})
 	}
 }

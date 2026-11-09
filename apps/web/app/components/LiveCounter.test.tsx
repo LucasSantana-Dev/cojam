@@ -33,4 +33,22 @@ describe('LiveCounter', () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('does not replace the DOM node when the poll returns the same count', async () => {
+    vi.useFakeTimers();
+    try {
+      respond({ people: 5, rooms: 2 });
+      render(<LiveCounter />);
+      const node = await vi.waitFor(() => screen.getByText(/5 pessoas em 2 salas agora/));
+
+      // Advance past the 30s poll interval; server still returns the same stats.
+      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+      // Same DOM node reference: no remount → role="status" will not re-announce.
+      expect(screen.getByText(/5 pessoas em 2 salas agora/)).toBe(node);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

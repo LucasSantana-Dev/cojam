@@ -61,6 +61,10 @@ type Metrics struct {
 	// RetentionPurgedRows counts rows deleted by the retention sweep (#319),
 	// by table. The label is a fixed table name, never input.
 	RetentionPurgedRows *prometheus.CounterVec
+
+	// SearchProviderFailures counts search provider errors by provider name
+	// (deezer, spotify). Used to detect a total search outage (#396).
+	SearchProviderFailures *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -170,11 +174,16 @@ func New() *Metrics {
 			Name: "music_jam_retention_purged_total",
 			Help: "Rows deleted by the retention sweep, by table (reports, moderation_actions).",
 		}, []string{"table"}),
+		SearchProviderFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_search_provider_failures_total",
+			Help: "Search provider errors by provider (deezer, spotify).",
+		}, []string{"provider"}),
 	}
 	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
 		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.RoomsPersistedEvicted,
 		m.PublishErrors, m.PlayingWithoutTransport, m.VotesCast, m.SkipVotes, m.SkipsByVote, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
-		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject, m.ReportsFiled, m.RetentionPurgedRows)
+		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject, m.ReportsFiled, m.RetentionPurgedRows,
+		m.SearchProviderFailures)
 
 	m.registerFoundation()
 	return m
@@ -240,6 +249,11 @@ func (m *Metrics) ReportFiled(kind string)    { m.ReportsFiled.WithLabelValues(k
 // RetentionPurged counts n rows deleted from table by the retention sweep.
 func (m *Metrics) RetentionPurged(table string, n int64) {
 	m.RetentionPurgedRows.WithLabelValues(table).Add(float64(n))
+}
+
+// SearchProviderFailed counts one search provider failure by provider name.
+func (m *Metrics) SearchProviderFailed(provider string) {
+	m.SearchProviderFailures.WithLabelValues(provider).Inc()
 }
 
 func (m *Metrics) WebVital(name string, v float64) {

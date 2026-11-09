@@ -19,10 +19,12 @@ import (
 // httpx.MaxResponseBytes: this endpoint is an unauthenticated write from the
 // public internet.
 const (
-	telemetryMaxBody   = 4 << 10 // 4 KiB
-	telemetryMaxDetail = 300     // runes, not bytes
-	telemetryBurst     = 20
-	telemetryRefill    = 3 * time.Second
+	telemetryMaxBody    = 4 << 10 // 4 KiB
+	telemetryMaxDetail  = 300     // runes, not bytes
+	telemetryBurst      = 20
+	telemetryRefill     = 3 * time.Second
+	telemetryIdleTTL    = time.Hour
+	telemetrySweepEvery = time.Minute
 )
 
 // Allowlisted names per type. Prometheus labels are taken from these maps and
@@ -37,6 +39,10 @@ var (
 		"track_added": true, "provider_connected": true,
 	}
 	telemetryVitals = map[string]bool{"LCP": true, "INP": true, "CLS": true}
+	// vitalMaxValue caps each web vital. Values at or above the cap (or < 0)
+	// are rejected: an unbounded value would skew the histogram _sum forever.
+	// LCP and INP are in milliseconds; CLS is unitless.
+	vitalMaxValue = map[string]float64{"LCP": 60_000, "INP": 60_000, "CLS": 10}
 	telemetryErrors = map[string]bool{
 		"boundary_segment": true, "boundary_root": true, "ws_terminal": true,
 		"playback_failed": true, "token_refresh_failed": true,
@@ -76,25 +82,32 @@ type telemetryPayload struct {
 	Detail string  `json:"detail"`
 }
 
-// callerLimiter is a token bucket keyed by caller, mirroring the hub's
-// rateLimiter. Each public endpoint gets its own instance so one cannot spend
-// another's budget, and none of them spend the hub's.
+// callerLimiter is a per-key token bucket limiter. Each public endpoint gets
+// its own instance so one endpoint cannot spend another's budget. Refill is
+// computed lazily per key, and idle buckets are swept at most once per
+// sweepEvery interval so the map cannot grow unboundedly.
+type callerBucket struct {
+	tokens float64
+	last   time.Time
+}
+
 type callerLimiter struct {
-	mu      sync.Mutex
-	burst   float64
-	refill  time.Duration
-	buckets map[string]float64
-	seen    map[string]time.Time
-	last    time.Time
+	mu         sync.Mutex
+	burst      float64
+	refill     time.Duration
+	idleTTL    time.Duration
+	sweepEvery time.Duration
+	lastSweep  time.Time
+	buckets    map[string]*callerBucket
 }
 
 func newCallerLimiter(burst float64, refill time.Duration) *callerLimiter {
 	return &callerLimiter{
-		burst:   burst,
-		refill:  refill,
-		buckets: map[string]float64{},
-		seen:    map[string]time.Time{},
-		last:    time.Now(),
+		burst:      burst,
+		refill:     refill,
+		idleTTL:    telemetryIdleTTL,
+		sweepEvery: telemetrySweepEvery,
+		buckets:    make(map[string]*callerBucket),
 	}
 }
 
@@ -106,35 +119,42 @@ func (l *callerLimiter) allow(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// buckets hold tokens CONSUMED, so refill decreases them. A caller back at
-	// zero is indistinguishable from one never seen, so drop the entry.
-	if elapsed := now.Sub(l.last); elapsed > 0 {
-		refill := float64(elapsed) / float64(l.refill)
-		for k := range l.buckets {
-			if v := l.buckets[k] - refill; v <= 0 {
-				delete(l.buckets, k)
-			} else {
-				l.buckets[k] = v
-			}
-		}
-		l.last = now
+	l.sweepLocked(now)
+	b := l.refillLocked(key, now)
+	if b.tokens < 1 {
+		return false
 	}
-	// Evict callers unseen for an hour so the maps stay bounded.
-	for k, t := range l.seen {
-		if now.Sub(t) > time.Hour {
-			delete(l.seen, k)
+	b.tokens--
+	return true
+}
+
+// refillLocked returns key's bucket, created full on first use and refilled
+// for elapsed time since its last access. Callers must hold l.mu.
+func (l *callerLimiter) refillLocked(key string, now time.Time) *callerBucket {
+	b, ok := l.buckets[key]
+	if !ok {
+		b = &callerBucket{tokens: l.burst, last: now}
+		l.buckets[key] = b
+	}
+	b.tokens += float64(now.Sub(b.last)) / float64(l.refill)
+	if b.tokens > l.burst {
+		b.tokens = l.burst
+	}
+	b.last = now
+	return b
+}
+
+// sweepLocked evicts idle buckets at most once per sweepEvery. Callers must hold l.mu.
+func (l *callerLimiter) sweepLocked(now time.Time) {
+	if now.Sub(l.lastSweep) < l.sweepEvery {
+		return
+	}
+	for k, b := range l.buckets {
+		if now.Sub(b.last) > l.idleTTL {
 			delete(l.buckets, k)
 		}
 	}
-	l.seen[key] = now
-
-	// Admit only a whole token: a bucket refilled to just under the burst
-	// must not let one extra request through.
-	if l.buckets[key]+1 > l.burst {
-		return false
-	}
-	l.buckets[key]++
-	return true
+	l.lastSweep = now
 }
 
 // truncateRunes cuts s to at most n runes. Byte slicing would split a
@@ -209,6 +229,11 @@ func telemetryHandler(metrics *obs.Metrics, logger *slog.Logger, limiter *caller
 		case "vital":
 			if !telemetryVitals[p.Name] {
 				metrics.TelemetryRejected("unknown_name")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if cap := vitalMaxValue[p.Name]; p.Value < 0 || p.Value >= cap {
+				metrics.TelemetryRejected("out_of_range")
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}

@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { getStoredUserId } from '@/lib/auth';
+import { useCopyText } from '@/lib/useCopyText';
 
 // Shows the guest id kept in this browser so a person can ask for their data
 // to be erased (LGPD, #318). The id is the only link between a guest and what
@@ -16,7 +17,7 @@ const noopSubscribe = () => () => {};
 // link to the deletion steps).
 export function YourDataId({ inline = false, menu = false }: { inline?: boolean; menu?: boolean } = {}) {
   const id = useSyncExternalStore(noopSubscribe, getStoredUserId, () => null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyText();
   // False on the server and during hydration: the inline variant must not flash
   // "no code" before localStorage has been read.
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
@@ -30,23 +31,13 @@ export function YourDataId({ inline = false, menu = false }: { inline?: boolean;
     ) : null;
   }
 
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(id);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      // Clipboard unavailable or denied: the id is on screen and selectable.
-    }
-  };
-
   if (menu) {
     return (
       <details className="your-data r4-menu__data">
         <summary>Seus dados</summary>
         <p className="your-data-row">
           <code>{id}</code>
-          <button type="button" onClick={copy} aria-label={copied ? 'Código copiado' : 'Copiar código'}>
+          <button type="button" onClick={() => copy(id)} aria-label={copied ? 'Código copiado' : 'Copiar código'}>
             {copied ? 'Copiado' : 'Copiar'}
           </button>
         </p>
@@ -62,7 +53,7 @@ export function YourDataId({ inline = false, menu = false }: { inline?: boolean;
       <p>Para pedir a exclusão dos seus dados, envie este código para o contato da política de privacidade.</p>
       <p className="your-data-row">
         <code>{id}</code>
-        <button type="button" onClick={copy} aria-label={copied ? 'Código copiado' : 'Copiar código'}>
+        <button type="button" onClick={() => copy(id)} aria-label={copied ? 'Código copiado' : 'Copiar código'}>
           {copied ? 'Copiado' : 'Copiar'}
         </button>
       </p>

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/LucasSantana-Dev/cojam/server/internal/events"
 )
 
 // Reactions ("Modo palco", part 2): a member presses Curtir on the playing
@@ -53,6 +55,7 @@ func (h *Hub) reactionWoot(roomID, clientID string) (json.RawMessage, error) {
 	if err := h.publishWoot(roomID, clientID); err != nil {
 		return nil, err
 	}
+	h.emit(events.Event{Name: events.TrackLiked, RoomID: roomID, ActorID: h.actorKey(clientID)})
 	return json.Marshal(map[string]string{"clientId": clientID})
 }
 

@@ -88,8 +88,9 @@ These have all caused real, user-visible failures.
 - Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`), PRs target
   `main`, small and reviewable beats sweeping.
 - CI (`.github/workflows/ci.yml`) runs three jobs on every PR: Go server
-  (build, vet, `go test -race`), Web (drift check, `tsc --noEmit`, lint,
-  vitest, build), and Playwright e2e. All must be green.
+  (build, vet, `go test -race`), Web (`pnpm audit --audit-level high`,
+  drift check, `tsc --noEmit`, lint, vitest), and Playwright e2e.
+  All must be green.
 - Docker images publish to GHCR on merge to `main`; deployment is manual via
   the runbooks (`docs/runbooks/launch-readiness.md`,
   `docs/runbooks/feature-rollout-plan.md`, local-only).

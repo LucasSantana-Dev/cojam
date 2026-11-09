@@ -12,12 +12,17 @@ NEXT_PUBLIC_FEATURE_SPOTIFY=false      # default false
 NEXT_PUBLIC_FEATURE_PRESENCE=true      # default true
 NEXT_PUBLIC_SPOTIFY_CLIENT_ID=<id>     # Spotify PKCE (Web Playback)
 NEXT_PUBLIC_WS_URL=ws://localhost:8080/connection/websocket
+NEXT_PUBLIC_SUPABASE_URL=<url>         # Supabase project URL (build-time fallback; runtime override: COJAM_SUPABASE_URL)
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<key>    # Supabase anon key (build-time fallback; runtime override: COJAM_SUPABASE_ANON_KEY)
+SERVER_ORIGIN=http://localhost:8080    # Go server origin for /api/stats/* rewrites; dev/e2e only (production: Caddy routes before Next sees it)
 ```
 
 `NEXT_PUBLIC_*` are inlined at build time. A deployed image is configured at runtime instead, via `COJAM_*` vars served through `/env.js` (no rebuild):
 
 ```bash
 COJAM_WS_URL=wss://example.com/connection/websocket
+COJAM_SITE_URL=https://example.com    # canonical origin for metadata, sitemap and structured data; unset falls back to https://cojam.lucassantana.tech in production
+COJAM_SPOTIFY_CLIENT_ID=<id>          # runtime override for Spotify PKCE client ID; replaces NEXT_PUBLIC_SPOTIFY_CLIENT_ID in a deployed image
 COJAM_FEATURE_<NAME>=true|false        # runtime override per feature flag
 COJAM_SUPABASE_URL=<url>               # accounts; emitted only with the anon key
 COJAM_SUPABASE_ANON_KEY=<key>
@@ -50,6 +55,8 @@ FEATURE_MATCHING=true
 ROOM_IDLE_TTL_MINUTES=30               # evict memberless rooms idle this long
 ROOM_PERSIST_IDLE_TTL_MINUTES=0        # delete memberless room ROWS idle this long (0=disabled, opt-in; single-instance only)
 REPORT_RETENTION_DAYS=0                # delete reports and moderation actions older than this (0=keep forever)
+EVENTS_HMAC_KEY=<32+ random bytes>     # keys the room/actor hashes of product events; unset = random per boot (hashes not stable across restarts)
+FEATURE_PRODUCT_EVENTS=true            # first-party product events table; default on with DATABASE_URL, always off in memory mode
 LOG_LEVEL=info                         # debug | info | warn | error (default info)
 YOUTUBE_API_KEY=<key>                  # YouTube matching
 SPOTIFY_CLIENT_ID=<id>                 # Spotify matching (client credentials)
@@ -64,6 +71,7 @@ Read in `apps/server/cmd/server/main.go`. Same truthy and falsy values as the we
 | Flag | Default |
 | --- | --- |
 | `FEATURE_MATCHING`, `FEATURE_PLAYLIST_IMPORT`, `FEATURE_RADIO`, `FEATURE_TRACK_DEPTH`, `FEATURE_LYRICS` | on |
+| `FEATURE_PRODUCT_EVENTS` | on with `DATABASE_URL`, off without |
 | `FEATURE_SYNC`, `FEATURE_QUEUE_VOTING`, `FEATURE_ROOM_CHAT`, `FEATURE_PUBLIC_ROOMS`, `FEATURE_VIDEO`, `FEATURE_ROOM_AUTH`, `FEATURE_SUPABASE_AUTH`, `FEATURE_LISTENBRAINZ`, `FEATURE_LASTFM_ENRICH` | off |
 
 > [!IMPORTANT]
@@ -75,7 +83,7 @@ Both retention windows default to **keep forever**. Deleting data is an owner de
 
 | Variable | What it deletes | Default |
 | --- | --- | --- |
-| `ROOM_PERSIST_IDLE_TTL_MINUTES` | Persisted room rows (queue, added-by names and ids, votes, host id, room name) with no connected member and no change for this long. Everything a room holds about a person lives in that one row. | `0` (keep). The policy intends 30 days, `43200`. |
+| `ROOM_PERSIST_IDLE_TTL_MINUTES` | Persisted room rows (queue, added-by names and ids, votes, host id, room name) with no connected member and no change for this long. Everything a room holds about a person lives in that one row. | `0` (keep) in code. Production sets `43200` (30 days), which is the retention the privacy policy states. |
 | `REPORT_RETENTION_DAYS` | `reports` and `moderation_actions` rows older than this many days, by `created_at`. | `0` (keep) |
 
 `REPORT_RETENTION_DAYS` must be a whole number from 0 to 36500; anything else refuses to start, because a typo that silently kept data forever would make the policy false. The purge runs once at boot and then hourly. Each `DELETE` is bounded to 5000 rows, oldest first; a run repeats while batches come back full, up to 10 per table, and logs `retention_backlog` if rows past the window remain for the next run. Logs carry counts only, and `music_jam_retention_purged_total{table}` counts deleted rows.
@@ -87,16 +95,20 @@ The purge is by age only. Neither table has a status or resolution column, so a 
 
 Room idleness is measured by the last change to the row, not the last visit. A room someone opened within the in-memory window (`ROOM_IDLE_TTL_MINUTES`) without changing anything is still held in memory, and a later change saves it again.
 
+### Product events
+
+`FEATURE_PRODUCT_EVENTS` writes anonymous usage events to the `product_events` table (see `docs/observability-metrics.md` and spec 253 section 8). Set `EVENTS_HMAC_KEY` to 32 or more random bytes (`openssl rand -hex 32`) and keep it stable: it keys the hashes of room and actor ids, so changing it makes new events incomparable with old ones. `server erase` needs the same key to find a person's rows (it refuses to run without it unless passed `--skip-product-events`), so changing it also makes earlier rows unerasable by identity. Rows are purged after 13 months (a fixed window, stated on `/privacidade`); the purge runs whenever a database exists, even with the flag off. Dashboards use the read-only `grafana_ro` role from `observability/postgres/grafana-ro.sql`.
+
 ### Erasing one person's data (LGPD)
 
 `server erase` is an operator subcommand of the server binary (#318). It connects with `DATABASE_URL`, runs in one transaction, and prints counts per table only.
 
 ```bash
-server erase --sub <guest id> [--name <display name>] [--client-id <id>]... [--include-subject-reports] --dry-run
-server erase --sub <guest id> [--name <display name>] [--client-id <id>]... [--include-subject-reports] --apply
+server erase --sub <guest id> [--name <display name>] [--client-id <id>]... [--include-subject-reports] [--skip-product-events] --dry-run
+server erase --sub <guest id> [--name <display name>] [--client-id <id>]... [--include-subject-reports] [--skip-product-events] --apply
 ```
 
-It deletes the person's Spotify token row; removes their votes, host role and queue attribution from persisted rooms (names become "Removido"); anonymizes them as the reporter of reports and as the actor or subject of moderation actions. A display name (`--name`) only matches inside rooms where the person's id or a given client id was found, since names are not unique. Reports **about** the person are kept as evidence under a legal obligation (LGPD art. 7 II, art. 16 I) unless `--include-subject-reports` is passed, and moderation rows tied to a kept report stay with it. `[[REVISAR]]` that default with legal review. Stop the server before `--apply`: a room held in memory would write the person back. The guest id is shown to the person on the landing page under "Seus dados". The full procedure is the operator runbook `docs/runbooks/lgpd-erasure.md` (kept out of git, like the other runbooks).
+It deletes the person's Spotify token row; removes their votes, host role and queue attribution from persisted rooms (names become "Removido"); anonymizes them as the reporter of reports and as the actor or subject of moderation actions. It deletes their `product_events` rows by recomputing `actor_hash` with `EVENTS_HMAC_KEY` (for `user:<sub>` and each `--client-id`); without the key it refuses to run unless `--skip-product-events` is passed, for a server that never had one. A guest without room auth is hashed per connection and cannot be matched without that connection id. A display name (`--name`) only matches inside rooms where the person's id or a given client id was found, since names are not unique. Reports **about** the person are kept as evidence under a legal obligation (LGPD art. 7 II, art. 16 I) unless `--include-subject-reports` is passed, and moderation rows tied to a kept report stay with it. `[[REVISAR]]` that default with legal review. Stop the server before `--apply`: a room held in memory would write the person back. The guest id is shown to the person on the landing page under "Seus dados". The full procedure is the operator runbook `docs/runbooks/lgpd-erasure.md` (kept out of git, like the other runbooks).
 
 ## Observability
 

@@ -38,7 +38,7 @@ pnpm --filter web e2e                  # web e2e (two-browser room sync)
 cojam/
 ├── apps/
 │   ├── web/              # Next.js 16 frontend (app/, lib/, e2e/)
-│   └── server/           # Go server (cmd/server, internal/hub|match|queue|obs)
+│   └── server/           # Go server (cmd/server, internal/)
 ├── packages/shared/      # TS protocol types: TrackRef, RoomState
 ├── docs/                 # protocol + specs; ADRs and runbooks
 │                         # (launch-readiness, feature-rollout-plan, feature-flags,

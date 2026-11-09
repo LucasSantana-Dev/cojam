@@ -1,0 +1,1135 @@
+{
+  "uid": "cojam-negocio",
+  "title": "CoJam: negócio",
+  "description": "Uso real do CoJam: salas, entradas, o que toca, pulos e retenção. Fonte: tabela product_events (Postgres, somente leitura).",
+  "tags": [
+    "cojam",
+    "negocio"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "templating": {
+    "list": [
+      {
+        "name": "ds_prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "regex": "/^Prometheus$/",
+        "hide": 2,
+        "refresh": 1,
+        "current": {},
+        "options": [],
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "ds_loki",
+        "type": "datasource",
+        "query": "loki",
+        "regex": "",
+        "hide": 2,
+        "refresh": 1,
+        "current": {},
+        "options": [],
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "provedor",
+        "label": "Provedor da faixa",
+        "description": "Filtra os painéis de faixas tocadas por provedor de origem da faixa.",
+        "type": "custom",
+        "hide": 0,
+        "query": "youtube,spotify,other",
+        "includeAll": true,
+        "allValue": "youtube,spotify,other",
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "cojam"
+      ],
+      "asDropdown": false,
+      "title": "Dashboards do CoJam",
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link"
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "title": "Leia antes",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Todos os números vêm de eventos anônimos gravados pelo servidor (sala e pessoa viram hash; não há IP, apelido nem texto de chat). **Visitante sem login conta como uma pessoa nova a cada conexão**, então retenção é piso, não valor exato. O período é o seletor de tempo no topo (padrão 30 dias)."
+      },
+      "id": 1
+    },
+    {
+      "type": "row",
+      "title": "Salas e pessoas",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 24,
+        "h": 1
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Salas criadas",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT count(*) AS \"Salas\" FROM product_events WHERE name = 'room_created' AND $__timeFilter(at)",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Entradas em salas",
+      "description": "Cada vez que alguém entra numa sala (inclui o criador).",
+      "gridPos": {
+        "x": 4,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT count(*) AS \"Entradas\" FROM product_events WHERE name = 'room_joined' AND $__timeFilter(at)",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Salas que tiveram 2+ pessoas",
+      "description": "Salas com pico de ao menos 2 pessoas juntas numa hora. É o que separa \"abriu\" de \"usou de verdade\".",
+      "gridPos": {
+        "x": 8,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT count(DISTINCT room_hash) AS \"Salas\" FROM product_events WHERE name = 'listener_peak' AND $__timeFilter(at) AND (props->>'n')::int >= 2",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "id": 5
+    },
+    {
+      "type": "stat",
+      "title": "Músicas tocadas",
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT count(*) AS \"Músicas\" FROM product_events WHERE name = 'track_started' AND $__timeFilter(at)",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "id": 6
+    },
+    {
+      "type": "stat",
+      "title": "Curtidas",
+      "description": "",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT count(*) AS \"Curtidas\" FROM product_events WHERE name = 'track_liked' AND $__timeFilter(at)",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "id": 7
+    },
+    {
+      "type": "stat",
+      "title": "Horas-sala com 2+ pessoas",
+      "description": "Aproximação do tempo ouvindo junto: cada linha listener_peak com n>=2 é uma hora em que a sala teve pico de 2 ou mais pessoas. Superestima salas que só encostaram no 2 e subestima quem ficou sozinho.",
+      "gridPos": {
+        "x": 20,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT count(*) AS \"Horas\" FROM product_events WHERE name = 'listener_peak' AND $__timeFilter(at) AND (props->>'n')::int >= 2",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "id": 8
+    },
+    {
+      "type": "timeseries",
+      "title": "Salas criadas, entradas e salas com 2+ pessoas por dia",
+      "description": "Normal: entradas maiores que salas criadas e algumas salas com 2+ pessoas. Preocupante: salas criadas sem entradas de outras pessoas (ninguém convida) ou nenhuma sala com 2+.",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', at) AS time, count(*) FILTER (WHERE name = 'room_created') AS \"Salas criadas\", count(*) FILTER (WHERE name = 'room_joined') AS \"Entradas\", count(DISTINCT room_hash) FILTER (WHERE name = 'listener_peak' AND (props->>'n')::int >= 2) AS \"Salas com 2+ pessoas\" FROM product_events WHERE name IN ('room_created','room_joined','listener_peak') AND $__timeFilter(at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Horas-sala com 2+ pessoas por dia (tempo ouvindo junto)",
+      "description": "Aproximação: conta horas em que a sala teve pico de 2+ pessoas, não minutos exatos. Use para ver tendência, não para faturar.",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', at) AS time, count(*) AS \"Horas-sala\" FROM product_events WHERE name = 'listener_peak' AND $__timeFilter(at) AND (props->>'n')::int >= 2 GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10
+    },
+    {
+      "type": "row",
+      "title": "Músicas",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 1
+      },
+      "id": 11
+    },
+    {
+      "type": "timeseries",
+      "title": "Músicas por sala por dia",
+      "description": "Média de músicas iniciadas por sala que tocou algo no dia. Normal: acima de 3. Preocupante: perto de 1 (a sala toca uma música e acaba).",
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', at) AS time, round(count(*)::numeric / nullif(count(DISTINCT room_hash), 0), 1) AS \"Músicas por sala\" FROM product_events WHERE name = 'track_started' AND $__timeFilter(at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12
+    },
+    {
+      "type": "timeseries",
+      "title": "YouTube vs Spotify (origem da faixa)",
+      "description": "Provedor da faixa quando ela começa. A escolha de onde a pessoa ouve (Ouvir no) é do navegador e o servidor não vê. Dropdown Provedor filtra.",
+      "gridPos": {
+        "x": 8,
+        "y": 17,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', at) AS time, coalesce(props->>'provider', 'other') AS metric, count(*) AS value FROM product_events WHERE name = 'track_started' AND $__timeFilter(at) AND coalesce(props->>'provider', 'other') = ANY(string_to_array('${provedor:csv}', ',')) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 13
+    },
+    {
+      "type": "timeseries",
+      "title": "Origem da música (manual, autoplay, rádio, histórico)",
+      "description": "manual = alguém escolheu; autoplay = veio depois de outra; rádio e histórico = vieram da origem da faixa. Muito autoplay e pouco manual = sala deixada tocando sozinha.",
+      "gridPos": {
+        "x": 16,
+        "y": 17,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', at) AS time, coalesce(props->>'source', 'desconhecida') AS metric, count(*) AS value FROM product_events WHERE name = 'track_started' AND $__timeFilter(at) AND coalesce(props->>'provider', 'other') = ANY(string_to_array('${provedor:csv}', ',')) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 14
+    },
+    {
+      "type": "row",
+      "title": "Pulos e curtidas",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 1
+      },
+      "id": 15
+    },
+    {
+      "type": "timeseries",
+      "title": "Pulos por voto, anfitrião e automático",
+      "description": "Automático = a faixa não tocou e o servidor pulou. Muito automático = problema de fonte (veja CoJam: erros). Por voto = a sala decidiu junta.",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', at) AS time, CASE props->>'by' WHEN 'vote' THEN 'Por voto' WHEN 'host' THEN 'Anfitrião' WHEN 'auto' THEN 'Automático' ELSE 'Outro' END AS metric, count(*) AS value FROM product_events WHERE name = 'track_skipped' AND $__timeFilter(at) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 16
+    },
+    {
+      "type": "timeseries",
+      "title": "Curtidas por dia",
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', at) AS time, count(*) AS \"Curtidas\" FROM product_events WHERE name = 'track_liked' AND $__timeFilter(at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 17
+    },
+    {
+      "type": "timeseries",
+      "title": "Pulos por voto (contador do servidor)",
+      "description": "Dados do Prometheus (reinicia a contagem quando o servidor reinicia). Votos muito acima de pulos = a sala vota e não chega ao limite.",
+      "gridPos": {
+        "x": 18,
+        "y": 26,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "expr": "sum(increase(music_jam_skips_by_vote_total{job=\"cojam-server\"}[$__rate_interval]))",
+          "legendFormat": "pulos por voto",
+          "instant": false,
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "expr": "sum(increase(music_jam_skip_votes_total{job=\"cojam-server\"}[$__rate_interval]))",
+          "legendFormat": "votos para pular",
+          "instant": false,
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 18
+    },
+    {
+      "type": "row",
+      "title": "Buscas e provedores",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 1
+      },
+      "id": 19
+    },
+    {
+      "type": "stat",
+      "title": "Acerto do cache de busca",
+      "description": "Das buscas por fonte (YouTube e Spotify), quantas foram respondidas sem gastar cota. Normal: acima de 60%. Baixo = cota do YouTube vai acabar cedo.",
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE props->>'cache_hit' = 'true') / nullif(count(*), 0), 1) AS \"Acerto (%)\" FROM product_events WHERE name = 'search' AND $__timeFilter(at) AND props->>'provider' IN ('youtube','spotify')",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "green",
+                "value": 60
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "sem buscas"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "id": 20
+    },
+    {
+      "type": "timeseries",
+      "title": "Buscas por dia",
+      "description": "catalog = busca digitada na tela; youtube e spotify = resolução de fonte. Para catalog o cache_hit não é medido.",
+      "gridPos": {
+        "x": 6,
+        "y": 35,
+        "w": 9,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', at) AS time, coalesce(props->>'provider', 'outro') || CASE WHEN props->>'cache_hit' = 'true' THEN ' (cache)' ELSE '' END AS metric, count(*) AS value FROM product_events WHERE name = 'search' AND $__timeFilter(at) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 21
+    },
+    {
+      "type": "timeseries",
+      "title": "Provedor conectado por dia",
+      "description": "Pessoas que conectaram a conta do Spotify. Zero por semanas = ninguém usa o Spotify ou o fluxo quebrou.",
+      "gridPos": {
+        "x": 15,
+        "y": 35,
+        "w": 9,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "SELECT date_trunc('day', at) AS time, coalesce(props->>'provider', 'outro') AS metric, count(*) AS value FROM product_events WHERE name = 'provider_connected' AND $__timeFilter(at) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 22
+    },
+    {
+      "type": "row",
+      "title": "Retenção",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 43,
+        "w": 24,
+        "h": 1
+      },
+      "id": 23
+    },
+    {
+      "type": "table",
+      "title": "Retenção semanal por coorte (W1 e W4)",
+      "description": "Coorte = semana (segunda a domingo, UTC) em que a pessoa apareceu pela primeira vez. W1 = % que voltou na semana seguinte; W4 = % que voltou 4 semanas depois. Vazio enquanto a semana ainda não fechou. Visitante sem login vira outra pessoa a cada conexão, então o número é um piso. Bom: W1 acima de 20%.",
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cojam-postgres"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cojam-postgres"
+          },
+          "rawSql": "WITH a AS (SELECT actor_hash, date_trunc('week', at) AS w FROM product_events WHERE actor_hash IS NOT NULL GROUP BY 1, 2), f AS (SELECT actor_hash, min(w) AS c FROM a GROUP BY 1) SELECT f.c::date AS \"Semana de entrada\", count(*) AS \"Pessoas\", round(100.0 * count(*) FILTER (WHERE f.c + interval '2 weeks' <= now() AND EXISTS (SELECT 1 FROM a x WHERE x.actor_hash = f.actor_hash AND x.w = f.c + interval '1 week')) / nullif(count(*) FILTER (WHERE f.c + interval '2 weeks' <= now()), 0), 1) AS \"Voltou na semana 1 (%)\", round(100.0 * count(*) FILTER (WHERE f.c + interval '5 weeks' <= now() AND EXISTS (SELECT 1 FROM a x WHERE x.actor_hash = f.actor_hash AND x.w = f.c + interval '4 weeks')) / nullif(count(*) FILTER (WHERE f.c + interval '5 weeks' <= now()), 0), 1) AS \"Voltou na semana 4 (%)\" FROM f WHERE f.c > now() - interval '16 weeks' GROUP BY 1 ORDER BY 1 DESC",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "sem dados de coorte"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Voltou.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 10
+                    },
+                    {
+                      "color": "green",
+                      "value": 20
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {},
+      "id": 24
+    }
+  ]
+}

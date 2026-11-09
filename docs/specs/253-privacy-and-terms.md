@@ -92,17 +92,20 @@ architecture:
 
 - **No audio or video ever passes through CoJam's servers.** Each listener plays
   on their own account through the provider's own SDK.
-- No analytics or tracking exists today (#251 is unimplemented). If it lands,
-  the policy must change with it, in the same PR.
+- No third-party analytics or tracking exists. First-party product events do
+  (section 8, added 2026-10-09 in the same change that introduced them), kept
+  in CoJam's own Postgres. Any further collection must change the policy in
+  the same PR.
 
 ## 3. Retention, from the configuration
 
 Retention claims must match the code, or the policy is false:
 
 - `ROOM_IDLE_TTL_MINUTES` (default 30) evicts memberless rooms from memory.
-- `ROOM_PERSIST_IDLE_TTL_MINUTES` deletes room **rows**. It is unset in
-  production today, which means `0`, which means disabled, which means
-  **persisted rooms are currently retained indefinitely**.
+- `ROOM_PERSIST_IDLE_TTL_MINUTES` deletes room **rows**. It was unset in
+  production when this spec was drafted, which meant `0`, disabled, so
+  **persisted rooms were retained indefinitely**. Production now sets
+  `43200` (30 days) and the policy page states that as current.
 - Chat is ephemeral and dies with the room in memory. Deploys also end it, by
   decision (ADR-0006).
 
@@ -118,6 +121,11 @@ gone.
 
 Do not publish the policy before the setting is applied. A retention promise
 the configuration does not keep is worse than no promise.
+
+Product events (section 8) are kept **13 months**, then purged by the
+retention sweep (`retention_purged_total{table="product_events"}`). The window
+is a constant in `cmd/server/events.go`, not an environment variable, because
+the policy states it.
 
 ## 4. Deletion has to actually work
 
@@ -167,3 +175,100 @@ Shorter, and mostly about setting expectations:
 - Reviewed by someone qualified in Brazilian law **before** external users are
   invited.
 - If #251 analytics lands, the policy is updated in the same PR.
+- The product events description in section 8 and the policy table agree with
+  `docs/observability-metrics.md` (events, props, retention) in the same PR.
+
+## 8. First-party product events (owner decision 2026-10-09)
+
+Decision: "Tabela de eventos propria". Product events live in CoJam's Postgres
+(`product_events`), with no IP, no nickname, no chat text, deleted after 13
+months, read later through aggregated Grafana dashboards. Until now the policy
+promised only counts (the browser telemetry of 245/251, Prometheus counters).
+This section is what makes the wider promise true; `/privacidade` sections 3, 4,
+5 and 8 were updated in the same change.
+
+### 8.1 What is recorded
+
+Eight event names, exact strings in `internal/events`: `room_created`,
+`room_joined`, `track_started`, `track_skipped`, `track_liked`, `search`,
+`provider_connected`, `listener_peak`. Each row is `at`, `name`, `room_hash`,
+`actor_hash` and a small `props` object whose keys and values are an allowlist
+enforced in code (an unknown key or value is dropped before it is buffered).
+
+`room_hash` and `actor_hash` are the first 16 bytes of HMAC-SHA256 over the
+room id or the connection identity, keyed by `EVENTS_HMAC_KEY`. Room ids are
+capabilities (spec 245 section 2.5), so the clear value is never stored.
+
+### 8.2 What is not recorded
+
+IP address, display name, chat text, search text, track titles and artists, the
+clear room id, the clear guest identifier, Spotify tokens or scopes.
+
+### 8.3 Pseudonymised, not anonymous
+
+The same input always yields the same hash, which is what lets a dashboard
+count distinct rooms and people. Whoever holds the key and a candidate id can
+recompute the hash, so under LGPD these are **pseudonymised personal data**, not
+anonymised data (art. 13 paragraph 4 and art. 12). The policy says so in plain
+words. Guests without room auth get a per-connection actor, so they are not
+linkable across visits; users with an anonymous or account sub are stable.
+
+### 8.4 Balancing test (legitimo interesse, art. 7 IX and art. 10)
+
+Drafted by engineering to hand to the reviewer. Not reviewed by a lawyer.
+
+- **Purpose.** Understand how CoJam is used (do rooms get created and shared,
+  do tracks play, do people skip, which provider) so the product can be
+  improved. Legitimate, specific and stated on the policy.
+- **Necessity.** Aggregate Prometheus counters already answer "how many". They
+  cannot answer "how many distinct rooms" or "what share of rooms ever had a
+  second listener" without a per-room identifier, and they vanish on restart.
+  The data collected is the minimum for those questions: a pseudonymous room
+  and actor, an event name and enum props. No content, no identity, no IP.
+- **Balancing and safeguards.** Impact on the person is low: the data is
+  behavioural at the level of "a track started", cannot be tied to a name or an
+  IP from the table alone, and is never used to profile, target or sell.
+  Safeguards: keyed hashing; allowlisted props; 13 month retention with an
+  automatic purge; RLS on with no policy for anyone but a read-only role that
+  sees only the table's non-id columns; access through aggregated dashboards.
+  Reasonable expectation: a shared listening room is a social product and its
+  operator measuring room and track counts is expected, but the policy states
+  it up front. A minor-specific concern (ECA Digital) is limited by the same
+  minimisation: nothing recorded reveals who a minor is.
+- **Objection.** The policy gives the contact for objection (art. 18
+  paragraph 2). Past rows: `server erase` deletes them. It recomputes
+  `actor_hash` for `user:<sub>` (and `client:<id>` for each connection id the
+  operator has) with the same `events.Hasher` and `EVENTS_HMAC_KEY` the server
+  writes with, and deletes the matching `product_events` rows in the same
+  transaction as the rest of the erasure (procedure: the LGPD erasure
+  runbook). The command refuses to run without the key unless the operator
+  passes `--skip-product-events`, for a server that never had one. Future
+  rows: a person who objects but keeps using CoJam with the same identity is
+  hashed again; stopping that needs a suppression list, not implemented.
+  Owner decision 2026-10-09: no suppression list for now. `/privacidade`
+  section 8 says the objection follows the erasure procedure (which also
+  removes the other data tied to the code), that per-connection events cannot
+  be found, and that clearing CoJam's site data in the browser gives a new
+  code so new events are not linked to the old one.
+- **Guests without an account.** A guest without room auth is hashed as
+  `client:<connection id>`, a new value per connection that the person cannot
+  see or give us. Their rows cannot be matched for erasure unless the operator
+  finds the connection id elsewhere (a report or a moderation row); otherwise
+  they stay until the 13 month purge. They are also not linkable to each
+  other, which is the reason this is acceptable.
+- **Open items for the reviewer.** Whether pseudonymised events need a DPIA
+  line in the records of processing; whether the minimum age text must mention
+  events for the public directory; whether a longer or shorter window fits;
+  whether erasing past rows is enough to honour an objection from someone who
+  keeps using CoJam (with the advice to clear site data), or a suppression list
+  (8.4, Objection) is required; whether handling an objection through the full
+  erasure, which also removes votes and attribution, is proportionate or an
+  events-only path is needed.
+
+### 8.5 Operations
+
+`EVENTS_HMAC_KEY` must be set in production (32 or more random bytes). Without
+it each boot uses a random key and hashes do not compare across restarts.
+`FEATURE_PRODUCT_EVENTS=false` turns the writer off; the purge still runs
+whenever a database exists, so earlier rows keep the 13 month promise. The
+dashboard role is `observability/postgres/grafana-ro.sql`.

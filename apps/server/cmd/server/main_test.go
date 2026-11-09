@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // presenceConnInfo forwards {name, platform?} into presence ConnInfo (#171):
@@ -130,5 +134,139 @@ func TestEnvPositiveInt(t *testing.T) {
 		if got := envPositiveInt(get, key, 30); got != want {
 			t.Errorf("%s: got %d, want %d", key, got, want)
 		}
+	}
+}
+
+func TestParseOrigins(t *testing.T) {
+	cases := []struct {
+		name  string
+		raw   string
+		want  map[string]bool
+	}{
+		{
+			"blank defaults to localhost",
+			"",
+			map[string]bool{"http://localhost:3000": true, "http://127.0.0.1:3000": true},
+		},
+		{
+			"whitespace-only defaults to localhost",
+			"   ",
+			map[string]bool{"http://localhost:3000": true, "http://127.0.0.1:3000": true},
+		},
+		{
+			"single origin",
+			"https://cojam.app",
+			map[string]bool{"https://cojam.app": true},
+		},
+		{
+			"comma-separated list",
+			"https://cojam.app,https://staging.cojam.app",
+			map[string]bool{"https://cojam.app": true, "https://staging.cojam.app": true},
+		},
+		{
+			"padded comma list",
+			"  https://a.com ,  https://b.com  ",
+			map[string]bool{"https://a.com": true, "https://b.com": true},
+		},
+		{
+			"wildcard passthrough",
+			"*",
+			map[string]bool{"*": true},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseOrigins(tc.raw)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for k := range tc.want {
+				if !got[k] {
+					t.Errorf("missing origin %q in %v", k, got)
+				}
+			}
+		})
+	}
+}
+
+func TestFeatureEnabledIn(t *testing.T) {
+	cases := []struct {
+		val  string
+		dflt bool
+		want bool
+	}{
+		{"1", false, true},
+		{"true", false, true},
+		{"on", false, true},
+		{"yes", false, true},
+		{"TRUE", false, true},
+		{"ON", false, true},
+		{"0", true, false},
+		{"false", true, false},
+		{"off", true, false},
+		{"no", true, false},
+		{"FALSE", true, false},
+		{"", true, true},
+		{"", false, false},
+		{"unknown", true, true},
+		{"unknown", false, false},
+	}
+	for _, tc := range cases {
+		get := func(string) string { return tc.val }
+		if got := featureEnabledIn(get, "KEY", tc.dflt); got != tc.want {
+			t.Errorf("featureEnabledIn(%q, dflt=%v) = %v, want %v", tc.val, tc.dflt, got, tc.want)
+		}
+	}
+}
+
+func TestEnvDurationMinutes(t *testing.T) {
+	dflt := 30 * time.Minute
+	cases := []struct {
+		val  string
+		want time.Duration
+	}{
+		{"", dflt},
+		{"  ", dflt},
+		{"0", dflt},
+		{"-1", dflt},
+		{"garbage", dflt},
+		{"1", 1 * time.Minute},
+		{"60", 60 * time.Minute},
+		{" 45 ", 45 * time.Minute},
+	}
+	for _, tc := range cases {
+		get := func(string) string { return tc.val }
+		if got := envDurationMinutes(get, "KEY", dflt); got != tc.want {
+			t.Errorf("envDurationMinutes(%q) = %v, want %v", tc.val, got, tc.want)
+		}
+	}
+}
+
+// readyzHandler returns 503 when the pool cannot reach the database.
+// 127.0.0.1:1 is a refused port (nothing listens there).
+func TestReadyzHandler_PostgresUnreachable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, "postgres://x:x@127.0.0.1:1/x")
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	defer pool.Close()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+
+	readyzHandler(pool).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body not JSON: %v", err)
+	}
+	if body["status"] != "not ready" {
+		t.Fatalf("status field = %q, want \"not ready\"", body["status"])
 	}
 }

@@ -143,6 +143,46 @@ func TestGetOrCreateRoom_LoadFailure_FailsRPC(t *testing.T) {
 	}
 }
 
+// #392: a save failure during the legacy-history migration must be counted.
+// The migration fires when a loaded room has played tracks behind the
+// NowPlaying pointer; it persists via Save and counts any error as
+// StoreError("save").
+func TestLegacyMigration_SaveFailureCounted(t *testing.T) {
+	legacyState := &queue.RoomState{
+		RoomID:       "legacyroom",
+		NowPlayingID: "t2",
+		Queue: []queue.TrackRef{
+			{ID: "t1", Title: "before", Artist: "x"},
+			{ID: "t2", Title: "current", Artist: "x"},
+		},
+	}
+	metrics := obs.New()
+	s := &legacySaveFailStore{state: legacyState, saveErr: errors.New("disk full")}
+	h := NewHub(nil).WithStore(s).WithObservability(nil, metrics)
+
+	if _, err := h.HandleRPC("room.join", []byte(`{"roomId":"legacyroom"}`), ""); err != nil {
+		t.Fatalf("legacy migration save failure must not fail the RPC: %v", err)
+	}
+	if got := testutil.ToFloat64(metrics.StoreErrors.WithLabelValues("save")); got < 1 {
+		t.Fatalf("store_errors_total{op=save} = %v, want >=1", got)
+	}
+}
+
+type legacySaveFailStore struct {
+	state   *queue.RoomState
+	saveErr error
+}
+
+func (s *legacySaveFailStore) Load(_ context.Context, _ string) (*queue.RoomState, error) {
+	return s.state, nil
+}
+func (s *legacySaveFailStore) Save(_ context.Context, _ *queue.RoomState) error {
+	return s.saveErr
+}
+func (s *legacySaveFailStore) DeleteIdleRooms(_ context.Context, _ time.Time, _ map[string]struct{}) (int64, error) {
+	return 0, nil
+}
+
 // Save failures stay non-fatal to the RPC (write-through is best-effort) but
 // must be counted, not invisible (#194/#195).
 func TestMutate_SaveFailure_Counted(t *testing.T) {
@@ -242,6 +282,38 @@ func TestObserveRPC_LogLevelByErrorKind(t *testing.T) {
 			}
 			if rec["level"] != tc.want || rec["err"] != tc.err.Error() {
 				t.Fatalf("level=%v err=%v, want level %s err %q", rec["level"], rec["err"], tc.want, tc.err.Error())
+			}
+		})
+	}
+}
+
+// sync.ping runs every few seconds per client: its ok line is logged only when
+// slow. Other methods and the Warn/Error paths are unchanged; metrics count all.
+func TestObserveRPC_PingQuiet(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		err    error
+		d      time.Duration
+		want   bool
+	}{
+		{"ping fast", "sync.ping", nil, time.Millisecond, false},
+		{"ping slow", "sync.ping", nil, 500 * time.Millisecond, true},
+		{"ping fast user error", "sync.ping", userErrorf("nope"), time.Millisecond, true},
+		{"ping fast internal error", "sync.ping", errors.New("boom"), time.Millisecond, true},
+		{"other fast", "queue.add", nil, time.Millisecond, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			metrics := obs.New()
+			h := NewHub(nil).WithObservability(slog.New(slog.NewJSONHandler(&buf, nil)), metrics)
+			h.observeRPC(tc.method, []byte(`{"roomId":"p1"}`), tc.err, tc.d)
+			if got := buf.Len() > 0; got != tc.want {
+				t.Fatalf("logged=%v, want %v (buf=%q)", got, tc.want, buf.String())
+			}
+			if n := testutil.CollectAndCount(metrics.RPCDuration); n != 1 {
+				t.Fatalf("metric series = %d, want 1 (counting must stay)", n)
 			}
 		})
 	}

@@ -14,7 +14,20 @@ export function LiveCounter({ pill = false, className = '' }: { pill?: boolean; 
     const controller = new AbortController();
     const load = async () => {
       const next = await fetchLiveStats(controller.signal);
-      if (!controller.signal.aborted) setStats(next);
+      if (!controller.signal.aborted) {
+        // Return the previous reference when values are unchanged so the
+        // role="status" node stays stable and screen readers don't re-announce.
+        setStats((prev) => {
+          if (
+            prev !== null &&
+            next !== null &&
+            prev.people === next.people &&
+            prev.rooms === next.rooms
+          )
+            return prev;
+          return next;
+        });
+      }
     };
     void load();
     const timer = setInterval(() => {

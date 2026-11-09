@@ -44,7 +44,7 @@ type foundation struct {
 var panicCounter atomic.Pointer[prometheus.CounterVec]
 
 // SafeGoWheres are the known goroutine labels, initialised at boot.
-var SafeGoWheres = []string{"hub_enrich", "hub_evict", "hub_heartbeat", "hub_radio", "match_search", "report_notify", "report_retention", "moderation_audit", "search_purge"}
+var SafeGoWheres = []string{"hub_enrich", "hub_evict", "hub_heartbeat", "hub_radio", "events_writer", "match_search", "report_notify", "report_retention", "moderation_audit", "search_purge"}
 
 func (m *Metrics) registerFoundation() {
 	m.StoreSaveDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
