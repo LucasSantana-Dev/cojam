@@ -77,10 +77,24 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   };
 
   // Auto-scroll to the newest line on append only when pinned to the bottom.
+  // Keyed on the last id, not the length: the store caps the list at 100, so
+  // past that an append leaves the length unchanged.
+  const lastId = chat.length ? chat[chat.length - 1].id : null;
   useEffect(() => {
     const el = listRef.current;
     if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [chat.length]);
+  }, [lastId]);
+  // A hidden panel (palco on the Palco tab, a closed drawer) cannot scroll, and
+  // a keyboard or layout change resizes the list: keep a pinned list at the bottom.
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (pinnedToBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Cor da faixa motion (#325): a new line springs in. Only live arrivals (one to
   // three at a time), never the history that lands on join. Off under
