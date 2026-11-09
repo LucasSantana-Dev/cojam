@@ -2739,7 +2739,7 @@ textarea.age-gate__input { resize: vertical; }
   bottom: calc(100% + 0.5rem);
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(3, 44px);
+  grid-template-columns: repeat(4, 44px);
   gap: 0.25rem;
   padding: 0.375rem;
   border-radius: 0.8rem;
