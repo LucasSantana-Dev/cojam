@@ -30,7 +30,7 @@ import {
   type Material,
   type MeshBasicMaterialParameters,
 } from 'three';
-import { DESK_BOTTOM, DESK_TOP, EDGE_COLS, plainSideColours, SIDE_EXT, SPLIT, SPRITE_H, SPRITE_W, type Framing, type Slot, type WorldDef } from '@/lib/palco';
+import { DESK_BOTTOM, DESK_TOP, EDGE_COLS, headRow, plainSideColours, SIDE_EXT, SPLIT, SPRITE_H, SPRITE_W, type Framing, type Slot, type WorldDef } from '@/lib/palco';
 import { beatAt } from '@/lib/beatClock';
 import { serverNow } from '@/lib/playbackSync';
 import { CHARACTER_COUNT } from '@/lib/characters';
@@ -212,6 +212,8 @@ interface CharTex {
   // idle), the rest are 4 frame loops. A null entry is the idle pose.
   moves: Array<Array<[Texture, Texture] | null>>;
   front: Texture | null;
+  // Empty rows above the head (a seated sprite): the booth lifts it by this.
+  lift: number;
 }
 
 type Facing = 'front' | 'back';
@@ -707,6 +709,7 @@ export class PalcoScene {
         ...(this.imgs.moves[id] ?? []).map((frames) => frames.map((f) => arms(f))),
       ].filter((m) => m[0] !== null),
       front: front ? texFrom(crop(front, 0, 0, SPRITE_W, SPRITE_H)) : null,
+      lift: headRow(crop(front ?? back, 0, 0, SPRITE_W, SPRITE_H).getContext('2d')!.getImageData(0, 0, SPRITE_W, SPRITE_H).data, SPRITE_W, SPRITE_H),
     };
     this.charTex.set(id, t);
     return t;
@@ -834,10 +837,11 @@ export class PalcoScene {
       }
       const bob = motion && b.rise >= 1 ? ((beat % 1) < 0.5 ? 1 : 0) : 0;
       const sink = Math.round((1 - b.rise) * 40);
-      const y = b.top + sink;
+      const lift = b.who ? this.chars(b.who.characterId).lift : 0;
+      const y = b.top + sink - lift;
       if (b.def.desk) {
         // Show only the rows above the desk's bottom edge: whole rows.
-        const vis = DESK_BOTTOM - sink;
+        const vis = Math.min(SPRITE_H, DESK_BOTTOM - sink + lift);
         const map = (b.mesh.material as MeshBasicMaterial).map;
         if (map) { map.repeat.y = vis / SPRITE_H; map.offset.y = 1 - vis / SPRITE_H; }
         b.mesh.scale.y = vis / SPRITE_H;
@@ -846,7 +850,7 @@ export class PalcoScene {
       } else {
         this.put(b.mesh, b.def.x, y + bob);
       }
-      const [ax, ay] = this.css(b.def.x + SPRITE_W / 2, b.def.desk ? b.top + DESK_BOTTOM : y);
+      const [ax, ay] = this.css(b.def.x + SPRITE_W / 2, b.def.desk ? b.top + DESK_BOTTOM : y + lift);
       out.booths.push({ key: b.who?.key ?? null, x: ax, y: ay, visible: Boolean(b.who) && b.rise >= 1 });
     });
 

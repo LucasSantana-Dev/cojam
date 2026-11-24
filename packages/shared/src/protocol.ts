@@ -188,7 +188,7 @@ export type ReactionWootPub = {
 };
 
 // The emotes of the Reagir bar (reaction.emote); the server rejects any other.
-export const EMOTES = ['amei', 'fogo', 'rindo', 'palmas', 'uau', 'cantando'] as const;
+export const EMOTES = ['amei', 'fogo', 'rindo', 'palmas', 'uau', 'cantando', 'triste'] as const;
 export type Emote = (typeof EMOTES)[number];
 
 // ReactionEmotePub: a member sent an emote (reaction.emote). Same contract as

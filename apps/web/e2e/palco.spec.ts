@@ -170,7 +170,7 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
       const bar = hud.getByRole('group', { name: 'Reações' });
       await expect(bar).toBeVisible();
       const labels = await bar.getByRole('button').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
-      expect(labels).toEqual(['Amei', 'Fogo', 'Rindo', 'Palmas', 'Uau', 'Cantando']);
+      expect(labels).toEqual(['Amei', 'Fogo', 'Rindo', 'Palmas', 'Uau', 'Cantando', 'Triste']);
       const player = await playerBox(page);
       for (const b of await bar.getByRole('button').all()) {
         const r = (await b.boundingBox())!;
