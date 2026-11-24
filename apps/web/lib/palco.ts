@@ -139,6 +139,16 @@ const STRIP_TAG_ROWS = 14;
 // World pixels the scene draws past each side of the art (sky, ground, crowd).
 export const SIDE_EXT = 60;
 
+// First row with any opaque pixel of an RGBA sprite. A seated character (the
+// wheelchair user) starts lower: a booth lifts it by this much so the head clears
+// the booth front, which covers everything below the 17th row.
+export function headRow(px: Uint8ClampedArray, w: number, h: number): number {
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3]) return y;
+  }
+  return 0;
+}
+
 // Plain side extension of a plate: each row takes the most common dark colour
 // of the plate's EDGE_COLS outer columns (x0..x0+EDGE_COLS) when it covers most
 // of them, the sky or ground there. Rows where the edge is busy (towers, booths,

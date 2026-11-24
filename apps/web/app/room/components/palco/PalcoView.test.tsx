@@ -231,7 +231,7 @@ describe('PalcoView', () => {
     try {
       await mount();
       const bar = screen.getByRole('group', { name: 'Reações' });
-      expect([...bar.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Amei', 'Fogo', 'Rindo', 'Palmas', 'Uau', 'Cantando']);
+      expect([...bar.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['Amei', 'Fogo', 'Rindo', 'Palmas', 'Uau', 'Cantando', 'Triste']);
       fireEvent.click(screen.getByRole('button', { name: 'Fogo' }));
       expect(fake.sendEmote).toHaveBeenCalledWith('R1', 'fogo');
       // Cooling down: a second press within 600 ms sends nothing.
