@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveFeatures, FEATURE_ENV_VARS } from './features';
+import { resolveFeatures, parseFlag, FEATURE_ENV_VARS } from './features';
 
 describe('resolveFeatures', () => {
   it('youtube+presence default on, spotify/listenbrainz/lastfmEnrich/sync default off', () => {
@@ -125,5 +125,17 @@ describe('FEATURE_ENV_VARS', () => {
     for (const envVar of Object.values(FEATURE_ENV_VARS)) {
       expect(envVar).toMatch(/^COJAM_FEATURE_/);
     }
+  });
+});
+
+describe('parseFlag', () => {
+  it.each(['1', 'true', 'on', 'yes', 'TRUE', 'Yes'])('reads %s as true', (v) => {
+    expect(parseFlag(v)).toBe(true);
+  });
+  it.each(['0', 'false', 'off', 'no', 'FALSE', 'Off'])('reads %s as false', (v) => {
+    expect(parseFlag(v)).toBe(false);
+  });
+  it.each([undefined, '', 'maybe'])('reads %s as undefined', (v) => {
+    expect(parseFlag(v)).toBeUndefined();
   });
 });
