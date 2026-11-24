@@ -46,15 +46,20 @@ export const FEATURE_ENV_VARS: Record<FeatureName, string> = {
 const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
 const FALSY = new Set(['0', 'false', 'off', 'no']);
 
+// parseFlag reads one toggle value: 1/true/on/yes → true, 0/false/off/no →
+// false (case-insensitive), unset or unrecognized → undefined so the caller
+// applies its own default. Mirrors featureEnabledIn in the Go server.
+export function parseFlag(raw: string | undefined): boolean | undefined {
+  if (raw === undefined) return undefined;
+  const v = raw.toLowerCase();
+  if (TRUTHY.has(v)) return true;
+  if (FALSY.has(v)) return false;
+  return undefined;
+}
+
 // Pure + testable: env map → resolved flags with per-flag defaults.
 export function resolveFeatures(env: Record<string, string | undefined>): Features {
-  const flag = (raw: string | undefined, dflt: boolean): boolean => {
-    if (raw === undefined) return dflt;
-    const v = raw.toLowerCase();
-    if (TRUTHY.has(v)) return true;
-    if (FALSY.has(v)) return false;
-    return dflt; // unrecognized → default
-  };
+  const flag = (raw: string | undefined, dflt: boolean): boolean => parseFlag(raw) ?? dflt;
   return {
     youtube: flag(env.NEXT_PUBLIC_FEATURE_YOUTUBE, true),
     spotify: flag(env.NEXT_PUBLIC_FEATURE_SPOTIFY, false),

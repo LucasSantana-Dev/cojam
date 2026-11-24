@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1071,7 +1072,7 @@ func FetchLastfmEnrichment(ctx context.Context, artist, title string) (*LastfmEn
 	params.Set("format", "json")
 	params.Set("autocorrect", "1")
 
-	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "similar"), "GET", lastfmURL+"?"+params.Encode(), nil)
+	req, err := http.NewRequestWithContext(httpx.WithOp(ctx, "lookup"), "GET", lastfmURL+"?"+params.Encode(), nil)
 	if err != nil {
 		// Graceful return on request creation error
 		return result, nil
@@ -1086,17 +1087,11 @@ func FetchLastfmEnrichment(ctx context.Context, artist, title string) (*LastfmEn
 	}
 
 	// Extract playcount and listeners (Last.fm returns them as strings)
-	if resp.Track.Playcount != "" {
-		if pc, parseErr := fmt.Sscanf(resp.Track.Playcount, "%d", &result.Playcount); parseErr == nil {
-			// Set only if successfully parsed
-			_ = pc
-		}
+	if n, err := strconv.Atoi(resp.Track.Playcount); err == nil {
+		result.Playcount = n
 	}
-	if resp.Track.Listeners != "" {
-		if ls, parseErr := fmt.Sscanf(resp.Track.Listeners, "%d", &result.Listeners); parseErr == nil {
-			// Set only if successfully parsed
-			_ = ls
-		}
+	if n, err := strconv.Atoi(resp.Track.Listeners); err == nil {
+		result.Listeners = n
 	}
 
 	// Extract top tags

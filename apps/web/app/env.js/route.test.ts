@@ -72,6 +72,18 @@ describe('env.js route supabase overrides', () => {
     expect(env.supabaseAnonKey).toBe('runtime-key');
   });
 
+  it.each(['0', 'off', 'no', 'FALSE'])(
+    'emits neither when COJAM_FEATURE_SUPABASE_AUTH is %s',
+    async (value) => {
+      process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
+      process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
+      process.env.COJAM_FEATURE_SUPABASE_AUTH = value;
+      const env = await parseBody(GET());
+      expect(env.supabaseUrl).toBeUndefined();
+      expect(env.supabaseAnonKey).toBeUndefined();
+    },
+  );
+
   it('emits neither when only the URL is set', async () => {
     process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
     delete process.env.COJAM_SUPABASE_ANON_KEY;
@@ -129,6 +141,24 @@ describe('env.js route features map', () => {
     process.env.COJAM_FEATURE_SYNC = 'false';
     const env = await parseBody(GET());
     expect(env.features).toEqual({ spotify: true, sync: false });
+  });
+
+  it.each(['1', 'on', 'yes', 'TRUE'])('emits true for the on synonym %s', async (value) => {
+    process.env.COJAM_FEATURE_SYNC = value;
+    const env = await parseBody(GET());
+    expect(env.features).toEqual({ sync: true });
+  });
+
+  it.each(['0', 'off', 'no', 'False'])('emits false for the off synonym %s', async (value) => {
+    process.env.COJAM_FEATURE_SYNC = value;
+    const env = await parseBody(GET());
+    expect(env.features).toEqual({ sync: false });
+  });
+
+  it('treats an unrecognized value like unset, so the build-time flag applies', async () => {
+    process.env.COJAM_FEATURE_SYNC = 'maybe';
+    const env = await parseBody(GET());
+    expect(env.features).toBeUndefined();
   });
 
   it('omits the features map when no COJAM_FEATURE_* var is set, so build-time flags apply', async () => {

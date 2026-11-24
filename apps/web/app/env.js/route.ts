@@ -3,7 +3,7 @@
 // setting COJAM_WS_URL / COJAM_SPOTIFY_CLIENT_ID in the server environment.
 // Loaded via a beforeInteractive <Script> so window.__COJAM_ENV__ is set before
 // the app runs. See lib/runtimeEnv.ts.
-import { FEATURE_ENV_VARS, type FeatureName } from '@/lib/features';
+import { FEATURE_ENV_VARS, parseFlag, type FeatureName } from '@/lib/features';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +23,12 @@ export function GET() {
   // build-time NEXT_PUBLIC_* fallback of the other, pointing the client at two
   // different Supabase projects.
   //
-  // COJAM_FEATURE_SUPABASE_AUTH=false suppresses the pair entirely. The client
+  // COJAM_FEATURE_SUPABASE_AUTH set to an off value (0/false/off/no) suppresses
+  // the pair entirely. The client
   // treats their presence as "accounts available" (lib/supabase.ts), so a stale
   // URL/key left in the environment renders a sign-in path the server will not
   // honour when its own FEATURE_SUPABASE_AUTH is off.
-  const supabaseAuthOff = process.env.COJAM_FEATURE_SUPABASE_AUTH === 'false';
+  const supabaseAuthOff = parseFlag(process.env.COJAM_FEATURE_SUPABASE_AUTH) === false;
   if (
     !supabaseAuthOff &&
     process.env.COJAM_SUPABASE_URL !== undefined &&
@@ -40,11 +41,13 @@ export function GET() {
   // build time, so the env-agnostic image cannot flip a flag without these. Each
   // flag is emitted only when its COJAM_FEATURE_* var is explicitly set, so an
   // UNSET runtime value falls back to the build-time flag instead of forcing it
-  // off. The map itself is omitted when no flag is set.
+  // off. Values follow lib/features.ts (1/true/on/yes, 0/false/off/no); an
+  // unrecognized value is treated like unset. The map itself is omitted when
+  // no flag is set.
   const features: Partial<Record<FeatureName, boolean>> = {};
   for (const [name, envVar] of Object.entries(FEATURE_ENV_VARS) as [FeatureName, string][]) {
-    const raw = process.env[envVar];
-    if (raw !== undefined) features[name] = raw === 'true';
+    const value = parseFlag(process.env[envVar]);
+    if (value !== undefined) features[name] = value;
   }
   if (Object.keys(features).length > 0) env.features = features;
   // JSON.stringify keeps the values safely encoded inside the script.
