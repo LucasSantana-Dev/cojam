@@ -48,7 +48,7 @@ func runErase(args []string, getenv func(string) string, stdout, stderr io.Write
 	fs.StringVar(&req.Name, "name", "", "display name the person used (optional)")
 	fs.Var(&clientIDs, "client-id", "connection id seen in reports or moderation rows (optional, repeatable)")
 	fs.BoolVar(&req.IncludeSubjectReports, "include-subject-reports", false,
-		"also delete reports ABOUT the person (kept by default as evidence)")
+		"also delete reports ABOUT the person (kept by default as evidence; a room under legal hold keeps them anyway)")
 	fs.BoolVar(&skipEvents, "skip-product-events", false,
 		"leave product_events alone (only when EVENTS_HMAC_KEY was never set)")
 	fs.BoolVar(&dryRun, "dry-run", false, "count what would change, change nothing")
@@ -118,8 +118,8 @@ func printEraseCounts(w io.Writer, c erase.Counts, applied, productEvents bool) 
 	fmt.Fprintf(w, "spotify_tokens      deleted: %d\n", c.SpotifyTokensDeleted)
 	fmt.Fprintf(w, "rooms               rewritten: %d (queue entries anonymized: %d, votes removed: %d, hosts cleared: %d)\n",
 		c.RoomsRewritten, c.QueueEntriesAnonymized, c.VotesRemoved, c.HostsCleared)
-	fmt.Fprintf(w, "reports             reporter anonymized: %d, about the person deleted: %d, about the person retained: %d\n",
-		c.ReportsReporterAnonymized, c.ReportsSubjectDeleted, c.ReportsSubjectRetained)
+	fmt.Fprintf(w, "reports             reporter anonymized: %d, about the person deleted: %d, about the person retained: %d, kept by legal hold: %d\n",
+		c.ReportsReporterAnonymized, c.ReportsSubjectDeleted, c.ReportsSubjectRetained, c.ReportsSubjectHeld)
 	fmt.Fprintf(w, "moderation_actions  actor anonymized: %d, subject anonymized: %d, retained with kept reports: %d\n",
 		c.ModerationActorAnonymized, c.ModerationSubjectAnonymized, c.ModerationSubjectRetained)
 	fmt.Fprintf(w, "rebound_subs        retained: %d\n", c.ReboundSubsRetained)

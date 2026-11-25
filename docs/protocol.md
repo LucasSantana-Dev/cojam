@@ -205,6 +205,13 @@ check happens in dispatch: a non-host attempt is rejected with a UserError
 rate limit as `chat.send`. `chat.delete` shares the `FEATURE_ROOM_CHAT` gate
 (`ErrorMethodNotFound` when chat is off); `room.kick` has no feature flag.
 
+Operator room closure (#259): a room the operator closed with `server room
+--close` disconnects every member with the terminal code 4501 ("room
+closed"), and from then on a channel subscribe or any room-scoped RPC naming
+it (`room.join` included) ends the connection with the same code. The web
+client shows a "room closed" state instead of "removed by host". The room
+also leaves `room.list`.
+
 Guest-to-account upgrade (#172): `room.rebind` moves a guest's attribution in
 the current room from their anonymous sub to their signed-in `sb:<uuid>`
 identity, so a guest who signs in keeps what they already did. The payload

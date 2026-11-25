@@ -38,10 +38,12 @@ Violations of children's rights can be reported to **Disque 100**.
 
 ## What the operator does
 
-1. **Contain.** Remove the person from the room, take the room out of the
-   directory, and switch the whole directory off when in doubt.
-2. **Preserve.** Keep the report and the room's moderation record before any
-   retention window or erasure request can remove them.
+1. **Contain.** End the room (everyone in it is disconnected within seconds
+   and nobody can rejoin, by link or by directory), and switch the whole
+   directory off when in doubt.
+2. **Preserve.** Put the room under legal hold, so its reports and moderation
+   record outlive the retention window and any erasure request until the case
+   is closed. Ending a room sets the hold too.
 3. **Assess.** Read the copied content and record the decision and the reasons.
 4. **Escalate.** Where a child is at risk, refer the case to the competent
    authorities. Evidence goes to them directly, never through chat apps.
@@ -51,12 +53,16 @@ Violations of children's rights can be reported to **Disque 100**.
 Moderation actions taken by room hosts (deleting a message, removing a member)
 are recorded with who, what and when, so a case can be reconstructed.
 
+Operators do both with `server room --room <id> --close --apply` (`--hold`
+alone preserves without ending; `--reopen` and `--release` undo them, and
+`--list` shows what is in force). See `docs/configuration.md`.
+
 ## Known gaps
 
 Stated so nobody relies on something that does not exist yet:
 
-- There is no operator command yet to end a single room or block one person
-  from coming back. Removing a member, unlisting a room and switching the
-  directory off are what exists today.
-- Reports are purged by age only (`REPORT_RETENTION_DAYS`); there is no legal
-  hold for an open case, so evidence is exported when a case opens.
+- Ending a room blocks the room, not a person: someone removed from one room
+  can still open another. Blocking one identity across rooms does not exist
+  yet.
+- Ending a room and the legal hold need the database; a deployment without
+  `DATABASE_URL` has neither.

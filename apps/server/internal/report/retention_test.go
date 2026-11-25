@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/dbtest"
+	"github.com/LucasSantana-Dev/cojam/server/internal/restrict"
 )
 
 // base is a fixed instant far in the past that the purge tests write their
@@ -159,6 +160,62 @@ func TestPostgresAudit_PurgeBefore_BoundaryAndLimit(t *testing.T) {
 	}
 	if !exists(t, pool, "moderation_actions", "ret-act-at-cutoff") {
 		t.Fatal("record created exactly at the cutoff must be kept")
+	}
+}
+
+// #259: a room under legal hold keeps its old reports and moderation actions
+// through the purge; other rooms are purged as usual, and releasing the hold
+// lets the next sweep take them. Skips if TEST_DATABASE_URL is not set.
+func TestPostgres_PurgeBefore_SkipsLegalHold(t *testing.T) {
+	pool := dbtest.Isolated(t)
+	ctx := context.Background()
+	s := NewPostgres(pool)
+	a := NewPostgresAudit(pool)
+	holds := restrict.NewPostgres(pool)
+	old := base.Add(-time.Hour)
+	for _, r := range []Report{
+		{ID: "hold-report", RoomID: "held-room", Kind: KindRoom, CreatedAt: old},
+		{ID: "free-report", RoomID: "free-room", Kind: KindRoom, CreatedAt: old},
+	} {
+		if err := s.Create(ctx, r); err != nil {
+			t.Fatalf("Create %s: %v", r.ID, err)
+		}
+	}
+	for _, act := range []Action{
+		{ID: "hold-act", RoomID: "held-room", Action: "room.kick", CreatedAt: old},
+		{ID: "free-act", RoomID: "free-room", Action: "room.kick", CreatedAt: old},
+	} {
+		if err := a.Record(ctx, act); err != nil {
+			t.Fatalf("Record %s: %v", act.ID, err)
+		}
+	}
+	if err := holds.Put(ctx, restrict.Restriction{RoomID: "held-room", LegalHold: true}); err != nil {
+		t.Fatalf("Put hold: %v", err)
+	}
+
+	if n, err := s.PurgeBefore(ctx, base, 100); err != nil || n != 1 {
+		t.Fatalf("reports PurgeBefore = %d, %v; want 1, nil", n, err)
+	}
+	if n, err := a.PurgeBefore(ctx, base, 100); err != nil || n != 1 {
+		t.Fatalf("actions PurgeBefore = %d, %v; want 1, nil", n, err)
+	}
+	for table, ids := range map[string][2]string{"reports": {"hold-report", "free-report"}, "moderation_actions": {"hold-act", "free-act"}} {
+		if !exists(t, pool, table, ids[0]) {
+			t.Fatalf("%s: %s is under legal hold and must survive the purge", table, ids[0])
+		}
+		if exists(t, pool, table, ids[1]) {
+			t.Fatalf("%s: %s has no hold and must be purged", table, ids[1])
+		}
+	}
+
+	if err := holds.Put(ctx, restrict.Restriction{RoomID: "held-room"}); err != nil {
+		t.Fatalf("release hold: %v", err)
+	}
+	if n, err := s.PurgeBefore(ctx, base, 100); err != nil || n != 1 {
+		t.Fatalf("after release, reports PurgeBefore = %d, %v; want 1, nil", n, err)
+	}
+	if n, err := a.PurgeBefore(ctx, base, 100); err != nil || n != 1 {
+		t.Fatalf("after release, actions PurgeBefore = %d, %v; want 1, nil", n, err)
 	}
 }
 

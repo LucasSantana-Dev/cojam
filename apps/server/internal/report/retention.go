@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/obs"
+	"github.com/LucasSantana-Dev/cojam/server/internal/restrict"
 )
 
 // Retention for reports and moderation actions (#319).
@@ -17,10 +18,11 @@ import (
 // the incident (ECA Digital, #259). The default is therefore zero, meaning
 // keep forever, until the owner sets REPORT_RETENTION_DAYS.
 //
-// The purge is by age only. Neither table has a status or resolution column,
-// so there is no way to tell an open case from a closed one; holding a record
-// past the window for an ongoing matter (legal hold) is out of scope and has to
-// be done by raising the window or copying the record out before it expires.
+// The purge is by age, except for rooms under legal hold: the operator sets
+// one with `server room --hold` (or `--close`, which implies it), and the
+// Postgres purge skips that room's rows until the hold is released
+// (room_restrictions, internal/restrict). The in-memory stores have no hold:
+// without a database the operator command cannot reach the server anyway.
 
 // Purger deletes records created strictly before cutoff, oldest first, at most
 // limit per call, and returns how many it removed.
@@ -214,10 +216,12 @@ func (m *MemoryAudit) PurgeBefore(_ context.Context, cutoff time.Time, limit int
 // PurgeBefore deletes reports created strictly before cutoff, oldest first,
 // in one statement bounded by limit so a large backlog never holds a long
 // lock; the remainder goes on the next sweep. Uses reports_created_at_idx.
+// Reports of a room under legal hold are skipped.
 func (p *Postgres) PurgeBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
 	tag, err := p.pool.Exec(ctx, `
 		DELETE FROM reports WHERE id IN (
-			SELECT id FROM reports WHERE created_at < $1 ORDER BY created_at LIMIT $2
+			SELECT id FROM reports r WHERE r.created_at < $1 AND NOT `+restrict.HeldSQL("r")+`
+			ORDER BY r.created_at LIMIT $2
 		)
 	`, cutoff, limit)
 	if err != nil {
@@ -227,11 +231,13 @@ func (p *Postgres) PurgeBefore(ctx context.Context, cutoff time.Time, limit int)
 }
 
 // PurgeBefore deletes moderation actions created strictly before cutoff,
-// oldest first, bounded by limit.
+// oldest first, bounded by limit. Actions in a room under legal hold are
+// skipped.
 func (p *PostgresAudit) PurgeBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
 	tag, err := p.pool.Exec(ctx, `
 		DELETE FROM moderation_actions WHERE id IN (
-			SELECT id FROM moderation_actions WHERE created_at < $1 ORDER BY created_at LIMIT $2
+			SELECT id FROM moderation_actions m WHERE m.created_at < $1 AND NOT `+restrict.HeldSQL("m")+`
+			ORDER BY m.created_at LIMIT $2
 		)
 	`, cutoff, limit)
 	if err != nil {

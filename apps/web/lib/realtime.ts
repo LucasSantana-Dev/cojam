@@ -73,6 +73,11 @@ const MAX_CHAT_MESSAGES = 100;
 // the room page swaps to an explicit "removed by host" state instead.
 export const DISCONNECT_CODE_KICKED = 4500;
 
+// Terminal disconnect code for a room the operator closed (#259): every member
+// is disconnected and a rejoin is refused with the same code. The room page
+// shows the "room closed" variant of the removed state.
+export const DISCONNECT_CODE_ROOM_CLOSED = 4501;
+
 // A 'disconnected' the client did not ask for. Centrifuge 0 is disconnect()
 // called by us (leave room, join cleanup); anything else is the server or the
 // transport ending the session for good (unauthorized, bad request, ...).
@@ -149,6 +154,9 @@ export interface AppStore {
   // (room.kick, #181): the room page shows "removed by host" instead of the
   // reconnect flow. Reset on every fresh joinRoom.
   kicked: boolean;
+  // True with kicked when the removal was the operator closing the room
+  // (DISCONNECT_CODE_ROOM_CLOSED, #259) rather than the host.
+  roomClosed: boolean;
   // Whether an account session (Supabase) is active. Drives the guest-identity
   // signals (#167): guests see them, signed-in members never do.
   signedIn: boolean;
@@ -170,7 +178,7 @@ export interface AppStore {
   setConnected: (connected: boolean) => void;
   setReconnecting: (reconnecting: boolean) => void;
   setClientId: (clientId: string) => void;
-  setKicked: (kicked: boolean) => void;
+  setKicked: (kicked: boolean, roomClosed?: boolean) => void;
   setMembers: (members: Member[]) => void;
   setPlatformOverride: (clientId: string, platform: Platform) => void;
   setPlatformOverrides: (overrides: Record<string, Platform>) => void;
@@ -203,6 +211,7 @@ export const useStore = create<AppStore>((set) => ({
   nameSuffixes: {},
   connectedServices: [],
   kicked: false,
+  roomClosed: false,
   signedIn: false,
   rebindNotice: null,
   myVotes: {},
@@ -214,7 +223,7 @@ export const useStore = create<AppStore>((set) => ({
   setConnected: (connected) => set({ connected }),
   setReconnecting: (reconnecting) => set({ reconnecting }),
   setClientId: (clientId) => set({ clientId }),
-  setKicked: (kicked) => set({ kicked }),
+  setKicked: (kicked, roomClosed = false) => set({ kicked, roomClosed: kicked && roomClosed }),
   setMembers: (connections) => set((s) => ({
     connections,
     ...derivePresence(connections, s.platformOverrides, s.platformSeqs, s.characterOverrides, s.characterSeqs),
@@ -546,6 +555,8 @@ export async function joinRoom(
     const code = (ctx as { code?: number } | undefined)?.code;
     if (code === DISCONNECT_CODE_KICKED) {
       useStore.getState().setKicked(true);
+    } else if (code === DISCONNECT_CODE_ROOM_CLOSED) {
+      useStore.getState().setKicked(true, true);
     } else if (isTerminalDisconnect(code)) {
       // The client gave up and will not reconnect on its own. Only the numeric
       // code goes out, never the free-text reason.

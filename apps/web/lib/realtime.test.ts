@@ -3,7 +3,7 @@
 // different V8 realm, so parseConnInfo's `instanceof Uint8Array` check
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useStore, isPermissionDeniedError, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED,
+import { useStore, isPermissionDeniedError, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED, DISCONNECT_CODE_ROOM_CLOSED,
   chatUnavailableNotice, queueAdd, updatePlatform, updateCharacter, onWoot, sendWoot, onEmote, sendEmote,
 } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
@@ -672,6 +672,30 @@ describe('host moderation (#181)', () => {
     instance.emit('disconnected', { code: DISCONNECT_CODE_KICKED, reason: 'removed by host' });
     expect(useStore.getState().kicked).toBe(true);
     expect(useStore.getState().connected).toBe(false);
+  });
+
+  it('marks the store kicked and room-closed when the operator closes the room (#259)', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    instance.emit('disconnected', { code: DISCONNECT_CODE_ROOM_CLOSED, reason: 'room closed' });
+    expect(useStore.getState().kicked).toBe(true);
+    expect(useStore.getState().roomClosed).toBe(true);
+
+    // A fresh join clears the kick (setKicked(false)), and the closure with it.
+    useStore.getState().setKicked(false);
+    expect(useStore.getState().roomClosed).toBe(false);
+  });
+
+  it('a host kick is not a room closure', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+    instance.emit('disconnected', { code: DISCONNECT_CODE_KICKED, reason: 'removed by host' });
+    expect(useStore.getState().roomClosed).toBe(false);
   });
 
   it('reports ws_terminal for a terminal disconnect, but not for a kick or our own disconnect', async () => {

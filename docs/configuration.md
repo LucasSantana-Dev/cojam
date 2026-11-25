@@ -91,7 +91,20 @@ Both retention windows default to **keep forever**. Deleting data is an owner de
 > [!CAUTION]
 > The first run happens at boot and deletes immediately. A typo such as `1` for `100` destroys reports that cannot be recovered. Check the value (it is logged as `report_retention_enabled window_days=...`) before deploying.
 
-The purge is by age only. Neither table has a status or resolution column, so a report tied to an open case is purged on the same schedule as any other: holding one longer (legal hold) is not supported, and the window has to be long enough for ECA Digital reporting duties (#259). That length is a question for legal review.
+The purge is by age, except for rooms under legal hold. A report tied to an open case is kept by holding its room: `server room --room <id> --hold --apply` keeps that room's `reports` and `moderation_actions` rows past the window and through `server erase`, until `--release`. The window itself still has to suit ECA Digital reporting duties (#259); that length is a question for legal review.
+
+### Ending a room (operator)
+
+`server room` (same image, run like `server erase`, with `DATABASE_URL`) records operator restrictions in `room_restrictions` (#259):
+
+| Command | Effect |
+| --- | --- |
+| `server room --room <id> --close [--report <id>] --apply` | Ends the room: the running server disconnects everyone in it (code 4501, "room closed") within 15 seconds, drops it from the directory and refuses every rejoin. Also sets the legal hold. |
+| `server room --room <id> --reopen --apply` | Accepts joins again. The hold stays. |
+| `server room --room <id> --hold --apply` / `--release --apply` | Sets or lifts the legal hold (release is refused while the room is closed). |
+| `server room --list` | Rooms that are closed or held. |
+
+Every change takes `--dry-run` first to show the before and after. The server polls the table every 15 seconds and logs `room_closed_by_operator` with the number of connections it ended; a failed poll keeps the last known set, so a database blip never reopens a room. Without `DATABASE_URL` the poll is off (`room_restrictions_disabled` at boot).
 
 Room idleness is measured by the last change to the row, not the last visit. A room someone opened within the in-memory window (`ROOM_IDLE_TTL_MINUTES`) without changing anything is still held in memory, and a later change saves it again.
 

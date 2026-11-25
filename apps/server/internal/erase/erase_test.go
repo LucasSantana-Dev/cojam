@@ -330,6 +330,38 @@ func TestRun_IncludeSubjectReports(t *testing.T) {
 	}
 }
 
+// #259: a legal hold on the room keeps the reports about the person even when
+// the request asks to delete them, and the count says so.
+func TestRun_IncludeSubjectReportsRespectsLegalHold(t *testing.T) {
+	pool := dbtest.Isolated(t)
+	seed(t, pool)
+	ctx := context.Background()
+	mustExec(t, pool, `INSERT INTO room_restrictions (room_id, legal_hold) VALUES ('room-a', true)`)
+	req := baseRequest()
+	req.IncludeSubjectReports = true
+
+	got, err := Run(ctx, pool, req, true)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if got.ReportsSubjectDeleted != 0 || got.ReportsSubjectHeld != 2 {
+		t.Fatalf("subject reports deleted/held = %d/%d, want 0/2", got.ReportsSubjectDeleted, got.ReportsSubjectHeld)
+	}
+	var n int
+	pool.QueryRow(ctx, "SELECT count(*) FROM reports WHERE id IN ('r2', 'r3')").Scan(&n)
+	if n != 2 {
+		t.Fatalf("held reports must survive (%d of 2)", n)
+	}
+	if got.ModerationSubjectRetained != 1 {
+		t.Fatalf("moderation row linked to a held report: retained = %d, want 1", got.ModerationSubjectRetained)
+	}
+	var reporter string
+	pool.QueryRow(ctx, "SELECT reporter_sub FROM reports WHERE id = 'r1'").Scan(&reporter)
+	if reporter != "" {
+		t.Fatal("the person's own reporter id is still anonymized under a hold")
+	}
+}
+
 // #318: a second apply finds nothing left to change; only the retained
 // counts repeat.
 func TestRun_Idempotent(t *testing.T) {

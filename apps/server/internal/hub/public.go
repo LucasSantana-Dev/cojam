@@ -48,10 +48,20 @@ type PublicRoomSummary struct {
 func (h *Hub) listPublicRooms() (json.RawMessage, error) {
 	// Lock order is memberMu then h.mu (the order evictIdleRooms establishes;
 	// Join/Leave take memberMu alone and GetOrCreateRoom takes h.mu alone).
+	h.closedMu.RLock()
+	closed := make(map[string]struct{}, len(h.closedRooms))
+	for id := range h.closedRooms {
+		closed[id] = struct{}{}
+	}
+	h.closedMu.RUnlock()
+
 	h.memberMu.RLock()
 	h.mu.RLock()
 	rooms := make([]PublicRoomSummary, 0, len(h.rooms))
 	for roomID, room := range h.rooms {
+		if _, isClosed := closed[roomID]; isClosed {
+			continue // operator-closed (#259), even if a stray path reloaded it
+		}
 		room.mu.Lock()
 		// Defense in depth (#259): a name stored before the filter existed, or
 		// changed by a path that skipped it, never reaches the directory.

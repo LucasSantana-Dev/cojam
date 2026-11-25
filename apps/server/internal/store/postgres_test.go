@@ -364,7 +364,9 @@ func TestPostgresDeleteIdleRooms_RemovesEveryRoomLinkedPersonalDatum(t *testing.
 
 	// Room state must live only in rooms. reports and moderation_actions carry
 	// a room_id on purpose (they outlive the room, #259) and have their own
-	// retention; any other table with a room_id needs its own eviction path.
+	// retention; room_restrictions (#259) holds only the operator's flags, no
+	// personal data, and must outlive the room or an evicted closed room could
+	// be recreated. Any other table with a room_id needs its own eviction path.
 	rows, err := pool.Query(ctx, `
 		SELECT table_name FROM information_schema.columns
 		WHERE table_schema = current_schema() AND column_name = 'room_id'
@@ -381,7 +383,7 @@ func TestPostgresDeleteIdleRooms_RemovesEveryRoomLinkedPersonalDatum(t *testing.
 		}
 		tables = append(tables, name)
 	}
-	want := []string{"moderation_actions", "reports", "rooms"}
+	want := []string{"moderation_actions", "reports", "room_restrictions", "rooms"}
 	if strings.Join(tables, ",") != strings.Join(want, ",") {
 		t.Fatalf("tables with room_id = %v, want %v: a new room-linked table needs an eviction path", tables, want)
 	}
