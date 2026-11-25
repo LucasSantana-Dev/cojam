@@ -95,6 +95,7 @@ Self-host runbooks are local-only by repo convention. The one rule to know: the 
 - [`docs/platforms.md`](docs/platforms.md): platform support matrix
 - [`docs/protocol.md`](docs/protocol.md): wire protocol
 - [`docs/specs/`](docs/specs/README.md): feature specs
+- [`docs/safety/minor-safety-escalation.md`](docs/safety/minor-safety-escalation.md): reports involving a minor at risk, and the operator's response commitment
 
 ## Contributing
 
