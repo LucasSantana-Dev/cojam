@@ -59,3 +59,47 @@ jobs:
             exit 1
           fi
           echo "Production is serving."
+
+  # A failed scheduled run only sends GitHub's failure email, which is easy to
+  # miss (the 2026-11-19 outage ran ~20h). This job keeps one open issue per
+  # outage instead: opened on the first failed probe, updated on each further
+  # failure, closed on recovery. Issue notifications reach the owner through
+  # every channel GitHub has (web, mobile push, email) and the issue doubles as
+  # the outage record. It still runs only as often as GitHub's throttled cron.
+  alert:
+    name: Track outage issue
+    needs: probe
+    if: always() && (needs.probe.result == 'success' || needs.probe.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RESULT: ${{ needs.probe.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - name: Open, update or close the outage issue
+        run: |
+          set -euo pipefail
+          now=$(date -u +%Y-%m-%dT%H:%MZ)
+          open=$(gh issue list --label outage --state open --json number --jq '.[0].number // empty')
+
+          if [ "$RESULT" = "failure" ]; then
+            if [ -z "$open" ]; then
+              gh label create outage --color B60205 \
+                --description "Production is not serving (opened by the Uptime workflow)" --force >/dev/null
+              gh issue create --label outage --assignee "$OWNER" \
+                --title "Production down since $now" \
+                --body "The Uptime probe failed at $now: \`/\` or \`/api/healthz\` did not return 200 after 3 attempts.
+
+          Run: $RUN_URL
+
+          This issue closes itself when a later probe succeeds. See #264 for the 502 failure mode and docs/specs/268-uptime-probe.md."
+            else
+              gh issue comment "$open" --body "Still failing at $now. Run: $RUN_URL"
+            fi
+          elif [ -n "$open" ]; then
+            gh issue close "$open" --comment "Recovered: probe passed at $now. Run: $RUN_URL"
+          fi

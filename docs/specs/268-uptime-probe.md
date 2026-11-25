@@ -66,14 +66,15 @@ Runs on GitHub Actions, deliberately **not** on the CoJam host: that satisfies
 the one hard requirement, since a monitor sharing fate with the monitored is
 what happened in #264.
 
-Probes `/` and `/api/connection-token` every 15 minutes, three attempts each
-with a 10s gap so a single blip does not alert. GitHub emails the repo owner
-when a scheduled workflow fails.
+Probes `/` and `/api/healthz` every 15 minutes, three attempts each with a 10s
+gap so a single blip does not alert.
 
-Note it probes `/api/connection-token` rather than the purpose-built
-`/api/healthz`: the latter ships in #271 and is not deployed yet. Verified
-against production, where `/api/healthz` currently returns 404 for exactly that
-reason. Switch once it is live.
+Alerting: a second job keeps one open issue labelled `outage` per outage. The
+first failed probe opens it (assigned to the repo owner), each further failure
+adds a comment, and the first passing probe closes it. Issue notifications reach
+the owner on the web, mobile push and email, where the failed-run email alone
+was easy to miss (the 2026-11-19 outage lasted about 20 hours). The issue is
+also the outage record.
 
 Known limits, stated because they affect how much to trust it: GitHub's cron is
 best-effort and can be delayed by many minutes under load, and scheduled
