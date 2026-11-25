@@ -35,6 +35,21 @@ func TestAuthorizeSubscribe(t *testing.T) {
 	}
 }
 
+// #259: a closed room refuses the subscribe with the terminal room-closed
+// disconnect and does not enrol the client.
+func TestAuthorizeSubscribe_ClosedRoom(t *testing.T) {
+	h := hub.NewHub(nil)
+	h.SetClosedRooms([]string{"ABC123"})
+	_, err := authorizeSubscribe(h, "c1", "room:ABC123")
+	var d centrifuge.Disconnect
+	if !errors.As(err, &d) || d.Code != hub.DisconnectRoomClosed.Code {
+		t.Fatalf("subscribe to a closed room: got %v, want the room-closed disconnect", err)
+	}
+	if h.IsMember("c1", "ABC123") {
+		t.Fatal("a refused subscribe must not enrol")
+	}
+}
+
 // The websocket upgrade request's client IP (same trust rules as callerKey)
 // is carried in the connection context for the hub to record.
 func TestWithClientIP_StoresCallerKeyInContext(t *testing.T) {

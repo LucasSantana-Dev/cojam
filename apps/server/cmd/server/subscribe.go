@@ -16,6 +16,11 @@ func authorizeSubscribe(h *hub.Hub, clientID, channel string) (centrifuge.Subscr
 	if !ok {
 		return centrifuge.SubscribeReply{}, centrifuge.ErrorPermissionDenied
 	}
+	// An operator-closed room (#259) ends the connection with the terminal
+	// room-closed code instead of enrolling it.
+	if h.IsRoomClosed(roomID) {
+		return centrifuge.SubscribeReply{}, hub.DisconnectRoomClosed
+	}
 	h.Join(clientID, roomID)
 	// Presence + join/leave so the room can show who is listening.
 	return centrifuge.SubscribeReply{

@@ -282,6 +282,12 @@ type Hub struct {
 	hbWG           sync.WaitGroup // running heartbeat loops, for StopHeartbeats
 	heartbeats     map[string]chan struct{}
 
+	// closedRooms is the set of rooms the operator closed (closed.go), read
+	// on every subscribe and room-scoped RPC. Guarded by closedMu, which is
+	// never held together with another hub lock.
+	closedMu    sync.RWMutex
+	closedRooms map[string]struct{}
+
 	// publicRoomsEnabled gates the public room directory RPCs
 	// (room.set_public, room.list; FEATURE_PUBLIC_ROOMS). Dark-shipped off:
 	// when false both RPCs return ErrorMethodNotFound (transport.* precedent).
@@ -1163,6 +1169,11 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 	// or dispatch can create or touch it.
 	if probe.RoomID != "" && !ValidRoomID(probe.RoomID) {
 		return errInvalidRoomID
+	}
+	// An operator-closed room (#259) refuses everything, join included, and
+	// ends the connection with the terminal room-closed code.
+	if probe.RoomID != "" && h.IsRoomClosed(probe.RoomID) {
+		return DisconnectRoomClosed
 	}
 
 	if method == "room.join" {

@@ -34,6 +34,7 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
 	"github.com/LucasSantana-Dev/cojam/server/internal/rebind"
 	"github.com/LucasSantana-Dev/cojam/server/internal/report"
+	"github.com/LucasSantana-Dev/cojam/server/internal/restrict"
 	"github.com/LucasSantana-Dev/cojam/server/internal/spotifytoken"
 	"github.com/LucasSantana-Dev/cojam/server/internal/store"
 	"github.com/LucasSantana-Dev/cojam/server/internal/supauth"
@@ -99,7 +100,10 @@ func envDurationMinutes(getenv func(string) string, key string, dflt time.Durati
 // and a first-enable backlog drains over successive sweeps.
 const (
 	retentionInterval = time.Hour
-	retentionBatch    = 5000
+	// restrictionsPollInterval is how long an operator closure (#259) takes
+	// at most to reach a running server.
+	restrictionsPollInterval = 15 * time.Second
+	retentionBatch           = 5000
 )
 
 // maxDisplayNameLen caps the connect-time display name, in runes. The name
@@ -149,6 +153,9 @@ func main() {
 	// Operator subcommands run and exit before any server setup.
 	if len(os.Args) > 1 && os.Args[1] == "erase" {
 		os.Exit(runErase(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "room" {
+		os.Exit(runRoom(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
 	}
 
 	var shutdownHooks []func()
@@ -589,8 +596,9 @@ func main() {
 
 	// Retention for reports and moderation actions (#319). REPORT_RETENTION_DAYS
 	// unset or 0 keeps them forever: the window is an owner decision tied to
-	// ECA Digital reporting duties, so the code does not pick one. Purge is by
-	// age only (no status column exists, so no legal-hold exemption).
+	// ECA Digital reporting duties, so the code does not pick one. Rows of a
+	// room under legal hold (`server room --hold`, room_restrictions) are
+	// skipped by the Postgres purge.
 	reportWindow, err := reportRetention(os.Getenv)
 	if err != nil {
 		fatal(logger, "report_retention_config_invalid", "err", err.Error())
@@ -606,6 +614,19 @@ func main() {
 		logger.Info("report_retention_enabled", "window_days", int(reportWindow.Hours()/24))
 	} else {
 		logger.Info("report_retention_disabled", "hint", "set REPORT_RETENTION_DAYS to purge reports and moderation actions")
+	}
+
+	// Operator room closure (#259): `server room --close` writes
+	// room_restrictions and this poll applies it to the hub, disconnecting the
+	// room and refusing rejoins. Needs the database: without one there is no
+	// way for the command to reach the server, and the boot log says so.
+	if dbPool != nil {
+		stopRestrict := restrict.Watch(restrict.NewPostgres(dbPool), restrictionsPollInterval, h.SetClosedRooms, logger)
+		// Stopped before the pool closes, like retention.
+		shutdownHooks = append([]func(){stopRestrict}, shutdownHooks...)
+		logger.Info("room_restrictions_enabled", "poll_seconds", int(restrictionsPollInterval.Seconds()))
+	} else {
+		logger.Warn("room_restrictions_disabled", "hint", "set DATABASE_URL: `server room --close` needs the database to reach the server")
 	}
 
 	// Connection authentication setup

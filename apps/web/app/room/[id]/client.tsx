@@ -462,17 +462,35 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // room.kick (#181): the server closed this connection with the terminal
   // kicked code. Replace the room UI entirely — no StatusBanner retry loop,
   // since the disconnect was deliberate and the connection will not retry.
+  // The operator closing the room (#259) lands here too, with its own copy:
+  // the room is over for everyone, and a rejoin is refused.
   if (store.kicked) {
+    const closed = store.roomClosed;
     return (
-      <div className="pw" data-view="kicked">
+      <div className="pw" data-view={closed ? 'room-closed' : 'kicked'}>
         <PalcoBrandBar />
         {/* An empty festival ground, no crowd: the screen says the show is over for you. */}
-        <PalcoScene kind="kicked" led={{ title: 'FIM', scale: 3, sub: 'Fora da sala' }}>
+        <PalcoScene
+          kind="kicked"
+          led={{ title: 'FIM', scale: 3, sub: closed ? 'Sala encerrada' : 'Fora da sala' }}
+        >
           <main id="main" className="pw-dock pw-plate">
             <div className="pw-dock__copy">
-              <p className="pw-eyebrow">Fim da sessão · para você</p>
-              <h1 className="pw-title">Você foi removido da sala</h1>
-              <p className="pw-text">O anfitrião removeu você desta sessão.</p>
+              {closed ? (
+                <>
+                  <p className="pw-eyebrow">Fim da sessão · para todos</p>
+                  <h1 className="pw-title">Esta sala foi encerrada</h1>
+                  <p className="pw-text">
+                    A sala foi encerrada pela moderação do CoJam e não aceita mais entradas.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="pw-eyebrow">Fim da sessão · para você</p>
+                  <h1 className="pw-title">Você foi removido da sala</h1>
+                  <p className="pw-text">O anfitrião removeu você desta sessão.</p>
+                </>
+              )}
             </div>
             <div className="pw-actions">
               <Link href="/" className="pw-btn">

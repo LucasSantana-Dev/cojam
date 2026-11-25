@@ -47,6 +47,7 @@ import (
 
 	"github.com/LucasSantana-Dev/cojam/server/internal/events"
 	"github.com/LucasSantana-Dev/cojam/server/internal/queue"
+	"github.com/LucasSantana-Dev/cojam/server/internal/restrict"
 )
 
 // RemovedName replaces the display name on anonymized queue entries.
@@ -107,6 +108,10 @@ type Counts struct {
 	ReportsReporterAnonymized int64
 	ReportsSubjectDeleted     int64
 	ReportsSubjectRetained    int64
+	// ReportsSubjectHeld counts reports about the person that
+	// IncludeSubjectReports would delete but a legal hold on their room
+	// keeps (#259, `server room --hold`).
+	ReportsSubjectHeld int64
 
 	ModerationActorAnonymized   int64
 	ModerationSubjectAnonymized int64
@@ -329,9 +334,14 @@ func Run(ctx context.Context, pool *pgxpool.Pool, req Request, apply bool) (Coun
 	var steps []step
 	// Subject reports go first, so the moderation link check below sees only
 	// the reports that are actually kept.
+	// A room under legal hold (#259) keeps its reports whatever the request
+	// asks: the operator releases the hold when the case is closed.
 	if req.IncludeSubjectReports {
-		steps = append(steps, step{"reports", &c.ReportsSubjectDeleted, false,
-			`DELETE FROM reports r WHERE ` + subjectReportSQL, subj})
+		steps = append(steps,
+			step{"reports", &c.ReportsSubjectHeld, true,
+				`SELECT count(*) FROM reports r WHERE ` + subjectReportSQL + ` AND ` + restrict.HeldSQL("r"), subj},
+			step{"reports", &c.ReportsSubjectDeleted, false,
+				`DELETE FROM reports r WHERE ` + subjectReportSQL + ` AND NOT ` + restrict.HeldSQL("r"), subj})
 	} else {
 		steps = append(steps, step{"reports", &c.ReportsSubjectRetained, true,
 			`SELECT count(*) FROM reports r WHERE ` + subjectReportSQL, subj})

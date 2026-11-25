@@ -103,4 +103,20 @@ describe('removed-from-room screen (palco, wave 3)', () => {
     expect(container.querySelector('.sx')).toBeNull();
     useStore.setState({ kicked: false });
   });
+
+  it('says the room was closed when the operator ended it (#259)', async () => {
+    sessionStorage.clear();
+    localStorage.clear();
+    useStore.setState({ state: null, signedIn: false, name: '', kicked: false, roomClosed: false });
+    saveGuestName('Ana');
+    const { container } = render(<RoomClient roomId="DWB86HRONU22" />);
+    await act(async () => {});
+    act(() => useStore.getState().setKicked(true, true));
+    expect(container.querySelector('[data-view="room-closed"]')).not.toBeNull();
+    expect(wide().querySelector('.pws-led')?.getAttribute('data-led')).toBe('FIM / SALA ENCERRADA');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Esta sala foi encerrada');
+    expect(screen.queryByText('O anfitrião removeu você desta sessão.')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Voltar ao início' })).toHaveAttribute('href', '/');
+    useStore.setState({ kicked: false, roomClosed: false });
+  });
 });
