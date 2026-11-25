@@ -12,13 +12,14 @@ spec [`259-eca-minor-safety.md`](../specs/259-eca-minor-safety.md).
 
 CoJam is run by one person. These are commitments that person can keep:
 
-- A report in the **minor at risk** category is acknowledged within
-  **[[PRAZO DE RECONHECIMENTO]]**.
-- Containment and a decision follow within **[[PRAZO DE AÇÃO]]**.
-- When the operator cannot respond in that time (travel, illness), the **public
-  room directory is switched off** until they can. A directory of stranger rooms
-  that nobody can answer for is the risk this policy exists to limit. Rooms
-  reached by an invite link keep working.
+- A report in the **minor at risk** category is looked at the same day it
+  arrives, within **12 waking hours**.
+- Every other report is looked at within **72 hours**.
+- The report channel is checked at least twice a day.
+- When the operator is unreachable for more than **24 hours** (travel,
+  illness), the **public room directory is switched off first**. A directory of
+  stranger rooms that nobody can answer for is the risk this policy exists to
+  limit. Rooms reached by an invite link keep working.
 
 ## How to report
 
@@ -37,8 +38,8 @@ Violations of children's rights can be reported to **Disque 100**.
 
 ## What the operator does
 
-1. **Contain.** Turn off the public directory if the room was reachable through
-   it, and act on the room.
+1. **Contain.** Remove the person from the room, take the room out of the
+   directory, and switch the whole directory off when in doubt.
 2. **Preserve.** Keep the report and the room's moderation record before any
    retention window or erasure request can remove them.
 3. **Assess.** Read the copied content and record the decision and the reasons.
@@ -55,7 +56,7 @@ are recorded with who, what and when, so a case can be reconstructed.
 Stated so nobody relies on something that does not exist yet:
 
 - There is no operator command yet to end a single room or block one person
-  without a server restart. The host's own tools and the directory switch are
-  what exists today.
+  from coming back. Removing a member, unlisting a room and switching the
+  directory off are what exists today.
 - Reports are purged by age only (`REPORT_RETENTION_DAYS`); there is no legal
   hold for an open case, so evidence is exported when a case opens.
