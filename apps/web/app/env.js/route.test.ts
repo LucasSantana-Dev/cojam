@@ -7,6 +7,7 @@ const KEYS = [
   'COJAM_SUPABASE_URL',
   'COJAM_SUPABASE_ANON_KEY',
   'COJAM_FEATURE_SUPABASE_AUTH',
+  'COJAM_STUN_URLS',
   ...FEATURE_KEYS,
 ];
 
@@ -29,6 +30,15 @@ describe('env.js route supabase overrides', () => {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
+  });
+
+  it('emits stunUrls only when COJAM_STUN_URLS is set, even empty (#310)', async () => {
+    delete process.env.COJAM_STUN_URLS;
+    expect((await parseBody(GET())).stunUrls).toBeUndefined();
+    process.env.COJAM_STUN_URLS = '';
+    expect((await parseBody(GET())).stunUrls).toBe('');
+    process.env.COJAM_STUN_URLS = 'stun:example.org:3478';
+    expect((await parseBody(GET())).stunUrls).toBe('stun:example.org:3478');
   });
 
   it('emits both supabase values when both are set', async () => {

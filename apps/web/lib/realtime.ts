@@ -9,7 +9,7 @@ import { features } from './features';
 import { trackEvent, trackError } from './telemetry';
 import { isCharacterId } from './characters';
 import { skipVoteKey } from './skipVote';
-import type { ChatDeletePub, ChatMessage, ChatMessagePub, Emote, MemberPlatformPub, MemberCharacterPub, ReactionEmotePub, ReactionWootPub, RoomState, RoomStatePub, TrackRef } from '@cojam/shared';
+import type { ChatDeletePub, ChatMessage, ChatMessagePub, Emote, MemberPlatformPub, MemberCharacterPub, ReactionEmotePub, ReactionWootPub, RoomState, RoomStatePub, ServerMessage, SignalPayload, TrackRef } from '@cojam/shared';
 import { EMOTES } from '@cojam/shared';
 
 export type Member = {
@@ -579,6 +579,13 @@ export async function joinRoom(
       // code goes out, never the free-text reason.
       trackError('ws_terminal', new Error(`disconnect code ${code}`));
     }
+  });
+
+  // Per-connection server messages (screen share signaling, #310). Not a
+  // channel publication: only this connection receives them.
+  centrifuge.on('message', (ctx) => {
+    const msg = (ctx as { data?: unknown }).data;
+    if (isServerMessage(msg)) emitServerMessage(msg);
   });
 
   const sub = centrifuge.newSubscription(`room:${roomId}`);
@@ -1352,4 +1359,63 @@ export async function transportPause(roomId: string, positionMs: number) {
 export async function transportSeek(roomId: string, positionMs: number) {
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('transport.seek', { roomId, positionMs });
+}
+
+// Screen share (#310, FEATURE_SCREENSHARE). Server messages arrive on the
+// connection (centrifuge 'message'), never on the room channel, and fan out
+// to whoever mounted the screen share controller.
+type ServerMessageListener = (msg: ServerMessage) => void;
+const serverMessageListeners = new Set<ServerMessageListener>();
+
+export function onServerMessage(cb: ServerMessageListener): () => void {
+  serverMessageListeners.add(cb);
+  return () => {
+    serverMessageListeners.delete(cb);
+  };
+}
+
+function emitServerMessage(msg: ServerMessage): void {
+  serverMessageListeners.forEach((l) => l(msg));
+}
+
+const SERVER_MESSAGE_TYPES = new Set(['rtc.signal', 'screen.viewer', 'screen.ended']);
+
+export function isServerMessage(v: unknown): v is ServerMessage {
+  if (!v || typeof v !== 'object') return false;
+  const m = v as { type?: unknown; roomId?: unknown };
+  return typeof m.type === 'string' && SERVER_MESSAGE_TYPES.has(m.type) && typeof m.roomId === 'string';
+}
+
+function screenRpc(method: string, params: Record<string, unknown>) {
+  if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
+  return centrifuge.rpc(method, params);
+}
+
+export async function screenStart(roomId: string): Promise<void> {
+  await screenRpc('screen.start', { roomId, ageAffirmed: true });
+}
+
+export async function screenStop(roomId: string): Promise<void> {
+  await screenRpc('screen.stop', { roomId });
+}
+
+export async function screenWatch(roomId: string): Promise<string> {
+  const r = await screenRpc('screen.watch', { roomId });
+  return (r.data as { broadcasterId?: string } | null)?.broadcasterId ?? '';
+}
+
+export async function screenUnwatch(roomId: string): Promise<void> {
+  await screenRpc('screen.unwatch', { roomId });
+}
+
+export async function screenLock(roomId: string, locked: boolean): Promise<void> {
+  await screenRpc('screen.lock', { roomId, locked });
+}
+
+export async function screenRefuse(roomId: string, clientId: string): Promise<void> {
+  await screenRpc('screen.refuse', { roomId, clientId });
+}
+
+export async function rtcSignal(roomId: string, to: string, payload: SignalPayload): Promise<void> {
+  await screenRpc('rtc.signal', { roomId, to, payload });
 }

@@ -28,6 +28,7 @@ COJAM_SUPABASE_URL=<url>               # accounts; emitted only with the anon ke
 COJAM_SUPABASE_ANON_KEY=<key>
 COJAM_FEATURE_SUPABASE_AUTH=false      # suppress the Supabase pair entirely
 COJAM_FEATURE_TELEMETRY=true           # client error/vitals/event reporting (default off)
+COJAM_STUN_URLS=stun:a:3478,stun:b     # screen share STUN servers (#310); unset = Google + Cloudflare, empty = none; non-stun: entries are dropped (no TURN)
 ```
 
 > [!IMPORTANT]
@@ -40,9 +41,11 @@ Source of truth: `apps/web/lib/features.ts`. Each has a `NEXT_PUBLIC_FEATURE_<NA
 | Flag | Default |
 | --- | --- |
 | `YOUTUBE`, `PRESENCE`, `TRACK_DEPTH`, `LYRICS` | on |
-| `SPOTIFY`, `LISTENBRAINZ`, `LASTFM_ENRICH`, `SYNC`, `ROOM_AUTH`, `QUEUE_VOTING`, `ROOM_CHAT`, `PUBLIC_ROOMS`, `TELEMETRY`, `VIDEO` | off |
+| `SPOTIFY`, `LISTENBRAINZ`, `LASTFM_ENRICH`, `SYNC`, `ROOM_AUTH`, `QUEUE_VOTING`, `ROOM_CHAT`, `PUBLIC_ROOMS`, `TELEMETRY`, `VIDEO`, `SCREENSHARE` | off |
 
 `VIDEO` is its own flag, not `SYNC`: video co-watch carries a ToS exposure and must switch off without disabling audio drift correction.
+
+`SCREENSHARE` (#310) shows the share controls only with `ROOM_AUTH` on, and only to the host or owner of a private room. Turn it on together with the server's `FEATURE_SCREENSHARE`, and not before the rollout gates in `docs/specs/310-screen-share.md` section 10.
 
 ## Server
 

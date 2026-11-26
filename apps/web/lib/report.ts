@@ -1,7 +1,9 @@
 // Filing member reports (#259). Design: docs/specs/259-eca-minor-safety.md.
 import { resolveConnectionToken } from './realtime';
 
-export type ReportKind = 'message' | 'member' | 'room';
+// 'broadcast' (#310): a screen share. The server resolves who was sharing and
+// ignores subjectId and content, so the client sends neither.
+export type ReportKind = 'message' | 'member' | 'room' | 'broadcast';
 
 // Closed set mirrored by report.NormalizeCategory on the server; anything else
 // is stored as "other".
