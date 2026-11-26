@@ -112,6 +112,10 @@ func (h *Hub) roomKick(roomID, targetClientID string) (json.RawMessage, error) {
 	if !h.IsMember(targetClientID, roomID) {
 		return nil, userErrorf("that member is not in this room")
 	}
+	// Before leaveRoom (#310): a kicked broadcaster's share ends and a kicked
+	// viewer's slot is freed here, not left to a disconnect hook that would
+	// no longer see the membership.
+	h.screenLeave(roomID, targetClientID, screenEndKicked)
 	h.leaveRoom(targetClientID, roomID)
 	if h.node != nil {
 		if c, ok := h.node.Hub().Connections()[targetClientID]; ok {

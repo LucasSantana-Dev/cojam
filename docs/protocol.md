@@ -43,6 +43,13 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `member.characters` | `{ roomId }` | `{ characters: Record<clientId, characterId> }` |
 | `reaction.woot` | `{ roomId }` | `{ clientId: string }` |
 | `reaction.emote` | `{ roomId, emote }` | `{ clientId: string, emote: string }` |
+| `screen.start` | `{ roomId, ageAffirmed: true }` | `RoomState` |
+| `screen.stop` | `{ roomId }` | `RoomState` |
+| `screen.watch` | `{ roomId }` | `{ broadcasterId: string }` |
+| `screen.unwatch` | `{ roomId }` | `{}` |
+| `screen.lock` | `{ roomId, locked: boolean }` | `RoomState` |
+| `screen.refuse` | `{ roomId, clientId: string }` | `{}` |
+| `rtc.signal` | `{ roomId, to: string, payload: SignalPayload }` | `{}` |
 | `sync.ping` | `{}` | `{ serverNowMs: number }` |
 
 `track.search` is a read (not membership-gated). The query is trimmed; empty
@@ -175,6 +182,50 @@ republishes the room state every 10s with `version` bumped and `transport`
 unchanged, so clients that missed a publication converge on the next beat. The
 ticker stops on pause, track end, a non-video track, an empty room and room
 eviction. No video bytes cross the server: each client renders its own IFrame.
+
+Screen share v1 (#310, `docs/specs/310-screen-share.md`) exists only when
+`FEATURE_SCREENSHARE` is on (default off; the server refuses to boot with it on
+and `FEATURE_ROOM_AUTH` off, in every environment); otherwise every `screen.*`
+method and `rtc.signal` reply `ErrorMethodNotFound`. One member of a private
+room shares their screen with at most 5 other members over a WebRTC P2P mesh.
+The server never carries media: it decides who may share and who may watch,
+and relays SDP and ICE candidates.
+
+- `screen.start`: the host or owner (an empty host is a refusal), or the same
+  identity as the current broadcaster from a new connection (takeover: the old
+  session ends with no viewers). Refused when `ageAffirmed` is not `true`, the
+  room is public, the room id is not in the 12-char format, the room is not in
+  `SCREENSHARE_ROOM_ALLOWLIST` when that is set, or someone else is sharing.
+  `room.set_public {public:true}` is refused while a share is live.
+- `screen.watch` is the only way to receive a stream. One slot per identity (a
+  second tab moves the slot), at most 5, refused when locked or when the caller
+  was refused this session. `screen.unwatch` is always allowed.
+- `screen.stop`: the broadcaster or the host. `screen.lock` and
+  `screen.refuse`: the broadcaster or the host. A refusal lasts for the session.
+- `rtc.signal` only between the broadcaster and an admitted viewer; `offer`
+  only from the broadcaster, `answer` only from a viewer. Params are capped at
+  16 KiB, candidate batches at 20, and unknown fields are refused. Its own
+  per-caller limiter (burst 60, one token per 100ms). Payloads are never
+  logged: SDP carries IP addresses.
+- A kick, a disconnect, a rebind or an operator room closure of the
+  broadcaster ends the share; of a viewer frees the slot.
+
+Server-to-client messages arrive on the connection itself (centrifuge
+`message` event, not a channel publication), JSON with a `type`:
+
+```ts
+type ServerMessage =
+  | { type: 'rtc.signal'; roomId: string; from: string; payload: SignalPayload } // from = sender clientId, server-stamped
+  | { type: 'screen.viewer'; roomId: string; clientId: string; action: 'join' | 'leave' };
+// screen.viewer goes to the broadcaster (open or close that peer) and, with the
+// viewer's own clientId and action 'leave', to a viewer that was removed.
+
+type SignalPayload =
+  | { kind: 'offer' | 'answer'; sdp: string }                 // sdp starts with "v=0"
+  | { kind: 'candidates'; candidates: RTCIceCandidateInit[] }  // 1..20 per message
+  | { kind: 'end-of-candidates' }
+  | { kind: 'bye' };
+```
 
 `chat.send` / `chat.history` (F8) exist only when `FEATURE_ROOM_CHAT` is on
 (default off); otherwise the server replies `ErrorMethodNotFound`. Chat is
@@ -562,6 +613,16 @@ type RoomState = {
   skipVotes?: string[]; // voter keys who want the playing track skipped; cleared on every track change
   public?: boolean;         // directory opt-in (FEATURE_PUBLIC_ROOMS); absent = private
   name?: string;            // optional host-set room label shown in the directory
+  screen?: ScreenShareState; // live screen share (FEATURE_SCREENSHARE, #310); stamped on every state, never persisted
+};
+
+type ScreenShareState = {
+  broadcasterId: string;    // clientId of the broadcasting connection
+  broadcasterName: string;  // server-stamped connect-time display name
+  startedAtMs: number;      // server clock (unix ms)
+  viewerCount: number;      // admitted viewers, 0..maxViewers
+  maxViewers: number;       // 5 in v1
+  locked: boolean;          // admission closed by the host or broadcaster
 };
 
 type TransportState = {

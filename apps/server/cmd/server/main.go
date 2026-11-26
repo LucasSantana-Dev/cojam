@@ -209,7 +209,19 @@ func main() {
 		WithVoting(featureEnabled("FEATURE_QUEUE_VOTING", false)).
 		WithChat(featureEnabled("FEATURE_ROOM_CHAT", false)).
 		WithPublicRooms(featureEnabled("FEATURE_PUBLIC_ROOMS", false)).
-		WithVideo(featureEnabled("FEATURE_VIDEO", false))
+		WithVideo(featureEnabled("FEATURE_VIDEO", false)).
+		WithScreenShare(featureEnabled("FEATURE_SCREENSHARE", false), screenShareAllowlist(os.Getenv))
+
+	// Screen share (#310) needs a host to control it, in every environment:
+	// this is not part of validateProdConfig, which is silent outside prod.
+	if msg := screenShareConfigError(os.Getenv); msg != "" {
+		fatal(logger, "config_invalid", "problems", msg)
+	}
+	if featureEnabled("FEATURE_SCREENSHARE", false) {
+		logger.Info("screenshare_enabled", "room_allowlist", len(screenShareAllowlist(os.Getenv)))
+	} else {
+		logger.Info("screenshare_disabled")
+	}
 
 	if featureEnabled("FEATURE_SYNC", false) {
 		logger.Info("sync_enabled")
@@ -721,6 +733,7 @@ func main() {
 
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
 			metrics.ConnDec()
+			h.ScreenOnDisconnect(client.ID())  // screen share (#310): resolves rooms from its own index, so it runs first
 			h.PromoteOnDisconnect(client.ID()) // host handoff (#166): needs membership + userID, so it must precede the cleanup calls
 			h.PruneGuestVotes(client.ID())     // drop ephemeral guest votes before membership is cleared (#183)
 			h.Leave(client.ID())               // revoke room memberships for this connection

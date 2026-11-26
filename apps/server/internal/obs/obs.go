@@ -65,6 +65,14 @@ type Metrics struct {
 	// SearchProviderFailures counts search provider errors by provider name
 	// (deezer, spotify). Used to detect a total search outage (#396).
 	SearchProviderFailures *prometheus.CounterVec
+
+	// Screen share (#310). Reasons are fixed label sets set by the hub, never
+	// input. The ICE failure rate comes from client telemetry
+	// (screen_ice_failed / screen_ice_connected), not from these.
+	ScreenSessionsStarted prometheus.Counter
+	ScreenSessionsEnded   *prometheus.CounterVec
+	ScreenViewers         prometheus.Histogram
+	ScreenWatchRejects    *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -178,12 +186,29 @@ func New() *Metrics {
 			Name: "music_jam_search_provider_failures_total",
 			Help: "Search provider errors by provider (deezer, spotify).",
 		}, []string{"provider"}),
+		ScreenSessionsStarted: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "music_jam_screen_sessions_started_total",
+			Help: "Screen share sessions started (#310).",
+		}),
+		ScreenSessionsEnded: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_screen_sessions_ended_total",
+			Help: "Screen share sessions ended, by reason (stopped, host_stopped, disconnect, kicked, takeover, shutdown, closed).",
+		}, []string{"reason"}),
+		ScreenViewers: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "music_jam_screen_viewers_per_session",
+			Help:    "Peak admitted viewers per ended screen share session.",
+			Buckets: []float64{0, 1, 2, 3, 4, 5},
+		}),
+		ScreenWatchRejects: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "music_jam_screen_watch_rejected_total",
+			Help: "screen.watch calls refused, by reason (full, no_share, self, locked, refused).",
+		}, []string{"reason"}),
 	}
 	reg.MustRegister(m.RPCDuration, m.ConnectionsActive, m.MatchConfidence, m.MatchCacheHits, m.MatchCacheMisses,
 		m.StoreErrors, m.StoreVersionGuardRejected, m.RateLimitRejected, m.RoomsEvicted, m.RoomsPersistedEvicted,
 		m.PublishErrors, m.PlayingWithoutTransport, m.VotesCast, m.SkipVotes, m.SkipsByVote, m.ChatMessagesSent, m.RoomsListed, m.RoomsSetPublic, m.RoomsShared,
 		m.ClientErrors, m.ProductEvents, m.WebVitals, m.TelemetryReject, m.ReportsFiled, m.RetentionPurgedRows,
-		m.SearchProviderFailures)
+		m.SearchProviderFailures, m.ScreenSessionsStarted, m.ScreenSessionsEnded, m.ScreenViewers, m.ScreenWatchRejects)
 
 	m.registerFoundation()
 	return m
@@ -263,4 +288,19 @@ func (m *Metrics) WebVital(name string, v float64) {
 // RoomSetPublic counts one room.set_public toggle by target visibility.
 func (m *Metrics) RoomSetPublic(public bool) {
 	m.RoomsSetPublic.WithLabelValues(strconv.FormatBool(public)).Inc()
+}
+
+// ScreenSessionStarted counts one accepted screen.start (#310).
+func (m *Metrics) ScreenSessionStarted() { m.ScreenSessionsStarted.Inc() }
+
+// ScreenSessionEnded counts one ended screen share and observes its peak
+// viewer count.
+func (m *Metrics) ScreenSessionEnded(reason string, peakViewers int) {
+	m.ScreenSessionsEnded.WithLabelValues(reason).Inc()
+	m.ScreenViewers.Observe(float64(peakViewers))
+}
+
+// ScreenWatchRejected counts one refused screen.watch.
+func (m *Metrics) ScreenWatchRejected(reason string) {
+	m.ScreenWatchRejects.WithLabelValues(reason).Inc()
 }

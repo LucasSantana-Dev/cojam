@@ -100,7 +100,42 @@ export type RoomState = {
   // Optional host-set room label shown in the public directory. Not to be
   // confused with the `name` param of room.join (a member's display name).
   name?: string;
+  // Live screen share (FEATURE_SCREENSHARE, #310). Present only while one is
+  // live; stamped by the server on every state, never persisted.
+  screen?: ScreenShareState;
 };
+
+// Public projection of a live screen share (#310).
+export type ScreenShareState = {
+  broadcasterId: string;   // clientId of the broadcasting connection
+  broadcasterName: string; // server-stamped connect-time display name
+  startedAtMs: number;     // server clock (unix ms)
+  viewerCount: number;     // admitted viewers, 0..maxViewers
+  maxViewers: number;      // 5 in v1; never hardcode it client-side
+  locked: boolean;         // admission closed by the host or broadcaster
+};
+
+// One ICE candidate as RTCIceCandidateInit carries it.
+export type IceCandidateInit = {
+  candidate: string;
+  sdpMid?: string | null;
+  sdpMLineIndex?: number | null;
+  usernameFragment?: string | null;
+};
+
+// rtc.signal payload (#310). The server refuses unknown kinds and fields,
+// an offer from a viewer and an answer from the broadcaster.
+export type SignalPayload =
+  | { kind: 'offer' | 'answer'; sdp: string }
+  | { kind: 'candidates'; candidates: IceCandidateInit[] } // 1..20 per message
+  | { kind: 'end-of-candidates' }
+  | { kind: 'bye' };
+
+// Messages the server sends to one connection (centrifuge `message` event,
+// not a channel publication). `from` is the sender's clientId, server-stamped.
+export type ServerMessage =
+  | { type: 'rtc.signal'; roomId: string; from: string; payload: SignalPayload }
+  | { type: 'screen.viewer'; roomId: string; clientId: string; action: 'join' | 'leave' };
 
 // PublicRoomSummary is the directory view of a public room returned by
 // room.list. Deliberately narrow: queue contents, host id, transport, and

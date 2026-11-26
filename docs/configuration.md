@@ -73,6 +73,7 @@ Read in `apps/server/cmd/server/main.go`. Same truthy and falsy values as the we
 | `FEATURE_MATCHING`, `FEATURE_PLAYLIST_IMPORT`, `FEATURE_RADIO`, `FEATURE_TRACK_DEPTH`, `FEATURE_LYRICS` | on |
 | `FEATURE_PRODUCT_EVENTS` | on with `DATABASE_URL`, off without |
 | `FEATURE_SYNC`, `FEATURE_QUEUE_VOTING`, `FEATURE_ROOM_CHAT`, `FEATURE_PUBLIC_ROOMS`, `FEATURE_VIDEO`, `FEATURE_ROOM_AUTH`, `FEATURE_SUPABASE_AUTH`, `FEATURE_LISTENBRAINZ`, `FEATURE_LASTFM_ENRICH` | off |
+| `FEATURE_SCREENSHARE` (#310). Needs `FEATURE_ROOM_AUTH`: the server refuses to boot without it, in every environment. `SCREENSHARE_ROOM_ALLOWLIST` (comma-separated room ids) limits shares to those rooms; unset means every eligible private room. | off |
 
 > [!IMPORTANT]
 > `SPOTIFY_TOKEN_KEY` must be base64 of exactly 32 bytes (`openssl rand -base64 32`) and must be kept **separate from `DATABASE_URL`**, so leaking one does not imply leaking the other. Unset means no server-side custody: playback still works for the lifetime of one access token, then the user reconnects. Refusing is deliberate, because storing a long-lived credential in the clear is worse than not storing it.
