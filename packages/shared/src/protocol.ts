@@ -135,7 +135,9 @@ export type SignalPayload =
 // not a channel publication). `from` is the sender's clientId, server-stamped.
 export type ServerMessage =
   | { type: 'rtc.signal'; roomId: string; from: string; payload: SignalPayload }
-  | { type: 'screen.viewer'; roomId: string; clientId: string; action: 'join' | 'leave' };
+  | { type: 'screen.viewer'; roomId: string; clientId: string; action: 'join' | 'leave' }
+  // To the broadcaster and every viewer of a session that ended.
+  | { type: 'screen.ended'; roomId: string };
 
 // PublicRoomSummary is the directory view of a public room returned by
 // room.list. Deliberately narrow: queue contents, host id, transport, and

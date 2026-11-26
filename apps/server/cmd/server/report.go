@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -67,6 +68,13 @@ func reportHandler(
 		}
 
 		kind := report.Kind(req.Kind)
+		if kind == report.KindBroadcast {
+			// A broadcast report names no subject and copies no content
+			// (#310): the server resolves who was broadcasting, so a reporter
+			// cannot point it at someone else, and a guest can always file it.
+			req.SubjectID = ""
+			req.Content = ""
+		}
 		// ids are short by construction; an oversize one is abuse, not a typo,
 		// and would otherwise be stored verbatim (up to the body cap).
 		// Ids reach the operator's webhook channel, so they are restricted to a
@@ -116,7 +124,7 @@ func reportHandler(
 			SubjectSub:  subject.Sub,
 			SubjectName: stripNUL(subject.Name),
 			SubjectText: truncateRunes(stripNUL(subject.Text), reportMaxContent),
-			Content:     truncateRunes(req.Content, reportMaxContent),
+			Content:     truncateRunes(reportContent(kind, req.Content, subject), reportMaxContent),
 			Reason:      reason,
 			CreatedAt:   time.Now().UTC(),
 		}
@@ -146,3 +154,40 @@ func reportHandler(
 }
 
 func stripNUL(s string) string { return strings.ReplaceAll(s, "\x00", "") }
+
+// reportContent is what a report stores as its content: the reporter's copy,
+// except for a broadcast report, whose content is the session the server
+// resolved (nothing of what was on screen is retained, spec 7.3).
+func reportContent(kind report.Kind, reporterCopy string, subject hub.Subject) string {
+	if kind == report.KindBroadcast {
+		return subject.Text
+	}
+	return reporterCopy
+}
+
+// broadcastSubjects wraps a subject resolver so a broadcast report filed after
+// the share ended still names the broadcaster: with no live share it falls
+// back to the newest screen session in the trail within the lookback (#310).
+// A store error or no session leaves the subject empty; the report is stored
+// either way.
+func broadcastSubjects(live subjectResolver, audit report.AuditStore, logger *slog.Logger, now func() time.Time) subjectResolver {
+	return func(roomID, kind, subjectID string) hub.Subject {
+		s := live(roomID, kind, subjectID)
+		if kind != string(report.KindBroadcast) || s.Sub != "" || audit == nil {
+			return s
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		since := now().Add(-report.BroadcastLookbackDays * 24 * time.Hour)
+		a, ok, err := audit.LatestBroadcast(ctx, roomID, since)
+		if err != nil {
+			logger.Error("broadcast_subject_lookup_failed", "room_id", roomID, "err", err.Error())
+			return s
+		}
+		if !ok {
+			return s
+		}
+		name, _ := a.Detail["name"].(string)
+		return hub.Subject{Sub: a.SubjectID, Name: name, Text: hub.ScreenSummary(a.Detail)}
+	}
+}

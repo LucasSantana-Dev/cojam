@@ -761,3 +761,55 @@ func TestScreenConfig_NeedsRoomAuthEverywhere(t *testing.T) {
 		t.Fatalf("blank allowlist entries must mean no allowlist, got %v", h.screen.allowlist)
 	}
 }
+
+// Review finding: a broadcaster who lost the host role keeps the running
+// share but cannot open a fresh one from another tab.
+func TestScreenStart_DemotedBroadcasterCannotTakeOver(t *testing.T) {
+	r := newScreenRig(t)
+	r.hostRoom("ana")
+	r.mustCall("c-host", "u-host", "room.transfer_host", map[string]any{"roomId": screenRoom, "userId": "u-ana"})
+	r.start("c-ana", "u-ana")
+	r.mustCall("c-ana", "u-ana", "room.transfer_host", map[string]any{"roomId": screenRoom, "userId": "u-host"})
+	r.join(screenRoom, "c-ana2", "u-ana")
+	_, err := r.call("c-ana2", "u-ana", "screen.start", map[string]any{"roomId": screenRoom, "ageAffirmed": true})
+	wantUserError(t, err, "host")
+	if sc := r.screen(); sc == nil || sc.BroadcasterID != "c-ana" {
+		t.Fatalf("running share changed: %+v", sc)
+	}
+}
+
+func TestScreen_EndNoticesReachEveryConnection(t *testing.T) {
+	r := newScreenRig(t)
+	r.hostRoom("ana")
+	r.start("c-host", "u-host")
+	if err := r.watch("c-ana", "u-ana"); err != nil {
+		t.Fatal(err)
+	}
+	r.join(screenRoom, "c-host2", "u-host")
+	r.start("c-host2", "u-host") // takeover ends the first session
+	for _, c := range []string{"c-host", "c-ana"} {
+		if got := r.sentTo(c, "screen.ended"); len(got) != 1 {
+			t.Fatalf("%s got %d screen.ended notices, want 1", c, len(got))
+		}
+	}
+}
+
+func TestScreenRefuse_TargetMustBeInTheRoom(t *testing.T) {
+	r := newScreenRig(t)
+	r.hostRoom()
+	r.start("c-host", "u-host")
+	_, err := r.call("c-host", "u-host", "screen.refuse", map[string]any{"roomId": screenRoom, "clientId": "c-nobody"})
+	wantUserError(t, err, "not in this room")
+	_, err = r.call("c-host", "u-host", "screen.refuse", map[string]any{"roomId": screenRoom, "clientId": "c-host"})
+	wantUserError(t, err, "parar")
+}
+
+// A refused member who is not watching is still refused by identity.
+func TestScreenRefuse_NonViewerByIdentity(t *testing.T) {
+	r := newScreenRig(t)
+	r.hostRoom("ana")
+	r.start("c-host", "u-host")
+	r.mustCall("c-host", "u-host", "screen.refuse", map[string]any{"roomId": screenRoom, "clientId": "c-ana"})
+	r.join(screenRoom, "c-ana2", "u-ana")
+	wantUserError(t, r.watch("c-ana2", "u-ana"), "não está aceitando")
+}

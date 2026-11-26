@@ -224,6 +224,24 @@ func (h *Hub) residentRoom(roomID string) *Room {
 	return h.rooms[roomID]
 }
 
+// endSessionLocked detaches roomID's live share and drops every index entry
+// it owns. Callers hold room.mu (screen.mu is a leaf lock), so index and
+// session state change together: a disconnect can never read an index that
+// lags the session, and a late cleanup can never erase a newer session's
+// entries.
+func (h *Hub) endSessionLocked(room *Room, roomID, reason, actor string) *screenEnded {
+	cur := room.screen
+	if cur == nil {
+		return nil
+	}
+	room.screen = nil
+	h.screenIndexRemove(cur.broadcasterClientID, roomID)
+	for _, c := range cur.viewers {
+		h.screenIndexRemove(c, roomID)
+	}
+	return &screenEnded{roomID: roomID, session: *cur, reason: reason, actor: actor, endedAt: time.Now()}
+}
+
 // mutateScreen runs fn under room.mu with the Room at hand, through the
 // normal mutate path (version bump, save, publish). Screen RPCs touch no
 // queue, so the sourceless auto-skip and the video heartbeat do not apply.
@@ -261,7 +279,9 @@ func (h *Hub) screenStart(roomID, clientID, userID string, ageAffirmed bool) (js
 			return nil // already sharing from this connection: idempotent
 		}
 		takeover := cur != nil && userID != "" && cur.broadcasterUserID == userID
-		if !takeover && !s.IsHostOrOwner(userID) {
+		// Takeover is still host-only: a broadcaster who lost the host role
+		// keeps the running share but cannot open a new one.
+		if !s.IsHostOrOwner(userID) {
 			return userErrorf("Só o host pode compartilhar a tela.")
 		}
 		if s.Public {
@@ -275,7 +295,7 @@ func (h *Hub) screenStart(roomID, clientID, userID string, ageAffirmed bool) (js
 			// Same person, new connection (a reload, or a dropped connection
 			// whose disconnect has not been detected yet): end the old
 			// session so its owner is not locked out for the ping timeout.
-			ended = &screenEnded{roomID: roomID, session: *cur, reason: screenEndTakeover, actor: userID, endedAt: now}
+			ended = h.endSessionLocked(room, roomID, screenEndTakeover, userID)
 		}
 		room.screen = &screenSession{
 			broadcasterClientID: clientID,
@@ -286,6 +306,7 @@ func (h *Hub) screenStart(roomID, clientID, userID string, ageAffirmed bool) (js
 			viewers:             make(map[string]string),
 			refused:             make(map[string]struct{}),
 		}
+		h.screenIndexAdd(clientID, roomID)
 		started = true
 		s.Version++
 		return nil
@@ -297,7 +318,6 @@ func (h *Hub) screenStart(roomID, clientID, userID string, ageAffirmed bool) (js
 		h.finishScreenSession(*ended, false)
 	}
 	if started {
-		h.screenIndexAdd(clientID, roomID)
 		if h.metrics != nil {
 			h.metrics.ScreenSessionStarted()
 		}
@@ -334,8 +354,7 @@ func (h *Hub) screenStop(roomID, clientID, userID string) (json.RawMessage, erro
 			}
 			reason = screenEndHostStopped
 		}
-		ended = &screenEnded{roomID: roomID, session: *cur, reason: reason, actor: userID, endedAt: time.Now()}
-		room.screen = nil
+		ended = h.endSessionLocked(room, roomID, reason, userID)
 		s.Version++
 		return nil
 	})
@@ -373,6 +392,8 @@ func (h *Hub) screenWatch(roomID, clientID, userID string) (json.RawMessage, err
 			// One slot per person: the slot moves to the new connection.
 			movedFrom = held
 			cur.viewers[key] = clientID
+			h.screenIndexRemove(held, roomID)
+			h.screenIndexAdd(clientID, roomID)
 			s.Version++
 			return nil
 		}
@@ -389,6 +410,7 @@ func (h *Hub) screenWatch(roomID, clientID, userID string) (json.RawMessage, err
 			return userErrorf("O compartilhamento está cheio (%d espectadores).", screenMaxViewers)
 		}
 		cur.viewers[key] = clientID
+		h.screenIndexAdd(clientID, roomID)
 		if len(cur.viewers) > cur.peakViewers {
 			cur.peakViewers = len(cur.viewers)
 		}
@@ -402,9 +424,7 @@ func (h *Hub) screenWatch(roomID, clientID, userID string) (json.RawMessage, err
 		return nil, err
 	}
 	_ = res
-	h.screenIndexAdd(clientID, roomID)
 	if movedFrom != "" {
-		h.screenIndexRemove(movedFrom, roomID)
 		h.notifyScreenViewer(broadcaster, roomID, movedFrom, "leave")
 		h.notifyScreenViewer(movedFrom, roomID, movedFrom, "leave")
 	}
@@ -423,6 +443,7 @@ func (h *Hub) screenUnwatch(roomID, clientID string) (json.RawMessage, error) {
 
 // screenViewerLeave frees clientID's viewer slot in roomID, publishes and
 // tells the broadcaster to close that peer. No-op when clientID holds none.
+// During shutdown the slot is freed in place, with no publication.
 func (h *Hub) screenViewerLeave(roomID, clientID string) error {
 	room := h.residentRoom(roomID)
 	if room == nil {
@@ -430,19 +451,30 @@ func (h *Hub) screenViewerLeave(roomID, clientID string) error {
 		return nil
 	}
 	var broadcaster string
-	_, err := h.mutateRoom(roomID, room, func(s *queue.RoomState) error {
+	leave := func(s *queue.RoomState) bool {
 		cur := room.screen
 		if cur == nil || !cur.removeViewerClient(clientID) {
-			return nil
+			return false
 		}
+		h.screenIndexRemove(clientID, roomID)
 		broadcaster = cur.broadcasterClientID
-		s.Version++
+		return true
+	}
+	if h.roles.shuttingDown.Load() {
+		room.mu.Lock()
+		leave(room.State)
+		room.mu.Unlock()
+		return nil
+	}
+	_, err := h.mutateRoom(roomID, room, func(s *queue.RoomState) error {
+		if leave(s) {
+			s.Version++
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	h.screenIndexRemove(clientID, roomID)
 	if broadcaster != "" {
 		h.notifyScreenViewer(broadcaster, roomID, clientID, "leave")
 	}
@@ -476,7 +508,11 @@ func (h *Hub) screenRefuse(roomID, clientID, userID, targetClientID string) (jso
 	if targetClientID == "" {
 		return nil, userErrorf("client id required")
 	}
-	targetKey := viewerKey(targetClientID, h.userIDOf(targetClientID))
+	// Resolved before taking the room lock (clientUserIDMu is never taken
+	// under room.mu); the session's own slot map wins when the target holds a
+	// slot, so a connection that just dropped is still refused by person.
+	targetUser := h.userIDOf(targetClientID)
+	var targetKey string
 	var broadcaster string
 	var removed []string
 	refusedOK := false
@@ -491,11 +527,23 @@ func (h *Hub) screenRefuse(roomID, clientID, userID, targetClientID string) (jso
 		if targetClientID == cur.broadcasterClientID {
 			return userErrorf("Para encerrar o compartilhamento, use parar.")
 		}
+		for k, c := range cur.viewers {
+			if c == targetClientID {
+				targetKey = k
+			}
+		}
+		if targetKey == "" {
+			if targetUser == "" || !h.IsMember(targetClientID, roomID) {
+				return userErrorf("that member is not in this room")
+			}
+			targetKey = viewerKey(targetClientID, targetUser)
+		}
 		broadcaster = cur.broadcasterClientID
 		cur.refused[targetKey] = struct{}{}
 		if held, ok := cur.viewers[targetKey]; ok {
 			removed = append(removed, held)
 			delete(cur.viewers, targetKey)
+			h.screenIndexRemove(held, roomID)
 		}
 		refusedOK = true
 		s.Version++
@@ -508,7 +556,6 @@ func (h *Hub) screenRefuse(roomID, clientID, userID, targetClientID string) (jso
 		h.screenAudit("screen.refuse", roomID, userID, strings.TrimPrefix(targetKey, "user:"), map[string]any{})
 	}
 	for _, c := range removed {
-		h.screenIndexRemove(c, roomID)
 		h.notifyScreenViewer(broadcaster, roomID, c, "leave")
 		h.notifyScreenViewer(c, roomID, c, "leave")
 	}
@@ -539,8 +586,7 @@ func (h *Hub) screenLeave(roomID, clientID, reason string) {
 			// node that is shutting down.
 			room.mu.Lock()
 			if room.screen != nil && room.screen.broadcasterClientID == clientID {
-				ended = &screenEnded{roomID: roomID, session: *room.screen, reason: screenEndShutdown, endedAt: time.Now()}
-				room.screen = nil
+				ended = h.endSessionLocked(room, roomID, screenEndShutdown, "")
 			}
 			room.mu.Unlock()
 			if ended != nil {
@@ -552,8 +598,7 @@ func (h *Hub) screenLeave(roomID, clientID, reason string) {
 			if room.screen == nil || room.screen.broadcasterClientID != clientID {
 				return nil
 			}
-			ended = &screenEnded{roomID: roomID, session: *room.screen, reason: reason, endedAt: time.Now()}
-			room.screen = nil
+			ended = h.endSessionLocked(room, roomID, reason, "")
 			s.Version++
 			return nil
 		})
@@ -568,7 +613,13 @@ func (h *Hub) screenLeave(roomID, clientID, reason string) {
 			h.logger.Error("screen_leave_failed", "room_id", roomID, "err", err.Error())
 		}
 	default:
-		h.screenIndexRemove(clientID, roomID)
+		// Not (or no longer) part of this share: drop a stale entry, under the
+		// room lock so it cannot race a concurrent watch or start.
+		room.mu.Lock()
+		if room.screen == nil || (room.screen.broadcasterClientID != clientID && !room.screen.isViewer(clientID)) {
+			h.screenIndexRemove(clientID, roomID)
+		}
+		room.mu.Unlock()
 	}
 }
 
@@ -592,10 +643,7 @@ func (h *Hub) screenCloseRoom(roomID string) {
 	}
 	room.mu.Lock()
 	var ended *screenEnded
-	if room.screen != nil {
-		ended = &screenEnded{roomID: roomID, session: *room.screen, reason: screenEndClosed, endedAt: time.Now()}
-		room.screen = nil
-	}
+	ended = h.endSessionLocked(room, roomID, screenEndClosed, "")
 	room.mu.Unlock()
 	if ended != nil {
 		h.finishScreenSession(*ended, false)
@@ -618,9 +666,12 @@ func (h *Hub) screenLive(roomID string) bool {
 // chat line (announce false skips the line, for ends nobody is left to read).
 func (h *Hub) finishScreenSession(e screenEnded, announce bool) {
 	sess := e.session
-	h.screenIndexRemove(sess.broadcasterClientID, e.roomID)
+	// Tell every connection of the ended session, so a well-behaved client
+	// closes its peers even before (or without) the state publication: after
+	// a takeover the old tab otherwise keeps peers outside any server state.
+	h.notifyScreenEnded(sess.broadcasterClientID, e.roomID)
 	for _, c := range sess.viewers {
-		h.screenIndexRemove(c, e.roomID)
+		h.notifyScreenEnded(c, e.roomID)
 	}
 	if h.metrics != nil {
 		h.metrics.ScreenSessionEnded(e.reason, sess.peakViewers)
@@ -697,4 +748,25 @@ func (h *Hub) dispatchScreen(method string, data []byte, clientID, userID string
 		return h.screenRefuse(req.RoomID, clientID, userID, req.ClientID)
 	}
 	return nil, centrifuge.ErrorMethodNotFound
+}
+
+// ScreenSummary renders a session's trail detail as the stored content of a
+// broadcast report: compact JSON with sorted keys, no content and no network
+// addresses (#310, spec 7.3).
+func ScreenSummary(detail map[string]any) string {
+	b, err := json.Marshal(detail)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// notifyScreenEnded tells one connection that the share it took part in
+// ended. Best effort, like notifyScreenViewer.
+func (h *Hub) notifyScreenEnded(target, roomID string) {
+	msg, err := json.Marshal(map[string]string{"type": "screen.ended", "roomId": roomID})
+	if err != nil {
+		return
+	}
+	_ = h.sendToClient(target, msg)
 }

@@ -100,10 +100,30 @@ type Subject struct {
 // Anything else, or a subject already gone, resolves to the zero Subject:
 // the report is stored either way.
 func (h *Hub) ReportSubject(roomID, kind, subjectID string) Subject {
-	if subjectID == "" {
+	if subjectID == "" && kind != "broadcast" {
 		return Subject{}
 	}
 	switch kind {
+	case "broadcast":
+		// The live share, if any (#310). The reporter names nothing: the
+		// subject is whoever the server has broadcasting in that room.
+		room := h.residentRoom(roomID)
+		if room == nil {
+			return Subject{}
+		}
+		room.mu.Lock()
+		defer room.mu.Unlock()
+		if s := room.screen; s != nil {
+			return Subject{Sub: s.broadcasterUserID, Name: s.broadcasterName, Text: ScreenSummary(map[string]any{
+				"name":        s.broadcasterName,
+				"startedAt":   s.startedAt.UnixMilli(),
+				"viewers":     len(s.viewers),
+				"peakViewers": s.peakViewers,
+				"ageAffirmed": s.ageAffirmed,
+				"live":        true,
+			})}
+		}
+		return Subject{}
 	case "member":
 		if !h.IsMember(subjectID, roomID) {
 			return Subject{}

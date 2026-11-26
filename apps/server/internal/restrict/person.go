@@ -140,6 +140,10 @@ func (r ReportSubject) Consistent() bool {
 		return r.Name != "" && strings.HasPrefix(r.Content, r.Name)
 	case "message":
 		return r.Text != "" && r.Content == r.Text
+	case "broadcast":
+		// The reporter names nothing in a broadcast report (#310): the server
+		// resolved the broadcaster itself, so there is no copy to disagree.
+		return r.Sub != ""
 	}
 	return false
 }

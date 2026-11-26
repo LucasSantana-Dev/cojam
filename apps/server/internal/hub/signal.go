@@ -198,8 +198,12 @@ func (h *Hub) rtcSignal(data []byte, clientID, userID string) (json.RawMessage, 
 			return nil, userErrorf("only viewers send answers")
 		}
 	}
+	// A vanished viewer frees its slot; a vanished broadcaster is left to its
+	// own disconnect, so a viewer's signal can never end someone's share.
 	if !h.IsMember(req.To, req.RoomID) {
-		h.screenLeave(req.RoomID, req.To, screenEndDisconnect)
+		if fromBroadcaster {
+			h.screenLeave(req.RoomID, req.To, screenEndDisconnect)
+		}
 		return nil, userErrorf("Essa pessoa não está mais conectada.")
 	}
 
@@ -213,7 +217,9 @@ func (h *Hub) rtcSignal(data []byte, clientID, userID string) (json.RawMessage, 
 		return nil, err
 	}
 	if err := h.sendToClient(req.To, msg); err != nil {
-		h.screenLeave(req.RoomID, req.To, screenEndDisconnect)
+		if fromBroadcaster {
+			h.screenLeave(req.RoomID, req.To, screenEndDisconnect)
+		}
 		return nil, userErrorf("Essa pessoa não está mais conectada.")
 	}
 	if h.logger != nil {

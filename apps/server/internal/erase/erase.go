@@ -123,6 +123,11 @@ type Counts struct {
 	ModerationActorAnonymized   int64
 	ModerationSubjectAnonymized int64
 	ModerationSubjectRetained   int64
+	// Screen share trail rows about the person as broadcaster (#310):
+	// subject and display name removed, unless a kept broadcast report about
+	// them in that room still needs the session as evidence.
+	ScreenSessionsAnonymized int64
+	ScreenSessionsRetained   int64
 
 	ReboundSubsRetained int64
 	// PersonBlocksRetained counts the person's operator block (#259): kept.
@@ -269,6 +274,13 @@ const linkedSQL = `EXISTS (
 	AND ` + subjectReportSQL + `
 )`
 
+// screenLinkedSQL is true when a kept broadcast report in the same room is
+// about the screen row's subject (#310). $1 is the person's sub.
+const screenLinkedSQL = `EXISTS (
+	SELECT 1 FROM reports r
+	WHERE r.room_id = m.room_id AND r.kind = 'broadcast' AND r.subject_sub = $1
+)`
+
 // personRoomsSQL lists rooms where the person is identified outside room
 // state: reports they filed, moderation rows where they acted or were the
 // subject, reports about their client ids or sub. $1 sub, $2 client ids.
@@ -369,6 +381,15 @@ func Run(ctx context.Context, pool *pgxpool.Pool, req Request, apply bool) (Coun
 		{"moderation_actions", &c.ModerationSubjectRetained, true,
 			`SELECT count(*) FROM moderation_actions m
 			 WHERE m.subject_id <> '' AND m.subject_id = ANY($1::text[]) AND ` + linkedSQL, subj},
+		// Screen sessions name the broadcaster by sub and display name
+		// (#310). They go with the reports that need them, like the rows
+		// above, so this runs after the subject report steps.
+		{"moderation_actions", &c.ScreenSessionsAnonymized, false,
+			`UPDATE moderation_actions m SET subject_id = '', detail = m.detail - 'name'
+			 WHERE m.action LIKE 'screen.%' AND m.subject_id = $1 AND NOT ` + screenLinkedSQL, []any{req.Sub}},
+		{"moderation_actions", &c.ScreenSessionsRetained, true,
+			`SELECT count(*) FROM moderation_actions m
+			 WHERE m.action LIKE 'screen.%' AND m.subject_id = $1 AND ` + screenLinkedSQL, []any{req.Sub}},
 		{"rebound_subs", &c.ReboundSubsRetained, true,
 			`SELECT count(*) FROM rebound_subs WHERE sub = $1`, []any{req.Sub}},
 		{"person_blocks", &c.PersonBlocksRetained, true,

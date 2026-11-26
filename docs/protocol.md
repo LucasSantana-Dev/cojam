@@ -209,6 +209,14 @@ and relays SDP and ICE candidates.
   logged: SDP carries IP addresses.
 - A kick, a disconnect, a rebind or an operator room closure of the
   broadcaster ends the share; of a viewer frees the slot.
+- Every session start and end is written to the moderation trail
+  (`moderation_actions`, actions `screen.start`, `screen.stop`,
+  `screen.host_stop`, `screen.refuse`, with a `detail` of name, times, peak
+  viewers, age affirmation and end reason; no content, no addresses).
+- `POST /api/report` takes `kind: "broadcast"` with the room id and a reason.
+  The server ignores any `subjectId` and `content` and resolves the subject
+  itself: the live share, else the newest session in the trail within 7 days.
+  A broadcast report is never rejected for lack of a subject.
 
 Server-to-client messages arrive on the connection itself (centrifuge
 `message` event, not a channel publication), JSON with a `type`:
@@ -216,7 +224,8 @@ Server-to-client messages arrive on the connection itself (centrifuge
 ```ts
 type ServerMessage =
   | { type: 'rtc.signal'; roomId: string; from: string; payload: SignalPayload } // from = sender clientId, server-stamped
-  | { type: 'screen.viewer'; roomId: string; clientId: string; action: 'join' | 'leave' };
+  | { type: 'screen.viewer'; roomId: string; clientId: string; action: 'join' | 'leave' }
+  | { type: 'screen.ended'; roomId: string }; // to the broadcaster and every viewer of a session that ended
 // screen.viewer goes to the broadcaster (open or close that peer) and, with the
 // viewer's own clientId and action 'leave', to a viewer that was removed.
 

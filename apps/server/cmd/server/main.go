@@ -589,7 +589,7 @@ func main() {
 	// Moderation audit trail (#259): chat.delete and room.kick previously left
 	// only a stdout line, which is not queryable and dies with the container.
 	// Recorded asynchronously so a slow write never blocks a moderation action.
-	h.WithModerationAudit(func(action, roomID, actorUserID, subjectID string) {
+	recordAudit := func(action, roomID, actorUserID, subjectID string, detail map[string]any) {
 		auditWg.Add(1)
 		obs.SafeGo("moderation_audit", func() {
 			defer auditWg.Done()
@@ -601,13 +601,20 @@ func main() {
 				Action:      action,
 				ActorUserID: actorUserID,
 				SubjectID:   subjectID,
+				Detail:      detail,
 				CreatedAt:   time.Now().UTC(),
 			}
 			if err := audit.Record(ctx, rec); err != nil {
 				logger.Error("moderation_audit_failed", "err", err.Error(), "action", action)
 			}
 		})
+	}
+	h.WithModerationAudit(func(action, roomID, actorUserID, subjectID string) {
+		recordAudit(action, roomID, actorUserID, subjectID, nil)
 	})
+	// Screen share sessions (#310): every start and end, so the trail answers
+	// who was broadcasting in a room at a given time.
+	h.WithScreenAudit(recordAudit)
 
 	// Retention for reports and moderation actions (#319). REPORT_RETENTION_DAYS
 	// unset or 0 keeps them forever: the window is an owner decision tied to
@@ -792,7 +799,7 @@ func main() {
 		logger.Warn("report_webhook_disabled", "hint", "set REPORT_WEBHOOK_URL so reports reach the operator")
 	}
 	r.Post("/api/report", reportHandler(reports, roomAuthSecret, metrics, logger,
-		newCallerLimiter(reportBurst, reportRefill), reportNotifier, h.ReportSubject))
+		newCallerLimiter(reportBurst, reportRefill), reportNotifier, broadcastSubjects(h.ReportSubject, audit, logger, time.Now)))
 
 	// Client telemetry (#245/#251): folds browser-reported errors, funnel
 	// events and web vitals into the existing Prometheus surface.
