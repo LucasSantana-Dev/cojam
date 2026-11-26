@@ -9,7 +9,7 @@ import { fileReport, type ReportCategory, type ReportKind } from '@/lib/report';
 
 export type ReportTarget = {
   roomId: string;
-  kind: Extract<ReportKind, 'room' | 'member'>;
+  kind: Extract<ReportKind, 'room' | 'member' | 'broadcast'>;
   // Member reports carry the member's client id and display name; room reports
   // omit both. The name is copied because presence is ephemeral too.
   subjectId?: string;
@@ -57,15 +57,17 @@ export function useReportDialog() {
     const ok = await fileReport({
       roomId: target.roomId,
       kind: target.kind,
-      subjectId: target.subjectId,
-      content: target.subjectLabel,
+      // A broadcast report never carries content or a subject: the server
+      // names the broadcaster itself (#310).
+      ...(target.kind === 'broadcast' ? {} : { subjectId: target.subjectId, content: target.subjectLabel }),
       reason: reason.trim() || undefined,
       category,
     });
     setStatus(ok ? 'sent' : 'error');
   };
 
-  const title = target?.kind === 'member' ? 'Denunciar usuário' : 'Denunciar sala';
+  const title =
+    target?.kind === 'member' ? 'Denunciar usuário' : target?.kind === 'broadcast' ? 'Denunciar transmissão' : 'Denunciar sala';
 
   const dialog = (
     <dialog
@@ -94,6 +96,9 @@ export function useReportDialog() {
             <p className="age-gate__body">
               {target?.kind === 'member' && target.subjectLabel
                 ? `Você está denunciando ${target.subjectLabel}. `
+                : ''}
+              {target?.kind === 'broadcast'
+                ? 'O CoJam não grava a tela: a denúncia registra quem estava transmitindo e quando. '
                 : ''}
               Você não precisa de conta. Em caso de perigo imediato, ligue 190. Para
               violência contra crianças e adolescentes, ligue 100.

@@ -14,14 +14,18 @@ export type ProductEvent =
   | 'room_create'
   | 'room_join'
   | 'track_added'
-  | 'provider_connected';
+  | 'provider_connected'
+  // Screen share (#310): a peer connected, or the person declined the picker.
+  | 'screen_ice_connected'
+  | 'screen_capture_denied';
 
 export type ClientErrorName =
   | 'boundary_segment'
   | 'boundary_root'
   | 'ws_terminal'
   | 'playback_failed'
-  | 'token_refresh_failed';
+  | 'token_refresh_failed'
+  | 'screen_ice_failed';
 
 const ENDPOINT = '/api/telemetry';
 

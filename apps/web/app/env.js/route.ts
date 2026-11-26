@@ -13,6 +13,7 @@ export function GET() {
     spotifyClientId: string;
     supabaseUrl?: string;
     supabaseAnonKey?: string;
+    stunUrls?: string;
     features?: Partial<Record<FeatureName, boolean>>;
   } = {
     wsUrl: process.env.COJAM_WS_URL ?? '',
@@ -37,6 +38,9 @@ export function GET() {
     env.supabaseUrl = process.env.COJAM_SUPABASE_URL;
     env.supabaseAnonKey = process.env.COJAM_SUPABASE_ANON_KEY;
   }
+  // Screen share STUN servers (#310). Emitted whenever set, even empty: an
+  // empty value means no STUN at all (lib/screenShare.ts iceServersFrom).
+  if (process.env.COJAM_STUN_URLS !== undefined) env.stunUrls = process.env.COJAM_STUN_URLS;
   // Feature flags must be runtime-configurable too: NEXT_PUBLIC_* are inlined at
   // build time, so the env-agnostic image cannot flip a flag without these. Each
   // flag is emitted only when its COJAM_FEATURE_* var is explicitly set, so an

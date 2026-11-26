@@ -19,6 +19,7 @@ describe('resolveFeatures', () => {
       publicRooms: false,
       telemetry: false,
       video: false,
+      screenShare: false,
     });
   });
 
@@ -46,6 +47,7 @@ describe('resolveFeatures', () => {
       publicRooms: false,
       telemetry: false,
       video: false,
+      screenShare: false,
     });
   });
 
@@ -68,6 +70,12 @@ describe('resolveFeatures', () => {
   it('sync defaults off and can be enabled', () => {
     expect(resolveFeatures({}).sync).toBe(false);
     expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_SYNC: 'on' }).sync).toBe(true);
+  });
+
+  it('screenShare defaults off and maps to COJAM_FEATURE_SCREENSHARE', () => {
+    expect(resolveFeatures({}).screenShare).toBe(false);
+    expect(resolveFeatures({ NEXT_PUBLIC_FEATURE_SCREENSHARE: 'on' }).screenShare).toBe(true);
+    expect(FEATURE_ENV_VARS.screenShare).toBe('COJAM_FEATURE_SCREENSHARE');
   });
 
   it('video defaults off, is independent of sync, and maps to COJAM_FEATURE_VIDEO', () => {

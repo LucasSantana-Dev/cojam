@@ -19,6 +19,9 @@ export type Features = {
   // exposure accepted in ADR-0007 and must switch off without disabling audio
   // drift correction.
   video: boolean;
+  // Screen share (#310, ADR-0008): private rooms only, off until the ECA legal
+  // review (#259, question 10) clears it. Needs roomAuth on the server.
+  screenShare: boolean;
 };
 
 export type FeatureName = keyof Features;
@@ -41,6 +44,7 @@ export const FEATURE_ENV_VARS: Record<FeatureName, string> = {
   publicRooms: 'COJAM_FEATURE_PUBLIC_ROOMS',
   telemetry: 'COJAM_FEATURE_TELEMETRY',
   video: 'COJAM_FEATURE_VIDEO',
+  screenShare: 'COJAM_FEATURE_SCREENSHARE',
 };
 
 const TRUTHY = new Set(['1', 'true', 'on', 'yes']);
@@ -75,6 +79,7 @@ export function resolveFeatures(env: Record<string, string | undefined>): Featur
     publicRooms: flag(env.NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS, false),
     telemetry: flag(env.NEXT_PUBLIC_FEATURE_TELEMETRY, false),
     video: flag(env.NEXT_PUBLIC_FEATURE_VIDEO, false),
+    screenShare: flag(env.NEXT_PUBLIC_FEATURE_SCREENSHARE, false),
   };
 }
 
@@ -94,4 +99,5 @@ export const features: Features = resolveFeatures({
   NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS: process.env.NEXT_PUBLIC_FEATURE_PUBLIC_ROOMS,
   NEXT_PUBLIC_FEATURE_TELEMETRY: process.env.NEXT_PUBLIC_FEATURE_TELEMETRY,
   NEXT_PUBLIC_FEATURE_VIDEO: process.env.NEXT_PUBLIC_FEATURE_VIDEO,
+  NEXT_PUBLIC_FEATURE_SCREENSHARE: process.env.NEXT_PUBLIC_FEATURE_SCREENSHARE,
 });

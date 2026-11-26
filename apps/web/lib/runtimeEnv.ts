@@ -13,6 +13,8 @@ export type RuntimeEnv = {
   spotifyClientId?: string;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
+  // Comma-separated stun: URLs for screen share (#310); see iceServersFrom.
+  stunUrls?: string;
   // Runtime feature-flag overrides emitted by /env.js from COJAM_FEATURE_*.
   // Only flags whose env var is explicitly set appear here; absent keys fall
   // back to the build-time flag.

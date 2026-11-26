@@ -43,6 +43,19 @@ describe('useReportDialog (#259)', () => {
     expect(await screen.findByText(/Denúncia enviada/)).toBeInTheDocument();
   });
 
+  it('files a broadcast report with no subject and no content: the server names who shared (#310)', async () => {
+    render(<Harness target={{ roomId: 'R1', kind: 'broadcast', subjectId: 'c-9', subjectLabel: 'Ana' }} />);
+    fireEvent.click(screen.getByText('abrir'));
+    expect(screen.getByRole('heading', { name: 'Denunciar transmissão' })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar denúncia' }));
+    });
+    const sent = fileReport.mock.calls[0][0];
+    expect(sent).toMatchObject({ roomId: 'R1', kind: 'broadcast' });
+    expect(sent.subjectId).toBeUndefined();
+    expect(sent.content).toBeUndefined();
+  });
+
   it('files a user report carrying the member id and name', async () => {
     render(
       <Harness target={{ roomId: 'R1', kind: 'member', subjectId: 'c-9', subjectLabel: 'Ana' }} />,

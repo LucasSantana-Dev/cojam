@@ -5,6 +5,10 @@ export default defineConfig({
   timeout: 60_000,
   use: {
     baseURL: 'http://localhost:3000',
+    // Screen share e2e (#310): Chromium hides host addresses behind mDNS
+    // names, which do not resolve in CI containers; expose them so two pages
+    // can connect over host candidates. No effect on specs without WebRTC.
+    launchOptions: { args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] },
   },
   webServer: [
     {
@@ -30,6 +34,9 @@ export default defineConfig({
         // spec; video-cowatch.spec.ts turns them on per page through /env.js.
         FEATURE_SYNC: 'on',
         FEATURE_VIDEO: 'on',
+        // Screen share (#310): server side on; the web flag stays off except
+        // in screen-share.spec.ts, which turns it on per page via /env.js.
+        FEATURE_SCREENSHARE: 'on',
         // Every e2e browser arrives from 127.0.0.1, so per-IP budgets are
         // shared by the whole suite; raise them so specs never throttle.
         ROOM_CREATE_RATE_BURST: '1000',

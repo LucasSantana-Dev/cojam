@@ -30,6 +30,7 @@ import { AddTrackForm } from '../components/AddTrackForm';
 import { ListenersStage } from '../components/ListenersStage';
 import { ShareRoomButton } from '../components/ShareRoomButton';
 import { ReportRoomButton } from '../components/ReportRoomButton';
+import { ScreenSharePanel } from '../components/ScreenSharePanel';
 import { PublicRoomToggle } from '../components/PublicRoomToggle';
 import { AvatarMenu } from '../components/AvatarMenu';
 import { CharacterPicker } from '../components/CharacterPicker';
@@ -588,6 +589,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // Detalhes / Letra / Mais are one drawer slot: opening one closes the other.
   const closeDrawer = () => setDrawer(null);
 
+  // Screen share (#310): private rooms with room auth only; the server
+  // enforces both and every other rule.
+  const screenPanel =
+    f.screenShare && f.roomAuth ? (
+      <ScreenSharePanel roomId={roomId} canModerate={moderate} isPublic={Boolean(store.state?.public)} />
+    ) : null;
+
   const heroPanel = (
     <NowPlayingCard
       roomId={roomId}
@@ -811,6 +819,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
             <div data-testid="video-main-column" className="video-main r4-stack">
               <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel r4-stack" data-active={panelTab === 'playing'}>
+                {screenPanel}
                 {heroPanel}
                 {listenersStage}
               </div>
@@ -834,6 +843,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
                 {/* Below 768px the same Agora / Fila / Chat tabs as the video room
                     (#258) decide which panel shows; md and up shows every panel. */}
                 <div id="video-panel-playing" role="tabpanel" aria-labelledby="video-tab-playing" className="video-panel video-panel-keep r4-stack r4-stage" data-active={panelTab === 'playing'}>
+                  {screenPanel}
                   {heroPanel}
                   {listenersStage}
                 </div>
