@@ -8,11 +8,13 @@ package report
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -23,6 +25,10 @@ const (
 	KindMessage Kind = "message"
 	KindMember  Kind = "member"
 	KindRoom    Kind = "room"
+	// KindBroadcast is a report about a screen share (#310). Its subject is
+	// resolved by the server from the live share or the trail, never taken
+	// from the reporter.
+	KindBroadcast Kind = "broadcast"
 )
 
 // ErrInvalidKind reports an unrecognised kind.
@@ -31,7 +37,7 @@ var ErrInvalidKind = errors.New("unknown report kind")
 // Valid reports whether k is one of the recognised kinds. Callers validate
 // before storing so an arbitrary string never reaches the database.
 func (k Kind) Valid() bool {
-	return k == KindMessage || k == KindMember || k == KindRoom
+	return k == KindMessage || k == KindMember || k == KindRoom || k == KindBroadcast
 }
 
 // Report is one member's record that something needs attention.
@@ -158,16 +164,31 @@ func (p *Postgres) Recent(ctx context.Context, limit int) ([]Report, error) {
 type Action struct {
 	ID          string
 	RoomID      string
-	Action      string // "chat.delete" | "room.kick"
-	ActorUserID string // the host who acted
-	SubjectID   string // message id or client id
-	CreatedAt   time.Time
+	Action      string // "chat.delete" | "room.kick" | "screen.start" | "screen.stop" | "screen.host_stop" | "screen.refuse"
+	ActorUserID string // the host who acted, or the broadcaster for screen.start/stop
+	SubjectID   string // message id or client id; the broadcaster's identity for screen rows
+	// Detail holds the session facts of screen rows (#310): display name,
+	// start and end, peak viewers, age affirmation, end reason. No content
+	// and no network addresses. Nil for the older actions.
+	Detail    map[string]any
+	CreatedAt time.Time
 }
+
+// ScreenActions are the trail actions that describe a screen share session.
+var ScreenActions = []string{"screen.start", "screen.stop", "screen.host_stop"}
+
+// BroadcastLookbackDays is how far back a broadcast report looks for the
+// session it is about when no share is live (#310, spec 7.3).
+const BroadcastLookbackDays = 7
 
 // AuditStore persists moderation actions.
 type AuditStore interface {
 	Record(ctx context.Context, a Action) error
 	RecentActions(ctx context.Context, limit int) ([]Action, error)
+	// LatestBroadcast returns the newest screen session row (ScreenActions)
+	// for roomID created at or after since, and false when there is none
+	// (#310): the subject of a broadcast report filed after the share ended.
+	LatestBroadcast(ctx context.Context, roomID string, since time.Time) (Action, bool, error)
 	// Purger removes actions past the retention window (#319).
 	Purger
 }
@@ -185,6 +206,27 @@ func (m *MemoryAudit) Record(_ context.Context, a Action) error {
 	defer m.mu.Unlock()
 	m.actions = append(m.actions, a)
 	return nil
+}
+
+func (m *MemoryAudit) LatestBroadcast(_ context.Context, roomID string, since time.Time) (Action, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := len(m.actions) - 1; i >= 0; i-- {
+		a := m.actions[i]
+		if a.RoomID == roomID && isScreenAction(a.Action) && !a.CreatedAt.Before(since) {
+			return a, true, nil
+		}
+	}
+	return Action{}, false, nil
+}
+
+func isScreenAction(action string) bool {
+	for _, s := range ScreenActions {
+		if action == s {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *MemoryAudit) RecentActions(_ context.Context, limit int) ([]Action, error) {
@@ -206,10 +248,17 @@ type PostgresAudit struct {
 func NewPostgresAudit(pool *pgxpool.Pool) *PostgresAudit { return &PostgresAudit{pool: pool} }
 
 func (p *PostgresAudit) Record(ctx context.Context, a Action) error {
+	detail := []byte("{}")
+	if len(a.Detail) > 0 {
+		var err error
+		if detail, err = json.Marshal(a.Detail); err != nil {
+			return fmt.Errorf("failed to encode moderation action detail: %w", err)
+		}
+	}
 	_, err := p.pool.Exec(ctx, `
-		INSERT INTO moderation_actions (id, room_id, action, actor_user_id, subject_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, a.ID, a.RoomID, a.Action, a.ActorUserID, a.SubjectID, a.CreatedAt)
+		INSERT INTO moderation_actions (id, room_id, action, actor_user_id, subject_id, detail, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, a.ID, a.RoomID, a.Action, a.ActorUserID, a.SubjectID, detail, a.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to record moderation action: %w", err)
 	}
@@ -235,4 +284,27 @@ func (p *PostgresAudit) RecentActions(ctx context.Context, limit int) ([]Action,
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+func (p *PostgresAudit) LatestBroadcast(ctx context.Context, roomID string, since time.Time) (Action, bool, error) {
+	var a Action
+	var detail []byte
+	err := p.pool.QueryRow(ctx, `
+		SELECT id, room_id, action, actor_user_id, subject_id, detail, created_at
+		FROM moderation_actions
+		WHERE room_id = $1 AND action = ANY($2::text[]) AND created_at >= $3
+		ORDER BY created_at DESC LIMIT 1
+	`, roomID, ScreenActions, since).Scan(&a.ID, &a.RoomID, &a.Action, &a.ActorUserID, &a.SubjectID, &detail, &a.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Action{}, false, nil
+	}
+	if err != nil {
+		return Action{}, false, fmt.Errorf("failed to load broadcast session: %w", err)
+	}
+	if len(detail) > 0 {
+		if err := json.Unmarshal(detail, &a.Detail); err != nil {
+			return Action{}, false, fmt.Errorf("failed to decode broadcast session: %w", err)
+		}
+	}
+	return a, true, nil
 }

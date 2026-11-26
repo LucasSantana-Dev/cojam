@@ -57,6 +57,7 @@ func (h *Hub) SetClosedRooms(ids []string) {
 // disconnects its members. Lock order is memberMu then h.mu, as in
 // evictIdleRooms. Nothing is persisted: the store row stays as it was.
 func (h *Hub) endRoom(roomID string) {
+	h.screenCloseRoom(roomID) // a live share ends with the room (#310)
 	h.memberMu.Lock()
 	clients := make([]string, 0, len(h.roomMembers[roomID]))
 	for clientID := range h.roomMembers[roomID] {

@@ -163,6 +163,27 @@ type RoomState struct {
 	Public bool `json:"public,omitempty"`
 	// Name is an optional host-set room label shown in the public directory.
 	Name string `json:"name,omitempty"`
+	// Screen describes the live screen share (#310), present only while one
+	// is live. It is a projection of in-memory session state that the hub
+	// stamps on every outbound state: it describes live connections that die
+	// with the process, so it is never persisted.
+	Screen *ScreenShareState `json:"screen,omitempty"`
+}
+
+// ScreenShareState is the public projection of a live screen share (#310).
+type ScreenShareState struct {
+	// BroadcasterID is the centrifuge client id of the broadcasting
+	// connection: signaling targets a connection, not a person.
+	BroadcasterID string `json:"broadcasterId"`
+	// BroadcasterName is the server-stamped connect-time display name.
+	BroadcasterName string `json:"broadcasterName"`
+	StartedAtMs     int64  `json:"startedAtMs"`
+	// ViewerCount is the number of admitted viewers, 0..MaxViewers.
+	ViewerCount int `json:"viewerCount"`
+	// MaxViewers is sent so clients never hardcode the cap.
+	MaxViewers int `json:"maxViewers"`
+	// Locked reports that the host or broadcaster closed admission.
+	Locked bool `json:"locked"`
 }
 
 // setNowPlayingID is the single place NowPlayingID changes. When the pointer

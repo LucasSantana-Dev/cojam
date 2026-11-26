@@ -191,3 +191,28 @@ func TestValidateProdConfig_RetentionUnsetWarns(t *testing.T) {
 		}
 	}
 }
+
+// Screen share needs a host in every environment (#310): the check runs with
+// APP_ENV unset, unlike validateProdConfig.
+func TestScreenShareConfigError(t *testing.T) {
+	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+	if msg := screenShareConfigError(env(map[string]string{"FEATURE_SCREENSHARE": "on"})); msg == "" {
+		t.Fatal("screen share without room auth must fail the boot, with APP_ENV unset")
+	}
+	if msg := screenShareConfigError(env(map[string]string{"FEATURE_SCREENSHARE": "on", "FEATURE_ROOM_AUTH": "true"})); msg != "" {
+		t.Fatalf("screen share with room auth: %q", msg)
+	}
+	if msg := screenShareConfigError(env(map[string]string{})); msg != "" {
+		t.Fatalf("flag off: %q", msg)
+	}
+}
+
+func TestScreenShareAllowlist(t *testing.T) {
+	got := screenShareAllowlist(func(string) string { return " ABCDEF123456, ,ZZZZZZZZZZZZ " })
+	if len(got) != 2 || got[0] != "ABCDEF123456" || got[1] != "ZZZZZZZZZZZZ" {
+		t.Fatalf("allowlist = %q", got)
+	}
+	if got := screenShareAllowlist(func(string) string { return "" }); got != nil {
+		t.Fatalf("unset allowlist = %q, want nil", got)
+	}
+}

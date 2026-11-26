@@ -149,6 +149,12 @@ var mutationMethods = map[string]bool{
 	"room.transfer_host":          true,
 	"room.claim_host":             true,
 	"queue.clear":                 true,
+	"screen.start":                true,
+	"screen.stop":                 true,
+	"screen.watch":                true,
+	"screen.unwatch":              true,
+	"screen.lock":                 true,
+	"screen.refuse":               true,
 }
 
 // Defaults for the mutation limiter: a host curating a queue clicks in

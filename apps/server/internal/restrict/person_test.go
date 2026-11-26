@@ -123,6 +123,8 @@ func TestReportSubject_Consistent(t *testing.T) {
 		"message, same line":         {ReportSubject{Kind: "message", Text: "oi", Content: "oi"}, true},
 		"message, other line":        {ReportSubject{Kind: "message", Text: "oi", Content: "coisa feia"}, false},
 		"room":                       {ReportSubject{Kind: "room"}, false},
+		"broadcast, server resolved": {ReportSubject{Kind: "broadcast", Sub: "sub-b"}, true},
+		"broadcast, nobody resolved": {ReportSubject{Kind: "broadcast"}, false},
 	} {
 		if got := tc.r.Consistent(); got != tc.want {
 			t.Errorf("%s: Consistent = %v, want %v", name, got, tc.want)

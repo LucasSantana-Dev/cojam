@@ -102,3 +102,27 @@ func formatConfigErrors(problems []string) string {
 	}
 	return b.String()
 }
+
+// screenShareConfigError is the boot check for FEATURE_SCREENSHARE (#310):
+// screen share is host-controlled and fails closed, so without
+// FEATURE_ROOM_AUTH there is no host and no one to control a share. Checked
+// in every environment, not only production. Empty means fine.
+func screenShareConfigError(getenv func(string) string) string {
+	if featureEnabledIn(getenv, "FEATURE_SCREENSHARE", false) && !featureEnabledIn(getenv, "FEATURE_ROOM_AUTH", false) {
+		return "FEATURE_SCREENSHARE needs FEATURE_ROOM_AUTH: with no host there is no one to control a share"
+	}
+	return ""
+}
+
+// screenShareAllowlist reads SCREENSHARE_ROOM_ALLOWLIST (#310): comma-separated
+// room ids that may host a share during the named-test-rooms rollout stage.
+// Unset or empty means every eligible private room.
+func screenShareAllowlist(getenv func(string) string) []string {
+	var ids []string
+	for _, id := range strings.Split(getenv("SCREENSHARE_ROOM_ALLOWLIST"), ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}

@@ -37,6 +37,9 @@ var (
 	telemetryEvents = map[string]bool{
 		"landing_view": true, "room_create": true, "room_join": true,
 		"track_added": true, "provider_connected": true,
+		// Screen share (#310): screen_ice_connected is the denominator of the
+		// ICE failure rate the TURN revisit trigger is written against.
+		"screen_ice_connected": true, "screen_capture_denied": true,
 	}
 	telemetryVitals = map[string]bool{"LCP": true, "INP": true, "CLS": true}
 	// vitalMaxValue caps each web vital. Values at or above the cap (or < 0)
@@ -46,6 +49,7 @@ var (
 	telemetryErrors = map[string]bool{
 		"boundary_segment": true, "boundary_root": true, "ws_terminal": true,
 		"playback_failed": true, "token_refresh_failed": true,
+		"screen_ice_failed": true,
 	}
 )
 

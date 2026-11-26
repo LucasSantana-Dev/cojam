@@ -62,7 +62,11 @@ A YouTube 403 counts as `quota` only when the body says `quotaExceeded` or `dail
 | `music_jam_rooms_listed_total` | | `room.list` reads served. |
 | `music_jam_rooms_set_public_total` | `public` | `room.set_public` toggles, by target visibility. |
 | `music_jam_rooms_shared_total` | | Rooms that gained a first non-creator member. |
-| `music_jam_reports_filed_total` | `kind` | Member reports filed (`message`, `member`, `room`). |
+| `music_jam_reports_filed_total` | `kind` | Member reports filed (`message`, `member`, `room`, `broadcast`). |
+| `music_jam_screen_sessions_started_total` | | Screen share sessions started (#310). |
+| `music_jam_screen_sessions_ended_total` | `reason` | Sessions ended: `stopped`, `host_stopped`, `disconnect`, `kicked`, `takeover`, `shutdown`, `closed`. |
+| `music_jam_screen_viewers_per_session` | | Histogram of peak admitted viewers per ended session (buckets 0 to 5). |
+| `music_jam_screen_watch_rejected_total` | `reason` | `screen.watch` refused: `full`, `no_share`, `self`, `locked`, `refused`. |
 | `music_jam_retention_purged_total` | `table` | Rows deleted by the retention sweep (`reports`, `moderation_actions`, `product_events`). |
 
 ## Client telemetry

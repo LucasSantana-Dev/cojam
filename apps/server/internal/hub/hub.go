@@ -215,6 +215,10 @@ type Room struct {
 	// model (#180); Join emits the log/metric on the flip. The flag dies with
 	// the room on idle eviction, so a re-loaded room may emit again.
 	sharedObserved atomic.Bool
+
+	// screen is the live screen share (#310, screen.go), guarded by mu. Never
+	// in the stored state: mutateRoom projects it onto outbound states only.
+	screen *screenSession
 }
 
 // touch marks the room active now, resetting the idle-eviction clock.
@@ -418,6 +422,16 @@ type Hub struct {
 
 	// Host grace, shutdown and roles state (see roles.go).
 	roles roleState
+
+	// Screen share (#310): feature state and the cleanup index (screen.go),
+	// the durable trail hook, the rtc.signal limiter (signal.go), and the
+	// hub-owned client map behind sendToClient.
+	screen      screenState
+	screenAudit ScreenAudit
+	rtcLimiter  *rateLimiter
+	clientsMu   sync.RWMutex
+	clients     map[string]*centrifuge.Client
+	sendFn      func(clientID string, data []byte) error // test seam; nil = Client.Send
 }
 
 // mutatingMethods are the membership-gated RPCs: the caller must be a member
@@ -456,6 +470,13 @@ var mutatingMethods = map[string]bool{
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
 	"now_playing.vote_skip":       true,
+	"screen.start":                true,
+	"screen.stop":                 true,
+	"screen.watch":                true,
+	"screen.unwatch":              true,
+	"screen.lock":                 true,
+	"screen.refuse":               true,
+	"rtc.signal":                  true,
 }
 
 // knownMethods is the dispatch set. RPC method names are client-supplied, so
@@ -500,6 +521,13 @@ var knownMethods = map[string]bool{
 	"queue.clear":                 true,
 	"now_playing.skip_unplayable": true,
 	"now_playing.vote_skip":       true,
+	"screen.start":                true,
+	"screen.stop":                 true,
+	"screen.watch":                true,
+	"screen.unwatch":              true,
+	"screen.lock":                 true,
+	"screen.refuse":               true,
+	"rtc.signal":                  true,
 }
 
 // metricMethod is the bounded label for method: itself when known, else
@@ -670,6 +698,8 @@ func NewHub(node *centrifuge.Node) *Hub {
 		roomCreateLimiter: newRateLimiter(roomCreateBurst, roomCreateRefill, time.Now),
 		mutationLimiter:   newRateLimiter(mutationBurst, mutationRefill, time.Now),
 		notFound:          newNotFoundCache(notFoundMax),
+		rtcLimiter:        newRateLimiter(rtcBurst, rtcRefill, time.Now),
+		clients:           make(map[string]*centrifuge.Client),
 	}
 }
 
@@ -944,6 +974,7 @@ func (h *Hub) RemoveClientUserID(clientID string) {
 	delete(h.clientUserID, clientID)
 	delete(h.clientName, clientID)
 	delete(h.clientIP, clientID)
+	h.untrackClient(clientID)
 	h.platforms.remove(clientID)
 	h.characters.remove(clientID)
 }
@@ -1319,6 +1350,12 @@ func (h *Hub) getOrLoadRoom(roomID string, create bool) (*Room, error) {
 		}
 	}
 
+	// A screen share describes live connections and is never persisted
+	// (#310); clear it in case a stored row ever carries one.
+	if state != nil {
+		state.Screen = nil
+	}
+
 	// If not found, create fresh
 	created := false
 	if state == nil {
@@ -1569,6 +1606,10 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 	outbound := *room.State
 	outbound.RadioAvailable = h.similar != nil
 	outbound.YouTubeQuotaUntil = h.noticeUntilMs()
+	outbound.Screen = nil
+	if room.screen != nil {
+		outbound.Screen = room.screen.projection()
+	}
 	if !h.quotaUntil().IsZero() {
 		h.armQuotaTimer() // any pause: owed lookups retry when it ends
 	}
@@ -1592,6 +1633,7 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 		} else {
 			stateCopy.RadioAvailable = false // capability, not persisted state
 			stateCopy.YouTubeQuotaUntil = 0
+			stateCopy.Screen = nil // live connections, never persisted (#310)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := h.store.Save(ctx, &stateCopy); err != nil {
@@ -1736,6 +1778,9 @@ func (h *Hub) checkRateLimits(method, rlKey string) error {
 	}
 	if err == nil {
 		err = h.checkMutationLimit(method, rlKey)
+	}
+	if err == nil {
+		err = h.checkRTCLimit(method, rlKey)
 	}
 	return err
 }
@@ -2392,7 +2437,19 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 			}
 			name = &trimmed
 		}
+		// Resolved before mutate so the closure can read the live screen
+		// share under the same room lock (#310): one Room per id, and the
+		// caller is a member, so the room cannot be evicted in between.
+		pubRoom, err := h.GetOrCreateRoom(req.RoomID)
+		if err != nil {
+			return nil, err
+		}
 		res, err := h.mutate(req.RoomID, func(s *queue.RoomState) error {
+			// A live screen share keeps the room private (C6): a share must
+			// never reach strangers through the directory.
+			if req.Public && pubRoom.screen != nil {
+				return userErrorf("Encerre o compartilhamento de tela antes de deixar a sala pública.")
+			}
 			// Name filter (#259): a label shown to strangers in the directory
 			// must pass the blocklist. Checks the label being set, and for a
 			// room going public also the label it already carries.
@@ -2761,6 +2818,10 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		}
 		return h.reactionEmote(req.RoomID, clientID, req.Emote)
 
+	case "screen.start", "screen.stop", "screen.watch", "screen.unwatch",
+		"screen.lock", "screen.refuse", "rtc.signal":
+		return h.dispatchScreen(method, data, clientID, userID)
+
 	case "sync.ping":
 		return json.Marshal(map[string]int64{"serverNowMs": time.Now().UnixMilli()})
 
@@ -2968,6 +3029,7 @@ func (h *Hub) RegisterClient(client *centrifuge.Client) {
 
 	// Record the userID for host assignment (U3+).
 	h.RecordClientUserID(clientID, userID)
+	h.trackClient(client) // screen share signaling target (#310)
 
 	// Record the display name the connection presented at connect time
 	// (ConnInfo {name}) so queue attribution is stamped from the connection

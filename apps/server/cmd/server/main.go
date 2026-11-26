@@ -209,7 +209,19 @@ func main() {
 		WithVoting(featureEnabled("FEATURE_QUEUE_VOTING", false)).
 		WithChat(featureEnabled("FEATURE_ROOM_CHAT", false)).
 		WithPublicRooms(featureEnabled("FEATURE_PUBLIC_ROOMS", false)).
-		WithVideo(featureEnabled("FEATURE_VIDEO", false))
+		WithVideo(featureEnabled("FEATURE_VIDEO", false)).
+		WithScreenShare(featureEnabled("FEATURE_SCREENSHARE", false), screenShareAllowlist(os.Getenv))
+
+	// Screen share (#310) needs a host to control it, in every environment:
+	// this is not part of validateProdConfig, which is silent outside prod.
+	if msg := screenShareConfigError(os.Getenv); msg != "" {
+		fatal(logger, "config_invalid", "problems", msg)
+	}
+	if featureEnabled("FEATURE_SCREENSHARE", false) {
+		logger.Info("screenshare_enabled", "room_allowlist", len(screenShareAllowlist(os.Getenv)))
+	} else {
+		logger.Info("screenshare_disabled")
+	}
 
 	if featureEnabled("FEATURE_SYNC", false) {
 		logger.Info("sync_enabled")
@@ -577,7 +589,7 @@ func main() {
 	// Moderation audit trail (#259): chat.delete and room.kick previously left
 	// only a stdout line, which is not queryable and dies with the container.
 	// Recorded asynchronously so a slow write never blocks a moderation action.
-	h.WithModerationAudit(func(action, roomID, actorUserID, subjectID string) {
+	recordAudit := func(action, roomID, actorUserID, subjectID string, detail map[string]any) {
 		auditWg.Add(1)
 		obs.SafeGo("moderation_audit", func() {
 			defer auditWg.Done()
@@ -589,13 +601,20 @@ func main() {
 				Action:      action,
 				ActorUserID: actorUserID,
 				SubjectID:   subjectID,
+				Detail:      detail,
 				CreatedAt:   time.Now().UTC(),
 			}
 			if err := audit.Record(ctx, rec); err != nil {
 				logger.Error("moderation_audit_failed", "err", err.Error(), "action", action)
 			}
 		})
+	}
+	h.WithModerationAudit(func(action, roomID, actorUserID, subjectID string) {
+		recordAudit(action, roomID, actorUserID, subjectID, nil)
 	})
+	// Screen share sessions (#310): every start and end, so the trail answers
+	// who was broadcasting in a room at a given time.
+	h.WithScreenAudit(recordAudit)
 
 	// Retention for reports and moderation actions (#319). REPORT_RETENTION_DAYS
 	// unset or 0 keeps them forever: the window is an owner decision tied to
@@ -721,6 +740,7 @@ func main() {
 
 		client.OnDisconnect(func(e centrifuge.DisconnectEvent) {
 			metrics.ConnDec()
+			h.ScreenOnDisconnect(client.ID())  // screen share (#310): resolves rooms from its own index, so it runs first
 			h.PromoteOnDisconnect(client.ID()) // host handoff (#166): needs membership + userID, so it must precede the cleanup calls
 			h.PruneGuestVotes(client.ID())     // drop ephemeral guest votes before membership is cleared (#183)
 			h.Leave(client.ID())               // revoke room memberships for this connection
@@ -779,7 +799,7 @@ func main() {
 		logger.Warn("report_webhook_disabled", "hint", "set REPORT_WEBHOOK_URL so reports reach the operator")
 	}
 	r.Post("/api/report", reportHandler(reports, roomAuthSecret, metrics, logger,
-		newCallerLimiter(reportBurst, reportRefill), reportNotifier, h.ReportSubject))
+		newCallerLimiter(reportBurst, reportRefill), reportNotifier, broadcastSubjects(h.ReportSubject, audit, logger, time.Now)))
 
 	// Client telemetry (#245/#251): folds browser-reported errors, funnel
 	// events and web vitals into the existing Prometheus surface.
