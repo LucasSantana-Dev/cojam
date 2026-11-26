@@ -465,18 +465,26 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // The operator closing the room (#259) lands here too, with its own copy:
   // the room is over for everyone, and a rejoin is refused.
   if (store.kicked) {
-    const closed = store.roomClosed;
+    // The operator blocking the person (#259) is the third variant: it is
+    // about them, in every room, not about this room or this host.
+    const view = store.accessBlocked ? 'blocked' : store.roomClosed ? 'room-closed' : 'kicked';
+    const led = { blocked: 'Acesso bloqueado', 'room-closed': 'Sala encerrada', kicked: 'Fora da sala' }[view];
     return (
-      <div className="pw" data-view={closed ? 'room-closed' : 'kicked'}>
+      <div className="pw" data-view={view}>
         <PalcoBrandBar />
         {/* An empty festival ground, no crowd: the screen says the show is over for you. */}
-        <PalcoScene
-          kind="kicked"
-          led={{ title: 'FIM', scale: 3, sub: closed ? 'Sala encerrada' : 'Fora da sala' }}
-        >
+        <PalcoScene kind="kicked" led={{ title: 'FIM', scale: 3, sub: led }}>
           <main id="main" className="pw-dock pw-plate">
             <div className="pw-dock__copy">
-              {closed ? (
+              {view === 'blocked' ? (
+                <>
+                  <p className="pw-eyebrow">Fim da sessão · em todas as salas</p>
+                  <h1 className="pw-title">Seu acesso foi bloqueado</h1>
+                  <p className="pw-text">
+                    A moderação do CoJam bloqueou seu acesso a todas as salas.
+                  </p>
+                </>
+              ) : view === 'room-closed' ? (
                 <>
                   <p className="pw-eyebrow">Fim da sessão · para todos</p>
                   <h1 className="pw-title">Esta sala foi encerrada</h1>

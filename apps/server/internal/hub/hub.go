@@ -288,6 +288,12 @@ type Hub struct {
 	closedMu    sync.RWMutex
 	closedRooms map[string]struct{}
 
+	// blockedUsers is the set of identities the operator blocked in every
+	// room (blocked.go), read on every connect, subscribe and room-scoped
+	// RPC. Guarded by blockedMu, never held together with another hub lock.
+	blockedMu    sync.RWMutex
+	blockedUsers map[string]struct{}
+
 	// publicRoomsEnabled gates the public room directory RPCs
 	// (room.set_public, room.list; FEATURE_PUBLIC_ROOMS). Dark-shipped off:
 	// when false both RPCs return ErrorMethodNotFound (transport.* precedent).
@@ -1174,6 +1180,11 @@ func (h *Hub) Authorize(client Client, method string, data []byte) error {
 	// ends the connection with the terminal room-closed code.
 	if probe.RoomID != "" && h.IsRoomClosed(probe.RoomID) {
 		return DisconnectRoomClosed
+	}
+	// A blocked person (#259) is refused at connect; this covers a connection
+	// opened in the window before the server learned of the block.
+	if h.IsUserBlocked(userID) {
+		return DisconnectUserBlocked
 	}
 
 	if method == "room.join" {

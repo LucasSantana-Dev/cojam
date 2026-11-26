@@ -45,6 +45,16 @@ type Report struct {
 	ReporterSub string
 	// SubjectID is the reported message or member id; empty for a room report.
 	SubjectID string
+	// SubjectSub is the connection identity behind SubjectID, resolved by the
+	// server when the report is filed; empty when it could not be (#259).
+	// `server person --report` reads it. Never sent to the webhook.
+	SubjectSub string
+	// SubjectName and SubjectText are what the server itself had for the
+	// subject (display name; the chat line for message reports), so the
+	// operator can compare them with the reporter's Content. Never sent to
+	// the webhook.
+	SubjectName string
+	SubjectText string
 	// Content is a copy of what was reported, truncated. It exists because the
 	// original is usually gone by the time this is read.
 	Content   string
@@ -106,9 +116,11 @@ func (p *Postgres) Create(ctx context.Context, r Report) error {
 		return ErrInvalidKind
 	}
 	_, err := p.pool.Exec(ctx, `
-		INSERT INTO reports (id, room_id, kind, reporter_sub, subject_id, content, reason, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, r.ID, r.RoomID, string(r.Kind), r.ReporterSub, r.SubjectID, r.Content, r.Reason, r.CreatedAt)
+		INSERT INTO reports (id, room_id, kind, reporter_sub, subject_id, subject_sub, subject_name, subject_text,
+			content, reason, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, r.ID, r.RoomID, string(r.Kind), r.ReporterSub, r.SubjectID, r.SubjectSub, r.SubjectName, r.SubjectText,
+		r.Content, r.Reason, r.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to store report: %w", err)
 	}
@@ -117,7 +129,8 @@ func (p *Postgres) Create(ctx context.Context, r Report) error {
 
 func (p *Postgres) Recent(ctx context.Context, limit int) ([]Report, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT id, room_id, kind, reporter_sub, subject_id, content, reason, created_at
+		SELECT id, room_id, kind, reporter_sub, subject_id, subject_sub, subject_name, subject_text,
+			content, reason, created_at
 		FROM reports ORDER BY created_at DESC LIMIT $1
 	`, limit)
 	if err != nil {
@@ -129,7 +142,7 @@ func (p *Postgres) Recent(ctx context.Context, limit int) ([]Report, error) {
 	for rows.Next() {
 		var r Report
 		var kind string
-		if err := rows.Scan(&r.ID, &r.RoomID, &kind, &r.ReporterSub, &r.SubjectID,
+		if err := rows.Scan(&r.ID, &r.RoomID, &kind, &r.ReporterSub, &r.SubjectID, &r.SubjectSub, &r.SubjectName, &r.SubjectText,
 			&r.Content, &r.Reason, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan report: %w", err)
 		}

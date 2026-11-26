@@ -212,6 +212,17 @@ it (`room.join` included) ends the connection with the same code. The web
 client shows a "room closed" state instead of "removed by host". The room
 also leaves `room.list`.
 
+Operator person block (#259): an identity the operator blocked with `server
+person --block` has every open connection, in every room, ended with the
+terminal code 4502 ("access blocked"), and a new connection for it is refused
+at connect with the same code (a subscribe or RPC that slipped in before the
+server learned of the block gets it too). The web client shows an "access
+blocked" state. The identity is the connection's user id: `sb:<uuid>` for an
+account, the guest id otherwise. A block stops that identity, not a person: a
+blocked account holder can still join as a guest, and a guest can start over
+with a fresh guest id. A blocked guest identity cannot `room.rebind` its
+attribution to an account (same terminal code).
+
 Guest-to-account upgrade (#172): `room.rebind` moves a guest's attribution in
 the current room from their anonymous sub to their signed-in `sb:<uuid>`
 identity, so a guest who signs in keeps what they already did. The payload

@@ -3,7 +3,7 @@
 // different V8 realm, so parseConnInfo's `instanceof Uint8Array` check
 // misclassifies jsdom-created buffers.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useStore, isPermissionDeniedError, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED, DISCONNECT_CODE_ROOM_CLOSED,
+import { useStore, isPermissionDeniedError, parseConnInfo, buildProviderPrefs, joinRoom, retryConnection, rpcErrorMessage, setRoomPublic, deleteChatMessage, kickMember, DISCONNECT_CODE_KICKED, DISCONNECT_CODE_ROOM_CLOSED, DISCONNECT_CODE_BLOCKED,
   chatUnavailableNotice, queueAdd, updatePlatform, updateCharacter, onWoot, sendWoot, onEmote, sendEmote,
 } from './realtime';
 import type { ChatMessage, RoomState } from '@cojam/shared';
@@ -687,6 +687,21 @@ describe('host moderation (#181)', () => {
     // A fresh join clears the kick (setKicked(false)), and the closure with it.
     useStore.getState().setKicked(false);
     expect(useStore.getState().roomClosed).toBe(false);
+  });
+
+  it('marks the store kicked and access-blocked when the operator blocks the person (#259)', async () => {
+    const joinPromise = joinRoom('room-1', 'Alice');
+    const instance = await lastInstance();
+    instance.emit('connected');
+    await joinPromise;
+
+    instance.emit('disconnected', { code: DISCONNECT_CODE_BLOCKED, reason: 'access blocked' });
+    expect(useStore.getState().kicked).toBe(true);
+    expect(useStore.getState().accessBlocked).toBe(true);
+    expect(useStore.getState().roomClosed).toBe(false);
+
+    useStore.getState().setKicked(false);
+    expect(useStore.getState().accessBlocked).toBe(false);
   });
 
   it('a host kick is not a room closure', async () => {

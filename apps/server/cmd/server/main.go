@@ -157,6 +157,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "room" {
 		os.Exit(runRoom(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "person" {
+		os.Exit(runPerson(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
+	}
 
 	var shutdownHooks []func()
 
@@ -625,8 +628,13 @@ func main() {
 		// Stopped before the pool closes, like retention.
 		shutdownHooks = append([]func(){stopRestrict}, shutdownHooks...)
 		logger.Info("room_restrictions_enabled", "poll_seconds", int(restrictionsPollInterval.Seconds()))
+		// Person blocks (#259): `server person --block` writes person_blocks
+		// and this poll disconnects the person everywhere and refuses them at
+		// connect. Same interval and the same database dependency.
+		stopBlocks := restrict.WatchBlocked(restrict.NewPostgres(dbPool), restrictionsPollInterval, h.SetBlockedUsers, logger)
+		shutdownHooks = append([]func(){stopBlocks}, shutdownHooks...)
 	} else {
-		logger.Warn("room_restrictions_disabled", "hint", "set DATABASE_URL: `server room --close` needs the database to reach the server")
+		logger.Warn("room_restrictions_disabled", "hint", "set DATABASE_URL: `server room --close` and `server person --block` need the database to reach the server")
 	}
 
 	// Connection authentication setup
@@ -690,6 +698,13 @@ func main() {
 			userID = sub
 		}
 		// When off, preserve v0 behavior: empty UserID, connection allowed.
+
+		// A person the operator blocked (#259) is refused with the terminal
+		// blocked code, so the client shows why and does not retry.
+		if h.IsUserBlocked(userID) {
+			logger.Info("connection_rejected", "reason", "person_blocked")
+			return centrifuge.ConnectReply{}, hub.DisconnectUserBlocked
+		}
 
 		return centrifuge.ConnectReply{
 			Credentials: &centrifuge.Credentials{UserID: userID, Info: info},
@@ -764,7 +779,7 @@ func main() {
 		logger.Warn("report_webhook_disabled", "hint", "set REPORT_WEBHOOK_URL so reports reach the operator")
 	}
 	r.Post("/api/report", reportHandler(reports, roomAuthSecret, metrics, logger,
-		newCallerLimiter(reportBurst, reportRefill), reportNotifier))
+		newCallerLimiter(reportBurst, reportRefill), reportNotifier, h.ReportSubject))
 
 	// Client telemetry (#245/#251): folds browser-reported errors, funnel
 	// events and web vitals into the existing Prometheus surface.

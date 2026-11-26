@@ -55,14 +55,23 @@ are recorded with who, what and when, so a case can be reconstructed.
 
 Operators do both with `server room --room <id> --close --apply` (`--hold`
 alone preserves without ending; `--reopen` and `--release` undo them, and
-`--list` shows what is in force). See `docs/configuration.md`.
+`--list` shows what is in force). When the problem is a person rather than a
+room, `server person --report <id> --block --apply` disconnects that
+identity from every room within seconds, refuses it from then on, and holds
+the report's room. The command refuses a report whose content does not match
+what the server saw of its subject; check the identity another way before
+blocking with `--user`. See `docs/configuration.md`.
 
 ## Known gaps
 
 Stated so nobody relies on something that does not exist yet:
 
-- Ending a room blocks the room, not a person: someone removed from one room
-  can still open another. Blocking one identity across rooms does not exist
-  yet.
+- A block stops one identity, not a person. A blocked account holder can sign
+  out and come back as a guest, and a guest can come back with a fresh guest
+  id. There is no device, address or person-level ban, so a block contains
+  someone only for as long as they do not try to get around it.
+- A report names the person only if they are still in the room (or their
+  message still in the recent chat) when it is filed; otherwise the operator
+  needs the identity by other means.
 - Ending a room and the legal hold need the database; a deployment without
   `DATABASE_URL` has neither.

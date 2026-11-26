@@ -487,3 +487,34 @@ func TestRun_ProductEvents(t *testing.T) {
 		t.Fatalf("second apply deleted %d (%v), want 0", again.ProductEventsDeleted, err)
 	}
 }
+
+// #259: a report whose subject_sub is the person is about them even when the
+// request names only the sub, and their operator block survives erasure.
+func TestRun_SubjectSubAndPersonBlock(t *testing.T) {
+	pool := dbtest.Isolated(t)
+	seed(t, pool)
+	ctx := context.Background()
+	mustExec(t, pool, `INSERT INTO reports (id, room_id, kind, reporter_sub, subject_id, subject_sub, content, reason)
+		VALUES ('r7', 'room-z', 'member', $2, 'c-later', $1, 'Ana', 'assédio')`, person, other)
+	mustExec(t, pool, `INSERT INTO person_blocks (user_id, blocked, report_id) VALUES ($1, true, 'r7')`, person)
+
+	got, err := Run(ctx, pool, Request{Sub: person}, true)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if got.ReportsSubjectRetained != 1 || got.PersonBlocksRetained != 1 {
+		t.Fatalf("subject reports retained %d, blocks retained %d; want 1 and 1", got.ReportsSubjectRetained, got.PersonBlocksRetained)
+	}
+	var blocked bool
+	if err := pool.QueryRow(ctx, `SELECT blocked FROM person_blocks WHERE user_id = $1`, person).Scan(&blocked); err != nil || !blocked {
+		t.Fatalf("erasure must not unblock the person: blocked %v, err %v", blocked, err)
+	}
+
+	got, err = Run(ctx, pool, Request{Sub: person, IncludeSubjectReports: true}, true)
+	if err != nil {
+		t.Fatalf("apply with subject reports: %v", err)
+	}
+	if got.ReportsSubjectDeleted != 1 {
+		t.Fatalf("subject reports deleted = %d, want 1 (r7)", got.ReportsSubjectDeleted)
+	}
+}

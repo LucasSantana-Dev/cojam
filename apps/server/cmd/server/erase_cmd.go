@@ -123,6 +123,7 @@ func printEraseCounts(w io.Writer, c erase.Counts, applied, productEvents bool) 
 	fmt.Fprintf(w, "moderation_actions  actor anonymized: %d, subject anonymized: %d, retained with kept reports: %d\n",
 		c.ModerationActorAnonymized, c.ModerationSubjectAnonymized, c.ModerationSubjectRetained)
 	fmt.Fprintf(w, "rebound_subs        retained: %d\n", c.ReboundSubsRetained)
+	fmt.Fprintf(w, "person_blocks       retained: %d\n", c.PersonBlocksRetained)
 	if productEvents {
 		fmt.Fprintf(w, "product_events      deleted: %d\n", c.ProductEventsDeleted)
 	} else {

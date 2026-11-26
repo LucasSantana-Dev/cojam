@@ -463,3 +463,22 @@ func TestRebind_ConcurrentJoinAddRebind(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// #259: a blocked guest identity cannot hand its attribution to an account,
+// or signing in would launder the block.
+func TestRebind_BlockedGuestRejected(t *testing.T) {
+	h := newRebindHub(t)
+	setupGuestRoom(t, h, "ROOM", "guestsub", "sb:u1")
+	h.SetBlockedUsers([]string{"guestsub"})
+	proof := mintProof(t, rebindTestSecret, "guestsub", time.Hour)
+
+	_, err := rebindCall(h, "ROOM", proof, "c-auth", "sb:u1")
+	if !isBlockedDisconnect(err) {
+		t.Fatalf("rebind of a blocked guest: got %v, want the blocked disconnect", err)
+	}
+	for _, tr := range rebindState(t, h, "ROOM").Queue {
+		if tr.AddedByUserID != "guestsub" {
+			t.Fatalf("track %q moved to %q; a refused rebind must change nothing", tr.Title, tr.AddedByUserID)
+		}
+	}
+}
