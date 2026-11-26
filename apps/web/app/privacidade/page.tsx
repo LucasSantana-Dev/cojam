@@ -62,13 +62,18 @@ export default function PrivacyPage() {
             <td>Execução do serviço (V). Não são gravadas em banco (seção 4).</td>
           </tr>
           <tr>
-            <td>Denúncias: identificador do denunciante (quando disponível), sala, alvo, motivo e uma cópia do conteúdo denunciado (até 500 caracteres)</td>
+            <td>Denúncias: identificador do denunciante (quando disponível), sala, alvo, motivo e uma cópia do conteúdo denunciado (até 500 caracteres). Quando a pessoa denunciada ainda está na sala, também o identificador dela e o nome e a mensagem que o servidor registrou, para confirmar que a denúncia aponta para quem ela descreve</td>
             <td>Moderação e segurança, inclusive proteção de crianças e adolescentes</td>
             <td>Cumprimento de obrigação legal ou regulatória (II) e legítimo interesse (IX). <code>[[REVISAR: base]]</code></td>
           </tr>
           <tr>
             <td>Registro de ações de moderação (remoção de mensagem, expulsão): sala, quem agiu, alvo, data</td>
             <td>Trilha de auditoria de moderação</td>
+            <td>Legítimo interesse (IX). <code>[[REVISAR: base]]</code></td>
+          </tr>
+          <tr>
+            <td>Bloqueios aplicados pela moderação: identificador bloqueado, denúncia relacionada, datas</td>
+            <td>Impedir que uma identidade bloqueada volte a entrar em qualquer sala</td>
             <td>Legítimo interesse (IX). <code>[[REVISAR: base]]</code></td>
           </tr>
           <tr>
@@ -148,6 +153,11 @@ export default function PrivacyPage() {
         <li>
           <strong>Denúncias e registros de moderação:</strong> hoje não há prazo de exclusão
           definido no código. <code>[[PRAZO DE RETENÇÃO DE DENÚNCIAS]]</code>
+        </li>
+        <li>
+          <strong>Bloqueios:</strong> até a moderação desbloquear. Um pedido de exclusão não
+          remove um bloqueio, para que ele não sirva de caminho de volta.{' '}
+          <code>[[REVISAR: base]]</code>
         </li>
         <li>
           <strong>Eventos de uso:</strong> 13 meses. Depois disso são apagados automaticamente,
@@ -243,7 +253,7 @@ export default function PrivacyPage() {
       <ul>
         <li>Idade mínima para entrar em salas do diretório público: 16 anos, por autodeclaração. <code>[[REVISAR: idade mínima]]</code></li>
         <li>Salas encontradas por link de convite não passam por essa pergunta, e salas públicas têm chat ao vivo entre desconhecidos.</li>
-        <li>Para denunciar uma mensagem do chat, use a função de denúncia na sala (disponível para convidados). Denúncias de membro ou sala podem ser enviadas ao contato da seção 1. Anfitriões podem apagar mensagens e expulsar membros.</li>
+        <li>Para denunciar uma mensagem, um participante ou a sala, use a função de denúncia na sala (disponível para convidados). Anfitriões podem apagar mensagens e expulsar membros. A moderação do CoJam pode encerrar uma sala para todos e bloquear uma identidade em todas as salas.</li>
         <li>Responsáveis podem escrever para <code>[[EMAIL DE CONTATO DPO]]</code>.</li>
       </ul>
 
