@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/prometheus/client_golang v1.25.0
 )
 
@@ -27,7 +27,7 @@ require (
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/quagmt/udecimal v1.10.1 // indirect
 	github.com/redis/rueidis v1.0.79 // indirect
-	golang.org/x/sync v0.24.0
+	golang.org/x/sync v0.25.0
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
