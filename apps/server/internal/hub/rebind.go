@@ -36,6 +36,11 @@ func (h *Hub) roomRebind(roomID, proof, clientID, userID string) (json.RawMessag
 	if err != nil {
 		return nil, userErrorf("guest proof could not be verified")
 	}
+	// A guest identity the operator blocked (#259) cannot hand its
+	// attribution to an account: the block would otherwise be laundered.
+	if h.IsUserBlocked(oldSub) {
+		return nil, DisconnectUserBlocked
+	}
 	if h.isUserIDInRoomExcept(roomID, userID, clientID) {
 		return nil, userErrorf("This account is already in this room from another tab or device. Close it and retry.")
 	}

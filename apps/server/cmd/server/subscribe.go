@@ -21,6 +21,11 @@ func authorizeSubscribe(h *hub.Hub, clientID, channel string) (centrifuge.Subscr
 	if h.IsRoomClosed(roomID) {
 		return centrifuge.SubscribeReply{}, hub.DisconnectRoomClosed
 	}
+	// A blocked person (#259) is refused at connect; this catches a
+	// connection opened before the server learned of the block.
+	if h.IsClientBlocked(clientID) {
+		return centrifuge.SubscribeReply{}, hub.DisconnectUserBlocked
+	}
 	h.Join(clientID, roomID)
 	// Presence + join/leave so the room can show who is listening.
 	return centrifuge.SubscribeReply{

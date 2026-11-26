@@ -26,7 +26,7 @@ func TestReport_NotifiesAfterStore(t *testing.T) {
 	store := report.NewMemory()
 	n := &fakeNotifier{}
 	h := reportHandler(store, testRoomSecret, obs.New(), quietLogger(),
-		newCallerLimiter(reportBurst, reportRefill), n)
+		newCallerLimiter(reportBurst, reportRefill), n, nil)
 
 	rec := postReport(h, `{"roomId":"R1","kind":"room","category":"minor_at_risk","reason":"x"}`)
 	if rec.Code != http.StatusNoContent {
@@ -55,7 +55,7 @@ func TestReport_DeadWebhookDoesNotFailTheReport(t *testing.T) {
 	}
 	store := report.NewMemory()
 	h := reportHandler(store, testRoomSecret, obs.New(), quietLogger(),
-		newCallerLimiter(reportBurst, reportRefill), wh)
+		newCallerLimiter(reportBurst, reportRefill), wh, nil)
 
 	if rec := postReport(h, `{"roomId":"R1","kind":"room"}`); rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204 with a dead webhook, got %d", rec.Code)
@@ -69,7 +69,7 @@ func TestReport_DeadWebhookDoesNotFailTheReport(t *testing.T) {
 func TestReport_NoNotificationOnReject(t *testing.T) {
 	n := &fakeNotifier{}
 	h := reportHandler(report.NewMemory(), testRoomSecret, obs.New(), quietLogger(),
-		newCallerLimiter(reportBurst, reportRefill), n)
+		newCallerLimiter(reportBurst, reportRefill), n, nil)
 	postReport(h, `{"roomId":"R1","kind":"bogus"}`)
 	if len(n.got) != 0 {
 		t.Fatal("rejected report must not notify")

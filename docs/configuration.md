@@ -106,6 +106,23 @@ The purge is by age, except for rooms under legal hold. A report tied to an open
 
 Every change takes `--dry-run` first to show the before and after. The server polls the table every 15 seconds and logs `room_closed_by_operator` with the number of connections it ended; a failed poll keeps the last known set, so a database blip never reopens a room. Without `DATABASE_URL` the poll is off (`room_restrictions_disabled` at boot).
 
+### Blocking a person (operator)
+
+`server person` (same image and `DATABASE_URL`) records operator blocks in `person_blocks` (#259). Ending a room stops the room; a block stops the person in every room.
+
+| Command | Effect |
+| --- | --- |
+| `server person --report <id> --block --apply` | Blocks whoever the report is about. The server records that identity when the report is filed (`reports.subject_sub`), together with the name and chat line it saw (`subject_name`, `subject_text`). The reporter writes the content, and could point a report at someone else's connection, so the command refuses when the reporter's copy does not match what the server saw. Also puts the report's room under legal hold. |
+| `server person --user <id> --block --apply` | Blocks an identity directly (`sb:<uuid>` or a guest id): when there is no report, or a report was refused and the identity was verified another way. With `--report` too, it must match the identity the report names. |
+| `server person --user <id> --unblock --apply` | Lets the identity connect again. The block keeps its report link, and a hold set by the block stays until `server room --release`. |
+| `server person --list` | Blocked identities. |
+
+The running server polls with the room restrictions (15 seconds): every connection of a newly blocked identity ends with code 4502 ("access blocked"), and a new connection for it is refused at connect. A failed poll keeps the last known set; a server that boots with the database down blocks nobody until its first successful poll. The log line `person_blocked_by_operator` carries the number of connections ended, not the identity.
+
+A report names an identity only while its subject is still there when it is filed: the member still in the room, the chat line still in the room's last 50. Reports about a room, from before this version, or about a guest when room auth is off name none; `--report` then refuses and asks for `--user`.
+
+A block stops one identity, not a person. A blocked account holder can sign out and use CoJam as a guest; a guest gets a fresh guest id by clearing the browser's storage, or on its own after about 31 days away (token life plus the refresh grace). There is no device, address or person-level ban. `server erase` keeps a block (erasure must not unblock someone) and reports it as `person_blocks retained`.
+
 Room idleness is measured by the last change to the row, not the last visit. A room someone opened within the in-memory window (`ROOM_IDLE_TTL_MINUTES`) without changing anything is still held in memory, and a later change saves it again.
 
 ### Product events

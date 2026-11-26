@@ -111,12 +111,28 @@ describe('removed-from-room screen (palco, wave 3)', () => {
     saveGuestName('Ana');
     const { container } = render(<RoomClient roomId="DWB86HRONU22" />);
     await act(async () => {});
-    act(() => useStore.getState().setKicked(true, true));
+    act(() => useStore.getState().setKicked(true, 'room-closed'));
     expect(container.querySelector('[data-view="room-closed"]')).not.toBeNull();
     expect(wide().querySelector('.pws-led')?.getAttribute('data-led')).toBe('FIM / SALA ENCERRADA');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Esta sala foi encerrada');
     expect(screen.queryByText('O anfitrião removeu você desta sessão.')).toBeNull();
     expect(screen.getByRole('link', { name: 'Voltar ao início' })).toHaveAttribute('href', '/');
     useStore.setState({ kicked: false, roomClosed: false });
+  });
+
+  it('says access was blocked when the operator blocked the person (#259)', async () => {
+    sessionStorage.clear();
+    localStorage.clear();
+    useStore.setState({ state: null, signedIn: false, name: '', kicked: false, roomClosed: false, accessBlocked: false });
+    saveGuestName('Ana');
+    const { container } = render(<RoomClient roomId="DWB86HRONU22" />);
+    await act(async () => {});
+    act(() => useStore.getState().setKicked(true, 'blocked'));
+    expect(container.querySelector('[data-view="blocked"]')).not.toBeNull();
+    expect(wide().querySelector('.pws-led')?.getAttribute('data-led')).toBe('FIM / ACESSO BLOQUEADO');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Seu acesso foi bloqueado');
+    expect(screen.queryByText('Esta sala foi encerrada')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Voltar ao início' })).toHaveAttribute('href', '/');
+    useStore.setState({ kicked: false, roomClosed: false, accessBlocked: false });
   });
 });

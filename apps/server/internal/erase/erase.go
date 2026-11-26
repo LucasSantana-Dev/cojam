@@ -14,6 +14,13 @@
 //     reports) or reason (message reports): kept by default, see below.
 //   - moderation_actions.actor_user_id (host sub): anonymized. subject_id
 //     (client id or message id): anonymized unless tied to a kept report.
+//   - reports.subject_sub, subject_name, subject_text (who a report is about
+//     and what the server saw of them, resolved when it was filed, #259):
+//     subject_sub matches as a subject report, so the row is kept or deleted
+//     with the report like subject_id.
+//   - person_blocks.user_id (an operator block, #259): kept. Erasure must not
+//     unblock someone. Its report_id still points at the report that caused
+//     the block, which is kept as evidence by default.
 //   - rebound_subs.sub: kept. It is the burn list that stops a consumed guest
 //     token from minting connections again; deleting it would revive the
 //     identity, and it links to nothing once the rest is erased.
@@ -118,6 +125,8 @@ type Counts struct {
 	ModerationSubjectRetained   int64
 
 	ReboundSubsRetained int64
+	// PersonBlocksRetained counts the person's operator block (#259): kept.
+	PersonBlocksRetained int64
 
 	ProductEventsDeleted int64
 }
@@ -231,7 +240,7 @@ func ScrubRoom(s *queue.RoomState, req Request) RoomChanges {
 
 // subjectReportSQL matches reports about the person, aliased r. $1 is the
 // client id array, $2 the display name, $3 the rooms the person is known to
-// have been in. Member reports carry the reported member's client id as
+// have been in, $4 the sub (reports.subject_sub, #259). Member reports carry the reported member's client id as
 // subject_id and their display name as content; message reports carry
 // "reported message from <name>" as the reason, optionally behind a
 // "[category] " prefix (cmd/server/report.go, web ChatPanel).
@@ -241,6 +250,7 @@ func ScrubRoom(s *queue.RoomState, req Request) RoomChanges {
 // or a requester naming someone else could reach reports about that person.
 const subjectReportSQL = `(
 	(r.subject_id <> '' AND r.subject_id = ANY($1::text[]))
+	OR (r.subject_sub <> '' AND r.subject_sub = $4::text)
 	OR ($2::text <> '' AND r.room_id = ANY($3::text[]) AND (
 		(r.kind = 'member' AND r.content = $2::text)
 		OR (r.kind = 'message' AND (
@@ -261,9 +271,10 @@ const linkedSQL = `EXISTS (
 
 // personRoomsSQL lists rooms where the person is identified outside room
 // state: reports they filed, moderation rows where they acted or were the
-// subject, reports about their client ids. $1 sub, $2 client ids.
+// subject, reports about their client ids or sub. $1 sub, $2 client ids.
 const personRoomsSQL = `
 	SELECT room_id FROM reports WHERE reporter_sub = $1
+	UNION SELECT room_id FROM reports WHERE subject_sub = $1
 	UNION SELECT room_id FROM reports WHERE subject_id <> '' AND subject_id = ANY($2::text[])
 	UNION SELECT room_id FROM moderation_actions
 	      WHERE actor_user_id = $1 OR (subject_id <> '' AND subject_id = ANY($2::text[]))`
@@ -330,7 +341,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, req Request, apply bool) (Coun
 		roomIDs = append(roomIDs, id)
 	}
 
-	subj := []any{clientIDs, req.Name, roomIDs}
+	subj := []any{clientIDs, req.Name, roomIDs, req.Sub}
 	var steps []step
 	// Subject reports go first, so the moderation link check below sees only
 	// the reports that are actually kept.
@@ -360,6 +371,8 @@ func Run(ctx context.Context, pool *pgxpool.Pool, req Request, apply bool) (Coun
 			 WHERE m.subject_id <> '' AND m.subject_id = ANY($1::text[]) AND ` + linkedSQL, subj},
 		{"rebound_subs", &c.ReboundSubsRetained, true,
 			`SELECT count(*) FROM rebound_subs WHERE sub = $1`, []any{req.Sub}},
+		{"person_blocks", &c.PersonBlocksRetained, true,
+			`SELECT count(*) FROM person_blocks WHERE user_id = $1 AND blocked`, []any{req.Sub}},
 	}...)
 	if req.Events != nil {
 		steps = append(steps, step{"product_events", &c.ProductEventsDeleted, false,

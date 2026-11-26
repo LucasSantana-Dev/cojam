@@ -41,11 +41,18 @@ type reportRequest struct {
 	ConnToken string `json:"connToken"`
 }
 
+// subjectResolver maps a report's subject to what the server knows about it
+// (hub.ReportSubject); the zero Subject when it cannot.
+type subjectResolver func(roomID, kind, subjectID string) hub.Subject
+
 // reportHandler files one member report. Open to guests by design: requiring an
 // account would exclude most of the people reporting exists to protect.
+// resolve (optional) records who the report is about, so the operator can
+// block that person in every room (#259, `server person --report`).
 func reportHandler(
 	store report.Store, roomAuthSecret string, metrics *obs.Metrics,
 	logger *slog.Logger, limiter *callerLimiter, notifier report.Notifier,
+	resolve subjectResolver,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !limiter.allow(callerKey(r), time.Now()) {
@@ -93,12 +100,22 @@ func reportHandler(
 			reason = "[" + category + "] " + reason
 		}
 
+		// Resolved now: the connection and the chat line are both ephemeral,
+		// so by the time the operator reads the report they are gone.
+		var subject hub.Subject
+		if resolve != nil {
+			subject = resolve(req.RoomID, string(kind), req.SubjectID)
+		}
+
 		rec := report.Report{
 			ID:          connauth.NewSub(), // random id, same generator as anon subs
 			RoomID:      req.RoomID,
 			Kind:        kind,
 			ReporterSub: sub,
 			SubjectID:   req.SubjectID,
+			SubjectSub:  subject.Sub,
+			SubjectName: stripNUL(subject.Name),
+			SubjectText: truncateRunes(stripNUL(subject.Text), reportMaxContent),
 			Content:     truncateRunes(req.Content, reportMaxContent),
 			Reason:      reason,
 			CreatedAt:   time.Now().UTC(),
