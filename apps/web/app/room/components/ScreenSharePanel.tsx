@@ -14,37 +14,71 @@ import { canCaptureScreen, useScreenShare } from './useScreenShare';
 
 const REPORT_WINDOW_MS = 10 * 60 * 1000;
 
+const VOLUME_KEY = 'cojam.screenVolume';
+
+function savedVolume(): number {
+  try {
+    const v = Number(localStorage.getItem(VOLUME_KEY));
+    return v > 0 && v <= 1 ? v : 1;
+  } catch {
+    return 1;
+  }
+}
+
+// "Ao vivo há 12 min" from the server's start time. Clocks can differ a
+// little, so a negative span reads as just started.
+export function liveFor(startedAtMs: number, nowMs: number): string {
+  const min = Math.max(0, Math.floor((nowMs - startedAtMs) / 60_000));
+  if (min < 1) return 'Ao vivo agora';
+  if (min < 60) return `Ao vivo há ${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `Ao vivo há ${h} h ${m} min` : `Ao vivo há ${h} h`;
+}
+
+function canPictureInPicture(): boolean {
+  return typeof document !== 'undefined' && Boolean(document.pictureInPictureEnabled);
+}
+
 function StreamVideo({
   stream,
   muted,
+  volume = 1,
   label,
   onRatio,
+  videoRef,
 }: {
   stream: MediaStream;
   muted: boolean;
+  volume?: number;
   label: string;
   onRatio?: (ratio: number) => void;
+  videoRef?: React.RefObject<HTMLVideoElement | null>;
 }) {
-  const ref = useRef<HTMLVideoElement>(null);
+  const ownRef = useRef<HTMLVideoElement>(null);
+  const ref = videoRef ?? ownRef;
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.srcObject = stream;
-    void el.play().catch(() => {
+    void el.play()?.catch(() => {
       /* autoplay refused: the video stays muted until "Tocar som" */
     });
     return () => {
       el.srcObject = null;
     };
-  }, [stream]);
+  }, [stream, ref]);
   // Set the property directly: the attribute alone does not unmute a playing
   // element in every browser, and play() again in case autoplay held it.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.muted = muted;
-    if (!muted) void el.play().catch(() => {});
-  }, [muted]);
+    if (!muted) void el.play()?.catch(() => {});
+  }, [muted, ref]);
+  useEffect(() => {
+    if (ref.current) ref.current.volume = volume;
+  }, [volume, ref]);
   const reportRatio = () => {
     const el = ref.current;
     if (el && el.videoWidth > 0 && el.videoHeight > 0) onRatio?.(el.videoWidth / el.videoHeight);
@@ -93,6 +127,9 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
   const [theater, setTheater] = useState(true);
   const [ratio, setRatio] = useState(16 / 9);
   const sectionRef = useRef<HTMLElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [volume, setVolume] = useState(savedVolume);
+  const [pip, setPip] = useState(false);
   // The viewer peer hands over a new stream whenever a track is added, so
   // counting at render time stays current.
   const audioTracks = share.remoteStream?.getAudioTracks?.().length ?? 0;
@@ -132,6 +169,48 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
     else void el.requestFullscreen?.().catch(() => {});
   };
   const [now, setNow] = useState(() => Date.now());
+  // The live time on the share moves on its own.
+  const live = Boolean(share.screen);
+  useEffect(() => {
+    if (!live) return;
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, [live]);
+
+  const changeVolume = (v: number) => {
+    setVolume(v);
+    // Moving the slider means the person wants to hear it.
+    if (v > 0 && !soundOn) setSoundOn(true);
+    try {
+      localStorage.setItem(VOLUME_KEY, String(v));
+    } catch {
+      /* storage unavailable: the volume lasts for this visit */
+    }
+  };
+
+  // Picture in picture keeps the share in a small window over other tabs.
+  const togglePip = async () => {
+    const el = videoRef.current;
+    if (!el) return;
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await el.requestPictureInPicture();
+    } catch {
+      /* refused by the browser: nothing to undo */
+    }
+  };
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !watching) return;
+    const on = () => setPip(true);
+    const off = () => setPip(false);
+    el.addEventListener('enterpictureinpicture', on);
+    el.addEventListener('leavepictureinpicture', off);
+    return () => {
+      el.removeEventListener('enterpictureinpicture', on);
+      el.removeEventListener('leavepictureinpicture', off);
+    };
+  }, [watching, theater, share.remoteStream]);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -286,6 +365,11 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
                 </p>
                 <div className="screen-share__actions">
                   <span className="screen-share__who">Tela de {broadcasterName}</span>
+                  {screen && (
+                    <span className="screen-share__meta" data-testid="screen-share-live-info">
+                      {liveFor(screen.startedAtMs, now)} · {screen.viewerCount} assistindo
+                    </span>
+                  )}
                   {share.remoteStream && audioTracks > 0 && (
                     <button
                       type="button"
@@ -295,6 +379,18 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
                     >
                       {soundOn ? 'Tirar som' : 'Tocar som'}
                     </button>
+                  )}
+                  {share.remoteStream && audioTracks > 0 && (
+                    <input
+                      type="range"
+                      className="screen-share__volume"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={soundOn ? volume : 0}
+                      aria-label="Volume da transmissão"
+                      onChange={(e) => changeVolume(Number(e.target.value))}
+                    />
                   )}
                   {noSound && (
                     <span className="screen-share__note" data-testid="screen-share-no-sound">
@@ -307,6 +403,16 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
                   <button type="button" className="screen-share__btn" onClick={toggleFullscreen}>
                     Tela cheia
                   </button>
+                  {share.remoteStream && canPictureInPicture() && (
+                    <button
+                      type="button"
+                      className="screen-share__btn"
+                      aria-pressed={pip}
+                      onClick={() => void togglePip()}
+                    >
+                      {pip ? 'Voltar para a sala' : 'Janela flutuante'}
+                    </button>
+                  )}
                   {failed && (
                     <button type="button" className="screen-share__btn" onClick={() => void share.retryWatch()}>
                       Tentar de novo
@@ -326,8 +432,10 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
               <StreamVideo
                 stream={share.remoteStream}
                 muted={!soundOn}
+                volume={volume}
                 label={`Tela de ${broadcasterName}`}
                 onRatio={setRatio}
+                videoRef={videoRef}
               />
             ) : (
               <div className="screen-share__blank" />
@@ -349,6 +457,7 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
           <div className="screen-share__head">
             <span className="screen-share__live" aria-hidden="true" />
             <strong>Você está compartilhando a tela</strong>
+            <span className="screen-share__meta">{liveFor(screen.startedAtMs, now)}</span>
             <span className="screen-share__count" data-testid="screen-share-count">
               {screen.viewerCount} de {screen.maxViewers} assistindo
             </span>
@@ -414,6 +523,9 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
           <div className="screen-share__head">
             <span className="screen-share__live" aria-hidden="true" />
             <strong>{broadcasterName} está compartilhando a tela</strong>
+            <span className="screen-share__meta" data-testid="screen-share-card-info">
+              {liveFor(screen.startedAtMs, now)} · {screen.viewerCount} de {screen.maxViewers} assistindo
+            </span>
           </div>
           <div className="screen-share__actions">
             <button

@@ -3232,9 +3232,14 @@ textarea.age-gate__input { resize: vertical; }
   background: var(--color-status-error);
 }
 .screen-share__count,
+.screen-share__meta,
 .screen-share__who {
   color: var(--color-text-secondary);
   font-size: 0.85rem;
+}
+.screen-share__volume {
+  width: 7rem;
+  accent-color: var(--color-accent);
 }
 .screen-share__actions {
   display: flex;
