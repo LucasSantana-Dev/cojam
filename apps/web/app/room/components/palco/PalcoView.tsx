@@ -12,16 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SkipVoteButton } from '../SkipVoteButton';
 import { useLiveBroadcaster } from '@/lib/screenShareLive';
-import {
-  useStore,
-  onWoot,
-  sendWoot,
-  onEmote,
-  sendEmote,
-  transportPlay,
-  transportPause,
-  nowPlayingAdvance,
-} from '@/lib/realtime';
+import { useStore, onWoot, sendWoot, onEmote, sendEmote, transportPlay, transportPause, nowPlayingAdvance } from '@/lib/realtime';
 import { EMOTES, type Emote } from '@cojam/shared';
 import { SkipNextIcon } from '@/app/components/icons';
 import { playPauseLabel } from '../TransportUI';
@@ -32,26 +23,8 @@ import { useMotion } from '@/lib/motionFlags';
 import { usePalcoMotion, setPalcoMotion } from '@/lib/palcoView';
 import { computeExpectedPosition, serverNow } from '@/lib/playbackSync';
 import {
-  WORLDS,
-  pickWorld,
-  frameStage,
-  playerRect,
-  boothTop,
-  boothMembers,
-  crowdMembers,
-  crowdSlots,
-  memberKey,
-  tagName,
-  phoneTagMaxWidth,
-  newVoters,
-  memberForVoter,
-  memberForClient,
-  placeBubble,
-  placeTag,
-  upNext,
-  boardRect,
-  type Framing,
-  type WorldKind,
+  WORLDS, pickWorld, frameStage, playerRect, boothTop, boothMembers, crowdMembers, crowdSlots, memberKey, tagName, phoneTagMaxWidth,
+  newVoters, memberForVoter, memberForClient, placeBubble, placeTag, upNext, boardRect, type Framing, type WorldKind,
 } from '@/lib/palco';
 import { PalcoScene, loadSceneImages, type FrameOut } from './scene';
 import type { Member } from '@/lib/realtime';
@@ -92,13 +65,7 @@ const EMOTE_MS = 1500;
 const EMOTE_FLOAT = 10;
 const EMOTE_COOLDOWN_MS = 700; // the server allows one per 600 ms per connection; 100 ms margin for network jitter
 const EMOTE_LABEL: Record<Emote, string> = {
-  amei: 'Amei',
-  fogo: 'Fogo',
-  rindo: 'Rindo',
-  palmas: 'Palmas',
-  uau: 'Uau',
-  cantando: 'Cantando',
-  triste: 'Triste',
+  amei: 'Amei', fogo: 'Fogo', rindo: 'Rindo', palmas: 'Palmas', uau: 'Uau', cantando: 'Cantando', triste: 'Triste',
 };
 const LIKE_COOLDOWN_MS = 1500;
 const VARS = ['--palco-sx', '--palco-sy', '--palco-sw', '--palco-sh'] as const;
@@ -119,17 +86,7 @@ interface Bubble {
 }
 
 // Host transport for the HUD: the same RPCs and gates as the round 4 TransportUI.
-function PalcoTransport({
-  roomId,
-  activePlayer,
-  nowPlayingId,
-  playing,
-}: {
-  roomId: string;
-  activePlayer: IPlayer | null;
-  nowPlayingId: string | undefined;
-  playing: boolean;
-}) {
+function PalcoTransport({ roomId, activePlayer, nowPlayingId, playing }: { roomId: string; activePlayer: IPlayer | null; nowPlayingId: string | undefined; playing: boolean }) {
   const label = playPauseLabel(playing ? 'playing' : 'paused');
   const playPause = async () => {
     try {
@@ -144,54 +101,21 @@ function PalcoTransport({
   };
   return (
     <>
-      <button
-        type="button"
-        className="palco__ctrl"
-        onClick={playPause}
-        disabled={!activePlayer}
-        aria-label={label}
-        title={label}
-      >
+      <button type="button" className="palco__ctrl" onClick={playPause} disabled={!activePlayer} aria-label={label} title={label}>
         {playing ? (
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-          </svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
         ) : (
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M8 5v14l11-7z" />
-          </svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
         )}
       </button>
-      <button
-        type="button"
-        className="palco__ctrl"
-        onClick={skip}
-        disabled={!nowPlayingId}
-        aria-label="Próxima faixa"
-        title="Próxima faixa"
-      >
+      <button type="button" className="palco__ctrl" onClick={skip} disabled={!nowPlayingId} aria-label="Próxima faixa" title="Próxima faixa">
         <SkipNextIcon size={22} />
       </button>
     </>
   );
 }
 
-export function PalcoView({
-  roomId,
-  queue,
-  chat,
-  queueCount,
-  hasPlayer,
-  artwork,
-  canControl = false,
-  activePlayer = null,
-  volume,
-  servicePicker,
-  addOpen = false,
-  onAddOpen,
-  onAddClose,
-  screenShare = null,
-}: PalcoViewProps) {
+export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork, canControl = false, activePlayer = null, volume, servicePicker, addOpen = false, onAddOpen, onAddClose, screenShare = null }: PalcoViewProps) {
   const state = useStore((s) => s.state);
   const members = useStore((s) => s.members);
   const clientId = useStore((s) => s.clientId);
@@ -201,9 +125,7 @@ export function PalcoView({
   const suffixes = useStore((s) => s.nameSuffixes);
   const messages = useStore((s) => s.chat);
 
-  const [kind, setKind] = useState<WorldKind>(() =>
-    typeof window === 'undefined' ? 'wide' : pickWorld(window.innerWidth, window.innerHeight),
-  );
+  const [kind, setKind] = useState<WorldKind>(() => (typeof window === 'undefined' ? 'wide' : pickWorld(window.innerWidth, window.innerHeight)));
   const world = WORLDS[kind];
   const [panel, setPanel] = useState<Panel>('stage');
   const activePanel: Panel = panel === 'chat' && !chat ? 'stage' : panel;
@@ -235,10 +157,7 @@ export function PalcoView({
   };
   const compact = kind === 'phone' && activePanel !== 'stage';
   const [size, setSize] = useState<{ cw: number; ch: number } | null>(null);
-  const framing: Framing | null = useMemo(
-    () => (size && size.cw > 0 ? frameStage(world, size.cw, size.ch, compact) : null),
-    [world, size, compact],
-  );
+  const framing: Framing | null = useMemo(() => (size && size.cw > 0 ? frameStage(world, size.cw, size.ch, compact) : null), [world, size, compact]);
   // The player rectangle (owner decision A: full width on the vertical stage).
   // Every overlay is laid out around it, never over it.
   const screen = framing && size ? playerRect(world, framing, size.cw) : null;
@@ -258,19 +177,12 @@ export function PalcoView({
   const booths = useMemo(() => boothMembers(state, members), [state, members]);
   const crowd = useMemo(() => crowdMembers(members, booths), [members, booths]);
   const youIndex = crowd.findIndex((m) => isMe(m, clientId));
-  const placed = useMemo(
-    () => (framing ? crowdSlots(crowd.length, world, framing, youIndex) : { slots: [], overflow: 0 }),
-    [crowd.length, world, framing, youIndex],
-  );
+  const placed = useMemo(() => (framing ? crowdSlots(crowd.length, world, framing, youIndex) : { slots: [], overflow: 0 }), [crowd.length, world, framing, youIndex]);
   const entries = useMemo(
-    () =>
-      crowd.flatMap((m, i) =>
-        placed.slots[i] ? [{ m, key: memberKey(m), characterId: memberCharacter(m), slot: placed.slots[i] }] : [],
-      ),
+    () => crowd.flatMap((m, i) => (placed.slots[i] ? [{ m, key: memberKey(m), characterId: memberCharacter(m), slot: placed.slots[i] }] : [])),
     [crowd, placed],
   );
-  const boothLabel = (m: Member | null, verb: string) =>
-    m ? `${isMe(m, clientId) ? 'Você' : memberLabel(m, suffixes)} · ${verb}` : '';
+  const boothLabel = (m: Member | null, verb: string) => (m ? `${isMe(m, clientId) ? 'Você' : memberLabel(m, suffixes)} · ${verb}` : '');
 
   // Re-writes the fixed player's position (set by the effect below): any
   // layout change, not only a new rectangle, can move the stage on the page.
@@ -395,10 +307,7 @@ export function PalcoView({
   const nowPlayingId = state?.nowPlayingId;
   const [likes, setLikes] = useState<{ track: string | undefined; n: number }>({ track: undefined, n: 0 });
   const likeCount = likes.track === nowPlayingId ? likes.n : 0;
-  const bump = useCallback(
-    () => setLikes((l) => ({ track: nowPlayingId, n: (l.track === nowPlayingId ? l.n : 0) + 1 })),
-    [nowPlayingId],
-  );
+  const bump = useCallback(() => setLikes((l) => ({ track: nowPlayingId, n: (l.track === nowPlayingId ? l.n : 0) + 1 })), [nowPlayingId]);
   const membersRef = useRef(members);
   const sceneRef = useRef(scene);
   const bumpRef = useRef(bump);
@@ -408,17 +317,13 @@ export function PalcoView({
     bumpRef.current = bump;
   });
 
-  useEffect(
-    () =>
-      onWoot((cid) => {
-        if (cid === useStore.getState().clientId) return; // our own press already wooted locally
-        const m = memberForClient(cid, membersRef.current);
-        if (!m) return;
-        sceneRef.current?.woot(memberKey(m));
-        bumpRef.current();
-      }),
-    [],
-  );
+  useEffect(() => onWoot((cid) => {
+    if (cid === useStore.getState().clientId) return; // our own press already wooted locally
+    const m = memberForClient(cid, membersRef.current);
+    if (!m) return;
+    sceneRef.current?.woot(memberKey(m));
+    bumpRef.current();
+  }), []);
 
   const prevVotes = useRef<RoomState['votes'] | undefined>(undefined);
   useEffect(() => {
@@ -440,9 +345,7 @@ export function PalcoView({
     bump();
     setCooling(true);
     window.setTimeout(() => setCooling(false), LIKE_COOLDOWN_MS);
-    sendWoot(roomId).catch(() => {
-      /* the local woot already showed; the room just misses this one */
-    });
+    sendWoot(roomId).catch(() => { /* the local woot already showed; the room just misses this one */ });
   };
 
   // --- emotes (reaction.emote): a pixel bubble over the sender's character ---
@@ -462,15 +365,11 @@ export function PalcoView({
     const timers = emoteTimers.current;
     return () => timers.forEach(clearTimeout);
   }, []);
-  useEffect(
-    () =>
-      onEmote((cid, emote) => {
-        if (cid === useStore.getState().clientId) return; // our own press already showed locally
-        const m = memberForClient(cid, membersRef.current);
-        if (m) showEmote(memberKey(m), emote);
-      }),
-    [showEmote],
-  );
+  useEffect(() => onEmote((cid, emote) => {
+    if (cid === useStore.getState().clientId) return; // our own press already showed locally
+    const m = memberForClient(cid, membersRef.current);
+    if (m) showEmote(memberKey(m), emote);
+  }), [showEmote]);
   const [emoteCooling, setEmoteCooling] = useState(false);
   const [reactOpen, setReactOpen] = useState(false);
   const reactWrapRef = useRef<HTMLDivElement>(null);
@@ -502,9 +401,7 @@ export function PalcoView({
     setEmoteCooling(true);
     window.setTimeout(() => setEmoteCooling(false), EMOTE_COOLDOWN_MS);
     setReactOpen(false);
-    sendEmote(roomId, emote).catch(() => {
-      /* shown locally; the room just misses this one */
-    });
+    sendEmote(roomId, emote).catch(() => { /* shown locally; the room just misses this one */ });
   };
 
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
@@ -519,16 +416,12 @@ export function PalcoView({
     fresh.forEach((m) => seenChat.current!.add(m.id));
     const lines = fresh.flatMap((msg) => {
       if (msg.kind === 'system' || msg.deleted || !msg.text) return [];
-      const m =
-        (msg.userId && membersRef.current.find((x) => x.userId === msg.userId)) ||
-        membersRef.current.find((x) => x.name === msg.name);
+      const m = (msg.userId && membersRef.current.find((x) => x.userId === msg.userId)) || membersRef.current.find((x) => x.name === msg.name);
       return m ? [{ id: msg.id, key: memberKey(m), text: msg.text }] : [];
     });
     if (!lines.length) return;
     setBubbles((b) => [...b.filter((x) => !lines.some((l) => l.key === x.key)), ...lines]);
-    const timers = lines.map((l) =>
-      window.setTimeout(() => setBubbles((b) => b.filter((x) => x.id !== l.id)), BUBBLE_MS),
-    );
+    const timers = lines.map((l) => window.setTimeout(() => setBubbles((b) => b.filter((x) => x.id !== l.id)), BUBBLE_MS));
     return () => timers.forEach(clearTimeout);
   }, [messages]);
 
@@ -536,12 +429,7 @@ export function PalcoView({
   const tagRefs = useRef(new Map<string, HTMLElement>());
   const bubbleRefs = useRef(new Map<string, HTMLElement>());
   const emoteRefs = useRef(new Map<string, HTMLElement>());
-  const layoutRef = useRef<{ screen: typeof screen; viewW: number; below: boolean; scale: number }>({
-    screen: null,
-    viewW: 0,
-    below: false,
-    scale: 1,
-  });
+  const layoutRef = useRef<{ screen: typeof screen; viewW: number; below: boolean; scale: number }>({ screen: null, viewW: 0, below: false, scale: 1 });
   useEffect(() => {
     layoutRef.current = { screen, viewW: size?.cw ?? 0, below: kind === 'phone', scale: framing?.scale ?? 1 };
   });
@@ -568,23 +456,15 @@ export function PalcoView({
       if (!s) return;
       for (const [key, el] of tagRefs.current) {
         const a = key === 'booth-L' ? out.booths[0] : key === 'booth-R' ? out.booths[1] : out.people.get(key);
-        if (!a || !a.visible) {
-          hide(el);
-          continue;
-        }
+        if (!a || !a.visible) { hide(el); continue; }
         const [tw, th] = sizeOf(el);
         const isBooth = key.startsWith('booth-');
         const p = placeTag(a.x, a.y, tw, th, viewW, s, isBooth && below);
         show(el, p.left, p.top);
       }
       for (const [key, el] of bubbleRefs.current) {
-        const a =
-          out.people.get(key) ??
-          (out.booths[0].key === key ? out.booths[0] : out.booths[1].key === key ? out.booths[1] : undefined);
-        if (!a || !a.visible) {
-          hide(el);
-          continue;
-        }
+        const a = out.people.get(key) ?? (out.booths[0].key === key ? out.booths[0] : out.booths[1].key === key ? out.booths[1] : undefined);
+        if (!a || !a.visible) { hide(el); continue; }
         const [bw, bh] = sizeOf(el);
         // Above the name tag: the tag is ~20 px over the head.
         const p = placeBubble(a.x, a.y - 22, bw, bh, viewW, s);
@@ -592,13 +472,8 @@ export function PalcoView({
         show(el, p.left, p.top);
       }
       for (const [key, el] of emoteRefs.current) {
-        const a =
-          out.people.get(key) ??
-          (out.booths[0].key === key ? out.booths[0] : out.booths[1].key === key ? out.booths[1] : undefined);
-        if (!a || !a.visible) {
-          hide(el);
-          continue;
-        }
+        const a = out.people.get(key) ?? (out.booths[0].key === key ? out.booths[0] : out.booths[1].key === key ? out.booths[1] : undefined);
+        if (!a || !a.visible) { hide(el); continue; }
         const [ew, eh] = sizeOf(el);
         // The float rises EMOTE_FLOAT native px: place the whole travel, so even
         // the top of the float stays off the player, then start at its foot.
@@ -639,16 +514,10 @@ export function PalcoView({
   const pct = duration > 0 ? Math.min(100, (pos / duration) * 100) : 0;
   const leftMember = booths.left;
   const byLabel = nowPlaying
-    ? leftMember && isMe(leftMember, clientId)
-      ? 'Você pediu'
-      : `${(leftMember && memberLabel(leftMember, suffixes)) || nowPlaying.addedBy} pediu`
+    ? leftMember && isMe(leftMember, clientId) ? 'Você pediu' : `${(leftMember && memberLabel(leftMember, suffixes)) || nowPlaying.addedBy} pediu`
     : '';
 
-  const tabs: Array<[Panel, string]> = [
-    ['stage', 'Palco'],
-    ['queue', `Fila (${queueCount})`],
-    ...(chat ? ([['chat', 'Chat']] as Array<[Panel, string]>) : []),
-  ];
+  const tabs: Array<[Panel, string]> = [['stage', 'Palco'], ['queue', `Fila (${queueCount})`], ...(chat ? ([['chat', 'Chat']] as Array<[Panel, string]>) : [])];
   const onTabKey = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     const i = tabs.findIndex(([id]) => id === activePanel);
@@ -662,24 +531,11 @@ export function PalcoView({
   const board = framing && screen ? boardRect(world, framing, screen, upcoming.length) : null;
 
   const stageImgStyle = framing
-    ? {
-        left: framing.ox - framing.camLeft * framing.scale,
-        top: -framing.camTop * framing.scale,
-        width: world.W * framing.scale,
-        height: world.H * framing.scale,
-      }
+    ? { left: framing.ox - framing.camLeft * framing.scale, top: -framing.camTop * framing.scale, width: world.W * framing.scale, height: world.H * framing.scale }
     : undefined;
 
   return (
-    <section
-      ref={rootRef}
-      className="palco"
-      data-world={kind}
-      data-panel={activePanel}
-      data-motion={motion ? 'on' : 'off'}
-      aria-label="Modo palco"
-      data-testid="palco"
-    >
+    <section ref={rootRef} className="palco" data-world={kind} data-panel={activePanel} data-motion={motion ? 'on' : 'off'} aria-label="Modo palco" data-testid="palco">
       <div className="palco__main">
         <div ref={stageRef} className="palco__stage" style={framing ? { height: framing.height } : undefined}>
           <div ref={canvasHostRef} className="palco__gl" hidden={glFailed} />
@@ -688,36 +544,22 @@ export function PalcoView({
             <img className="palco__still" src={world.src} alt="" style={stageImgStyle} />
           )}
           {screen && (
-            <div
-              className="palco__screen"
-              style={{ left: screen.x, top: screen.y, width: screen.w, height: screen.h }}
-              data-has-player={hasPlayer ? 'true' : 'false'}
-            >
-              {!hasPlayer &&
-                (artwork ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- remote cover art from the queue, like the round 4 card
-                  <img src={artwork} alt={nowPlaying ? `Capa de ${nowPlaying.title}` : ''} />
-                ) : (
-                  <span className="palco__screen-empty">{nowPlaying ? nowPlaying.title : 'Nada tocando'}</span>
-                ))}
+            <div className="palco__screen" style={{ left: screen.x, top: screen.y, width: screen.w, height: screen.h }} data-has-player={hasPlayer ? 'true' : 'false'}>
+              {!hasPlayer && (artwork ? (
+                // eslint-disable-next-line @next/next/no-img-element -- remote cover art from the queue, like the round 4 card
+                <img src={artwork} alt={nowPlaying ? `Capa de ${nowPlaying.title}` : ''} />
+              ) : (
+                <span className="palco__screen-empty">{nowPlaying ? nowPlaying.title : 'Nada tocando'}</span>
+              ))}
             </div>
           )}
           {board && (
-            <section
-              className="palco-board"
-              aria-labelledby="palco-board-head"
-              data-testid="palco-board"
-              style={{ left: board.x, top: board.y, width: board.w, height: board.h }}
-            >
-              <p id="palco-board-head" className="palco-board__head">
-                A seguir
-              </p>
+            <section className="palco-board" aria-labelledby="palco-board-head" data-testid="palco-board" style={{ left: board.x, top: board.y, width: board.w, height: board.h }}>
+              <p id="palco-board-head" className="palco-board__head">A seguir</p>
               <ol className="palco-board__list">
                 {upcoming.slice(0, board.rows).map((t, i) => (
                   <li key={t.id} className="palco-board__row">
-                    <span className="palco-board__n" aria-hidden="true">
-                      {i + 1}
-                    </span>
+                    <span className="palco-board__n" aria-hidden="true">{i + 1}</span>
                     <span className="palco-board__t">{t.title}</span>
                     <span className="palco-board__a"> · {t.artist}</span>
                   </li>
@@ -730,41 +572,20 @@ export function PalcoView({
               const m = side === 'L' ? booths.left : booths.right;
               if (!m) return null;
               return (
-                <span
-                  key={`booth-${side}-${memberKey(m)}`}
-                  ref={tagRef(`booth-${side}`)}
-                  className={`palco-tag palco-tag--dj${isMe(m, clientId) ? ' palco-tag--you' : ''}${liveTag(m)}`}
-                >
+                <span key={`booth-${side}-${memberKey(m)}`} ref={tagRef(`booth-${side}`)} className={`palco-tag palco-tag--dj${isMe(m, clientId) ? ' palco-tag--you' : ''}${liveTag(m)}`}>
                   {boothLabel(m, side === 'L' ? 'tocando' : 'próxima')}
                 </span>
               );
             })}
             {entries.map(({ m, key, slot }) => (
-              <span
-                key={key}
-                ref={tagRef(key)}
-                className={`palco-tag${isMe(m, clientId) ? ' palco-tag--you' : ''}${slot.row === 1 ? ' palco-tag--back' : ''}${liveTag(m)}`}
-                style={
-                  framing && kind === 'phone'
-                    ? { maxWidth: phoneTagMaxWidth(world, framing.scale) }
-                    : framing
-                      ? { maxWidth: world.spacing * framing.scale - 4 }
-                      : undefined
-                }
-              >
-                {isMe(m, clientId)
-                  ? 'Você'
-                  : kind === 'phone'
-                    ? tagName(m.name, suffixes[m.clientId] ?? '')
-                    : memberLabel(m, suffixes)}
+              <span key={key} ref={tagRef(key)} className={`palco-tag${isMe(m, clientId) ? ' palco-tag--you' : ''}${slot.row === 1 ? ' palco-tag--back' : ''}${liveTag(m)}`} style={framing && kind === 'phone' ? { maxWidth: phoneTagMaxWidth(world, framing.scale) } : framing ? { maxWidth: world.spacing * framing.scale - 4 } : undefined}>
+                {isMe(m, clientId) ? 'Você' : kind === 'phone' ? tagName(m.name, suffixes[m.clientId] ?? '') : memberLabel(m, suffixes)}
               </span>
             ))}
           </div>
           <div className="palco__bubbles" aria-hidden="true">
             {bubbles.map((b) => (
-              <p key={b.id} ref={bubbleRef(b.key)} className="palco-bubble">
-                {b.text}
-              </p>
+              <p key={b.id} ref={bubbleRef(b.key)} className="palco-bubble">{b.text}</p>
             ))}
             {emotes.map((e) => (
               <span key={e.id} ref={emoteRef(e.key)} className="palco-emote" data-emote={e.emote}>
@@ -794,14 +615,7 @@ export function PalcoView({
             {nowPlaying && duration > 0 && (
               <div className="palco__bar">
                 <span>{clock(pos)}</span>
-                <span
-                  className="palco__track"
-                  role="progressbar"
-                  aria-label="Progresso da música"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(pct)}
-                >
+                <span className="palco__track" role="progressbar" aria-label="Progresso da música" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
                   <span className="palco__fill" style={{ width: `${pct}%` }} />
                 </span>
                 <span>{clock(duration)}</span>
@@ -809,22 +623,12 @@ export function PalcoView({
             )}
           </div>
           <div className="palco__acts">
-            <button
-              type="button"
-              className="palco__like"
-              onClick={like}
-              disabled={!nowPlaying}
-              aria-disabled={cooling || undefined}
-            >
+            <button type="button" className="palco__like" onClick={like} disabled={!nowPlaying} aria-disabled={cooling || undefined}>
               <svg viewBox="0 0 7 6" width="14" height="12" aria-hidden="true" shapeRendering="crispEdges">
                 <path fill="currentColor" d="M1 0h2v1h1V0h2v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z" />
               </svg>
               Curtir
-              {likeCount > 0 && (
-                <span className="palco__likes" aria-label={`${likeCount} curtidas`}>
-                  {likeCount}
-                </span>
-              )}
+              {likeCount > 0 && <span className="palco__likes" aria-label={`${likeCount} curtidas`}>{likeCount}</span>}
             </button>
             <SkipVoteButton roomId={roomId} variant="palco" />
             {kind === 'phone' ? (
@@ -843,15 +647,7 @@ export function PalcoView({
                 {reactOpen && (
                   <div id="palco-emotes" className="palco__emotes palco__emotes--pop" role="group" aria-label="Reações">
                     {EMOTES.map((e) => (
-                      <button
-                        key={e}
-                        type="button"
-                        className="palco__emote"
-                        aria-label={EMOTE_LABEL[e]}
-                        title={EMOTE_LABEL[e]}
-                        aria-disabled={emoteCooling || undefined}
-                        onClick={() => react(e)}
-                      >
+                      <button key={e} type="button" className="palco__emote" aria-label={EMOTE_LABEL[e]} title={EMOTE_LABEL[e]} aria-disabled={emoteCooling || undefined} onClick={() => react(e)}>
                         {/* eslint-disable-next-line @next/next/no-img-element -- 16 px pixel art at an integer scale */}
                         <img src={`/palco/emotes/${e}.png`} alt="" width={32} height={32} />
                       </button>
@@ -862,16 +658,7 @@ export function PalcoView({
             ) : (
               <div className="palco__emotes" role="group" aria-label="Reações">
                 {EMOTES.map((e) => (
-                  <button
-                    key={e}
-                    type="button"
-                    className="palco__emote"
-                    aria-label={EMOTE_LABEL[e]}
-                    title={EMOTE_LABEL[e]}
-                    disabled={!nowPlaying}
-                    aria-disabled={emoteCooling || undefined}
-                    onClick={() => react(e)}
-                  >
+                  <button key={e} type="button" className="palco__emote" aria-label={EMOTE_LABEL[e]} title={EMOTE_LABEL[e]} disabled={!nowPlaying} aria-disabled={emoteCooling || undefined} onClick={() => react(e)}>
                     {/* eslint-disable-next-line @next/next/no-img-element -- 16 px pixel art at an integer scale */}
                     <img src={`/palco/emotes/${e}.png`} alt="" width={32} height={32} />
                   </button>
@@ -879,21 +666,8 @@ export function PalcoView({
               </div>
             )}
             {onAddOpen && (
-              <button
-                ref={addRef}
-                type="button"
-                className="palco__toggle palco__add"
-                aria-label="Adicionar música"
-                title="Adicionar música"
-                aria-expanded={adding && addOpen}
-                aria-controls="palco-panel"
-                onClick={openAdd}
-              >
-                <span aria-hidden="true">+</span>
-                <span className="palco__add-text" aria-hidden="true">
-                  {' '}
-                  Música
-                </span>
+              <button ref={addRef} type="button" className="palco__toggle palco__add" aria-label="Adicionar música" title="Adicionar música" aria-expanded={adding && addOpen} aria-controls="palco-panel" onClick={openAdd}>
+                <span aria-hidden="true">+</span><span className="palco__add-text" aria-hidden="true"> Música</span>
               </button>
             )}
             <button
@@ -909,14 +683,7 @@ export function PalcoView({
           </div>
           {(canControl || volume || servicePicker) && (
             <div className="palco__ctrls" role="group" aria-label="Controles da música">
-              {canControl && (
-                <PalcoTransport
-                  roomId={roomId}
-                  activePlayer={activePlayer}
-                  nowPlayingId={nowPlayingId}
-                  playing={transport?.state === 'playing'}
-                />
-              )}
+              {canControl && <PalcoTransport roomId={roomId} activePlayer={activePlayer} nowPlayingId={nowPlayingId} playing={transport?.state === 'playing'} />}
               {volume}
               {servicePicker}
             </div>
@@ -953,13 +720,7 @@ export function PalcoView({
       </div>
 
       {activePanel !== 'stage' && (
-        <div
-          id="palco-panel"
-          className="palco__panel"
-          role="tabpanel"
-          aria-labelledby={`palco-tab-${activePanel}`}
-          onKeyDown={onPanelKey}
-        >
+        <div id="palco-panel" className="palco__panel" role="tabpanel" aria-labelledby={`palco-tab-${activePanel}`} onKeyDown={onPanelKey}>
           {activePanel === 'queue' ? queue : chat}
         </div>
       )}

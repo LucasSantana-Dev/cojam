@@ -13,16 +13,7 @@
 // re-checks both.
 import { useEffect, useRef, useState } from 'react';
 import { requestWatch, useLiveBroadcaster } from '@/lib/screenShareLive';
-import {
-  useStore,
-  useMyUserId,
-  claimHost,
-  kickMember,
-  setRoomAdmin,
-  transferHost,
-  rpcErrorMessage,
-  getClockOffsetMs,
-} from '@/lib/realtime';
+import { useStore, useMyUserId, claimHost, kickMember, setRoomAdmin, transferHost, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
 import { useDialogFocus } from './useDialogFocus';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
 import { memberLabel } from '@/lib/nameSuffix';
@@ -76,21 +67,8 @@ function Crown() {
 
 function WaveGlyph() {
   return (
-    <svg
-      className="r4-ls__glyph"
-      width="30"
-      height="14"
-      viewBox="0 0 30 14"
-      fill="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M1 7c3-8 5-8 7 0s4 8 7 0 4-8 7 0 4 8 7 0"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
+    <svg className="r4-ls__glyph" width="30" height="14" viewBox="0 0 30 14" fill="none" aria-hidden="true" focusable="false">
+      <path d="M1 7c3-8 5-8 7 0s4 8 7 0 4-8 7 0 4 8 7 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
@@ -99,25 +77,13 @@ type RoleMember = { userId?: string; name: string };
 
 // Confirm dialog for handing the host role to someone else. The owner (or the
 // new host) can take it back, so the copy says it is recoverable.
-function TransferDialog({
-  target,
-  onCancel,
-  onConfirm,
-  busy,
-}: {
-  target: RoleMember;
-  onCancel: () => void;
-  onConfirm: () => void;
-  busy: boolean;
-}) {
+function TransferDialog({ target, onCancel, onConfirm, busy }: { target: RoleMember; onCancel: () => void; onConfirm: () => void; busy: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useDialogFocus(true, onCancel, ref);
   return (
     <div className="r4-ls__scrim">
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="r4-transfer-h" className="r4-ls__dialog">
-        <h3 id="r4-transfer-h" className="r4-h2">
-          Passar o anfitrião para {target.name}?
-        </h3>
+        <h3 id="r4-transfer-h" className="r4-h2">Passar o anfitrião para {target.name}?</h3>
         <p className="r4-ls__dialog-text">
           {target.name} passa a ser o anfitrião da sala. O dono da sala pode retomar o posto a qualquer momento.
         </p>
@@ -134,15 +100,7 @@ function TransferDialog({
   );
 }
 
-export function ListenersStage({
-  roomId,
-  canModerate = false,
-  running,
-  hostUserId,
-  admins,
-  ownerUserId,
-  readOnly = false,
-}: ListenersStageProps) {
+export function ListenersStage({ roomId, canModerate = false, running, hostUserId, admins, ownerUserId, readOnly = false }: ListenersStageProps) {
   const canControl = canModerate;
   const myUserId = useMyUserId();
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -255,9 +213,7 @@ export function ListenersStage({
   return (
     <section className="r4-card r4-listeners" aria-labelledby="r4-listeners-h">
       <header className="r4-listeners__head">
-        <h2 id="r4-listeners-h" className="r4-h2">
-          Ouvindo agora
-        </h2>
+        <h2 id="r4-listeners-h" className="r4-h2">Ouvindo agora</h2>
         {Boolean(myUserId && ownerUserId === myUserId && hostUserId && hostUserId !== myUserId) && (
           <button
             type="button"
@@ -279,21 +235,14 @@ export function ListenersStage({
         </p>
       )}
 
-      <div
-        ref={boxRef}
-        data-count={visible.length}
-        className={`r4-ls${running ? ' is-running' : ''}${tuned ? ' is-tuned' : ''}`}
-        role="group"
-        aria-label="Quem está ouvindo"
-      >
+      <div ref={boxRef} data-count={visible.length} className={`r4-ls${running ? ' is-running' : ''}${tuned ? ' is-tuned' : ''}`} role="group" aria-label="Quem está ouvindo">
         {visible.map((member, i) => {
           const label = memberLabel(member, nameSuffixes);
           const isHost = Boolean(hostUserId && member.userId && member.userId === hostUserId);
           const mine = (member.clientIds ?? [member.clientId]).includes(myClientId);
           const isAdmin = Boolean(member.userId && admins?.includes(member.userId));
           const isOwner = Boolean(ownerUserId && member.userId === ownerUserId);
-          const manageable =
-            !readOnly && canControl && !mine && Boolean(member.userId) && !isOwner && member.userId !== myUserId;
+          const manageable = !readOnly && canControl && !mine && Boolean(member.userId) && !isOwner && member.userId !== myUserId;
           const menuKey = member.userId ?? member.clientId;
           const isLive = Boolean(liveId && (member.clientIds ?? [member.clientId]).includes(liveId));
           return (
@@ -312,24 +261,11 @@ export function ListenersStage({
                   )}
                   <svg className="r4-arcs" viewBox="0 0 160 70" aria-hidden="true" focusable="false">
                     {ARC_RADII.map((r, k) => (
-                      <path
-                        key={r}
-                        className={`r4-arcs__a r4-arcs__a${k}`}
-                        d={arcPath(r)}
-                        fill="none"
-                        strokeWidth="2.6"
-                        strokeLinecap="round"
-                      />
+                      <path key={r} className={`r4-arcs__a r4-arcs__a${k}`} d={arcPath(r)} fill="none" strokeWidth="2.6" strokeLinecap="round" />
                     ))}
                   </svg>
-                  <div
-                    className="r4-ls__av"
-                    style={{ background: avatarGradient(member.userId ?? member.clientId ?? member.name) }}
-                  >
-                    <CharacterAvatar
-                      characterId={memberCharacter(member)}
-                      initial={member.name.charAt(0).toUpperCase()}
-                    />
+                  <div className="r4-ls__av" style={{ background: avatarGradient(member.userId ?? member.clientId ?? member.name) }}>
+                    <CharacterAvatar characterId={memberCharacter(member)} initial={member.name.charAt(0).toUpperCase()} />
                     {member.platform && (
                       <span className="r4-ls__badge">
                         <ServiceBadge source={member.platform} size="md" />
@@ -360,12 +296,8 @@ export function ListenersStage({
                       <Crown />
                     </span>
                   )}
-                  <span className="r4-ls__name-text" title={label} tabIndex={0}>
-                    {label}
-                  </span>
-                  <span className="r4-ls__full" aria-hidden="true">
-                    {label}
-                  </span>
+                  <span className="r4-ls__name-text" title={label} tabIndex={0}>{label}</span>
+                  <span className="r4-ls__full" aria-hidden="true">{label}</span>
                 </div>
                 {isAdmin && <span className="r4-chip r4-ls__chip">admin</span>}
                 {manageable && (

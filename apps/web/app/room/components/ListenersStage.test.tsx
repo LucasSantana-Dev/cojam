@@ -1,15 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ListenersStage } from './ListenersStage';
-import {
-  useStore,
-  setRoomAdmin,
-  transferHost,
-  claimHost,
-  kickMember,
-  rpcErrorMessage,
-  type Member,
-} from '@/lib/realtime';
+import { useStore, setRoomAdmin, transferHost, claimHost, kickMember, rpcErrorMessage, type Member } from '@/lib/realtime';
 
 vi.mock('@/lib/realtime', async (orig) => ({
   ...(await orig<typeof import('@/lib/realtime')>()),
@@ -90,18 +82,10 @@ describe('ListenersStage', () => {
 
   it('"+N" overflow counts connections, not unique names', () => {
     // 8 connections, two of them the same name: 6 visible, +2 hidden.
-    useStore
-      .getState()
-      .setMembers([
-        m('1', 'Alice'),
-        m('2', 'Alice'),
-        m('3', 'Bo'),
-        m('4', 'Cy'),
-        m('5', 'Di'),
-        m('6', 'Ed'),
-        m('7', 'Fi'),
-        m('8', 'Gus'),
-      ]);
+    useStore.getState().setMembers([
+      m('1', 'Alice'), m('2', 'Alice'), m('3', 'Bo'), m('4', 'Cy'),
+      m('5', 'Di'), m('6', 'Ed'), m('7', 'Fi'), m('8', 'Gus'),
+    ]);
     render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByText('+2')).toBeInTheDocument();
@@ -221,14 +205,14 @@ describe('ListenersStage', () => {
 
       fireEvent.click(screen.getByLabelText('Remover Bob da sala'));
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        rpcErrorMessage(err, 'Não foi possível remover da sala.'),
-      );
+      expect(await screen.findByRole('alert')).toHaveTextContent(rpcErrorMessage(err, 'Não foi possível remover da sala.'));
       expect(kickMember).toHaveBeenCalledTimes(2);
     });
 
     it('stays quiet when one connection is kicked and a ghost one is not', async () => {
-      vi.mocked(kickMember).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('not in this room'));
+      vi.mocked(kickMember)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('not in this room'));
       render(<ListenersStage roomId="r" running={false} canModerate />);
 
       fireEvent.click(screen.getByLabelText('Remover Bob da sala'));

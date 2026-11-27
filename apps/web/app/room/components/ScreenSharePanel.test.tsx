@@ -70,11 +70,7 @@ beforeEach(() => {
   vi.stubGlobal('RTCPeerConnection', StubPC);
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
-    value: {
-      getDisplayMedia: vi.fn(async () => {
-        throw new DOMException('denied', 'NotAllowedError');
-      }),
-    },
+    value: { getDisplayMedia: vi.fn(async () => { throw new DOMException('denied', 'NotAllowedError'); }) },
   });
   try {
     localStorage.clear();
@@ -275,9 +271,11 @@ describe('ScreenSharePanel', () => {
 
   it('falls back to muted when the browser refuses to play with sound', async () => {
     seed({ screen: live() });
-    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
-      return this.muted ? Promise.resolve() : Promise.reject(new DOMException('no', 'NotAllowedError'));
-    });
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, 'play')
+      .mockImplementation(function (this: HTMLMediaElement) {
+        return this.muted ? Promise.resolve() : Promise.reject(new DOMException('no', 'NotAllowedError'));
+      });
     try {
       renderWatching(watchingShare());
       expect(await screen.findByRole('button', { name: 'Tocar som' })).toBeTruthy();
