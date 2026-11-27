@@ -561,6 +561,9 @@ screen share usually offers. Added in small PRs:
   when someone starts or stops watching (a burst reads as a count); a viewer
   whose share ended because the broadcaster left the room is told so; the
   audio tip in the start dialog folds to one line after the first share.
+- **Viewer connection notice**: every 5s the viewer compares two
+  `inbound-rtp` video samples; no decoded frame in between shows "A imagem
+  parou", under 5 fps or over 5% packets lost shows "Conexão fraca".
 
 - **Phones and keyboard**: fullscreen falls back to the video's own player
   on the iPhone; the volume slider hides where media volume is read only;
