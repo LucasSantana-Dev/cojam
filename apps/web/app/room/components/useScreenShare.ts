@@ -6,6 +6,7 @@ import {
   onServerMessage,
   rpcErrorMessage,
   rtcSignal,
+  screenLabel,
   screenLock,
   screenRefuse,
   screenStart,
@@ -419,6 +420,22 @@ export function useScreenShare(roomId: string) {
     [roomId],
   );
 
+  // The broadcaster's line about what is on screen (spec 5.7). Returns
+  // whether the server took it, so the field can keep the text on a refusal.
+  const setLabel = useCallback(
+    async (label: string): Promise<boolean> => {
+      setError('');
+      try {
+        await screenLabel(roomId, label);
+        return true;
+      } catch (err) {
+        setError(rpcErrorMessage(err, 'Não foi possível salvar esse texto.'));
+        return false;
+      }
+    },
+    [roomId],
+  );
+
   const refuse = useCallback(
     async (clientId: string) => {
       setError('');
@@ -455,5 +472,6 @@ export function useScreenShare(roomId: string) {
     retryWatch,
     lock,
     refuse,
+    setLabel,
   };
 }

@@ -557,6 +557,10 @@ screen share usually offers. Added in small PRs:
 - **Viewer**: volume slider (remembered per browser), picture in picture
   where the browser supports it, live time and viewer count.
 
+- **What is on screen**: `screen.label` lets the broadcasting connection set
+  an optional line (60 characters, whitespace collapsed, room name filter)
+  that the card shows before anyone chooses to watch. It replaces the
+  thumbnail as a hint without opening a peer. Not written to the trail.
 - **Notices** (after the Go Live review): the broadcaster gets a 5 s line
   when someone starts or stops watching (a burst reads as a count); a viewer
   whose share ended because the broadcaster left the room is told so; the

@@ -184,6 +184,9 @@ type ScreenShareState struct {
 	MaxViewers int `json:"maxViewers"`
 	// Locked reports that the host or broadcaster closed admission.
 	Locked bool `json:"locked"`
+	// Label is the broadcaster's optional line about what is on screen
+	// (spec 5.7), so a member can decide before watching. Empty when unset.
+	Label string `json:"label,omitempty"`
 }
 
 // setNowPlayingID is the single place NowPlayingID changes. When the pointer
