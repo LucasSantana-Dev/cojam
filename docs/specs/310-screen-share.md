@@ -562,6 +562,11 @@ screen share usually offers. Added in small PRs:
   whose share ended because the broadcaster left the room is told so; the
   audio tip in the start dialog folds to one line after the first share.
 
+- **Phones and keyboard**: fullscreen falls back to the video's own player
+  on the iPhone; the volume slider hides where media volume is read only;
+  phone hosts are told sharing works on a computer; F toggles fullscreen, M
+  the sound, and a double click on the video goes fullscreen.
+
 Left out on purpose: a live thumbnail before "Assistir" (it would open a peer
 before the viewer opts in, which 5.3 and the IP disclosure forbid), and the
 viewer list for everyone (needs a protocol change and a privacy call; the
