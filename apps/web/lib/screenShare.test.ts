@@ -89,8 +89,20 @@ function fakeStream(kinds: string[]) {
 
 const cand = (n: number): IceCandidateInit => ({ candidate: `candidate:${n}`, sdpMid: '0', sdpMLineIndex: 0 });
 
+class FakeMediaStream {
+  constructor(private readonly tracks: unknown[] = []) {}
+  getTracks() {
+    return this.tracks;
+  }
+}
+
 beforeEach(() => {
   FakePC.all = [];
+  vi.stubGlobal('MediaStream', FakeMediaStream);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('iceServersFrom', () => {
@@ -221,6 +233,23 @@ describe('BroadcasterPeers', () => {
     expect(FakePC.all[2].senders.map((s) => s.track?.kind)).toEqual(['video']);
   });
 
+  it('adds sound from a new source and renegotiates with a new offer', async () => {
+    const sent: { to: string; payload: SignalPayload }[] = [];
+    const peers = new BroadcasterPeers({
+      stream: fakeStream(['video']),
+      send: async (to, payload) => {
+        sent.push({ to, payload });
+      },
+      createPeer: factory,
+      iceServers: [],
+      batchMs: 1,
+    });
+    await peers.addViewer('v1');
+    await peers.replaceSource(fakeStream(['video', 'audio']));
+    expect(FakePC.all[0].senders.map((s) => s.track?.kind)).toEqual(['video', 'audio']);
+    expect(sent.filter((m) => m.payload.kind === 'offer')).toHaveLength(2);
+  });
+
   it('trickles candidates to the right viewer', async () => {
     const { peers, sent } = rig();
     await peers.addViewer('v1');
@@ -272,16 +301,26 @@ describe('ViewerPeer', () => {
     peer.close();
   });
 
-  it('reports the received stream and the connected state', () => {
+  it('reports the received tracks as one stream and the connected state', () => {
     const { peer, pc, states, streams } = rig();
-    const stream = fakeStream(['video']);
-    pc.ontrack?.({ streams: [stream], track: {} });
+    const video = { kind: 'video', id: 'v' };
+    pc.ontrack?.({ streams: [fakeStream(['video'])], track: video });
     pc.setState('connected');
-    expect(streams).toEqual([stream]);
+    expect(streams.map((s) => s.getTracks())).toEqual([[video]]);
     expect(states).toEqual(['connected']);
     peer.close();
     expect(states.at(-1)).toBe('closed');
     expect(pc.closed).toBe(true);
+  });
+
+  it('keeps the video when sound arrives later on another stream', () => {
+    const { peer, pc, streams } = rig();
+    const video = { kind: 'video', id: 'v' };
+    const audio = { kind: 'audio', id: 'a' };
+    pc.ontrack?.({ streams: [fakeStream(['video'])], track: video });
+    pc.ontrack?.({ streams: [fakeStream(['audio'])], track: audio });
+    expect(streams.at(-1)?.getTracks()).toEqual([video, audio]);
+    peer.close();
   });
 
   it('restarts ICE once, then fails', () => {

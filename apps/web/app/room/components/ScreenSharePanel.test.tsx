@@ -154,6 +154,28 @@ describe('ScreenSharePanel', () => {
     expect(screen.queryByTestId('screen-share-notice')).toBeNull();
   });
 
+  it('opens large over the page, with "Reduzir" back to the room and fullscreen offered', async () => {
+    affirmAge();
+    seed({ screen: live() });
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Assistir' }));
+    // The large view lives in a portal on the body, so the node is queried again after each switch.
+    const view = () => screen.getByTestId('screen-share-watching');
+    await screen.findByTestId('screen-share-watching');
+    expect(view().className).toContain('screen-share--theater');
+    expect(view().parentElement).toBe(document.body);
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(screen.getByRole('button', { name: 'Tela cheia' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Reduzir' }));
+    expect(view().className).not.toContain('screen-share--theater');
+    expect(view().parentElement).not.toBe(document.body);
+    expect(document.body.style.overflow).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: 'Ampliar' }));
+    expect(view().className).toContain('screen-share--theater');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(view().className).not.toContain('screen-share--theater');
+  });
+
   it('drops the video when the share disappears from the room state', async () => {
     affirmAge();
     seed({ screen: live() });

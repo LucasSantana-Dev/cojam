@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/realtime';
 import { MINIMUM_AGE, affirmAge, hasAffirmedAge } from '@/lib/ageGate';
 import { useReportDialog } from '@/app/components/useReportDialog';
@@ -13,7 +14,17 @@ import { canCaptureScreen, useScreenShare } from './useScreenShare';
 
 const REPORT_WINDOW_MS = 10 * 60 * 1000;
 
-function StreamVideo({ stream, muted, label }: { stream: MediaStream; muted: boolean; label: string }) {
+function StreamVideo({
+  stream,
+  muted,
+  label,
+  onRatio,
+}: {
+  stream: MediaStream;
+  muted: boolean;
+  label: string;
+  onRatio?: (ratio: number) => void;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -26,7 +37,30 @@ function StreamVideo({ stream, muted, label }: { stream: MediaStream; muted: boo
       el.srcObject = null;
     };
   }, [stream]);
-  return <video ref={ref} autoPlay playsInline muted={muted} aria-label={label} data-testid="screen-video" />;
+  // Set the property directly: the attribute alone does not unmute a playing
+  // element in every browser, and play() again in case autoplay held it.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.muted = muted;
+    if (!muted) void el.play().catch(() => {});
+  }, [muted]);
+  const reportRatio = () => {
+    const el = ref.current;
+    if (el && el.videoWidth > 0 && el.videoHeight > 0) onRatio?.(el.videoWidth / el.videoHeight);
+  };
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      muted={muted}
+      aria-label={label}
+      data-testid="screen-video"
+      onLoadedMetadata={reportRatio}
+      onResize={reportRatio}
+    />
+  );
 }
 
 type PanelProps = {
@@ -54,6 +88,49 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
   const [confirmMode, setConfirmMode] = useState<'share' | 'watch'>('share');
   const [ageChecked, setAgeChecked] = useState(false);
   const [soundOn, setSoundOn] = useState(false);
+  // Watching opens large (theater) by default: the room column is too narrow
+  // for a shared screen. "Reduzir" puts it back in the column.
+  const [theater, setTheater] = useState(true);
+  const [ratio, setRatio] = useState(16 / 9);
+  const sectionRef = useRef<HTMLElement>(null);
+  // The viewer peer hands over a new stream whenever a track is added, so
+  // counting at render time stays current.
+  const audioTracks = share.remoteStream?.getAudioTracks?.().length ?? 0;
+  const watching = share.role === 'watching';
+
+  // Each new watch starts large, muted until "Tocar som", with the default ratio.
+  const [wasWatching, setWasWatching] = useState(false);
+  if (watching !== wasWatching) {
+    setWasWatching(watching);
+    if (watching) {
+      setTheater(true);
+      setSoundOn(false);
+      setRatio(16 / 9);
+    }
+  }
+
+  // Theater covers the page: Esc goes back to the room and the page under it
+  // does not scroll.
+  useEffect(() => {
+    if (!watching || !theater) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !document.fullscreenElement) setTheater(false);
+    };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [watching, theater]);
+
+  const toggleFullscreen = () => {
+    const el = sectionRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+    else void el.requestFullscreen?.().catch(() => {});
+  };
   const [now, setNow] = useState(() => Date.now());
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -138,6 +215,12 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
             delas. Compartilhe só o que você tem direito de mostrar (veja os <a href="/termos">Termos de Uso</a>).
           </p>
         )}
+        {confirmMode === 'share' && (
+          <p className="age-gate__body screen-share__tip">
+            Para levar o som, escolha uma <strong>aba do navegador</strong> e deixe ligado{' '}
+            <strong>Compartilhar áudio da aba</strong>. No Mac, janela e tela inteira vão sem som.
+          </p>
+        )}
         {!hasAffirmedAge() && (
           <label className="age-gate__field screen-share__check">
             <input type="checkbox" checked={ageChecked} onChange={(e) => setAgeChecked(e.target.checked)} />
@@ -166,54 +249,86 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
 
   function body() {
     // Watching: the video on the stage, with the notice that cannot be closed.
-    if (share.role === 'watching') {
+    if (watching) {
       const failed = share.viewerState === 'failed';
-      return (
-        <section className="screen-share" data-testid="screen-share-watching">
+      const noSound = Boolean(share.remoteStream) && audioTracks === 0;
+      const view = (
+        <section
+          ref={sectionRef}
+          className={`screen-share screen-share--watching${theater ? ' screen-share--theater' : ''}`}
+          data-testid="screen-share-watching"
+          aria-label={`Tela de ${broadcasterName}`}
+          style={{ ['--screen-ratio' as string]: String(ratio) }}
+        >
           <Stage
             label="Tela compartilhada"
             overlay={
-              <div className="screen-share__overlay">
+              share.viewerState === 'connecting' || failed ? (
+                <div className="screen-share__overlay">
+                  {share.viewerState === 'connecting' && (
+                    <p className="screen-share__note" role="status">
+                      Conectando a {broadcasterName}...
+                    </p>
+                  )}
+                  {failed && (
+                    <p className="screen-share__error" role="alert">
+                      Não foi possível conectar. Sua rede ou a de {broadcasterName} bloqueia conexões diretas, e o CoJam
+                      ainda não tem um servidor de retransmissão.
+                    </p>
+                  )}
+                </div>
+              ) : undefined
+            }
+            caption={
+              <div className="screen-share__bar">
                 <p className="screen-share__notice" data-testid="screen-share-notice">
                   Transmissão não moderada. O CoJam não vê nem grava o que é compartilhado.
                 </p>
-                {share.viewerState === 'connecting' && (
-                  <p className="screen-share__note" role="status">
-                    Conectando a {broadcasterName}...
-                  </p>
-                )}
-                {failed && (
-                  <p className="screen-share__error" role="alert">
-                    Não foi possível conectar. Sua rede ou a de {broadcasterName} bloqueia conexões diretas, e o CoJam
-                    ainda não tem um servidor de retransmissão.
-                  </p>
-                )}
-              </div>
-            }
-            caption={
-              <div className="screen-share__actions">
-                <span className="screen-share__who">Tela de {broadcasterName}</span>
-                {share.remoteStream && !soundOn && (
-                  <button type="button" className="screen-share__btn" onClick={() => setSoundOn(true)}>
-                    Tocar som
+                <div className="screen-share__actions">
+                  <span className="screen-share__who">Tela de {broadcasterName}</span>
+                  {share.remoteStream && audioTracks > 0 && (
+                    <button
+                      type="button"
+                      className="screen-share__btn screen-share__btn--primary"
+                      aria-pressed={soundOn}
+                      onClick={() => setSoundOn(!soundOn)}
+                    >
+                      {soundOn ? 'Tirar som' : 'Tocar som'}
+                    </button>
+                  )}
+                  {noSound && (
+                    <span className="screen-share__note" data-testid="screen-share-no-sound">
+                      Sem som: {broadcasterName} não compartilhou o áudio.
+                    </span>
+                  )}
+                  <button type="button" className="screen-share__btn" onClick={() => setTheater(!theater)}>
+                    {theater ? 'Reduzir' : 'Ampliar'}
                   </button>
-                )}
-                {failed && (
-                  <button type="button" className="screen-share__btn" onClick={() => void share.retryWatch()}>
-                    Tentar de novo
+                  <button type="button" className="screen-share__btn" onClick={toggleFullscreen}>
+                    Tela cheia
                   </button>
-                )}
-                <button type="button" className="screen-share__btn" onClick={() => void share.unwatch()}>
-                  Parar de assistir
-                </button>
-                <button type="button" className="screen-share__btn screen-share__btn--quiet" onClick={openReport}>
-                  Denunciar transmissão
-                </button>
+                  {failed && (
+                    <button type="button" className="screen-share__btn" onClick={() => void share.retryWatch()}>
+                      Tentar de novo
+                    </button>
+                  )}
+                  <button type="button" className="screen-share__btn" onClick={() => void share.unwatch()}>
+                    Parar de assistir
+                  </button>
+                  <button type="button" className="screen-share__btn screen-share__btn--quiet" onClick={openReport}>
+                    Denunciar transmissão
+                  </button>
+                </div>
               </div>
             }
           >
             {share.remoteStream ? (
-              <StreamVideo stream={share.remoteStream} muted={!soundOn} label={`Tela de ${broadcasterName}`} />
+              <StreamVideo
+                stream={share.remoteStream}
+                muted={!soundOn}
+                label={`Tela de ${broadcasterName}`}
+                onRatio={setRatio}
+              />
             ) : (
               <div className="screen-share__blank" />
             )}
@@ -221,6 +336,9 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
           {messages}
         </section>
       );
+      // Large view goes to the body: a transformed ancestor (the room's entry
+      // animation, the palco layout) would trap position: fixed in its box.
+      return theater && typeof document !== 'undefined' ? createPortal(view, document.body) : view;
     }
 
     // Broadcasting: who is watching and the controls over admission.
@@ -240,7 +358,12 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
               <StreamVideo stream={share.localStream} muted label="Prévia do que você compartilha" />
             </div>
           )}
-          {noAudio && <p className="screen-share__note">Este navegador não compartilha o som, só a imagem.</p>}
+          {noAudio && (
+            <p className="screen-share__note" data-testid="screen-share-broadcast-no-sound">
+              Sem som: quem assiste só vê a imagem. Para levar o som, use <strong>Trocar o que compartilho</strong>,
+              escolha uma aba do navegador e deixe ligado <strong>Compartilhar áudio da aba</strong>.
+            </p>
+          )}
           {share.viewerIds.length > 0 && (
             <ul className="screen-share__viewers" aria-label="Quem está assistindo">
               {share.viewerIds.map((id) => (

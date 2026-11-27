@@ -29,9 +29,12 @@ export function iceServersFrom(raw: string | undefined): RTCIceServer[] {
 
 // The capture constraints of spec 5.2. selfBrowserSurface and friends are
 // Chromium hints; other browsers ignore unknown keys.
+// displaySurface 'browser' opens the picker on the tab list: on macOS only a
+// tab carries sound ("Compartilhar áudio da aba"), a window or the whole
+// screen never does. Voice processing is off so music is not mangled.
 export const DISPLAY_MEDIA_OPTIONS = {
-  video: { frameRate: { ideal: 15, max: 30 }, height: { max: 720 } },
-  audio: true,
+  video: { frameRate: { ideal: 15, max: 30 }, height: { max: 720 }, displaySurface: 'browser' },
+  audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   selfBrowserSurface: 'exclude',
   surfaceSwitching: 'include',
   systemAudio: 'include',
@@ -181,17 +184,29 @@ export class BroadcasterPeers {
     }
   }
 
-  // replaceSource swaps the video source on every peer without renegotiating
-  // ("Trocar o que compartilho", spec 5.5). Viewers who join later get the new
-  // stream. v1 does not renegotiate when audio appears or disappears.
+  // replaceSource swaps the source on every peer ("Trocar o que compartilho",
+  // spec 5.5). A kind the peer already sends is swapped in place; a kind it
+  // never sent (sound added on the second try) is added and renegotiated with
+  // a new offer on the same connection; a kind the new source lacks is muted.
   async replaceSource(stream: MediaStream): Promise<void> {
     this.stream = stream;
-    const track = stream.getVideoTracks()[0];
-    if (!track) return;
-    for (const { pc } of this.peers.values()) {
-      for (const sender of pc.getSenders()) {
-        if (sender.track?.kind === 'video') await sender.replaceTrack(track);
+    for (const [viewerId, { pc }] of this.peers) {
+      let renegotiate = false;
+      for (const kind of ['video', 'audio'] as const) {
+        const track = stream.getTracks().find((t) => t.kind === kind) ?? null;
+        const sender = senderFor(pc, kind);
+        if (sender) await sender.replaceTrack(track);
+        else if (track) {
+          const added = pc.addTrack(track, stream);
+          if (kind === 'video') void capSender(added);
+          renegotiate = true;
+        }
       }
+      if (!renegotiate) continue;
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      if (this.peers.get(viewerId)?.pc !== pc) continue;
+      await this.opts.send(viewerId, { kind: 'offer', sdp: offer.sdp ?? '' });
     }
   }
 
@@ -199,6 +214,14 @@ export class BroadcasterPeers {
     for (const id of [...this.peers.keys()]) this.removeViewer(id, false);
     this.opts.onViewersChange?.([]);
   }
+}
+
+// senderFor finds the sender of one media kind, even after its track was
+// swapped for null (the transceiver's receiver keeps the kind).
+function senderFor(pc: RTCPeerConnection, kind: string): RTCRtpSender | undefined {
+  const byTrack = pc.getSenders().find((s) => s.track?.kind === kind);
+  if (byTrack || typeof pc.getTransceivers !== 'function') return byTrack;
+  return pc.getTransceivers().find((t) => t.receiver.track?.kind === kind && t.currentDirection !== 'stopped')?.sender;
 }
 
 // capSender holds each viewer's stream at 1.2 Mbps and favours resolution:
@@ -225,6 +248,7 @@ export class ViewerPeer {
   private batcher: CandidateBatcher;
   private pendingCandidates: IceCandidateInit[] = [];
   private remoteSet = false;
+  private remoteTracks: MediaStreamTrack[] = [];
   private restarted = false;
   private state: ViewerState = 'connecting';
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -244,9 +268,14 @@ export class ViewerPeer {
     this.pc = opts.createPeer({ iceServers: opts.iceServers });
     this.batcher = new CandidateBatcher((p) => void opts.send(opts.broadcasterId, p).catch(() => {}), opts.batchMs);
     this.pc.onicecandidate = (e) => this.batcher.push(e.candidate);
+    // One stream for everything received: a track added later (sound turned
+    // on by a new source) arrives on a different remote stream id, and
+    // replacing the stream with it would drop the video.
     this.pc.ontrack = (e) => {
-      const stream = e.streams[0] ?? new MediaStream([e.track]);
-      opts.onStream(stream);
+      const tracks = this.remoteTracks.filter((t) => t.kind !== e.track.kind);
+      tracks.push(e.track);
+      this.remoteTracks = tracks;
+      opts.onStream(new MediaStream(tracks));
     };
     this.pc.onconnectionstatechange = () => this.onConnectionState();
     this.timer = setTimeout(() => {

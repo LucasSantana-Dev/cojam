@@ -21,7 +21,15 @@ navigator.mediaDevices.getDisplayMedia = async function () {
     ctx.fillStyle = n % 2 ? 'oklch(0.55 0.25 295)' : 'oklch(0.75 0.2 150)';
     ctx.fillRect(0, 0, c.width, c.height);
   }, 100);
-  return c.captureStream(15);
+  var stream = c.captureStream(15);
+  // A tone stands in for tab audio, so the sound path is exercised too.
+  var ac = new AudioContext();
+  var osc = ac.createOscillator();
+  var dest = ac.createMediaStreamDestination();
+  osc.connect(dest);
+  osc.start();
+  stream.addTrack(dest.stream.getAudioTracks()[0]);
+  return stream;
 };
 `;
 
@@ -98,6 +106,23 @@ test('host shares, a member watches real frames, then both tear down', async ({ 
         { timeout: 20_000 },
       )
       .toBeGreaterThan(0);
+
+    // Large by default, and the sound arrives: "Tocar som" unmutes it.
+    await expect(viewer.getByTestId('screen-share-watching')).toHaveClass(/screen-share--theater/);
+    await expect
+      .poll(() =>
+        viewer.evaluate(() => {
+          const v = document.querySelector('[data-testid="screen-video"]') as HTMLVideoElement | null;
+          return (v?.srcObject as MediaStream | null)?.getAudioTracks().length ?? 0;
+        }),
+      )
+      .toBe(1);
+    const view = viewer.getByTestId('screen-share-watching');
+    await view.getByRole('button', { name: 'Tocar som' }).click();
+    await expect(view.getByRole('button', { name: 'Tirar som' })).toBeVisible();
+    expect(
+      await viewer.evaluate(() => (document.querySelector('[data-testid="screen-video"]') as HTMLVideoElement).muted),
+    ).toBe(false);
 
     await viewer.getByRole('button', { name: 'Parar de assistir' }).click();
     await expect(viewer.getByTestId('screen-video')).toHaveCount(0);
