@@ -4,9 +4,14 @@ import {
   BroadcasterPeers,
   CandidateBatcher,
   DEFAULT_STUN_URLS,
+  DEFAULT_QUALITY,
   MAX_BITRATE,
+  SCREEN_QUALITIES,
   ViewerPeer,
+  displayMediaOptions,
   iceServersFrom,
+  qualityById,
+  uploadMbps,
   type ViewerState,
 } from './screenShare';
 
@@ -250,6 +255,40 @@ describe('BroadcasterPeers', () => {
     expect(sent.filter((m) => m.payload.kind === 'offer')).toHaveLength(2);
   });
 
+  it('re-caps every viewer for a new quality and favours frame rate for motion', async () => {
+    const { peers } = rig();
+    await peers.addViewer('v1');
+    await peers.addViewer('v2');
+    await peers.setQuality(qualityById('max'));
+    for (const pc of FakePC.all) {
+      expect(pc.senders[0].params.encodings?.[0].maxBitrate).toBe(4_000_000);
+      expect(pc.senders[0].params.degradationPreference).toBe('maintain-framerate');
+    }
+    // A viewer who joins later gets the current preset too.
+    await peers.addViewer('v3');
+    await Promise.resolve();
+    expect(FakePC.all[2].senders[0].params.encodings?.[0].maxBitrate).toBe(4_000_000);
+  });
+
+  it('reports the uplink as the limit over the CPU, and nothing when no peer is limited', async () => {
+    const { peers } = rig();
+    expect(await peers.limitation()).toBeNull();
+    await peers.addViewer('v1');
+    await peers.addViewer('v2');
+    const stats = (reason: string) => async () =>
+      new Map([
+        ['a', { type: 'outbound-rtp', kind: 'audio', qualityLimitationReason: 'bandwidth' }],
+        ['b', { type: 'outbound-rtp', kind: 'video', qualityLimitationReason: reason }],
+      ]);
+    Object.assign(FakePC.all[0], { getStats: stats('none') });
+    Object.assign(FakePC.all[1], { getStats: stats('none') });
+    expect(await peers.limitation()).toBeNull();
+    Object.assign(FakePC.all[0], { getStats: stats('cpu') });
+    expect(await peers.limitation()).toBe('cpu');
+    Object.assign(FakePC.all[1], { getStats: stats('bandwidth') });
+    expect(await peers.limitation()).toBe('bandwidth');
+  });
+
   it('trickles candidates to the right viewer', async () => {
     const { peers, sent } = rig();
     await peers.addViewer('v1');
@@ -348,5 +387,26 @@ describe('ViewerPeer', () => {
     await peer.handleSignal('b1', { kind: 'offer', sdp: 'v=0 offer' });
     expect(pc.remote).toBeNull();
     expect(sent).toEqual([]);
+  });
+});
+
+describe('quality presets', () => {
+  it('defaults to the spec 5.2 capture (720p, 15 fps, 1.2 Mbps) and falls back on unknown ids', () => {
+    expect(DEFAULT_QUALITY).toMatchObject({ id: 'text', height: 720, frameRate: 15, maxBitrate: MAX_BITRATE });
+    expect(qualityById('nope')).toBe(DEFAULT_QUALITY);
+    expect(qualityById(null)).toBe(DEFAULT_QUALITY);
+    expect(qualityById('hd').height).toBe(1080);
+  });
+
+  it('builds picker options per preset and keeps the tab and sound hints', () => {
+    const opts = displayMediaOptions(qualityById('smooth'));
+    expect(opts.video).toEqual({ frameRate: { ideal: 60, max: 60 }, height: { max: 720 }, displaySurface: 'browser' });
+    expect(opts.audio).toEqual({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+    expect(opts.systemAudio).toBe('include');
+  });
+
+  it('tells the upload each viewer takes', () => {
+    expect(SCREEN_QUALITIES.map((q) => uploadMbps(q, 1))).toEqual([1.2, 2.5, 2.5, 4]);
+    expect(uploadMbps(qualityById('max'), 5)).toBe(20);
   });
 });

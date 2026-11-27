@@ -539,6 +539,29 @@ privacy policy names both (PR 9 gate).
 It posts `kind: 'broadcast'` to `/api/report` with the room id and the
 reporter's reason only; the server resolves the subject (7.3).
 
+### 5.7 Quality presets and viewer controls (2026-11-27)
+
+After the first production test the owner asked for the controls a live
+screen share usually offers. Added in small PRs:
+
+- **Quality presets** (broadcaster, before sharing and live): Texto nítido
+  720p 15 fps 1.2 Mbps (the 5.2 default, unchanged), Alta definição 1080p
+  30 fps 2.5 Mbps, Movimento suave 720p 60 fps 2.5 Mbps, Máxima 1080p 60 fps
+  4 Mbps. Motion presets set `contentHint = 'motion'` and
+  `degradationPreference: 'maintain-framerate'`. A live change calls
+  `applyConstraints` on the track and re-caps every sender. The mesh sends
+  one copy per viewer, so the picker shows the upload per viewer. The 1.2 Mbps
+  prototype gate in section 8 applies to the default preset only.
+- **Limit notice**: every 5s the broadcaster reads `qualityLimitationReason`
+  from the video `outbound-rtp` stats and shows the section 6 message.
+- **Viewer**: volume slider (remembered per browser), picture in picture
+  where the browser supports it, live time and viewer count.
+
+Left out on purpose: a live thumbnail before "Assistir" (it would open a peer
+before the viewer opts in, which 5.3 and the IP disclosure forbid), and the
+viewer list for everyone (needs a protocol change and a privacy call; the
+broadcaster already sees it).
+
 ## 6. Failure modes
 
 | Failure | Detection | User sees | Server effect |

@@ -7,6 +7,7 @@ import { MINIMUM_AGE, affirmAge, hasAffirmedAge } from '@/lib/ageGate';
 import { useReportDialog } from '@/app/components/useReportDialog';
 import { Stage } from './Stage';
 import { canCaptureScreen, useScreenShare } from './useScreenShare';
+import { SCREEN_QUALITIES, uploadMbps, type ScreenQualityId } from '@/lib/screenShare';
 
 // Screen share v1 (#310, spec 5.2, 5.3, 5.6). Rendered only when
 // FEATURE_SCREENSHARE is on; the server stays authoritative on every rule
@@ -38,6 +39,32 @@ export function liveFor(startedAtMs: number, nowMs: number): string {
 
 function canPictureInPicture(): boolean {
   return typeof document !== 'undefined' && Boolean(document.pictureInPictureEnabled);
+}
+
+// The quality picker, before sharing and while live. The note tells how much
+// upload each viewer takes, since the mesh sends one copy per viewer.
+function QualityPicker({ share }: { share: ScreenShare }) {
+  return (
+    <div className="screen-share__quality">
+      <label>
+        <span>Qualidade</span>
+        <select
+          value={share.quality.id}
+          aria-label="Qualidade da transmissão"
+          onChange={(e) => void share.setQuality(e.target.value as ScreenQualityId)}
+        >
+          {SCREEN_QUALITIES.map((q) => (
+            <option key={q.id} value={q.id}>
+              {q.label} ({q.detail})
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className="screen-share__note" data-testid="screen-share-upload">
+        Cada pessoa assistindo usa até {uploadMbps(share.quality, 1).toLocaleString('pt-BR')} Mbps do seu upload.
+      </span>
+    </div>
+  );
 }
 
 function StreamVideo({
@@ -300,6 +327,7 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
             <strong>Compartilhar áudio da aba</strong>. No Mac, janela e tela inteira vão sem som.
           </p>
         )}
+        {confirmOpen && confirmMode === 'share' && <QualityPicker share={share} />}
         {!hasAffirmedAge() && (
           <label className="age-gate__field screen-share__check">
             <input type="checkbox" checked={ageChecked} onChange={(e) => setAgeChecked(e.target.checked)} />
@@ -466,6 +494,14 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
             <div className="screen-share__preview">
               <StreamVideo stream={share.localStream} muted label="Prévia do que você compartilha" />
             </div>
+          )}
+          <QualityPicker share={share} />
+          {share.limitation && (
+            <p className="screen-share__note" role="status" data-testid="screen-share-limited">
+              {share.limitation === 'bandwidth'
+                ? 'Sua conexão está no limite: a imagem pode perder qualidade. Uma qualidade menor ou menos espectadores ajudam.'
+                : 'Seu computador está no limite: a imagem pode perder qualidade. Uma qualidade menor ajuda.'}
+            </p>
           )}
           {noAudio && (
             <p className="screen-share__note" data-testid="screen-share-broadcast-no-sound">

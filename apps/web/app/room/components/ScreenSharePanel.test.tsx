@@ -4,6 +4,7 @@ import type { RoomState, ScreenShareState } from '@cojam/shared';
 import { ScreenSharePanel, ScreenSharePanelView, liveFor, type ScreenShare } from './ScreenSharePanel';
 import { useStore } from '@/lib/realtime';
 import { affirmAge } from '@/lib/ageGate';
+import { DEFAULT_QUALITY } from '@/lib/screenShare';
 
 // The RPC wrappers are mocked; the panel drives the real store, so what it
 // shows follows state.screen exactly like in the app.
@@ -230,6 +231,8 @@ describe('ScreenSharePanel', () => {
       viewerIds: [],
       lastWatchedAt: null,
       isBroadcaster: false,
+      quality: DEFAULT_QUALITY,
+      limitation: null,
     } as unknown as ScreenShare;
     render(<ScreenSharePanelView roomId="ROOM00000001" canModerate={false} isPublic={false} share={share} />);
     const slider = screen.getByRole('slider', { name: 'Volume da transmissão' }) as HTMLInputElement;
@@ -242,5 +245,18 @@ describe('ScreenSharePanel', () => {
     const video = screen.getByTestId('screen-video') as HTMLVideoElement;
     expect(video.muted).toBe(false);
     expect(video.volume).toBeCloseTo(0.4);
+  });
+
+  it('offers the quality before sharing and remembers it', () => {
+    seed();
+    renderPanel(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Compartilhar tela' }));
+    const select = screen.getByRole('combobox', { name: 'Qualidade da transmissão' }) as HTMLSelectElement;
+    expect(select.value).toBe('text');
+    expect(screen.getByTestId('screen-share-upload').textContent).toContain('1,2 Mbps');
+    fireEvent.change(select, { target: { value: 'max' } });
+    expect(select.value).toBe('max');
+    expect(screen.getByTestId('screen-share-upload').textContent).toContain('4 Mbps');
+    expect(localStorage.getItem('cojam.screenQuality')).toBe('max');
   });
 });
