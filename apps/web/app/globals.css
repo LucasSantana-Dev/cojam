@@ -3355,12 +3355,76 @@ textarea.age-gate__input { resize: vertical; }
   padding: 0.75rem 1rem;
   background: oklch(0.1 0.02 280);
 }
+.screen-share__main { display: grid; gap: 0.6rem; min-width: 0; }
+.screen-share--theater .screen-share__main,
+.screen-share--watching:fullscreen .screen-share__main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
 .screen-share--theater .stage,
 .screen-share--watching:fullscreen .stage {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+/* The room chat beside the large view (Go Live gap 1): a column on wide
+   screens, a drawer over the video below 56.25rem. */
+.screen-share--with-chat { flex-direction: row; }
+.screen-share__chat {
+  flex: none;
+  width: 20rem;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.screen-share__chat > .chat-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-1);
+}
+.screen-share__chat .chat-scroll { flex: 1; min-height: 0; max-height: none; }
+@media (max-width: 56.24rem) {
+  .screen-share__chat {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    height: min(60%, 28rem);
+    width: min(calc(100% - 1.5rem), 22rem);
+    z-index: 2;
+    box-shadow: 0 1rem 3rem oklch(0 0 0 / 0.5);
+  }
+}
+/* Icon controls: the accessible name and the tooltip come from the label. */
+.screen-share__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.screen-share__icon:hover { background: var(--color-surface-3); }
+.screen-share__icon[aria-pressed='true'] { background: var(--color-accent); border-color: transparent; color: oklch(1 0 0); }
+.screen-share__icon:focus-visible,
+.screen-share__btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.screen-share__spacer { flex: 1 1 0; }
+/* The large view hides its controls after a while without the mouse; the
+   notice under the video never hides (spec 5.3.4). */
+.screen-share__actions { transition: opacity 0.2s ease; }
+.screen-share--idle .screen-share__actions { opacity: 0; pointer-events: none; }
+.screen-share--idle .stage-frame { cursor: none; }
+@media (prefers-reduced-motion: reduce) {
+  .screen-share__actions { transition: none; }
 }
 .screen-share--theater .stage-frame,
 .screen-share--watching:fullscreen .stage-frame {

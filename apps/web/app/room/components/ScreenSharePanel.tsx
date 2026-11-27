@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/realtime';
 import { MINIMUM_AGE, affirmAge, hasAffirmedAge } from '@/lib/ageGate';
@@ -67,6 +67,67 @@ function QualityPicker({ share }: { share: ScreenShare }) {
   );
 }
 
+const CHAT_KEY = 'cojam.screenChat';
+// How long the large view waits without the mouse before hiding its controls.
+export const IDLE_MS = 3_000;
+
+function savedChatOpen(): boolean {
+  try {
+    const v = localStorage.getItem(CHAT_KEY);
+    if (v === '1' || v === '0') return v === '1';
+  } catch {
+    /* storage unavailable */
+  }
+  // Open by default where there is room for it beside the video.
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(min-width: 56.25rem)').matches
+    : true;
+}
+
+// Line icons in the room's own stroke style; the button carries the name.
+const ICONS = {
+  soundOn:
+    'M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z',
+  soundOff:
+    'M4 9v6h4l5 4V5L8 9H4zm12.6 3 2.7-2.7-1.3-1.3-2.7 2.7-2.7-2.7-1.3 1.3 2.7 2.7-2.7 2.7 1.3 1.3 2.7-2.7 2.7 2.7 1.3-1.3z',
+  shrink: 'M9 4v5H4v2h7V4H9zm6 0v7h7V9h-5V4h-2zM4 13v2h5v5h2v-7H4zm9 0v7h2v-5h5v-2h-7z',
+  grow: 'M4 4v7h2V6h5V4H4zm9 0v2h5v5h2V4h-7zM4 13v7h7v-2H6v-5H4zm14 0v5h-5v2h7v-7h-2z',
+  fullscreen: 'M3 3h7v2H5v5H3V3zm11 0h7v7h-2V5h-5V3zM3 14h2v5h5v2H3v-7zm16 0h2v7h-7v-2h5v-5z',
+  pip: 'M3 5h18v14H3V5zm2 2v10h14V7H5zm7 5h6v4h-6v-4z',
+  chat: 'M4 4h16v12H8l-4 4V4zm2 2v9.2L7.2 14H18V6H6z',
+} as const;
+
+function IconButton({
+  icon,
+  label,
+  pressed,
+  onClick,
+}: {
+  icon: keyof typeof ICONS;
+  label: string;
+  pressed?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="screen-share__icon"
+      aria-label={label}
+      title={label}
+      aria-pressed={pressed}
+      onClick={onClick}
+    >
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+        <path d={ICONS[icon]} fill="currentColor" />
+      </svg>
+    </button>
+  );
+}
+
+function isAutoplayRefusal(err: unknown): boolean {
+  return (err as { name?: string } | null)?.name === 'NotAllowedError';
+}
+
 function StreamVideo({
   stream,
   muted,
@@ -74,6 +135,7 @@ function StreamVideo({
   label,
   onRatio,
   videoRef,
+  onSoundBlocked,
 }: {
   stream: MediaStream;
   muted: boolean;
@@ -81,15 +143,23 @@ function StreamVideo({
   label: string;
   onRatio?: (ratio: number) => void;
   videoRef?: React.RefObject<HTMLVideoElement | null>;
+  // The browser refused to play with sound: the caller falls back to muted.
+  onSoundBlocked?: () => void;
 }) {
+  const blockedRef = useRef(onSoundBlocked);
+  useEffect(() => {
+    blockedRef.current = onSoundBlocked;
+  });
   const ownRef = useRef<HTMLVideoElement>(null);
   const ref = videoRef ?? ownRef;
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.srcObject = stream;
-    void el.play()?.catch(() => {
-      /* autoplay refused: the video stays muted until "Tocar som" */
+    void el.play()?.catch((err: unknown) => {
+      // Autoplay with sound refused: mute and play, "Tocar som" brings it back.
+      // An AbortError only means a newer stream replaced this one.
+      if (!el.muted && isAutoplayRefusal(err)) blockedRef.current?.();
     });
     return () => {
       el.srcObject = null;
@@ -101,7 +171,11 @@ function StreamVideo({
     const el = ref.current;
     if (!el) return;
     el.muted = muted;
-    if (!muted) void el.play()?.catch(() => {});
+    if (!muted)
+      void el.play()?.catch((err: unknown) => {
+        if (isAutoplayRefusal(err)) blockedRef.current?.();
+      });
+    else void el.play()?.catch(() => {});
   }, [muted, ref]);
   useEffect(() => {
     if (ref.current) ref.current.volume = volume;
@@ -140,7 +214,13 @@ export function ScreenSharePanel(props: PanelProps) {
   return <ScreenSharePanelView {...props} share={share} />;
 }
 
-export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: PanelProps & { share: ScreenShare }) {
+export function ScreenSharePanelView({
+  roomId,
+  canModerate,
+  isPublic,
+  share,
+  chat,
+}: PanelProps & { share: ScreenShare; chat?: ReactNode }) {
   const report = useReportDialog();
   const connections = useStore((s) => s.connections);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -162,16 +242,65 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
   const audioTracks = share.remoteStream?.getAudioTracks?.().length ?? 0;
   const watching = share.role === 'watching';
 
-  // Each new watch starts large, muted until "Tocar som", with the default ratio.
+  const [chatOpen, setChatOpen] = useState(savedChatOpen);
+  // The large view hides its controls after IDLE_MS without the mouse.
+  const [idle, setIdle] = useState(false);
+
+  // Each new watch starts large and with sound (choosing "Assistir" is the
+  // click that lets it play), with the default ratio. If the browser still
+  // refuses sound, StreamVideo reports it and the watch goes muted.
   const [wasWatching, setWasWatching] = useState(false);
   if (watching !== wasWatching) {
     setWasWatching(watching);
     if (watching) {
       setTheater(true);
-      setSoundOn(false);
+      setSoundOn(true);
       setRatio(16 / 9);
+      setIdle(false);
     }
   }
+  const soundBlocked = useCallback(() => setSoundOn(false), []);
+
+  const toggleChat = () => {
+    const next = !chatOpen;
+    setChatOpen(next);
+    try {
+      localStorage.setItem(CHAT_KEY, next ? '1' : '0');
+    } catch {
+      /* storage unavailable: the choice lasts for this visit */
+    }
+  };
+
+  // Any movement, key or focus inside the large view shows the controls again.
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleIdle = useCallback(() => {
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    idleTimer.current = setTimeout(() => {
+      const el = sectionRef.current;
+      // Never hide the controls under a keyboard focus (a mouse click leaves
+      // focus on the button, which must not keep them up forever).
+      const active = document.activeElement;
+      if (el?.querySelector('.screen-share__actions')?.contains(active) && active?.matches(':focus-visible')) return;
+      setIdle(true);
+    }, IDLE_MS);
+  }, []);
+  const wake = useCallback(() => {
+    setIdle(false);
+    scheduleIdle();
+  }, [scheduleIdle]);
+  const hidesControls = watching && theater && share.viewerState === 'connected';
+  const [wasHiding, setWasHiding] = useState(false);
+  if (hidesControls !== wasHiding) {
+    setWasHiding(hidesControls);
+    setIdle(false);
+  }
+  useEffect(() => {
+    if (!hidesControls) return;
+    scheduleIdle();
+    return () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+    };
+  }, [hidesControls, scheduleIdle]);
 
   // Theater covers the page: Esc goes back to the room and the page under it
   // does not scroll.
@@ -359,117 +488,130 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
     if (watching) {
       const failed = share.viewerState === 'failed';
       const noSound = Boolean(share.remoteStream) && audioTracks === 0;
+      const chatHere = theater && Boolean(chat);
       const view = (
         <section
           ref={sectionRef}
-          className={`screen-share screen-share--watching${theater ? ' screen-share--theater' : ''}`}
+          className={`screen-share screen-share--watching${theater ? ' screen-share--theater' : ''}${
+            chatHere && chatOpen ? ' screen-share--with-chat' : ''
+          }${idle && hidesControls ? ' screen-share--idle' : ''}`}
+          onPointerMove={hidesControls ? wake : undefined}
+          onPointerDown={hidesControls ? wake : undefined}
+          onKeyDown={hidesControls ? wake : undefined}
+          onFocus={hidesControls ? wake : undefined}
           data-testid="screen-share-watching"
           aria-label={`Tela de ${broadcasterName}`}
           style={{ ['--screen-ratio' as string]: String(ratio) }}
         >
-          <Stage
-            label="Tela compartilhada"
-            overlay={
-              share.viewerState === 'connecting' || failed ? (
-                <div className="screen-share__overlay">
-                  {share.viewerState === 'connecting' && (
-                    <p className="screen-share__note" role="status">
-                      Conectando a {broadcasterName}...
-                    </p>
-                  )}
-                  {failed && (
-                    <p className="screen-share__error" role="alert">
-                      Não foi possível conectar. Sua rede ou a de {broadcasterName} bloqueia conexões diretas, e o CoJam
-                      ainda não tem um servidor de retransmissão.
-                    </p>
-                  )}
-                </div>
-              ) : undefined
-            }
-            caption={
-              <div className="screen-share__bar">
-                <p className="screen-share__notice" data-testid="screen-share-notice">
-                  Transmissão não moderada. O CoJam não vê nem grava o que é compartilhado.
-                </p>
-                <div className="screen-share__actions">
-                  <span className="screen-share__who">Tela de {broadcasterName}</span>
-                  {screen && (
-                    <span className="screen-share__meta" data-testid="screen-share-live-info">
-                      {liveFor(screen.startedAtMs, now)} · {screen.viewerCount} assistindo
-                    </span>
-                  )}
-                  {share.remoteStream && audioTracks > 0 && (
-                    <button
-                      type="button"
-                      className="screen-share__btn screen-share__btn--primary"
-                      aria-pressed={soundOn}
-                      onClick={() => setSoundOn(!soundOn)}
-                    >
-                      {soundOn ? 'Tirar som' : 'Tocar som'}
-                    </button>
-                  )}
-                  {share.remoteStream && audioTracks > 0 && (
-                    <input
-                      type="range"
-                      className="screen-share__volume"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={soundOn ? volume : 0}
-                      aria-label="Volume da transmissão"
-                      onChange={(e) => changeVolume(Number(e.target.value))}
+          <div className="screen-share__main">
+            <Stage
+              label="Tela compartilhada"
+              overlay={
+                share.viewerState === 'connecting' || failed ? (
+                  <div className="screen-share__overlay">
+                    {share.viewerState === 'connecting' && (
+                      <p className="screen-share__note" role="status">
+                        Conectando a {broadcasterName}...
+                      </p>
+                    )}
+                    {failed && (
+                      <p className="screen-share__error" role="alert">
+                        Não foi possível conectar. Sua rede ou a de {broadcasterName} bloqueia conexões diretas, e o
+                        CoJam ainda não tem um servidor de retransmissão.
+                      </p>
+                    )}
+                  </div>
+                ) : undefined
+              }
+              caption={
+                <div className="screen-share__bar">
+                  <p className="screen-share__notice" data-testid="screen-share-notice">
+                    Transmissão não moderada. O CoJam não vê nem grava o que é compartilhado.
+                  </p>
+                  <div className="screen-share__actions">
+                    <span className="screen-share__who">Tela de {broadcasterName}</span>
+                    {screen && (
+                      <span className="screen-share__meta" data-testid="screen-share-live-info">
+                        {liveFor(screen.startedAtMs, now)} · {screen.viewerCount} assistindo
+                      </span>
+                    )}
+                    {share.remoteStream && audioTracks > 0 && (
+                      <IconButton
+                        icon={soundOn ? 'soundOn' : 'soundOff'}
+                        label={soundOn ? 'Tirar som' : 'Tocar som'}
+                        pressed={soundOn}
+                        onClick={() => setSoundOn(!soundOn)}
+                      />
+                    )}
+                    {share.remoteStream && audioTracks > 0 && (
+                      <input
+                        type="range"
+                        className="screen-share__volume"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={soundOn ? volume : 0}
+                        aria-label="Volume da transmissão"
+                        onChange={(e) => changeVolume(Number(e.target.value))}
+                      />
+                    )}
+                    {noSound && (
+                      <span className="screen-share__note" data-testid="screen-share-no-sound">
+                        Sem som: {broadcasterName} não compartilhou o áudio.
+                      </span>
+                    )}
+                    <span className="screen-share__spacer" />
+                    {chatHere && <IconButton icon="chat" label="Chat" pressed={chatOpen} onClick={toggleChat} />}
+                    <IconButton
+                      icon={theater ? 'shrink' : 'grow'}
+                      label={theater ? 'Reduzir' : 'Ampliar'}
+                      onClick={() => setTheater(!theater)}
                     />
-                  )}
-                  {noSound && (
-                    <span className="screen-share__note" data-testid="screen-share-no-sound">
-                      Sem som: {broadcasterName} não compartilhou o áudio.
-                    </span>
-                  )}
-                  <button type="button" className="screen-share__btn" onClick={() => setTheater(!theater)}>
-                    {theater ? 'Reduzir' : 'Ampliar'}
-                  </button>
-                  <button type="button" className="screen-share__btn" onClick={toggleFullscreen}>
-                    Tela cheia
-                  </button>
-                  {share.remoteStream && canPictureInPicture() && (
-                    <button
-                      type="button"
-                      className="screen-share__btn"
-                      aria-pressed={pip}
-                      onClick={() => void togglePip()}
-                    >
-                      {pip ? 'Voltar para a sala' : 'Janela flutuante'}
+                    <IconButton icon="fullscreen" label="Tela cheia" onClick={toggleFullscreen} />
+                    {share.remoteStream && canPictureInPicture() && (
+                      <IconButton
+                        icon="pip"
+                        label={pip ? 'Voltar para a sala' : 'Janela flutuante'}
+                        pressed={pip}
+                        onClick={() => void togglePip()}
+                      />
+                    )}
+                    {failed && (
+                      <button type="button" className="screen-share__btn" onClick={() => void share.retryWatch()}>
+                        Tentar de novo
+                      </button>
+                    )}
+                    <button type="button" className="screen-share__btn" onClick={() => void share.unwatch()}>
+                      Parar de assistir
                     </button>
-                  )}
-                  {failed && (
-                    <button type="button" className="screen-share__btn" onClick={() => void share.retryWatch()}>
-                      Tentar de novo
+                    <button type="button" className="screen-share__btn screen-share__btn--quiet" onClick={openReport}>
+                      Denunciar transmissão
                     </button>
-                  )}
-                  <button type="button" className="screen-share__btn" onClick={() => void share.unwatch()}>
-                    Parar de assistir
-                  </button>
-                  <button type="button" className="screen-share__btn screen-share__btn--quiet" onClick={openReport}>
-                    Denunciar transmissão
-                  </button>
+                  </div>
                 </div>
-              </div>
-            }
-          >
-            {share.remoteStream ? (
-              <StreamVideo
-                stream={share.remoteStream}
-                muted={!soundOn}
-                volume={volume}
-                label={`Tela de ${broadcasterName}`}
-                onRatio={setRatio}
-                videoRef={videoRef}
-              />
-            ) : (
-              <div className="screen-share__blank" />
-            )}
-          </Stage>
-          {messages}
+              }
+            >
+              {share.remoteStream ? (
+                <StreamVideo
+                  stream={share.remoteStream}
+                  muted={!soundOn}
+                  volume={volume}
+                  label={`Tela de ${broadcasterName}`}
+                  onRatio={setRatio}
+                  videoRef={videoRef}
+                  onSoundBlocked={soundBlocked}
+                />
+              ) : (
+                <div className="screen-share__blank" />
+              )}
+            </Stage>
+            {messages}
+          </div>
+          {chatHere && chatOpen && (
+            <aside className="screen-share__chat" aria-label="Chat da sala" data-testid="screen-share-chat">
+              {chat}
+            </aside>
+          )}
         </section>
       );
       // Large view goes to the body: a transformed ancestor (the room's entry

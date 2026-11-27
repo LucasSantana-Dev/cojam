@@ -604,6 +604,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
       canModerate={moderate}
       isPublic={Boolean(store.state?.public)}
       share={screenShare}
+      // The large view keeps the room's chat beside the video (Go Live gap 1).
+      chat={f.roomChat ? <ChatPanel roomId={roomId} canControl={moderate} /> : null}
     />
   ) : null;
   const screenPanel = palco ? null : screenPanelNode;
