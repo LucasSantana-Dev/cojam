@@ -12,6 +12,7 @@
 // member can report another member, the host can remove one. The server
 // re-checks both.
 import { useEffect, useRef, useState } from 'react';
+import { requestWatch, useLiveBroadcaster } from '@/lib/screenShareLive';
 import { useStore, useMyUserId, claimHost, kickMember, setRoomAdmin, transferHost, rpcErrorMessage, getClockOffsetMs } from '@/lib/realtime';
 import { useDialogFocus } from './useDialogFocus';
 import { useRuntimeFeatures } from '@/lib/useRuntimeFeatures';
@@ -112,6 +113,7 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
   const members = useStore((s) => s.members);
   const nameSuffixes = useStore((s) => s.nameSuffixes);
   const myClientId = useStore((s) => s.clientId);
+  const liveId = useLiveBroadcaster();
   const motion = useMotion();
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -242,6 +244,7 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
           const isOwner = Boolean(ownerUserId && member.userId === ownerUserId);
           const manageable = !readOnly && canControl && !mine && Boolean(member.userId) && !isOwner && member.userId !== myUserId;
           const menuKey = member.userId ?? member.clientId;
+          const isLive = Boolean(liveId && (member.clientIds ?? [member.clientId]).includes(liveId));
           return (
             <div key={member.userId ?? member.clientId} className="r4-ls__item">
               {i > 0 && (
@@ -269,6 +272,23 @@ export function ListenersStage({ roomId, canModerate = false, running, hostUserI
                       </span>
                     )}
                   </div>
+                  {isLive &&
+                    (mine || readOnly ? (
+                      <span className="r4-ls__live" data-testid="listener-live">
+                        ao vivo
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="r4-ls__live"
+                        data-testid="listener-live"
+                        aria-label={`${label} está ao vivo: ver a tela`}
+                        title="Assistir a tela"
+                        onClick={requestWatch}
+                      >
+                        ao vivo
+                      </button>
+                    ))}
                 </div>
                 <div className="r4-ls__name">
                   {isHost && (

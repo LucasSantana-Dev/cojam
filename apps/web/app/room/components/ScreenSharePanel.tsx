@@ -10,6 +10,7 @@ import { canCaptureScreen, useScreenShare } from './useScreenShare';
 import { FloatPortal, useFloatWindow } from './ScreenShareFloat';
 import { shortcutFor, toggleFullscreen as toggleViewerFullscreen, volumeWritable } from '@/lib/screenShareView';
 import { SCREEN_QUALITIES, uploadMbps, type ScreenQualityId } from '@/lib/screenShare';
+import { onWatchRequest } from '@/lib/screenShareLive';
 import { hasSharedBefore } from '@/lib/screenShareNotices';
 
 // Screen share v1 (#310, spec 5.2, 5.3, 5.6). Rendered only when
@@ -103,6 +104,8 @@ function LabelField({ share }: { share: ScreenShare }) {
 }
 
 const CHAT_KEY = 'cojam.screenChat';
+// How long the "começou a compartilhar" notice stays up (Go Live gap 3).
+export const START_NOTICE_MS = 6_000;
 // How long the large view waits without the mouse before hiding its controls.
 export const IDLE_MS = 3_000;
 
@@ -298,6 +301,41 @@ export function ScreenSharePanelView({
     }
   }
   const soundBlocked = useCallback(() => setSoundOn(false), []);
+
+  // "X começou a compartilhar a tela" with "Assistir", shown for a few seconds
+  // when a share starts and its card is out of view (another tab of the room
+  // on a phone, scrolled away). It never opens a connection by itself.
+  const [startNotice, setStartNotice] = useState<string | null>(null);
+  const liveId = share.screen?.broadcasterId ?? null;
+  const [seenLiveId, setSeenLiveId] = useState(liveId);
+  if (liveId !== seenLiveId) {
+    setSeenLiveId(liveId);
+    setStartNotice(
+      liveId && !share.isBroadcaster && share.role === 'idle' ? share.screen?.broadcasterName || 'Alguém' : null,
+    );
+  }
+  if (startNotice && share.role !== 'idle') setStartNotice(null);
+  useEffect(() => {
+    if (!startNotice) return;
+    const t = setTimeout(() => setStartNotice(null), START_NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [startNotice]);
+  const [cardEl, setCardEl] = useState<HTMLElement | null>(null);
+  const [cardVisible, setCardVisible] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!cardEl || typeof IntersectionObserver === 'undefined') return;
+    // A ratio above 0, not isIntersecting: a phone tab collapsed to height 0
+    // still reports an edge-adjacent, zero-area intersection, and the 0.01
+    // threshold makes the drop to that state fire a callback at all.
+    const io = new IntersectionObserver(
+      (entries) => setCardVisible(entries.some((e) => e.isIntersecting && e.intersectionRatio > 0)),
+      { threshold: [0, 0.01] },
+    );
+    io.observe(cardEl);
+    return () => io.disconnect();
+  }, [cardEl]);
+  // Without a card on the page (hidden tab, unmounted), it is out of view.
+  const cardInView = cardEl ? cardVisible : false;
 
   const toggleChat = () => {
     const next = !chatOpen;
@@ -497,9 +535,23 @@ export function ScreenSharePanelView({
   };
 
   const onWatch = () => {
+    setStartNotice(null);
     if (hasAffirmedAge()) void share.watch();
     else askToConfirm('watch');
   };
+
+  // Shortcuts elsewhere in the room (the "ao vivo" badge, the start notice)
+  // run the same flow as the card's "Assistir".
+  const watchShortcut = useRef<() => void>(() => {});
+  useEffect(() => {
+    watchShortcut.current = () => {
+      const sc = share.screen;
+      if (!sc || share.role !== 'idle' || share.isBroadcaster || share.busy) return;
+      if (sc.locked || sc.viewerCount >= sc.maxViewers) return;
+      onWatch();
+    };
+  });
+  useEffect(() => onWatchRequest(() => watchShortcut.current()), []);
 
   const confirmDialog = (
     <dialog
@@ -560,9 +612,32 @@ export function ScreenSharePanelView({
     </dialog>
   );
 
+  const toast =
+    startNotice && cardInView === false && typeof document !== 'undefined'
+      ? createPortal(
+          <div className="screen-share__toast" role="status" data-testid="screen-share-start-notice">
+            <span className="screen-share__live" aria-hidden="true" />
+            <span>{startNotice} começou a compartilhar a tela</span>
+            <button type="button" className="screen-share__btn screen-share__btn--primary" onClick={onWatch}>
+              Assistir
+            </button>
+            <button
+              type="button"
+              className="screen-share__btn screen-share__btn--quiet"
+              aria-label="Fechar aviso"
+              onClick={() => setStartNotice(null)}
+            >
+              ×
+            </button>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <>
       {body()}
+      {toast}
       {float.win && floatBody(float.win)}
       {confirmDialog}
       {report.dialog}
@@ -877,7 +952,7 @@ export function ScreenSharePanelView({
     if (screen) {
       const full = screen.viewerCount >= screen.maxViewers;
       return (
-        <section className="screen-share screen-share--card" data-testid="screen-share-available">
+        <section ref={setCardEl} className="screen-share screen-share--card" data-testid="screen-share-available">
           <div className="screen-share__head">
             <span className="screen-share__live" aria-hidden="true" />
             <strong>{broadcasterName} está compartilhando a tela</strong>

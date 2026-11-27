@@ -11,6 +11,7 @@
 // this file stay out of the round 4 bundle.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SkipVoteButton } from '../SkipVoteButton';
+import { useLiveBroadcaster } from '@/lib/screenShareLive';
 import { useStore, onWoot, sendWoot, onEmote, sendEmote, transportPlay, transportPause, nowPlayingAdvance } from '@/lib/realtime';
 import { EMOTES, type Emote } from '@cojam/shared';
 import { SkipNextIcon } from '@/app/components/icons';
@@ -118,6 +119,9 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
   const state = useStore((s) => s.state);
   const members = useStore((s) => s.members);
   const clientId = useStore((s) => s.clientId);
+  // The person sharing their screen gets a live dot on their tag (Go Live gap 2).
+  const liveId = useLiveBroadcaster();
+  const liveTag = (m: Member) => (liveId && (m.clientIds ?? [m.clientId]).includes(liveId) ? ' palco-tag--live' : '');
   const suffixes = useStore((s) => s.nameSuffixes);
   const messages = useStore((s) => s.chat);
 
@@ -568,13 +572,13 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
               const m = side === 'L' ? booths.left : booths.right;
               if (!m) return null;
               return (
-                <span key={`booth-${side}-${memberKey(m)}`} ref={tagRef(`booth-${side}`)} className={`palco-tag palco-tag--dj${isMe(m, clientId) ? ' palco-tag--you' : ''}`}>
+                <span key={`booth-${side}-${memberKey(m)}`} ref={tagRef(`booth-${side}`)} className={`palco-tag palco-tag--dj${isMe(m, clientId) ? ' palco-tag--you' : ''}${liveTag(m)}`}>
                   {boothLabel(m, side === 'L' ? 'tocando' : 'próxima')}
                 </span>
               );
             })}
             {entries.map(({ m, key, slot }) => (
-              <span key={key} ref={tagRef(key)} className={`palco-tag${isMe(m, clientId) ? ' palco-tag--you' : ''}${slot.row === 1 ? ' palco-tag--back' : ''}`} style={framing && kind === 'phone' ? { maxWidth: phoneTagMaxWidth(world, framing.scale) } : framing ? { maxWidth: world.spacing * framing.scale - 4 } : undefined}>
+              <span key={key} ref={tagRef(key)} className={`palco-tag${isMe(m, clientId) ? ' palco-tag--you' : ''}${slot.row === 1 ? ' palco-tag--back' : ''}${liveTag(m)}`} style={framing && kind === 'phone' ? { maxWidth: phoneTagMaxWidth(world, framing.scale) } : framing ? { maxWidth: world.spacing * framing.scale - 4 } : undefined}>
                 {isMe(m, clientId) ? 'Você' : kind === 'phone' ? tagName(m.name, suffixes[m.clientId] ?? '') : memberLabel(m, suffixes)}
               </span>
             ))}

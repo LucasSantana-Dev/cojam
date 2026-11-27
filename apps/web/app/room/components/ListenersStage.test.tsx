@@ -284,4 +284,48 @@ describe('ListenersStage', () => {
       await waitFor(() => expect(transferHost).toHaveBeenCalledWith('r', 'uc'));
     });
   });
+
+  describe('ao vivo badge (screen share)', () => {
+    afterEach(() => {
+      delete window.__COJAM_ENV__;
+      useStore.setState({ state: null, clientId: '' });
+    });
+    const live = (broadcasterId: string) => ({
+      roomId: 'r',
+      queue: [],
+      radioEnabled: false,
+      version: 1,
+      screen: { broadcasterId, broadcasterName: 'Bob', startedAtMs: 1, viewerCount: 0, maxViewers: 5, locked: false },
+    });
+
+    it('marks the person sharing, and the badge asks the panel to watch', () => {
+      window.__COJAM_ENV__ = { features: { screenShare: true, roomAuth: true } };
+      useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
+      useStore.setState({ clientId: 'a', state: live('b') as never });
+      const asked = vi.fn();
+      window.addEventListener('cojam:screen-watch', asked);
+      try {
+        render(<ListenersStage roomId="r" running={false} />);
+        const badge = screen.getByRole('button', { name: 'Bob está ao vivo: ver a tela' });
+        expect(screen.getAllByTestId('listener-live')).toHaveLength(1);
+        fireEvent.click(badge);
+        expect(asked).toHaveBeenCalledTimes(1);
+      } finally {
+        window.removeEventListener('cojam:screen-watch', asked);
+      }
+    });
+
+    it('is a plain label on your own avatar, and absent while the feature is off', () => {
+      window.__COJAM_ENV__ = { features: { screenShare: true, roomAuth: true } };
+      useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
+      useStore.setState({ clientId: 'b', state: live('b') as never });
+      const { unmount } = render(<ListenersStage roomId="r" running={false} />);
+      expect(screen.getByTestId('listener-live').tagName).toBe('SPAN');
+      unmount();
+
+      window.__COJAM_ENV__ = { features: { screenShare: false, roomAuth: true } };
+      render(<ListenersStage roomId="r" running={false} />);
+      expect(screen.queryByTestId('listener-live')).toBeNull();
+    });
+  });
 });
