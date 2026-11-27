@@ -31,6 +31,44 @@ export function shouldResumeInBackground(args: {
   return args.ytState === YT_PAUSED || args.ytState === YT_UNSTARTED || args.ytState === YT_CUED;
 }
 
+// When the YouTube embed pauses itself because the page went hidden (its mobile
+// player does this on visibilitychange), one playVideo() from the PAUSED event
+// can land before the embed has finished its own pause handling and be undone.
+// These follow-ups re-check and resume again. They are short on purpose: the
+// page counts as audible for about 30 s after the sound stops, so timers in
+// that window are throttled to about 1 s, not to once a minute.
+export const BACKGROUND_RESUME_RETRY_DELAYS_MS: readonly number[] = [1000, 3000, 8000];
+
+// Runs check() after each delay until it returns false (nothing left to do),
+// or until the returned cancel is called. check() is where the caller decides
+// whether to resume (see shouldResumeInBackground) and does it; it returns
+// true while the player still needed a resume.
+export function scheduleBackgroundResume(
+  check: () => boolean,
+  delays: readonly number[] = BACKGROUND_RESUME_RETRY_DELAYS_MS,
+  setTimer: (fn: () => void, ms: number) => ReturnType<typeof setTimeout> = setTimeout,
+  clearTimer: (id: ReturnType<typeof setTimeout>) => void = clearTimeout,
+): () => void {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let elapsed = 0;
+  const step = (i: number) => {
+    if (cancelled || i >= delays.length) return;
+    const wait = Math.max(0, delays[i] - elapsed);
+    elapsed = delays[i];
+    timer = setTimer(() => {
+      timer = null;
+      if (cancelled) return;
+      if (check()) step(i + 1);
+    }, wait);
+  };
+  step(0);
+  return () => {
+    cancelled = true;
+    if (timer !== null) clearTimer(timer);
+  };
+}
+
 // Calls onResume whenever the page may have just come back: tab shown, thawed
 // from a freeze, restored from the back/forward cache, network back. Calls
 // closer than RESUME_DEBOUNCE_MS apart collapse into one (several events fire

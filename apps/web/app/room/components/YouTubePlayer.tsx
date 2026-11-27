@@ -6,7 +6,7 @@ import type { TrackRef } from '@cojam/shared';
 import type { IPlayer } from '@/lib/playerInterface';
 import { computeExpectedPosition, isExpectedPositionKnown, serverNow } from '@/lib/playbackSync';
 import { secondsToMs, msToSeconds, createEndedDetector } from '@/lib/playerUtils';
-import { advanceWithRetry, shouldResumeInBackground } from '@/lib/backgroundPlayback';
+import { advanceWithRetry, shouldResumeInBackground, scheduleBackgroundResume } from '@/lib/backgroundPlayback';
 import { trackError } from '@/lib/telemetry';
 
 // Minimal structural types for the YouTube IFrame API surface this adapter uses.
@@ -62,6 +62,17 @@ function loadArg(videoId: string): string | { videoId: string; startSeconds: num
   if (!isExpectedPositionKnown(t, now)) return videoId;
   const startSeconds = msToSeconds(computeExpectedPosition(t, now));
   return startSeconds > 0 ? { videoId, startSeconds } : videoId;
+}
+
+// Paused, cued or unstarted by the browser or the embed while nobody looks at
+// the page and the room plays (see shouldResumeInBackground).
+function needsBackgroundResume(ytState: number, muted: boolean): boolean {
+  return shouldResumeInBackground({
+    ytState,
+    hidden: typeof document !== 'undefined' && document.hidden,
+    transportState: useStore.getState().state?.transport?.state,
+    muted,
+  });
 }
 
 // Stable empty-queue fallback: `?? []` inline would create a new array identity
@@ -244,6 +255,8 @@ export function YouTubePlayer({
     onPlayErrorRef.current = onPlayError;
     onMutedErrorRef.current = onMutedError;
   });
+  // Cancels the pending background resume follow-ups (see onStateChange).
+  const cancelResumeRef = useRef<(() => void) | null>(null);
   const [apiReady, setApiReady] = useState(false);
   const nowPlayingId = useStore((s) => s.state?.nowPlayingId);
   const queueMaybe = useStore((s) => s.state?.queue);
@@ -301,15 +314,22 @@ export function YouTubePlayer({
             }
             // Paused/cued by the browser or the embed while the page is hidden and
             // the room plays: restart it from this event, not from a throttled tick.
-            if (
-              shouldResumeInBackground({
-                ytState: event.data,
-                hidden: typeof document !== 'undefined' && document.hidden,
-                transportState: useStore.getState().state?.transport?.state,
-                muted: mutedRef.current,
-              })
-            ) {
+            // The embed can undo that first playVideo() while it finishes its
+            // own pause, so a few short follow-ups re-check and resume again.
+            if (needsBackgroundResume(event.data, mutedRef.current)) {
               player.playVideo();
+              cancelResumeRef.current?.();
+              cancelResumeRef.current = scheduleBackgroundResume(() => {
+                let state: number;
+                try {
+                  state = player.getPlayerState ? player.getPlayerState() : 1;
+                } catch {
+                  return false;
+                }
+                if (!needsBackgroundResume(state, mutedRef.current)) return false;
+                player.playVideo();
+                return true;
+              });
             }
           },
           onError: (event: { data: number }) => {
@@ -343,6 +363,8 @@ export function YouTubePlayer({
 
   useEffect(() => {
     return () => {
+      cancelResumeRef.current?.();
+      cancelResumeRef.current = null;
       if (adapterRef.current) {
         adapterRef.current.dispose();
         adapterRef.current = null;

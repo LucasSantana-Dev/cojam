@@ -35,8 +35,15 @@ class FakeYTPlayer {
   setVolume(v: number) {
     muteCalls.push(`volume ${v}`);
   }
-  playVideo() {}
+  static state = 1;
+  static playCalls = 0;
+  playVideo() {
+    FakeYTPlayer.playCalls++;
+  }
   pauseVideo() {}
+  getPlayerState() {
+    return FakeYTPlayer.state;
+  }
   seekTo() {}
   getCurrentTime() {
     return 0;
@@ -142,6 +149,70 @@ describe('YouTubePlayer onError wiring', () => {
     expect(onPlayError).toHaveBeenCalledWith('t1');
     act(() => capturedEvents!.onStateChange!({ data: 1 }));
     expect(onPlayError).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe('YouTubePlayer in a hidden tab', () => {
+  const playingRoom: RoomState = {
+    ...roomState,
+    transport: { state: 'playing', positionMs: 0, updatedAtServerMs: Date.now() },
+  };
+  const setHidden = (hidden: boolean) => Object.defineProperty(document, 'hidden', { value: hidden, configurable: true });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    capturedEvents = null;
+    FakeYTPlayer.state = 1;
+    FakeYTPlayer.playCalls = 0;
+    (window as { YT?: unknown }).YT = { Player: FakeYTPlayer };
+    useStore.setState({ state: playingRoom });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    setHidden(false);
+    delete (window as { YT?: unknown }).YT;
+    useStore.setState({ state: undefined });
+  });
+
+  it('resumes a pause the embed made while hidden, and again when the embed undoes the first play', () => {
+    setHidden(true);
+    render(<YouTubePlayer roomId="r1" fill />);
+    FakeYTPlayer.state = 2;
+    act(() => capturedEvents!.onStateChange!({ data: 2 }));
+    expect(FakeYTPlayer.playCalls).toBe(1);
+    // The embed paused it again: the follow-up resumes it.
+    act(() => vi.advanceTimersByTime(1000));
+    expect(FakeYTPlayer.playCalls).toBe(2);
+    // Playing again: the follow-ups stop.
+    FakeYTPlayer.state = 1;
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(FakeYTPlayer.playCalls).toBe(2);
+  });
+
+  it('never resumes a pause on a visible page or in a paused room', () => {
+    setHidden(false);
+    render(<YouTubePlayer roomId="r1" fill />);
+    FakeYTPlayer.state = 2;
+    act(() => capturedEvents!.onStateChange!({ data: 2 }));
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(FakeYTPlayer.playCalls).toBe(0);
+
+    setHidden(true);
+    useStore.setState({ state: { ...playingRoom, transport: { state: 'paused', positionMs: 0, updatedAtServerMs: Date.now() } } });
+    act(() => capturedEvents!.onStateChange!({ data: 2 }));
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(FakeYTPlayer.playCalls).toBe(0);
+  });
+
+  it('stops the follow-ups on unmount', () => {
+    setHidden(true);
+    const { unmount } = render(<YouTubePlayer roomId="r1" fill />);
+    FakeYTPlayer.state = 2;
+    act(() => capturedEvents!.onStateChange!({ data: 2 }));
+    unmount();
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(FakeYTPlayer.playCalls).toBe(1);
   });
 });
 
