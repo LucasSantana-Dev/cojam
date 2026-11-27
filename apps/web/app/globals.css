@@ -3249,17 +3249,59 @@ textarea.age-gate__input { resize: vertical; }
 .screen-share video { width: 100%; height: 100%; object-fit: contain; background: oklch(0 0 0); }
 .screen-share__blank { background: oklch(0 0 0); }
 .screen-share__check { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; }
-/* The notice is not dismissible (spec 5.3.4): it sits on the stage overlay. */
+/* Connecting and failure messages sit centred over the video. */
 .screen-share__overlay {
   position: absolute;
-  inset: auto 0 0 0;
+  inset: 0;
   display: grid;
+  place-content: center;
   gap: 0.35rem;
-  padding: 0.5rem 0.75rem;
-  background: linear-gradient(to top, oklch(0.12 0.02 280 / 0.85), transparent);
+  padding: 1rem;
+  text-align: center;
+  background: oklch(0.12 0.02 280 / 0.6);
 }
+/* The notice is not dismissible (spec 5.3.4): it stays under the video for
+   as long as the video shows, never over the shared content. */
+.screen-share__bar { display: grid; gap: 0.5rem; }
 .screen-share__notice {
   margin: 0;
   font-size: 0.8rem;
-  color: oklch(1 0 0);
+  color: var(--color-text-secondary);
 }
+/* Inline: the frame takes the shared screen's own shape (no black bars),
+   capped so a tall screen does not push the room off the page. */
+.screen-share--watching .stage-frame {
+  aspect-ratio: var(--screen-ratio, 16 / 9);
+  max-height: 70vh;
+  background: oklch(0 0 0);
+}
+.screen-share--watching .stage-frame video { object-fit: contain; }
+/* Theater (the default while watching) and browser fullscreen: the video
+   takes the whole viewport and the bar stays under it. */
+.screen-share--theater,
+.screen-share--watching:fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: oklch(0.1 0.02 280 / 0.97);
+}
+.screen-share--theater .stage,
+.screen-share--watching:fullscreen .stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.screen-share--theater .stage-frame,
+.screen-share--watching:fullscreen .stage-frame {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto;
+  border: 0;
+}
+.screen-share__tip { font-size: 0.85rem; }
