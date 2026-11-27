@@ -569,6 +569,11 @@ screen share usually offers. Added in small PRs:
   `inbound-rtp` video samples; no decoded frame in between shows "A imagem
   parou", under 5 fps or over 5% packets lost shows "Conexão fraca".
 
+- **Phones and keyboard**: fullscreen falls back to the video's own player
+  on the iPhone; the volume slider hides where media volume is read only;
+  phone hosts are told sharing works on a computer; F toggles fullscreen, M
+  the sound, and a double click on the video goes fullscreen.
+
 Left out on purpose: a live thumbnail before "Assistir" (it would open a peer
 before the viewer opts in, which 5.3 and the IP disclosure forbid), and the
 viewer list for everyone (needs a protocol change and a privacy call; the

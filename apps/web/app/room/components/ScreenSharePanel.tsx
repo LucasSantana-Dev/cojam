@@ -7,6 +7,7 @@ import { MINIMUM_AGE, affirmAge, hasAffirmedAge } from '@/lib/ageGate';
 import { useReportDialog } from '@/app/components/useReportDialog';
 import { Stage } from './Stage';
 import { canCaptureScreen, useScreenShare } from './useScreenShare';
+import { shortcutFor, toggleFullscreen as toggleViewerFullscreen, volumeWritable } from '@/lib/screenShareView';
 import { SCREEN_QUALITIES, uploadMbps, type ScreenQualityId } from '@/lib/screenShare';
 import { hasSharedBefore } from '@/lib/screenShareNotices';
 
@@ -169,6 +170,7 @@ function StreamVideo({
   onRatio,
   videoRef,
   onSoundBlocked,
+  onDoubleClick,
 }: {
   stream: MediaStream;
   muted: boolean;
@@ -178,6 +180,7 @@ function StreamVideo({
   videoRef?: React.RefObject<HTMLVideoElement | null>;
   // The browser refused to play with sound: the caller falls back to muted.
   onSoundBlocked?: () => void;
+  onDoubleClick?: () => void;
 }) {
   const blockedRef = useRef(onSoundBlocked);
   useEffect(() => {
@@ -220,6 +223,7 @@ function StreamVideo({
   return (
     <video
       ref={ref}
+      onDoubleClick={onDoubleClick}
       autoPlay
       playsInline
       muted={muted}
@@ -351,12 +355,27 @@ export function ScreenSharePanelView({
     };
   }, [watching, theater]);
 
-  const toggleFullscreen = () => {
-    const el = sectionRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
-    else void el.requestFullscreen?.().catch(() => {});
-  };
+  // Element fullscreen where the browser has it, the video's own player on
+  // the iPhone.
+  const toggleFullscreen = () => toggleViewerFullscreen(sectionRef.current, videoRef.current);
+
+  // F toggles fullscreen and M the sound while watching, large or not.
+  const hasSound = Boolean(share.remoteStream) && audioTracks > 0;
+  useEffect(() => {
+    if (!watching) return;
+    const onKey = (e: KeyboardEvent) => {
+      const action = shortcutFor(e);
+      if (action === 'fullscreen') {
+        e.preventDefault();
+        toggleViewerFullscreen(sectionRef.current, videoRef.current);
+      } else if (action === 'sound' && hasSound) {
+        e.preventDefault();
+        setSoundOn((on) => !on);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [watching, hasSound]);
   const [now, setNow] = useState(() => Date.now());
   // The live time on the share moves on its own.
   const live = Boolean(share.screen);
@@ -590,7 +609,7 @@ export function ScreenSharePanelView({
                         onClick={() => setSoundOn(!soundOn)}
                       />
                     )}
-                    {share.remoteStream && audioTracks > 0 && (
+                    {share.remoteStream && audioTracks > 0 && volumeWritable() && (
                       <input
                         type="range"
                         className="screen-share__volume"
@@ -647,6 +666,7 @@ export function ScreenSharePanelView({
                   onRatio={setRatio}
                   videoRef={videoRef}
                   onSoundBlocked={soundBlocked}
+                  onDoubleClick={toggleFullscreen}
                 />
               ) : (
                 <div className="screen-share__blank" />
@@ -801,8 +821,11 @@ export function ScreenSharePanelView({
 
     // Nothing live.
     const canStart = canModerate && !isPublic && canCaptureScreen();
+    // Phones and tablets have no screen capture in the browser: say so
+    // instead of hiding the option without a word.
+    const noCapture = canModerate && !isPublic && !canCaptureScreen();
     const canReport = share.lastWatchedAt !== null && now - share.lastWatchedAt < REPORT_WINDOW_MS;
-    if (!canStart && !canReport && !share.error && !share.notice) return null;
+    if (!canStart && !noCapture && !canReport && !share.error && !share.notice) return null;
     return (
       <section className="screen-share screen-share--quiet" data-testid="screen-share-idle">
         <div className="screen-share__actions">
@@ -822,6 +845,11 @@ export function ScreenSharePanelView({
             </button>
           )}
         </div>
+        {noCapture && (
+          <p className="screen-share__note" data-testid="screen-share-no-capture">
+            Compartilhar a tela funciona no navegador do computador.
+          </p>
+        )}
         {messages}
       </section>
     );
