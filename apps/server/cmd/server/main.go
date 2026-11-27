@@ -24,6 +24,7 @@ import (
 	"github.com/LucasSantana-Dev/cojam/server/internal/connauth"
 	"github.com/LucasSantana-Dev/cojam/server/internal/db"
 	"github.com/LucasSantana-Dev/cojam/server/internal/events"
+	"github.com/LucasSantana-Dev/cojam/server/internal/flags"
 	"github.com/LucasSantana-Dev/cojam/server/internal/httpx"
 	"github.com/LucasSantana-Dev/cojam/server/internal/hub"
 	"github.com/LucasSantana-Dev/cojam/server/internal/listenbrainz"
@@ -159,6 +160,9 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "person" {
 		os.Exit(runPerson(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "flag" {
+		os.Exit(runFlag(os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
 	}
 
 	var shutdownHooks []func()
@@ -656,6 +660,54 @@ func main() {
 		logger.Warn("room_restrictions_disabled", "hint", "set DATABASE_URL: `server room --close` and `server person --block` need the database to reach the server")
 	}
 
+	// Runtime feature flags (docs/specs/feature-flags-panel.md): the admin
+	// panel and `server flag` write overrides to feature_flags, and this
+	// runtime applies them to the hub on the same 15 s cycle as the room
+	// restrictions (and at once after a panel write). The environment above
+	// stays the default. The first read happens before the listener opens,
+	// so a flag turned off in the database is never briefly on after a
+	// restart.
+	var flagStore flags.Store
+	if dbPool != nil {
+		flagStore = flags.NewPostgres(dbPool)
+	}
+	flagRT := flags.NewRuntime(os.Getenv, flagStore, func(all []flags.Effective) {
+		h.SetFeatures(hubFeatures(all))
+	}, logger)
+	if flagStore != nil {
+		// Fail closed: booting on the environment alone could turn back on a
+		// flag the owner switched off in an incident. The database just ran
+		// the migrations, so a failure here is worth a restart.
+		var loadErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			if attempt > 0 {
+				time.Sleep(time.Second)
+			}
+			loadCtx, cancelLoad := context.WithTimeout(context.Background(), 5*time.Second)
+			loadErr = flagRT.Load(loadCtx)
+			cancelLoad()
+			if loadErr == nil {
+				break
+			}
+		}
+		if loadErr != nil {
+			fatal(logger, "feature_flags_load_failed", "err", loadErr.Error())
+		}
+		shutdownHooks = append([]func(){flagRT.Start(restrictionsPollInterval)}, shutdownHooks...)
+		logger.Info("feature_flags_enabled", "poll_seconds", int(restrictionsPollInterval.Seconds()))
+	} else {
+		logger.Warn("feature_flags_env_only", "hint", "set DATABASE_URL to change flags from the admin panel")
+	}
+	adminToken := os.Getenv("ADMIN_TOKEN")
+	switch {
+	case adminToken == "":
+		logger.Info("admin_panel_disabled", "hint", "set ADMIN_TOKEN (32+ bytes) to open /admin/flags")
+	case len(adminToken) < minAdminTokenLen:
+		logger.Error("admin_panel_disabled", "reason", "ADMIN_TOKEN shorter than 32 bytes")
+	default:
+		logger.Info("admin_panel_enabled")
+	}
+
 	// Connection authentication setup
 	roomAuthEnabled := featureEnabled("FEATURE_ROOM_AUTH", false)
 	roomAuthSecret := os.Getenv("ROOM_AUTH_SECRET")
@@ -826,6 +878,15 @@ func main() {
 	connToken := connectionTokenHandler(roomAuthEnabled, roomAuthSecret, burns, connTokenLimiter, logger)
 	r.Post("/api/connection-token", connToken)
 	r.Get("/api/connection-token", connToken)
+
+	// Runtime feature flags: the public overrides for the web app's /env.js,
+	// and the admin panel's endpoints behind ADMIN_TOKEN (admin_flags.go).
+	r.Get("/api/features", publicFeaturesHandler(flagRT))
+	r.Route("/api/admin", func(ar chi.Router) {
+		ar.Use(adminAuth(adminToken, newCallerLimiter(adminBurst, adminRefill), logger))
+		ar.Get("/flags", adminFlagsListHandler(flagRT, os.Getenv, logger))
+		ar.Put("/flags/{name}", adminFlagUpdateHandler(flagRT, os.Getenv, actorPanel, logger))
+	})
 
 	// WebSocket handler for centrifuge. Origin allowlist prevents cross-site
 	// WebSocket hijacking: without it any page could open a socket and mutate rooms.

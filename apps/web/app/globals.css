@@ -3137,6 +3137,29 @@ textarea.age-gate__input { resize: vertical; }
 .pwa-skel { display: block; height: 2.75rem; border-radius: var(--pw-radius); background: oklch(0.22 0.03 292); }
 .pwa-skel--title { height: 2rem; width: 60%; }
 
+/* admin: feature flags (/admin/flags). Same plates as conta; the "on" chip is
+   violet, never green (green is AO VIVO only). */
+.pwad { display: flex; flex-direction: column; gap: 1rem; max-width: 46rem; margin-inline: auto; }
+.pwad-intro, .pwad-flag, .pwad-history { padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.pwad-list { display: flex; flex-direction: column; gap: 1rem; }
+.pwad-flag__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
+.pwad-flag__title { font-size: 1.125rem; font-weight: 700; color: var(--palco-text); }
+.pwad-state { flex: none; padding: 0.125rem 0.625rem; border: 1px solid var(--palco-line); border-radius: 999px; color: var(--pw-muted); font-size: 0.8125rem; font-weight: 600; }
+.pwad-state--on { border-color: var(--pw-violet-text); color: var(--pw-violet-text); }
+.pwad-meta { color: var(--pw-muted); font-size: 0.875rem; overflow-wrap: anywhere; }
+.pwad-meta code { font-size: 0.8125rem; }
+.pwad-check { display: flex; align-items: center; gap: 0.5rem; color: var(--palco-text); font-size: 0.9375rem; }
+.pwad-check input { accent-color: var(--pw-violet); width: 1.125rem; height: 1.125rem; }
+.pwad-rooms { resize: vertical; min-height: 4rem; font-family: inherit; }
+.pwad-changes { display: flex; flex-direction: column; gap: 0.75rem; }
+.pwad-changes li { display: flex; flex-direction: column; gap: 0.125rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--palco-line); }
+.pwad-changes li:last-child { border-bottom: 0; padding-bottom: 0; }
+@media (max-width: 30rem) {
+  .pwad .pwa-row { flex-direction: column; }
+  .pwad .pw-seg { width: 100%; }
+  .pwad .pw-seg button { flex: 1; }
+}
+
 /* join */
 .pwj-main { position: relative; z-index: 1; width: calc(100% - 2rem); margin: 0.5rem auto 1.5rem; }
 .pwj-panel { display: flex; flex-direction: column; gap: 0.5rem; padding: 1.25rem; }

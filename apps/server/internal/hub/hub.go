@@ -265,14 +265,16 @@ type Hub struct {
 	lyrics           LyricsProvider
 	listenBrainz     ListenBrainzProvider
 	lastfmEnrich     LastfmEnrichProvider
-	syncEnabled      bool
-	votingEnabled    bool
-	chatEnabled      bool
+	// The feature gates below are atomics: SetFeatures (features.go)
+	// changes them while the server runs (runtime flags, migration 0012).
+	syncEnabled   atomic.Bool
+	votingEnabled atomic.Bool
+	chatEnabled   atomic.Bool
 
 	// videoEnabled gates the video heartbeat (FEATURE_VIDEO, #258). Its own
 	// flag, not syncEnabled: video carries ToS exposure and must switch off
 	// without disabling audio sync.
-	videoEnabled bool
+	videoEnabled atomic.Bool
 
 	// transportLimiter rate-limits transport.* per caller (transportMethods):
 	// scrubbing is bursty, so it gets its own bucket rather than fanoutLimiter
@@ -301,7 +303,7 @@ type Hub struct {
 	// publicRoomsEnabled gates the public room directory RPCs
 	// (room.set_public, room.list; FEATURE_PUBLIC_ROOMS). Dark-shipped off:
 	// when false both RPCs return ErrorMethodNotFound (transport.* precedent).
-	publicRoomsEnabled bool
+	publicRoomsEnabled atomic.Bool
 
 	// hostAssignment is on when every connection carries an identity
 	// (FEATURE_ROOM_AUTH), so every joined room binds a host. A room with no
@@ -612,14 +614,14 @@ func (h *Hub) WithObservability(logger *slog.Logger, m *obs.Metrics) *Hub {
 
 // WithSync enables synchronized playback transport RPCs (transport.play/pause/seek).
 func (h *Hub) WithSync(enabled bool) *Hub {
-	h.syncEnabled = enabled
+	h.syncEnabled.Store(enabled)
 	return h
 }
 
 // WithVoting enables queue voting (queue.vote, F4). Deliberately member-gated,
 // never host-only: voting is the listener's input channel.
 func (h *Hub) WithVoting(enabled bool) *Hub {
-	h.votingEnabled = enabled
+	h.votingEnabled.Store(enabled)
 	return h
 }
 
@@ -637,19 +639,19 @@ func (h *Hub) WithModerationAudit(fn ModerationAudit) *Hub {
 
 // WithVideo enables the video co-watch heartbeat (FEATURE_VIDEO, #258).
 func (h *Hub) WithVideo(enabled bool) *Hub {
-	h.videoEnabled = enabled
+	h.videoEnabled.Store(enabled)
 	return h
 }
 
 func (h *Hub) WithChat(enabled bool) *Hub {
-	h.chatEnabled = enabled
+	h.chatEnabled.Store(enabled)
 	return h
 }
 
 // WithPublicRooms enables the public room directory RPCs (room.set_public,
 // room.list). Default off (dark-ship, same posture as WithSync).
 func (h *Hub) WithPublicRooms(enabled bool) *Hub {
-	h.publicRoomsEnabled = enabled
+	h.publicRoomsEnabled.Store(enabled)
 	return h
 }
 
@@ -1674,7 +1676,7 @@ func (h *Hub) mutateRoom(roomID string, room *Room, fn func(*queue.RoomState) er
 // absentBefore reports the room was playing without a transport before the
 // mutation; that is logged and counted so the signal trends to zero.
 func (h *Hub) ensureTransportLocked(roomID string, s *queue.RoomState, absentBefore bool) {
-	if !h.syncEnabled || s.NowPlayingID == "" || s.Transport != nil {
+	if !h.syncEnabled.Load() || s.NowPlayingID == "" || s.Transport != nil {
 		return
 	}
 	if absentBefore {
@@ -2127,7 +2129,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		})
 
 	case "queue.vote":
-		if !h.votingEnabled {
+		if !h.votingEnabled.Load() {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
 		var req struct {
@@ -2412,7 +2414,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		})
 
 	case "room.set_public":
-		if !h.publicRoomsEnabled {
+		if !h.publicRoomsEnabled.Load() {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
 		var req struct {
@@ -2472,7 +2474,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		return res, err
 
 	case "room.list":
-		if !h.publicRoomsEnabled {
+		if !h.publicRoomsEnabled.Load() {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
 		res, err := h.listPublicRooms()
@@ -2482,7 +2484,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		return res, err
 
 	case "transport.play":
-		if !h.syncEnabled {
+		if !h.syncEnabled.Load() {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
 		var req struct {
@@ -2527,7 +2529,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		})
 
 	case "transport.pause":
-		if !h.syncEnabled {
+		if !h.syncEnabled.Load() {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
 		var req struct {
@@ -2555,7 +2557,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		})
 
 	case "transport.seek":
-		if !h.syncEnabled {
+		if !h.syncEnabled.Load() {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
 		var req struct {
@@ -2582,7 +2584,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		})
 
 	case "chat.send":
-		if !h.chatEnabled {
+		if !h.chatEnabled.Load() {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
 		var req struct {
@@ -2601,7 +2603,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		return h.chatSend(req.RoomID, req.Text, h.displayName(clientID), userID)
 
 	case "chat.history":
-		if !h.chatEnabled {
+		if !h.chatEnabled.Load() {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
 		var req struct {
@@ -2616,7 +2618,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		return h.chatHistoryRPC(req.RoomID)
 
 	case "chat.delete":
-		if !h.chatEnabled {
+		if !h.chatEnabled.Load() {
 			return nil, centrifuge.ErrorMethodNotFound
 		}
 		var req struct {

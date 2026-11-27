@@ -4,10 +4,11 @@
 // Loaded via a beforeInteractive <Script> so window.__COJAM_ENV__ is set before
 // the app runs. See lib/runtimeEnv.ts.
 import { FEATURE_ENV_VARS, parseFlag, type FeatureName } from '@/lib/features';
+import { getFlagOverrides } from '@/lib/flagOverrides';
 
 export const dynamic = 'force-dynamic';
 
-export function GET() {
+export async function GET() {
   const env: {
     wsUrl: string;
     spotifyClientId: string;
@@ -48,9 +49,14 @@ export function GET() {
   // off. Values follow lib/features.ts (1/true/on/yes, 0/false/off/no); an
   // unrecognized value is treated like unset. The map itself is omitted when
   // no flag is set.
+  //
+  // An override the owner set in /admin/flags (served by the Go server, see
+  // lib/flagOverrides.ts) wins over the COJAM_FEATURE_* value, so a flag can
+  // change without touching the environment.
+  const overrides = await getFlagOverrides();
   const features: Partial<Record<FeatureName, boolean>> = {};
   for (const [name, envVar] of Object.entries(FEATURE_ENV_VARS) as [FeatureName, string][]) {
-    const value = parseFlag(process.env[envVar]);
+    const value = overrides[name] ?? parseFlag(process.env[envVar]);
     if (value !== undefined) features[name] = value;
   }
   if (Object.keys(features).length > 0) env.features = features;
