@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ListenersStage } from './ListenersStage';
-import { useStore, setRoomAdmin, transferHost, claimHost, kickMember, rpcErrorMessage, type Member } from '@/lib/realtime';
+import {
+  useStore,
+  setRoomAdmin,
+  transferHost,
+  claimHost,
+  kickMember,
+  rpcErrorMessage,
+  type Member,
+} from '@/lib/realtime';
 
 vi.mock('@/lib/realtime', async (orig) => ({
   ...(await orig<typeof import('@/lib/realtime')>()),
@@ -82,10 +90,18 @@ describe('ListenersStage', () => {
 
   it('"+N" overflow counts connections, not unique names', () => {
     // 8 connections, two of them the same name: 6 visible, +2 hidden.
-    useStore.getState().setMembers([
-      m('1', 'Alice'), m('2', 'Alice'), m('3', 'Bo'), m('4', 'Cy'),
-      m('5', 'Di'), m('6', 'Ed'), m('7', 'Fi'), m('8', 'Gus'),
-    ]);
+    useStore
+      .getState()
+      .setMembers([
+        m('1', 'Alice'),
+        m('2', 'Alice'),
+        m('3', 'Bo'),
+        m('4', 'Cy'),
+        m('5', 'Di'),
+        m('6', 'Ed'),
+        m('7', 'Fi'),
+        m('8', 'Gus'),
+      ]);
     render(<ListenersStage roomId="r" running={false} />);
 
     expect(screen.getByText('+2')).toBeInTheDocument();
@@ -205,14 +221,14 @@ describe('ListenersStage', () => {
 
       fireEvent.click(screen.getByLabelText('Remover Bob da sala'));
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(rpcErrorMessage(err, 'Não foi possível remover da sala.'));
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        rpcErrorMessage(err, 'Não foi possível remover da sala.'),
+      );
       expect(kickMember).toHaveBeenCalledTimes(2);
     });
 
     it('stays quiet when one connection is kicked and a ghost one is not', async () => {
-      vi.mocked(kickMember)
-        .mockResolvedValueOnce(undefined)
-        .mockRejectedValueOnce(new Error('not in this room'));
+      vi.mocked(kickMember).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('not in this room'));
       render(<ListenersStage roomId="r" running={false} canModerate />);
 
       fireEvent.click(screen.getByLabelText('Remover Bob da sala'));
@@ -282,6 +298,50 @@ describe('ListenersStage', () => {
       expect(transferHost).not.toHaveBeenCalled();
       fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Passar anfitrião' }));
       await waitFor(() => expect(transferHost).toHaveBeenCalledWith('r', 'uc'));
+    });
+  });
+
+  describe('ao vivo badge (screen share)', () => {
+    afterEach(() => {
+      delete window.__COJAM_ENV__;
+      useStore.setState({ state: null, clientId: '' });
+    });
+    const live = (broadcasterId: string) => ({
+      roomId: 'r',
+      queue: [],
+      radioEnabled: false,
+      version: 1,
+      screen: { broadcasterId, broadcasterName: 'Bob', startedAtMs: 1, viewerCount: 0, maxViewers: 5, locked: false },
+    });
+
+    it('marks the person sharing, and the badge asks the panel to watch', () => {
+      window.__COJAM_ENV__ = { features: { screenShare: true, roomAuth: true } };
+      useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
+      useStore.setState({ clientId: 'a', state: live('b') as never });
+      const asked = vi.fn();
+      window.addEventListener('cojam:screen-watch', asked);
+      try {
+        render(<ListenersStage roomId="r" running={false} />);
+        const badge = screen.getByRole('button', { name: 'Bob está ao vivo: ver a tela' });
+        expect(screen.getAllByTestId('listener-live')).toHaveLength(1);
+        fireEvent.click(badge);
+        expect(asked).toHaveBeenCalledTimes(1);
+      } finally {
+        window.removeEventListener('cojam:screen-watch', asked);
+      }
+    });
+
+    it('is a plain label on your own avatar, and absent while the feature is off', () => {
+      window.__COJAM_ENV__ = { features: { screenShare: true, roomAuth: true } };
+      useStore.getState().setMembers([m('a', 'Alice'), m('b', 'Bob')]);
+      useStore.setState({ clientId: 'b', state: live('b') as never });
+      const { unmount } = render(<ListenersStage roomId="r" running={false} />);
+      expect(screen.getByTestId('listener-live').tagName).toBe('SPAN');
+      unmount();
+
+      window.__COJAM_ENV__ = { features: { screenShare: false, roomAuth: true } };
+      render(<ListenersStage roomId="r" running={false} />);
+      expect(screen.queryByTestId('listener-live')).toBeNull();
     });
   });
 });

@@ -1,10 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, within, act } from '@testing-library/react';
 import type { RoomState, ScreenShareState } from '@cojam/shared';
-import { IDLE_MS, ScreenSharePanel, ScreenSharePanelView, liveFor, type ScreenShare } from './ScreenSharePanel';
+import {
+  IDLE_MS,
+  START_NOTICE_MS,
+  ScreenSharePanel,
+  ScreenSharePanelView,
+  liveFor,
+  type ScreenShare,
+} from './ScreenSharePanel';
 import { useStore } from '@/lib/realtime';
 import { affirmAge } from '@/lib/ageGate';
 import { DEFAULT_QUALITY } from '@/lib/screenShare';
+import { requestWatch } from '@/lib/screenShareLive';
 
 // The RPC wrappers are mocked; the panel drives the real store, so what it
 // shows follows state.screen exactly like in the app.
@@ -62,7 +70,11 @@ beforeEach(() => {
   vi.stubGlobal('RTCPeerConnection', StubPC);
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
-    value: { getDisplayMedia: vi.fn(async () => { throw new DOMException('denied', 'NotAllowedError'); }) },
+    value: {
+      getDisplayMedia: vi.fn(async () => {
+        throw new DOMException('denied', 'NotAllowedError');
+      }),
+    },
   });
   try {
     localStorage.clear();
@@ -263,11 +275,9 @@ describe('ScreenSharePanel', () => {
 
   it('falls back to muted when the browser refuses to play with sound', async () => {
     seed({ screen: live() });
-    const play = vi
-      .spyOn(HTMLMediaElement.prototype, 'play')
-      .mockImplementation(function (this: HTMLMediaElement) {
-        return this.muted ? Promise.resolve() : Promise.reject(new DOMException('no', 'NotAllowedError'));
-      });
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
+      return this.muted ? Promise.resolve() : Promise.reject(new DOMException('no', 'NotAllowedError'));
+    });
     try {
       renderWatching(watchingShare());
       expect(await screen.findByRole('button', { name: 'Tocar som' })).toBeTruthy();
@@ -320,5 +330,80 @@ describe('ScreenSharePanel', () => {
     expect(select.value).toBe('max');
     expect(screen.getByTestId('screen-share-upload').textContent).toContain('4 Mbps');
     expect(localStorage.getItem('cojam.screenQuality')).toBe('max');
+  });
+
+  describe('start notice and shortcuts', () => {
+    let visible = false;
+    beforeEach(() => {
+      visible = false;
+      vi.stubGlobal(
+        'IntersectionObserver',
+        class {
+          constructor(private cb: (e: { isIntersecting: boolean; intersectionRatio: number }[]) => void) {}
+          observe() {
+            this.cb([{ isIntersecting: visible, intersectionRatio: visible ? 1 : 0 }]);
+          }
+          disconnect() {}
+        },
+      );
+    });
+
+    it('tells the room when a share starts and its card is out of view, then goes away', () => {
+      vi.useFakeTimers();
+      try {
+        seed();
+        renderPanel();
+        expect(screen.queryByTestId('screen-share-start-notice')).toBeNull();
+        act(() => useStore.setState({ state: state({ screen: live() }) }));
+        const notice = screen.getByTestId('screen-share-start-notice');
+        expect(notice.textContent).toContain('Ana começou a compartilhar a tela');
+        // It never watches on its own.
+        expect(rpc.screenWatch).not.toHaveBeenCalled();
+        act(() => vi.advanceTimersByTime(START_NOTICE_MS + 10));
+        expect(screen.queryByTestId('screen-share-start-notice')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('stays quiet when the card is in view, or for a share that was already live', () => {
+      visible = true;
+      seed();
+      const { unmount } = renderPanel();
+      act(() => useStore.setState({ state: state({ screen: live() }) }));
+      expect(screen.queryByTestId('screen-share-start-notice')).toBeNull();
+      unmount();
+
+      visible = false;
+      seed({ screen: live() });
+      renderPanel();
+      expect(screen.queryByTestId('screen-share-start-notice')).toBeNull();
+    });
+
+    it('"Assistir" on the notice runs the same flow as the card, 16+ dialog included', () => {
+      seed();
+      renderPanel();
+      act(() => useStore.setState({ state: state({ screen: live() }) }));
+      fireEvent.click(
+        within(screen.getByTestId('screen-share-start-notice')).getByRole('button', { name: 'Assistir' }),
+      );
+      expect(rpc.screenWatch).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(screen.queryByTestId('screen-share-start-notice')).toBeNull();
+    });
+
+    it('watches when a shortcut asks, but not when the share is full or locked', async () => {
+      affirmAge();
+      seed({ screen: live({ viewerCount: 5 }) });
+      const { unmount } = renderPanel();
+      act(() => requestWatch());
+      expect(rpc.screenWatch).not.toHaveBeenCalled();
+      unmount();
+
+      seed({ screen: live() });
+      renderPanel();
+      act(() => requestWatch());
+      await waitFor(() => expect(rpc.screenWatch).toHaveBeenCalledWith('ROOM00000001'));
+    });
   });
 });
