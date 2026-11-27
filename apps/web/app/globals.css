@@ -3493,3 +3493,15 @@ button.r4-ls__live:focus-visible { outline: 2px solid var(--color-accent); outli
 @media (max-width: 47.99rem) {
   .screen-share__toast { bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* Phones: the viewer controls stay on one row that scrolls sideways, so the
+   video keeps its height (Go Live review gap 6). */
+@media (max-width: 30rem) {
+  .screen-share--watching .screen-share__actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .screen-share--watching .screen-share__actions > * { flex-shrink: 0; }
+}
