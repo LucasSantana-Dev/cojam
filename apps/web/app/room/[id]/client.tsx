@@ -63,6 +63,7 @@ import type { SpotifyConnectErrorKind } from '@/lib/spotifyConnectError';
 import { fixtureKind, applyRoomFixture, fixturePlayer } from '@/lib/devFixture';
 import dynamic from 'next/dynamic';
 import { usePalcoView, setPalcoView } from '@/lib/palcoView';
+import { installPlaybackLog } from '@/lib/playbackLog';
 
 // Modo palco: client-only chunk (three.js), never in the round 4 bundle.
 // While the chunk (three.js) loads, a plain stage-coloured block holds the
@@ -118,6 +119,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const f = useRuntimeFeatures();
   // Accounts link: resolved at runtime, hydration-safe via the server snapshot.
   const accountsEnabled = useSyncExternalStore(noopSubscribe, supabaseEnabled, () => false);
+
+  // Local playback diagnostics (read with copy(cojamPlaybackLog()) in the console).
+  useEffect(() => {
+    installPlaybackLog();
+  }, []);
 
   // Accounts: when signed in, load persisted connected services into the store
   // (search ranking follows them on any device, even before local OAuth state

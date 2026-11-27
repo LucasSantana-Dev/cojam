@@ -5,6 +5,7 @@ import { createDriftSampler } from './driftSampler';
 import { trackSyncDrift } from './telemetry';
 import { resolveClientFeatures } from './useRuntimeFeatures';
 import { attachResumeListeners } from './backgroundPlayback';
+import { logPlayback } from './playbackLog';
 import { computeExpectedPosition, shouldCorrect, isExpectedPositionKnown, isPastEnd, DRIFT_THRESHOLD_MS, seekCooldownMs, serverNow } from './playbackSync';
 import type { IPlayer } from './playerInterface';
 
@@ -154,6 +155,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
     // and seeking it to 0 would replay that song instead of waiting for the
     // radio refill, so there is nothing to sync until a track is set.
     if (transport.state === 'playing' && !transport.hasTrack) return;
+    logPlayback('transport', { state: transport.state, player: activePlayer.kind ?? null });
     // Handle state transitions: play/pause/stop
     if (transport.state === 'playing') {
       // Same store snapshot for the transport and the now-playing id.
@@ -188,6 +190,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         requestClockRemeasure();
       }
     } else if (transport.state === 'paused') {
+      logPlayback('player_pause', { why: 'room_paused' });
       activePlayer.pause().catch((err) => {
         console.warn('Failed to pause:', err);
       });
@@ -230,6 +233,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
         if ((!resumeTried || retryHidden) && activePlayer.isPaused?.()) {
           resumeTried = true;
           lastResumeAt = Date.now();
+          logPlayback('drift_resume', { player: activePlayer.kind ?? null });
           activePlayer.play().catch(() => {});
         }
         return;
@@ -252,6 +256,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
             lastSeekAt = Date.now();
             consecutiveSeeks++;
             samplerRef.current.force(SAMPLE_AFTER_SEEK_MS);
+            logPlayback('drift_seek', { driftMs: Math.round(drift) });
             activePlayer.seekToMs(expected).catch((err) => {
               console.warn('Drift correction seek failed:', err);
             });
@@ -326,6 +331,7 @@ export function useDriftCorrection(activePlayer: IPlayer | null, syncEnabled: bo
   // check the player immediately. Never pauses anything, never re-joins.
   useEffect(() => {
     return attachResumeListeners(() => {
+      logPlayback('page_back');
       resyncRoom();
       samplerRef.current.force(SAMPLE_AFTER_RESUME_MS);
       checkNowRef.current?.();

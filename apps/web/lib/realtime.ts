@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Centrifuge } from 'centrifuge';
 import { pickEnv, getRuntimeEnv, resolveRuntimeFeatures } from './runtimeEnv';
+import { logPlayback } from './playbackLog';
 import { estimateOffset, type PingSample } from './clockSync';
 import { computeNameSuffixes } from './nameSuffix';
 import { fetchConnectionToken, getLastTokenFetchError, getStoredProofToken, clearStoredIdentity } from './auth';
@@ -511,6 +512,7 @@ export async function joinRoom(
   restoreMyVotes(roomId);
 
   centrifuge.on('connected', (ctx) => {
+    logPlayback('ws_connected');
     store.setConnected(true);
     store.setReconnecting(false);
     // The server-assigned client id (self-identification in presence, #181).
@@ -557,11 +559,13 @@ export async function joinRoom(
     }
   });
 
-  centrifuge.on('connecting', () => {
+  centrifuge.on('connecting', (ctx) => {
+    logPlayback('ws_connecting', { code: (ctx as { code?: number } | undefined)?.code ?? null });
     store.setReconnecting(true);
   });
 
   centrifuge.on('disconnected', (ctx) => {
+    logPlayback('ws_disconnected', { code: (ctx as { code?: number } | undefined)?.code ?? null });
     cancelClockMeasure();
     store.setConnected(false);
     store.setReconnecting(false);
@@ -1352,6 +1356,7 @@ export async function transportPlay(roomId: string, opts?: { trackId?: string; p
 }
 
 export async function transportPause(roomId: string, positionMs: number) {
+  logPlayback('rpc_pause');
   if (!centrifuge) throw new Error('Sem conexão com a sala. Recarregue a página.');
   await centrifuge.rpc('transport.pause', { roomId, positionMs });
 }
