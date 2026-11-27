@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/realtime';
 import { MINIMUM_AGE, affirmAge, hasAffirmedAge } from '@/lib/ageGate';
 import { useReportDialog } from '@/app/components/useReportDialog';
@@ -251,7 +252,7 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
     if (watching) {
       const failed = share.viewerState === 'failed';
       const noSound = Boolean(share.remoteStream) && audioTracks === 0;
-      return (
+      const view = (
         <section
           ref={sectionRef}
           className={`screen-share screen-share--watching${theater ? ' screen-share--theater' : ''}`}
@@ -335,6 +336,9 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
           {messages}
         </section>
       );
+      // Large view goes to the body: a transformed ancestor (the room's entry
+      // animation, the palco layout) would trap position: fixed in its box.
+      return theater && typeof document !== 'undefined' ? createPortal(view, document.body) : view;
     }
 
     // Broadcasting: who is watching and the controls over admission.
