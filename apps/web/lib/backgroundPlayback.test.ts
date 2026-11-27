@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { shouldResumeInBackground, attachResumeListeners, advanceWithRetry, RESUME_DEBOUNCE_MS } from './backgroundPlayback';
+import { shouldResumeInBackground, attachResumeListeners, advanceWithRetry, scheduleBackgroundResume, RESUME_DEBOUNCE_MS } from './backgroundPlayback';
 
 describe('shouldResumeInBackground', () => {
   const base = { hidden: true, transportState: 'playing', muted: false };
@@ -15,6 +15,36 @@ describe('shouldResumeInBackground', () => {
     expect(shouldResumeInBackground({ ...base, ytState: 2, transportState: 'paused' })).toBe(false);
     expect(shouldResumeInBackground({ ...base, ytState: 2, muted: true })).toBe(false);
     for (const ytState of [0, 1, 3]) expect(shouldResumeInBackground({ ...base, ytState })).toBe(false);
+  });
+});
+
+describe('scheduleBackgroundResume', () => {
+  it('re-checks at each delay while the check still had to resume', () => {
+    vi.useFakeTimers();
+    const check = vi.fn(() => true);
+    scheduleBackgroundResume(check, [1000, 3000]);
+    vi.advanceTimersByTime(999);
+    expect(check).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(check).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(2000);
+    expect(check).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(60_000);
+    expect(check).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+  it('stops once the check reports nothing to do, and on cancel', () => {
+    vi.useFakeTimers();
+    const done = vi.fn(() => false);
+    scheduleBackgroundResume(done, [1000, 3000]);
+    vi.advanceTimersByTime(10_000);
+    expect(done).toHaveBeenCalledTimes(1);
+    const busy = vi.fn(() => true);
+    const cancel = scheduleBackgroundResume(busy, [1000, 3000]);
+    cancel();
+    vi.advanceTimersByTime(10_000);
+    expect(busy).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
 

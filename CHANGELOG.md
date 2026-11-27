@@ -37,6 +37,7 @@ All notable changes to this project are documented here. Format follows
 
 ### Fixed
 
+- YouTube in a minimized or background tab: when the embed pauses itself after the page goes hidden and undoes the first resume, the player now re-checks and resumes again a few times in the first seconds, before the browser starts throttling the tab's timers
 - Race-proofed the queue undo window against concurrent activity (#230)
 - RPC no longer fails when publish fails after state was committed (#178, #231)
 - Room-auth guest votes are pruned on disconnect (#234)
