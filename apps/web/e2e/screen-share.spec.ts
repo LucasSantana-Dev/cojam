@@ -82,6 +82,9 @@ test('host shares, a member watches real frames, then both tear down', async ({ 
     await host.getByRole('button', { name: 'Escolher o que compartilhar' }).click();
     await expect(host.getByText('Você está compartilhando a tela')).toBeVisible();
     await expect(host.getByTestId('screen-share-count')).toHaveText('0 de 5 assistindo');
+    // The quality changes live; the viewer below still gets frames.
+    await host.getByRole('combobox', { name: 'Qualidade da transmissão' }).selectOption('hd');
+    await expect(host.getByTestId('screen-share-upload')).toContainText('2,5 Mbps');
 
     // Nothing is received until the member chooses to watch.
     await expect(viewer.getByText('Ana está compartilhando a tela')).toBeVisible();

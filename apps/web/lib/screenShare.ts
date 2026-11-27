@@ -41,6 +41,82 @@ export const DISPLAY_MEDIA_OPTIONS = {
 } as const;
 
 export const MAX_BITRATE = 1_200_000;
+
+// Quality presets the broadcaster picks, before sharing or live. The first
+// is the spec 5.2 default (720p, 15 fps, 1.2 Mbps, sharp text). The others
+// trade upload for detail or motion: the mesh sends one copy per viewer, so
+// five viewers at "Máxima" need about 20 Mbps of upload.
+export type ScreenQualityId = 'text' | 'hd' | 'smooth' | 'max';
+export type ScreenQuality = {
+  id: ScreenQualityId;
+  label: string;
+  detail: string;
+  height: number;
+  frameRate: number;
+  maxBitrate: number;
+  // true favours frame rate (video, games); false keeps resolution (text).
+  motion: boolean;
+};
+
+export const SCREEN_QUALITIES: readonly ScreenQuality[] = [
+  {
+    id: 'text',
+    label: 'Texto nítido',
+    detail: '720p, 15 fps',
+    height: 720,
+    frameRate: 15,
+    maxBitrate: MAX_BITRATE,
+    motion: false,
+  },
+  {
+    id: 'hd',
+    label: 'Alta definição',
+    detail: '1080p, 30 fps',
+    height: 1080,
+    frameRate: 30,
+    maxBitrate: 2_500_000,
+    motion: false,
+  },
+  {
+    id: 'smooth',
+    label: 'Movimento suave',
+    detail: '720p, 60 fps',
+    height: 720,
+    frameRate: 60,
+    maxBitrate: 2_500_000,
+    motion: true,
+  },
+  {
+    id: 'max',
+    label: 'Máxima',
+    detail: '1080p, 60 fps',
+    height: 1080,
+    frameRate: 60,
+    maxBitrate: 4_000_000,
+    motion: true,
+  },
+];
+
+export const DEFAULT_QUALITY: ScreenQuality = SCREEN_QUALITIES[0];
+
+export function qualityById(id: string | null | undefined): ScreenQuality {
+  return SCREEN_QUALITIES.find((q) => q.id === id) ?? DEFAULT_QUALITY;
+}
+
+// The video constraints of one preset, for the picker and for applyConstraints
+// on a live track.
+export function videoConstraints(q: ScreenQuality): MediaTrackConstraints {
+  return { frameRate: { ideal: q.frameRate, max: q.frameRate }, height: { max: q.height } };
+}
+
+export function displayMediaOptions(q: ScreenQuality) {
+  return { ...DISPLAY_MEDIA_OPTIONS, video: { ...videoConstraints(q), displaySurface: 'browser' } };
+}
+
+// Upload the broadcaster needs with every seat taken, in Mbps.
+export function uploadMbps(q: ScreenQuality, viewers: number): number {
+  return Math.round(((q.maxBitrate * viewers) / 1_000_000) * 10) / 10;
+}
 export const CANDIDATE_BATCH_MS = 100;
 export const MAX_CANDIDATES_PER_MESSAGE = 20;
 export const VIEWER_CONNECT_TIMEOUT_MS = 15_000;
@@ -127,9 +203,45 @@ export class BroadcasterPeers {
       iceServers: RTCIceServer[];
       onViewersChange?: (viewerIds: string[]) => void;
       batchMs?: number;
+      quality?: ScreenQuality;
     },
   ) {
     this.stream = opts.stream;
+    this.quality = opts.quality ?? DEFAULT_QUALITY;
+  }
+
+  private quality: ScreenQuality;
+
+  // setQuality re-caps every viewer's video sender for a new preset. The
+  // caller changes the track's own constraints.
+  async setQuality(q: ScreenQuality): Promise<void> {
+    this.quality = q;
+    await Promise.all(
+      [...this.peers.values()].map(({ pc }) => {
+        const sender = senderFor(pc, 'video');
+        return sender ? capSender(sender, q) : undefined;
+      }),
+    );
+  }
+
+  // limitation reports why the encoder is holding quality back on any peer
+  // (spec 6): the uplink or the CPU. Null when nothing limits it.
+  async limitation(): Promise<'bandwidth' | 'cpu' | null> {
+    let found: 'bandwidth' | 'cpu' | null = null;
+    for (const { pc } of this.peers.values()) {
+      if (typeof pc.getStats !== 'function') continue;
+      try {
+        const stats = await pc.getStats();
+        stats.forEach((r: { type?: string; kind?: string; qualityLimitationReason?: string }) => {
+          if (r.type !== 'outbound-rtp' || r.kind !== 'video') return;
+          if (r.qualityLimitationReason === 'bandwidth') found = 'bandwidth';
+          else if (r.qualityLimitationReason === 'cpu' && !found) found = 'cpu';
+        });
+      } catch {
+        /* closed meanwhile */
+      }
+    }
+    return found;
   }
 
   viewers(): string[] {
@@ -148,7 +260,7 @@ export class BroadcasterPeers {
     pc.onicecandidate = (e) => batcher.push(e.candidate);
     for (const track of this.stream.getTracks()) {
       const sender = pc.addTrack(track, this.stream);
-      if (track.kind === 'video') void capSender(sender);
+      if (track.kind === 'video') void capSender(sender, this.quality);
     }
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -198,7 +310,7 @@ export class BroadcasterPeers {
         if (sender) await sender.replaceTrack(track);
         else if (track) {
           const added = pc.addTrack(track, stream);
-          if (kind === 'video') void capSender(added);
+          if (kind === 'video') void capSender(added, this.quality);
           renegotiate = true;
         }
       }
@@ -224,14 +336,17 @@ function senderFor(pc: RTCPeerConnection, kind: string): RTCRtpSender | undefine
   return pc.getTransceivers().find((t) => t.receiver.track?.kind === kind && t.currentDirection !== 'stopped')?.sender;
 }
 
-// capSender holds each viewer's stream at 1.2 Mbps and favours resolution:
-// text on a shared screen is unreadable when the encoder drops resolution.
-async function capSender(sender: RTCRtpSender): Promise<void> {
+// capSender holds each viewer's stream at the preset's bitrate (1.2 Mbps by
+// default). Text presets keep resolution, since text on a shared screen is
+// unreadable when the encoder drops it; motion presets keep frame rate.
+async function capSender(sender: RTCRtpSender, q: ScreenQuality = DEFAULT_QUALITY): Promise<void> {
   try {
     const params = sender.getParameters();
     if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-    params.encodings[0].maxBitrate = MAX_BITRATE;
-    (params as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference = 'maintain-resolution';
+    params.encodings[0].maxBitrate = q.maxBitrate;
+    (params as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference = q.motion
+      ? 'maintain-framerate'
+      : 'maintain-resolution';
     await sender.setParameters(params);
   } catch {
     /* not supported here: keep the browser default */

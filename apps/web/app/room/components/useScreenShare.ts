@@ -16,9 +16,13 @@ import {
 } from '@/lib/realtime';
 import {
   BroadcasterPeers,
-  DISPLAY_MEDIA_OPTIONS,
   ViewerPeer,
+  displayMediaOptions,
   iceServersFrom,
+  qualityById,
+  videoConstraints,
+  type ScreenQuality,
+  type ScreenQualityId,
   type ViewerState,
 } from '@/lib/screenShare';
 import { getRuntimeEnv } from '@/lib/runtimeEnv';
@@ -45,13 +49,26 @@ function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop());
 }
 
-async function capture(): Promise<MediaStream | null> {
+const QUALITY_KEY = 'cojam.screenQuality';
+
+function savedQuality(): ScreenQuality {
+  try {
+    return qualityById(localStorage.getItem(QUALITY_KEY));
+  } catch {
+    return qualityById(null);
+  }
+}
+
+// How often the broadcaster checks whether the uplink or CPU holds quality back.
+const LIMITATION_CHECK_MS = 5_000;
+
+async function capture(quality: ScreenQuality): Promise<MediaStream | null> {
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia(
-      DISPLAY_MEDIA_OPTIONS as unknown as DisplayMediaStreamOptions,
+      displayMediaOptions(quality) as unknown as DisplayMediaStreamOptions,
     );
     const video = stream.getVideoTracks()[0];
-    if (video && 'contentHint' in video) video.contentHint = 'detail';
+    if (video && 'contentHint' in video) video.contentHint = quality.motion ? 'motion' : 'detail';
     return stream;
   } catch {
     // A cancelled picker (NotAllowedError) or no permission: back to idle.
@@ -76,6 +93,9 @@ export function useScreenShare(roomId: string) {
   // When the last share this person watched ended; "Denunciar transmissão"
   // stays available for 10 minutes after (spec 5.6).
   const [lastWatchedAt, setLastWatchedAt] = useState<number | null>(null);
+  const [quality, setQualityState] = useState<ScreenQuality>(savedQuality);
+  // Why the encoder is holding quality back (spec 6), while broadcasting.
+  const [limitation, setLimitation] = useState<'bandwidth' | 'cpu' | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<BroadcasterPeers | null>(null);
@@ -94,6 +114,7 @@ export function useScreenShare(roomId: string) {
     streamRef.current = null;
     setLocalStream(null);
     setViewerIds([]);
+    setLimitation(null);
     setRole((r) => (r === 'broadcasting' ? 'idle' : r));
     if (message) setNotice(message);
   }, []);
@@ -189,7 +210,7 @@ export function useScreenShare(roomId: string) {
     if (busy || peersRef.current) return;
     setError('');
     setNotice('');
-    const stream = await capture();
+    const stream = await capture(quality);
     if (!stream) return;
     setBusy(true);
     const peers = new BroadcasterPeers({
@@ -198,6 +219,7 @@ export function useScreenShare(roomId: string) {
       createPeer,
       iceServers: iceServers(),
       onViewersChange: setViewerIds,
+      quality,
     });
     peersRef.current = peers;
     streamRef.current = stream;
@@ -218,12 +240,12 @@ export function useScreenShare(roomId: string) {
     } finally {
       setBusy(false);
     }
-  }, [busy, roomId, send, stop]);
+  }, [busy, roomId, send, stop, quality]);
 
   const changeSource = useCallback(async () => {
     const peers = peersRef.current;
     if (!peers) return;
-    const next = await capture();
+    const next = await capture(quality);
     if (!next) return;
     if (peersRef.current !== peers) {
       stopStream(next);
@@ -236,7 +258,38 @@ export function useScreenShare(roomId: string) {
     next.getVideoTracks()[0]?.addEventListener('ended', () => {
       if (peersRef.current === peers && streamRef.current === next) void stop();
     });
-  }, [stop]);
+  }, [stop, quality]);
+
+  // A new preset applies at once while sharing: the track's own constraints
+  // and every viewer's encoder cap.
+  const setQuality = useCallback(async (id: ScreenQualityId) => {
+    const next = qualityById(id);
+    setQualityState(next);
+    try {
+      localStorage.setItem(QUALITY_KEY, next.id);
+    } catch {
+      /* storage unavailable: the choice lasts for this visit */
+    }
+    const video = streamRef.current?.getVideoTracks()[0];
+    if (video) {
+      if ('contentHint' in video) video.contentHint = next.motion ? 'motion' : 'detail';
+      await video.applyConstraints?.(videoConstraints(next)).catch(() => {});
+    }
+    await peersRef.current?.setQuality(next).catch(() => {});
+  }, []);
+
+  // Spec 6: tell the broadcaster when the uplink or the CPU is the limit.
+  useEffect(() => {
+    if (role !== 'broadcasting') return;
+    const t = setInterval(() => {
+      const peers = peersRef.current;
+      if (!peers) return;
+      void peers.limitation().then((l) => {
+        if (peersRef.current === peers) setLimitation(l);
+      });
+    }, LIMITATION_CHECK_MS);
+    return () => clearInterval(t);
+  }, [role]);
 
   const watch = useCallback(async () => {
     if (!screen || viewerRef.current || busy) return;
@@ -324,6 +377,9 @@ export function useScreenShare(roomId: string) {
     viewerState,
     viewerIds,
     lastWatchedAt,
+    quality,
+    setQuality,
+    limitation,
     isBroadcaster: Boolean(screen && screen.broadcasterId === myClientId),
     start,
     stop,

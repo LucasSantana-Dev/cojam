@@ -3237,6 +3237,26 @@ textarea.age-gate__input { resize: vertical; }
   color: var(--color-text-secondary);
   font-size: 0.85rem;
 }
+.screen-share__quality {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+.screen-share__quality label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.screen-share__quality select {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: inherit;
+}
 .screen-share__volume {
   width: 7rem;
   accent-color: var(--color-accent);
