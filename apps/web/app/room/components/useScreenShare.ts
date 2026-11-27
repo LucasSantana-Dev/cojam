@@ -24,9 +24,11 @@ import {
   videoConstraints,
   type ScreenQuality,
   type ScreenQualityId,
+  type ViewerHealth,
   type ViewerState,
 } from '@/lib/screenShare';
 import { getRuntimeEnv } from '@/lib/runtimeEnv';
+import { endedNotice, markShared, viewerChangeNotice } from '@/lib/screenShareNotices';
 import { trackError, trackEvent } from '@/lib/telemetry';
 
 // Screen share controller (#310, spec 5.2 and 5.3). Owns the captured stream,
@@ -97,6 +99,8 @@ export function useScreenShare(roomId: string) {
   const [quality, setQualityState] = useState<ScreenQuality>(savedQuality);
   // Why the encoder is holding quality back (spec 6), while broadcasting.
   const [limitation, setLimitation] = useState<'bandwidth' | 'cpu' | null>(null);
+  // Whether the image a viewer gets froze or the connection is weak (spec 5.7).
+  const [health, setHealth] = useState<ViewerHealth>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<BroadcasterPeers | null>(null);
@@ -105,6 +109,36 @@ export function useScreenShare(roomId: string) {
   // before that state arrives, so "no share in the state" only ends a
   // broadcast that the state had already confirmed.
   const confirmedRef = useRef(false);
+  // The viewer list last shown, for the joined/left notice (spec 5.7).
+  const prevViewersRef = useRef<string[]>([]);
+  // The last share seen in the state, so the end notice can name it after
+  // the state has dropped it.
+  const lastScreenRef = useRef(screen);
+  useEffect(() => {
+    if (screen) lastScreenRef.current = screen;
+  }, [screen]);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // A notice that clears itself, unless something else replaced it.
+  const flash = useCallback((message: string, ms = 5_000) => {
+    setNotice(message);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => {
+      setNotice((n) => (n === message ? '' : n));
+    }, ms);
+  }, []);
+
+  const onViewersChange = useCallback(
+    (ids: string[]) => {
+      const nameOf = (id: string) =>
+        useStore.getState().connections.find((m) => m.clientId === id)?.name || 'Alguém';
+      const message = viewerChangeNotice(prevViewersRef.current, ids, nameOf);
+      prevViewersRef.current = ids;
+      setViewerIds(ids);
+      if (message) flash(message);
+    },
+    [flash],
+  );
 
   // Local teardown only: the server already knows (or will on disconnect).
   const dropBroadcast = useCallback((message = '') => {
@@ -115,6 +149,7 @@ export function useScreenShare(roomId: string) {
     streamRef.current = null;
     setLocalStream(null);
     setViewerIds([]);
+    prevViewersRef.current = [];
     setLimitation(null);
     setRole((r) => (r === 'broadcasting' ? 'idle' : r));
     if (message) setNotice(message);
@@ -127,9 +162,24 @@ export function useScreenShare(roomId: string) {
     if (peer) setLastWatchedAt(Date.now());
     setRemoteStream(null);
     setViewerState(null);
+    setHealth(null);
     setRole((r) => (r === 'watching' ? 'idle' : r));
     if (message) setNotice(message);
   }, []);
+
+  // The share this person watched ended. Presence may lag the end by a
+  // moment, so whether the broadcaster left the room is checked shortly after.
+  const endViewing = useCallback(() => {
+    const id = viewerRef.current?.broadcasterId;
+    const name = lastScreenRef.current?.broadcasterName || 'Alguém';
+    const ended = endedNotice(name, true);
+    dropViewer(ended);
+    if (!id) return;
+    setTimeout(() => {
+      const here = useStore.getState().connections.some((m) => m.clientId === id);
+      if (!here) setNotice((n) => (n === ended ? endedNotice(name, false) : n));
+    }, 1_500);
+  }, [dropViewer]);
 
   // Server messages for this connection.
   useEffect(() => {
@@ -150,11 +200,11 @@ export function useScreenShare(roomId: string) {
           break;
         case 'screen.ended':
           if (peersRef.current) dropBroadcast('O compartilhamento de tela terminou.');
-          if (viewerRef.current) dropViewer('A transmissão terminou.');
+          if (viewerRef.current) endViewing();
           break;
       }
     });
-  }, [roomId, dropBroadcast, dropViewer]);
+  }, [roomId, dropBroadcast, dropViewer, endViewing]);
 
   // Spec 5.2.10 and 5.3.6: a state without the share, a share that is not
   // ours, or any disconnect closes every peer. Adjusting during render would
@@ -171,9 +221,23 @@ export function useScreenShare(roomId: string) {
     }
     if (peersRef.current && confirmedRef.current && !screen) dropBroadcast();
     if (viewerRef.current && (!screen || screen.broadcasterId !== viewerRef.current.broadcasterId)) {
-      dropViewer('A transmissão terminou.');
+      endViewing();
     }
-  }, [connected, screen, myClientId, dropBroadcast, dropViewer]);
+  }, [connected, screen, myClientId, dropBroadcast, dropViewer, endViewing]);
+
+  // The viewer checks the incoming image on the same cadence as the
+  // broadcaster's limit check.
+  useEffect(() => {
+    if (role !== 'watching' || viewerState !== 'connected') return;
+    const t = setInterval(() => {
+      const peer = viewerRef.current;
+      if (!peer) return;
+      void peer.health().then((h) => {
+        if (viewerRef.current === peer) setHealth(h);
+      });
+    }, LIMITATION_CHECK_MS);
+    return () => clearInterval(t);
+  }, [role, viewerState]);
 
   // Unmount (leaving the room): close everything and tell the server.
   useEffect(() => {
@@ -219,7 +283,7 @@ export function useScreenShare(roomId: string) {
       send,
       createPeer,
       iceServers: iceServers(),
-      onViewersChange: setViewerIds,
+      onViewersChange,
       quality,
     });
     peersRef.current = peers;
@@ -228,6 +292,7 @@ export function useScreenShare(roomId: string) {
       await screenStart(roomId);
       setLocalStream(stream);
       setRole('broadcasting');
+      markShared();
       // The browser's own "Parar de compartilhar" ends the track (5.2.9).
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         if (peersRef.current === peers) void stop();
@@ -241,7 +306,7 @@ export function useScreenShare(roomId: string) {
     } finally {
       setBusy(false);
     }
-  }, [busy, roomId, send, stop, quality]);
+  }, [busy, roomId, send, stop, quality, onViewersChange]);
 
   const changeSource = useCallback(async () => {
     const peers = peersRef.current;
@@ -397,6 +462,7 @@ export function useScreenShare(roomId: string) {
     quality,
     setQuality,
     limitation,
+    health,
     isBroadcaster: Boolean(screen && screen.broadcasterId === myClientId),
     start,
     stop,

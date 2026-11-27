@@ -12,6 +12,7 @@ import {
   iceServersFrom,
   qualityById,
   uploadMbps,
+  viewerHealth,
   type ViewerState,
 } from './screenShare';
 
@@ -408,5 +409,59 @@ describe('quality presets', () => {
   it('tells the upload each viewer takes', () => {
     expect(SCREEN_QUALITIES.map((q) => uploadMbps(q, 1))).toEqual([1.2, 2.5, 2.5, 4]);
     expect(uploadMbps(qualityById('max'), 5)).toBe(20);
+  });
+});
+
+describe('viewer health (spec 5.7)', () => {
+  const sample = (framesDecoded: number, packetsReceived = 1000, packetsLost = 0) => ({
+    framesDecoded,
+    packetsReceived,
+    packetsLost,
+  });
+
+  it('needs two samples', () => {
+    expect(viewerHealth(null, sample(10), 5)).toBeNull();
+  });
+
+  it('reads no new frame as frozen', () => {
+    expect(viewerHealth(sample(100), sample(100), 5)).toBe('frozen');
+  });
+
+  it('reads few frames or many lost packets as weak', () => {
+    expect(viewerHealth(sample(100), sample(110), 5)).toBe('weak');
+    expect(viewerHealth(sample(100, 1000, 0), sample(175, 1900, 100), 5)).toBe('weak');
+  });
+
+  it('is fine at a normal rate', () => {
+    expect(viewerHealth(sample(100, 1000, 0), sample(175, 2000, 10), 5)).toBeNull();
+  });
+
+  it('ViewerPeer.health reads inbound video stats once connected', async () => {
+    FakePC.all = [];
+    const peer = new ViewerPeer({
+      broadcasterId: 'b1',
+      send: async () => {},
+      createPeer: factory,
+      iceServers: [],
+      onStream: () => {},
+      onState: () => {},
+      batchMs: 1,
+    });
+    const pc = FakePC.all[0] as unknown as {
+      connectionState: string;
+      onconnectionstatechange: (() => void) | null;
+      getStats?: () => Promise<Map<string, unknown>>;
+    };
+    let frames = 100;
+    pc.getStats = async () =>
+      new Map([['v', { type: 'inbound-rtp', kind: 'video', framesDecoded: frames, packetsReceived: 1000, packetsLost: 0 }]]);
+    expect(await peer.health(0)).toBeNull();
+    pc.connectionState = 'connected';
+    pc.onconnectionstatechange?.();
+    expect(await peer.health(0)).toBeNull();
+    expect(await peer.health(5000)).toBe('frozen');
+    frames = 250;
+    expect(await peer.health(10_000)).toBeNull();
+    peer.close();
   });
 });

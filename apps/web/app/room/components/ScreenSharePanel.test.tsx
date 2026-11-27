@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within, act } from '@testing-library/react';
 import type { RoomState, ScreenShareState } from '@cojam/shared';
-import { ScreenSharePanel, ScreenSharePanelView, liveFor, type ScreenShare } from './ScreenSharePanel';
+import { IDLE_MS, ScreenSharePanel, ScreenSharePanelView, liveFor, type ScreenShare } from './ScreenSharePanel';
 import { useStore } from '@/lib/realtime';
 import { affirmAge } from '@/lib/ageGate';
 import { DEFAULT_QUALITY } from '@/lib/screenShare';
@@ -215,11 +215,10 @@ describe('ScreenSharePanel', () => {
     expect(screen.getByTestId('screen-share-card-info').textContent).toBe('Ao vivo há 3 min · 2 de 5 assistindo');
   });
 
-  it('turns the sound on from the volume slider and remembers the level', () => {
-    seed({ screen: live() });
+  function watchingShare(over: Partial<ScreenShare> = {}) {
     const audio = { kind: 'audio' } as MediaStreamTrack;
     const stream = { getAudioTracks: () => [audio], getVideoTracks: () => [], getTracks: () => [audio] };
-    const share = {
+    return {
       screen: live(),
       role: 'watching',
       busy: false,
@@ -233,18 +232,81 @@ describe('ScreenSharePanel', () => {
       isBroadcaster: false,
       quality: DEFAULT_QUALITY,
       limitation: null,
+      ...over,
     } as unknown as ScreenShare;
-    render(<ScreenSharePanelView roomId="ROOM00000001" canModerate={false} isPublic={false} share={share} />);
+  }
+
+  function renderWatching(share: ScreenShare, chat?: React.ReactNode) {
+    return render(
+      <ScreenSharePanelView roomId="ROOM00000001" canModerate={false} isPublic={false} share={share} chat={chat} />,
+    );
+  }
+
+  it('starts with sound, and the volume slider turns it back on and remembers the level', () => {
+    seed({ screen: live() });
+    renderWatching(watchingShare());
     const slider = screen.getByRole('slider', { name: 'Volume da transmissão' }) as HTMLInputElement;
+    const video = screen.getByTestId('screen-video') as HTMLVideoElement;
+    // Choosing "Assistir" is the click that lets the video play with sound.
+    expect(screen.getByRole('button', { name: 'Tirar som' })).toBeTruthy();
+    expect(video.muted).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Tirar som' }));
     expect(slider.value).toBe('0');
-    expect(screen.getByRole('button', { name: 'Tocar som' })).toBeTruthy();
+    expect(video.muted).toBe(true);
     fireEvent.change(slider, { target: { value: '0.4' } });
     expect(screen.getByRole('button', { name: 'Tirar som' })).toBeTruthy();
     expect(slider.value).toBe('0.4');
     expect(localStorage.getItem('cojam.screenVolume')).toBe('0.4');
-    const video = screen.getByTestId('screen-video') as HTMLVideoElement;
     expect(video.muted).toBe(false);
     expect(video.volume).toBeCloseTo(0.4);
+  });
+
+  it('falls back to muted when the browser refuses to play with sound', async () => {
+    seed({ screen: live() });
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, 'play')
+      .mockImplementation(function (this: HTMLMediaElement) {
+        return this.muted ? Promise.resolve() : Promise.reject(new DOMException('no', 'NotAllowedError'));
+      });
+    try {
+      renderWatching(watchingShare());
+      expect(await screen.findByRole('button', { name: 'Tocar som' })).toBeTruthy();
+      expect((screen.getByTestId('screen-video') as HTMLVideoElement).muted).toBe(true);
+    } finally {
+      play.mockRestore();
+    }
+  });
+
+  it('keeps the room chat beside the large view, and remembers when it is closed', () => {
+    seed({ screen: live() });
+    localStorage.setItem('cojam.screenChat', '1');
+    renderWatching(watchingShare(), <div className="chat-panel">chat da sala</div>);
+    const view = screen.getByTestId('screen-share-watching');
+    expect(view.className).toContain('screen-share--with-chat');
+    expect(screen.getByTestId('screen-share-chat').textContent).toBe('chat da sala');
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
+    expect(screen.queryByTestId('screen-share-chat')).toBeNull();
+    expect(localStorage.getItem('cojam.screenChat')).toBe('0');
+    // The small view in the room column never carries the chat: the room has its own.
+    fireEvent.click(screen.getByRole('button', { name: 'Reduzir' }));
+    expect(screen.queryByRole('button', { name: 'Chat' })).toBeNull();
+  });
+
+  it('hides the controls after a while without the mouse, never the notice', () => {
+    vi.useFakeTimers();
+    try {
+      seed({ screen: live() });
+      renderWatching(watchingShare());
+      const view = () => screen.getByTestId('screen-share-watching');
+      expect(view().className).not.toContain('screen-share--idle');
+      act(() => vi.advanceTimersByTime(IDLE_MS + 10));
+      expect(view().className).toContain('screen-share--idle');
+      expect(screen.getByTestId('screen-share-notice')).toBeTruthy();
+      fireEvent.pointerMove(view());
+      expect(view().className).not.toContain('screen-share--idle');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('offers the quality before sharing and remembers it', () => {

@@ -1841,6 +1841,11 @@ textarea.age-gate__input { resize: vertical; }
   .r4-queue-col > .fq, .r4-chat-col > .chat-panel { flex: 1; min-height: 0; }
   .room[data-room="r4"] .chat-scroll { max-height: none; }
   .room[data-room="r4"] .fq-list { max-height: none; }
+  /* A screen share on top of the left column (#310): the column scrolls as a
+     whole instead of squeezing "Ouvindo agora" into a sliver with its own
+     scrollbar. */
+  .r4-stage:has(> .screen-share) { overflow-y: auto; overscroll-behavior: contain; }
+  .r4-stage:has(> .screen-share) > .r4-listeners { flex: none; }
 }
 
 /* ---- now playing ----------------------------------------------------------- */
@@ -2228,6 +2233,8 @@ textarea.age-gate__input { resize: vertical; }
 .chat-sys { display: flex; align-items: center; padding: 0 0.6rem; min-height: 1.35rem; }
 .chat-sys__text { flex: 1; min-width: 0; font-size: 0.75rem; line-height: 1.3; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-sys + .chat-msg, .chat-msg + .chat-sys { margin-top: 0.15rem; }
+.chat-sys__more { flex: none; margin-left: 0.4rem; padding: 0 0.4rem; min-height: 1.35rem; border-radius: 999px; border: 1px solid var(--color-border); background: none; color: var(--color-text-muted); font-size: 0.7rem; font-weight: 700; cursor: pointer; }
+.chat-sys__more:hover { color: var(--color-text-primary); }
 .chat-form { display: flex; align-items: center; gap: 0.2rem; margin-top: 0.25rem; padding: 0.35rem 0.4rem 0.35rem 0.9rem; border-radius: 0.9rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); }
 /* One ring, on the pill (the visible control). Scoped to the input so the emoji
    and send buttons keep their own keyboard ring instead of doubling up. 1px
@@ -2782,6 +2789,9 @@ textarea.age-gate__input { resize: vertical; }
    (which renders nothing) leaves no empty row. The shared video stays small
    enough that the stage keeps most of the height. */
 .palco__share { display: contents; }
+/* The share row can be taller than what is left under the stage: let the
+   palco column scroll instead of cutting the controls off. */
+.palco__main:has(.palco__share > .screen-share) { overflow-y: auto; overscroll-behavior: contain; }
 .palco__share > .screen-share { flex: 1 1 100%; }
 .palco__share > .screen-share--card { padding: 0.6rem 0.8rem; background: var(--r4-panel-2); border-color: var(--r4-line); }
 .palco__share .stage { width: 100%; max-width: min(100%, calc(40dvh * 16 / 9)); margin-inline: auto; }
@@ -3345,12 +3355,76 @@ textarea.age-gate__input { resize: vertical; }
   padding: 0.75rem 1rem;
   background: oklch(0.1 0.02 280);
 }
+.screen-share__main { display: grid; gap: 0.6rem; min-width: 0; }
+.screen-share--theater .screen-share__main,
+.screen-share--watching:fullscreen .screen-share__main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
 .screen-share--theater .stage,
 .screen-share--watching:fullscreen .stage {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+/* The room chat beside the large view (Go Live gap 1): a column on wide
+   screens, a drawer over the video below 56.25rem. */
+.screen-share--with-chat { flex-direction: row; }
+.screen-share__chat {
+  flex: none;
+  width: 20rem;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.screen-share__chat > .chat-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-1);
+}
+.screen-share__chat .chat-scroll { flex: 1; min-height: 0; max-height: none; }
+@media (max-width: 56.24rem) {
+  .screen-share__chat {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    height: min(60%, 28rem);
+    width: min(calc(100% - 1.5rem), 22rem);
+    z-index: 2;
+    box-shadow: 0 1rem 3rem oklch(0 0 0 / 0.5);
+  }
+}
+/* Icon controls: the accessible name and the tooltip come from the label. */
+.screen-share__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.screen-share__icon:hover { background: var(--color-surface-3); }
+.screen-share__icon[aria-pressed='true'] { background: var(--color-accent); border-color: transparent; color: oklch(1 0 0); }
+.screen-share__icon:focus-visible,
+.screen-share__btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.screen-share__spacer { flex: 1 1 0; }
+/* The large view hides its controls after a while without the mouse; the
+   notice under the video never hides (spec 5.3.4). */
+.screen-share__actions { transition: opacity 0.2s ease; }
+.screen-share--idle .screen-share__actions { opacity: 0; pointer-events: none; }
+.screen-share--idle .stage-frame { cursor: none; }
+@media (prefers-reduced-motion: reduce) {
+  .screen-share__actions { transition: none; }
 }
 .screen-share--theater .stage-frame,
 .screen-share--watching:fullscreen .stage-frame {
