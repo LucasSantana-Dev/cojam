@@ -8,6 +8,7 @@ import { computeExpectedPosition, isExpectedPositionKnown, serverNow } from '@/l
 import { secondsToMs, msToSeconds, createEndedDetector } from '@/lib/playerUtils';
 import { advanceWithRetry, shouldResumeInBackground, scheduleBackgroundResume } from '@/lib/backgroundPlayback';
 import { trackError } from '@/lib/telemetry';
+import { logPlayback, ytStateName } from '@/lib/playbackLog';
 
 // Minimal structural types for the YouTube IFrame API surface this adapter uses.
 interface YTPlayerInstance {
@@ -295,6 +296,9 @@ export function YouTubePlayer({
             }
           },
           onStateChange: (event: { data: number }) => {
+            if (!mutedRef.current) {
+              logPlayback('yt_state', { state: ytStateName(event.data), room: useStore.getState().state?.transport?.state ?? null });
+            }
             // PLAYING: playback actually started, clear any prior failure.
             if (event.data === 1) onPlayErrorRef.current?.(null);
             // The muted visual video autoplays on every loadVideoById; in a room
@@ -317,6 +321,7 @@ export function YouTubePlayer({
             // The embed can undo that first playVideo() while it finishes its
             // own pause, so a few short follow-ups re-check and resume again.
             if (needsBackgroundResume(event.data, mutedRef.current)) {
+              logPlayback('yt_resume', { from: ytStateName(event.data) });
               player.playVideo();
               cancelResumeRef.current?.();
               cancelResumeRef.current = scheduleBackgroundResume(() => {
@@ -327,12 +332,14 @@ export function YouTubePlayer({
                   return false;
                 }
                 if (!needsBackgroundResume(state, mutedRef.current)) return false;
+                logPlayback('yt_resume_retry', { from: ytStateName(state) });
                 player.playVideo();
                 return true;
               });
             }
           },
           onError: (event: { data: number }) => {
+            if (!mutedRef.current) logPlayback('yt_error', { code: event.data });
             if (isUnplayableYtError(event.data) && nowPlayingIdRef.current) {
               trackError('playback_failed', new Error(`youtube error ${event.data}`));
               if (mutedRef.current) onMutedErrorRef.current?.(nowPlayingIdRef.current);

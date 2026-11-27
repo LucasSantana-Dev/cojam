@@ -8,6 +8,7 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- Local playback diagnostics in the room: page visibility, YouTube player states, resumes, transport and socket changes are kept in the browser (never sent) and read with `copy(cojamPlaybackLog())` in the console, to explain music stopping in a minimized window
 - Feature flag panel at `/admin/flags` (behind `ADMIN_TOKEN`) and `server flag`: sync, queue voting, chat, public rooms, video and screen share change without editing the environment or recreating containers, with an audit trail
 - Host moderation tools: `chat.delete` and `room.kick` (#227)
 - Chat system messages for track changes and member join/leave (#228)
