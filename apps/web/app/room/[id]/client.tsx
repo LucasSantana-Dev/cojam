@@ -30,7 +30,8 @@ import { AddTrackForm } from '../components/AddTrackForm';
 import { ListenersStage } from '../components/ListenersStage';
 import { ShareRoomButton } from '../components/ShareRoomButton';
 import { ReportRoomButton } from '../components/ReportRoomButton';
-import { ScreenSharePanel } from '../components/ScreenSharePanel';
+import { ScreenSharePanelView } from '../components/ScreenSharePanel';
+import { useScreenShare } from '../components/useScreenShare';
 import { PublicRoomToggle } from '../components/PublicRoomToggle';
 import { AvatarMenu } from '../components/AvatarMenu';
 import { CharacterPicker } from '../components/CharacterPicker';
@@ -198,6 +199,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
   useCoverFlight(nowPlaying?.id, motion.flip);
   // Modo palco (opt-in, remembered in this browser); the round 4 room is the default.
   const palco = usePalcoView();
+  // Screen share (#310) lives for the whole visit, above both layouts: the
+  // panel moves between the round 4 room and Modo palco, the share does not end.
+  const screenShare = useScreenShare(roomId);
 
   // U5: compute room control permission for this user
   const myUserId = useMyUserId();
@@ -591,10 +595,18 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   // Screen share (#310): private rooms with room auth only; the server
   // enforces both and every other rule.
-  const screenPanel =
-    f.screenShare && f.roomAuth ? (
-      <ScreenSharePanel roomId={roomId} canModerate={moderate} isPublic={Boolean(store.state?.public)} />
-    ) : null;
+  // Rendered in one place at a time: inside Modo palco when it is on, in the
+  // round 4 layout otherwise (that tree stays mounted, hidden, under palco).
+  const screenShareOn = f.screenShare && f.roomAuth;
+  const screenPanelNode = screenShareOn ? (
+    <ScreenSharePanelView
+      roomId={roomId}
+      canModerate={moderate}
+      isPublic={Boolean(store.state?.public)}
+      share={screenShare}
+    />
+  ) : null;
+  const screenPanel = palco ? null : screenPanelNode;
 
   const heroPanel = (
     <NowPlayingCard
@@ -778,6 +790,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
             queue={queuePanel}
             chat={chatPanel}
             queueCount={store.state?.queue.filter((t) => t.id !== store.state?.nowPlayingId).length ?? 0}
+            screenShare={screenPanelNode}
             hasPlayer={videoMode || Boolean(youtubeAudio) || mutedVideo || fixtureYt}
             artwork={artwork}
             canControl={hostControl}
