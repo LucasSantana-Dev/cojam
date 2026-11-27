@@ -557,6 +557,11 @@ screen share usually offers. Added in small PRs:
 - **Viewer**: volume slider (remembered per browser), picture in picture
   where the browser supports it, live time and viewer count.
 
+- **What is on screen**: `screen.label` lets the broadcasting connection set
+  an optional line (60 characters, whitespace collapsed, room name filter)
+  that the card shows before anyone chooses to watch. It replaces the
+  thumbnail as a hint without opening a peer. Not written to the trail.
+
 Left out on purpose: a live thumbnail before "Assistir" (it would open a peer
 before the viewer opts in, which 5.3 and the IP disclosure forbid), and the
 viewer list for everyone (needs a protocol change and a privacy call; the

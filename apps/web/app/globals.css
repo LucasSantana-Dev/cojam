@@ -3361,3 +3361,13 @@ textarea.age-gate__input { resize: vertical; }
   border: 0;
 }
 .screen-share__tip { font-size: 0.85rem; }
+.screen-share__label label { display: grid; gap: 0.25rem; font-size: 0.85rem; color: var(--color-text-secondary); }
+.screen-share__label input {
+  min-height: 2.25rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+.screen-share__showing { margin: 0; font-size: 0.9rem; color: var(--color-text-primary); overflow-wrap: anywhere; }

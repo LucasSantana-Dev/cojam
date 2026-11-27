@@ -1416,6 +1416,10 @@ export async function screenRefuse(roomId: string, clientId: string): Promise<vo
   await screenRpc('screen.refuse', { roomId, clientId });
 }
 
+export async function screenLabel(roomId: string, label: string): Promise<void> {
+  await screenRpc('screen.label', { roomId, label });
+}
+
 export async function rtcSignal(roomId: string, to: string, payload: SignalPayload): Promise<void> {
   await screenRpc('rtc.signal', { roomId, to, payload });
 }

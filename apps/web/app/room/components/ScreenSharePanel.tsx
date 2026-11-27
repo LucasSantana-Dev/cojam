@@ -67,6 +67,38 @@ function QualityPicker({ share }: { share: ScreenShare }) {
   );
 }
 
+// The broadcaster's optional line about what is on screen, shown on the card
+// before anyone chooses to watch (spec 5.7). A text hint, never a picture.
+function LabelField({ share }: { share: ScreenShare }) {
+  const current = share.screen?.label ?? '';
+  const [draft, setDraft] = useState(current);
+  const [saved, setSaved] = useState(current);
+  if (current !== saved) {
+    setSaved(current);
+    setDraft(current);
+  }
+  const save = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (draft.trim() === current) return;
+    await share.setLabel(draft);
+  };
+  return (
+    <form className="screen-share__label" onSubmit={save}>
+      <label>
+        <span>O que você está mostrando (opcional)</span>
+        <input
+          type="text"
+          value={draft}
+          maxLength={60}
+          placeholder="Ex.: revisão do projeto"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => void save()}
+        />
+      </label>
+    </form>
+  );
+}
+
 function StreamVideo({
   stream,
   muted,
@@ -496,6 +528,7 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
             </div>
           )}
           <QualityPicker share={share} />
+          <LabelField share={share} />
           {share.limitation && (
             <p className="screen-share__note" role="status" data-testid="screen-share-limited">
               {share.limitation === 'bandwidth'
@@ -563,6 +596,11 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
               {liveFor(screen.startedAtMs, now)} · {screen.viewerCount} de {screen.maxViewers} assistindo
             </span>
           </div>
+          {screen.label && (
+            <p className="screen-share__showing" data-testid="screen-share-label">
+              Mostrando: {screen.label}
+            </p>
+          )}
           <div className="screen-share__actions">
             <button
               type="button"

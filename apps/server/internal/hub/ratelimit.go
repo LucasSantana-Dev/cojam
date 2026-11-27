@@ -155,6 +155,7 @@ var mutationMethods = map[string]bool{
 	"screen.unwatch":              true,
 	"screen.lock":                 true,
 	"screen.refuse":               true,
+	"screen.label":                true,
 }
 
 // Defaults for the mutation limiter: a host curating a queue clicks in

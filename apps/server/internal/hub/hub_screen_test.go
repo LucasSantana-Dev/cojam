@@ -813,3 +813,32 @@ func TestScreenRefuse_NonViewerByIdentity(t *testing.T) {
 	r.join(screenRoom, "c-ana2", "u-ana")
 	wantUserError(t, r.watch("c-ana2", "u-ana"), "não está aceitando")
 }
+
+func TestScreenLabel(t *testing.T) {
+	r := newScreenRig(t)
+	r.hostRoom("ana")
+	_, err := r.call("c-host", "u-host", "screen.label", map[string]any{"roomId": screenRoom, "label": "Filme"})
+	wantUserError(t, err, "Ninguém")
+	r.start("c-host", "u-host")
+
+	r.mustCall("c-host", "u-host", "screen.label", map[string]any{"roomId": screenRoom, "label": "  Revisão   do   projeto "})
+	if got := r.screen().Label; got != "Revisão do projeto" {
+		t.Fatalf("label = %q, want trimmed and collapsed", got)
+	}
+	// Only the broadcasting connection sets it, not other members.
+	_, err = r.call("c-ana", "u-ana", "screen.label", map[string]any{"roomId": screenRoom, "label": "Outro"})
+	wantUserError(t, err, "Só quem compartilha")
+	// Too long and filtered text are refused; the label stays.
+	_, err = r.call("c-host", "u-host", "screen.label", map[string]any{"roomId": screenRoom, "label": strings.Repeat("a", 61)})
+	wantUserError(t, err, "60")
+	_, err = r.call("c-host", "u-host", "screen.label", map[string]any{"roomId": screenRoom, "label": "p o r n o"})
+	wantUserError(t, err, "não é permitido")
+	if got := r.screen().Label; got != "Revisão do projeto" {
+		t.Fatalf("label after refusals = %q", got)
+	}
+	// Empty clears it.
+	r.mustCall("c-host", "u-host", "screen.label", map[string]any{"roomId": screenRoom, "label": ""})
+	if got := r.screen().Label; got != "" {
+		t.Fatalf("label after clear = %q, want empty", got)
+	}
+}
