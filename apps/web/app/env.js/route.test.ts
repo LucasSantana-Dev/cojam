@@ -1,5 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FEATURE_ENV_VARS } from '@/lib/features';
+import type { FlagOverrides } from '@/lib/flagOverrides';
+
+// The admin panel's overrides come from the Go server; tests set them here.
+const overrides = vi.hoisted(() => ({ current: {} as FlagOverrides }));
+vi.mock('@/lib/flagOverrides', () => ({ getFlagOverrides: async () => overrides.current }));
+
 import { GET } from './route';
 
 const FEATURE_KEYS = Object.values(FEATURE_ENV_VARS);
@@ -34,17 +40,17 @@ describe('env.js route supabase overrides', () => {
 
   it('emits stunUrls only when COJAM_STUN_URLS is set, even empty (#310)', async () => {
     delete process.env.COJAM_STUN_URLS;
-    expect((await parseBody(GET())).stunUrls).toBeUndefined();
+    expect((await parseBody(await GET())).stunUrls).toBeUndefined();
     process.env.COJAM_STUN_URLS = '';
-    expect((await parseBody(GET())).stunUrls).toBe('');
+    expect((await parseBody(await GET())).stunUrls).toBe('');
     process.env.COJAM_STUN_URLS = 'stun:example.org:3478';
-    expect((await parseBody(GET())).stunUrls).toBe('stun:example.org:3478');
+    expect((await parseBody(await GET())).stunUrls).toBe('stun:example.org:3478');
   });
 
   it('emits both supabase values when both are set', async () => {
     process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
     process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.supabaseUrl).toBe('https://runtime.supabase.co');
     expect(env.supabaseAnonKey).toBe('runtime-key');
   });
@@ -57,7 +63,7 @@ describe('env.js route supabase overrides', () => {
     process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
     process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
     process.env.COJAM_FEATURE_SUPABASE_AUTH = 'false';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.supabaseUrl).toBeUndefined();
     expect(env.supabaseAnonKey).toBeUndefined();
   });
@@ -66,7 +72,7 @@ describe('env.js route supabase overrides', () => {
     process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
     process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
     process.env.COJAM_FEATURE_SUPABASE_AUTH = 'true';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.supabaseUrl).toBe('https://runtime.supabase.co');
     expect(env.supabaseAnonKey).toBe('runtime-key');
   });
@@ -77,7 +83,7 @@ describe('env.js route supabase overrides', () => {
     process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
     process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
     delete process.env.COJAM_FEATURE_SUPABASE_AUTH;
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.supabaseUrl).toBe('https://runtime.supabase.co');
     expect(env.supabaseAnonKey).toBe('runtime-key');
   });
@@ -88,7 +94,7 @@ describe('env.js route supabase overrides', () => {
       process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
       process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
       process.env.COJAM_FEATURE_SUPABASE_AUTH = value;
-      const env = await parseBody(GET());
+      const env = await parseBody(await GET());
       expect(env.supabaseUrl).toBeUndefined();
       expect(env.supabaseAnonKey).toBeUndefined();
     },
@@ -97,7 +103,7 @@ describe('env.js route supabase overrides', () => {
   it('emits neither when only the URL is set', async () => {
     process.env.COJAM_SUPABASE_URL = 'https://runtime.supabase.co';
     delete process.env.COJAM_SUPABASE_ANON_KEY;
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.supabaseUrl).toBeUndefined();
     expect(env.supabaseAnonKey).toBeUndefined();
   });
@@ -105,7 +111,7 @@ describe('env.js route supabase overrides', () => {
   it('emits neither when only the anon key is set', async () => {
     delete process.env.COJAM_SUPABASE_URL;
     process.env.COJAM_SUPABASE_ANON_KEY = 'runtime-key';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.supabaseUrl).toBeUndefined();
     expect(env.supabaseAnonKey).toBeUndefined();
   });
@@ -113,7 +119,7 @@ describe('env.js route supabase overrides', () => {
   it('emits neither when both are unset', async () => {
     delete process.env.COJAM_SUPABASE_URL;
     delete process.env.COJAM_SUPABASE_ANON_KEY;
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.supabaseUrl).toBeUndefined();
     expect(env.supabaseAnonKey).toBeUndefined();
   });
@@ -136,43 +142,43 @@ describe('env.js route features map', () => {
 
   it('emits a flag inside features when its COJAM_FEATURE_* var is set', async () => {
     process.env.COJAM_FEATURE_ROOM_AUTH = 'true';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toEqual({ roomAuth: true });
   });
 
   it('emits false when a flag is explicitly off', async () => {
     process.env.COJAM_FEATURE_ROOM_AUTH = 'false';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toEqual({ roomAuth: false });
   });
 
   it('emits only the flags that are set', async () => {
     process.env.COJAM_FEATURE_SPOTIFY = 'true';
     process.env.COJAM_FEATURE_SYNC = 'false';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toEqual({ spotify: true, sync: false });
   });
 
   it.each(['1', 'on', 'yes', 'TRUE'])('emits true for the on synonym %s', async (value) => {
     process.env.COJAM_FEATURE_SYNC = value;
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toEqual({ sync: true });
   });
 
   it.each(['0', 'off', 'no', 'False'])('emits false for the off synonym %s', async (value) => {
     process.env.COJAM_FEATURE_SYNC = value;
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toEqual({ sync: false });
   });
 
   it('treats an unrecognized value like unset, so the build-time flag applies', async () => {
     process.env.COJAM_FEATURE_SYNC = 'maybe';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toBeUndefined();
   });
 
   it('omits the features map when no COJAM_FEATURE_* var is set, so build-time flags apply', async () => {
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toBeUndefined();
   });
 });
@@ -194,18 +200,47 @@ describe('env.js route roomChat flag (F8)', () => {
 
   it('emits roomChat inside features when COJAM_FEATURE_ROOM_CHAT=true', async () => {
     process.env.COJAM_FEATURE_ROOM_CHAT = 'true';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toEqual({ roomChat: true });
   });
 
   it('emits roomChat false when explicitly off', async () => {
     process.env.COJAM_FEATURE_ROOM_CHAT = 'false';
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toEqual({ roomChat: false });
   });
 
   it('omits roomChat when unset so the build-time flag applies', async () => {
-    const env = await parseBody(GET());
+    const env = await parseBody(await GET());
     expect(env.features).toBeUndefined();
+  });
+});
+
+describe('env.js route admin panel overrides', () => {
+  let saved: Record<string, string | undefined>;
+  beforeEach(() => {
+    saved = Object.fromEntries(FEATURE_KEYS.map((k) => [k, process.env[k]]));
+    for (const k of FEATURE_KEYS) delete process.env[k];
+  });
+  afterEach(() => {
+    overrides.current = {};
+    for (const k of FEATURE_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it('lets an override win over the COJAM_FEATURE_* value', async () => {
+    process.env.COJAM_FEATURE_SCREENSHARE = 'true';
+    process.env.COJAM_FEATURE_SYNC = 'true';
+    overrides.current = { screenShare: false, roomChat: true };
+    const env = await parseBody(await GET());
+    expect(env.features).toEqual({ screenShare: false, roomChat: true, sync: true });
+  });
+
+  it('keeps the environment when there is no override', async () => {
+    process.env.COJAM_FEATURE_VIDEO = 'false';
+    const env = await parseBody(await GET());
+    expect(env.features).toEqual({ video: false });
   });
 });

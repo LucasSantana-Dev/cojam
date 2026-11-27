@@ -65,7 +65,7 @@ func TestQueueClear_KeepsHeadAndHistory(t *testing.T) {
 
 func TestQueueClear_DropsVotesOfRemoved(t *testing.T) {
 	h := clearSetup(t)
-	h.votingEnabled = true
+	h.votingEnabled.Store(true)
 	historyAdd(t, h, "one")
 	historyAdd(t, h, "two")
 	historyAdd(t, h, "three")

@@ -757,8 +757,8 @@ func TestScreenConfig_NeedsRoomAuthEverywhere(t *testing.T) {
 	// Tested here through the hub's contract; the boot check itself lives in
 	// cmd/server (screenShareConfigError) and is tested there.
 	h := NewHub(nil).WithScreenShare(true, []string{"", "  "})
-	if h.screen.allowlist != nil {
-		t.Fatalf("blank allowlist entries must mean no allowlist, got %v", h.screen.allowlist)
+	if set := h.screen.allowlist.Load(); set != nil {
+		t.Fatalf("blank allowlist entries must mean no allowlist, got %v", *set)
 	}
 }
 

@@ -106,7 +106,7 @@ func TestVideoHeartbeatNotForAudioOrFlagOff(t *testing.T) {
 		t.Fatalf("audio track must not heartbeat, got %d", n)
 	}
 	h2, _, id2 := newVideoHub(t, "video")
-	h2.videoEnabled = false
+	h2.videoEnabled.Store(false)
 	play(t, h2, id2)
 	h2.StopHeartbeats()
 	play(t, h2, id2)

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within, cleanup } from '@testing-library/react';
 import type { ChatMessage, RoomState, TrackRef } from '@cojam/shared';
 import { useStore, type Member } from '@/lib/realtime';
 import { WORLDS, frameStage, screenRect } from '@/lib/palco';
@@ -209,6 +209,15 @@ describe('PalcoView', () => {
     expect(fake.advance).toHaveBeenCalledWith('R1', 't1');
     fireEvent.click(screen.getByRole('button', { name: 'Pausar' }));
     await waitFor(() => expect(fake.pause).toHaveBeenCalledWith('R1', 4200));
+  });
+
+  it('puts the screen share panel in the HUD, and nothing when the flag is off', async () => {
+    await mount({ screenShare: <button type="button">Compartilhar tela</button> });
+    const hud = screen.getByTestId('palco-hud');
+    expect(within(hud).getByRole('button', { name: 'Compartilhar tela' })).toBeTruthy();
+    cleanup();
+    await mount();
+    expect(screen.queryByTestId('palco-share')).toBeNull();
   });
 
   it('shows no transport to who cannot control', async () => {

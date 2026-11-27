@@ -23,6 +23,8 @@ const config: NextConfig = {
     // server before Next sees it.
     return [
       { source: '/api/stats/:path*', destination: `${server}/api/stats/:path*` },
+      { source: '/api/admin/:path*', destination: `${server}/api/admin/:path*` },
+      { source: '/api/features', destination: `${server}/api/features` },
     ];
   },
   // Security headers — CoJam shipped none of these. connect-src covers the

@@ -53,6 +53,9 @@ interface PalcoViewProps {
   addOpen?: boolean;
   onAddOpen?: () => void;
   onAddClose?: () => void;
+  // Screen share (#310): the room's panel (share button, live card, or the
+  // shared video), rendered in the HUD above the tabs. Null when the flag is off.
+  screenShare?: ReactNode;
 }
 
 const BUBBLE_MS = 4500;
@@ -111,7 +114,7 @@ function PalcoTransport({ roomId, activePlayer, nowPlayingId, playing }: { roomI
   );
 }
 
-export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork, canControl = false, activePlayer = null, volume, servicePicker, addOpen = false, onAddOpen, onAddClose }: PalcoViewProps) {
+export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork, canControl = false, activePlayer = null, volume, servicePicker, addOpen = false, onAddOpen, onAddClose, screenShare = null }: PalcoViewProps) {
   const state = useStore((s) => s.state);
   const members = useStore((s) => s.members);
   const clientId = useStore((s) => s.clientId);
@@ -679,6 +682,11 @@ export function PalcoView({ roomId, queue, chat, queueCount, hasPlayer, artwork,
               {canControl && <PalcoTransport roomId={roomId} activePlayer={activePlayer} nowPlayingId={nowPlayingId} playing={transport?.state === 'playing'} />}
               {volume}
               {servicePicker}
+            </div>
+          )}
+          {screenShare && (
+            <div className="palco__share" data-testid="palco-share">
+              {screenShare}
             </div>
           )}
           <div className="palco__tabs" role="tablist" aria-label="Painéis do palco" onKeyDown={onTabKey}>

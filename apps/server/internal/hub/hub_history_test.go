@@ -70,7 +70,7 @@ func TestHistory_ReAddRPC_ControllersOnlyNewIDKeepsHistory(t *testing.T) {
 // History (it would show as played and evict real plays); chat says why.
 func TestHistory_AutoSkipSourcelessIsDroppedNotRecorded(t *testing.T) {
 	h := NewHub(nil)
-	h.chatEnabled = true
+	h.chatEnabled.Store(true)
 	rolesJoin(t, h, "c-o", "owner")
 	historyAdd(t, h, "one")
 	historyAdd(t, h, "two")
@@ -178,7 +178,7 @@ func TestHistory_LegacyRoomMigratedOnLoad(t *testing.T) {
 // why in chat, and is idempotent for a stale trackId.
 func TestHistory_SkipUnplayableRPC(t *testing.T) {
 	h := NewHub(nil)
-	h.chatEnabled = true
+	h.chatEnabled.Store(true)
 	rolesJoin(t, h, "c-o", "owner")
 	rolesJoin(t, h, "c-b", "bob")
 	historyAdd(t, h, "one")

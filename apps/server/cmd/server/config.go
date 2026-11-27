@@ -46,6 +46,15 @@ func validateProdConfig(getenv func(string) string) (fatal, warn []string) {
 		}
 	}
 
+	// The feature flag panel (admin_flags.go) is off without ADMIN_TOKEN.
+	// A short one is fatal: it is the only lock on a production switchboard.
+	switch token := getenv("ADMIN_TOKEN"); {
+	case token == "":
+		warn = append(warn, "ADMIN_TOKEN is unset: the feature flag panel is off (flags follow the environment and `server flag`)")
+	case len(token) < minAdminTokenLen:
+		fatal = append(fatal, fmt.Sprintf("ADMIN_TOKEN is shorter than %d bytes: the feature flag panel would be guessable", minAdminTokenLen))
+	}
+
 	if featureEnabledIn(getenv, "FEATURE_SUPABASE_AUTH", false) &&
 		getenv("SUPABASE_URL") == "" && getenv("SUPABASE_JWT_SECRET") == "" {
 		fatal = append(fatal, "FEATURE_SUPABASE_AUTH is on but neither SUPABASE_URL nor SUPABASE_JWT_SECRET is set: users would be unauthenticated")

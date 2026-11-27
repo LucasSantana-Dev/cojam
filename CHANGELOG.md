@@ -8,6 +8,7 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- Feature flag panel at `/admin/flags` (behind `ADMIN_TOKEN`) and `server flag`: sync, queue voting, chat, public rooms, video and screen share change without editing the environment or recreating containers, with an audit trail
 - Host moderation tools: `chat.delete` and `room.kick` (#227)
 - Chat system messages for track changes and member join/leave (#228)
 - Activity rail, shared room-age clock and guest identity signal in the room (#229)
