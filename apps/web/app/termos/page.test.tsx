@@ -24,6 +24,16 @@ describe('TermsPage', () => {
     expect(container.textContent).toContain('nunca transmite áudio');
   });
 
+  it('sets the screen share rules: rights, age, no recording (#310)', () => {
+    const { container } = render(<TermsPage />);
+    const text = container.textContent ?? '';
+    expect(screen.getByRole('heading', { level: 2, name: /Compartilhamento de tela/ })).toBeTruthy();
+    expect(text).toContain('Compartilhe só o que você tem direito de mostrar');
+    expect(text).toContain('transmitir ou assistir a um compartilhamento de tela');
+    expect(text).toContain('o CoJam não vê, não grava e não modera');
+    expect(text).not.toContain('[[REVISAR');
+  });
+
   it('is indexable with a canonical', () => {
     expect(metadata.alternates?.canonical).toBe('/termos');
     expect(metadata.robots).toMatchObject({ index: true });
@@ -33,7 +43,7 @@ describe('TermsPage', () => {
     const { container } = render(<TermsPage />);
     expect(container.querySelector('.pws__v--wide .pws-led')?.getAttribute('data-led')).toBe('TERMOS / DE USO');
     const toc = screen.getByRole('navigation', { name: 'Nesta página' });
-    expect(toc.querySelectorAll('li').length).toBe(10);
+    expect(toc.querySelectorAll('li').length).toBe(11);
     const first = toc.querySelector('a[href^="#"]') as HTMLAnchorElement;
     expect(container.querySelector(first.getAttribute('href')!)).toHaveTextContent('1. O que é o CoJam');
     expect(container.querySelector('main.pw-plate')).not.toBeNull();

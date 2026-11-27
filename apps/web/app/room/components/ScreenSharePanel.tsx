@@ -42,6 +42,9 @@ export function ScreenSharePanel({
   const report = useReportDialog();
   const connections = useStore((s) => s.connections);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // The same 16+ affirmation gates sharing and, since 2026-11-27 (owner
+  // decision Q1 in the spec), watching too.
+  const [confirmMode, setConfirmMode] = useState<'share' | 'watch'>('share');
   const [ageChecked, setAgeChecked] = useState(false);
   const [soundOn, setSoundOn] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -86,7 +89,19 @@ export function ScreenSharePanel({
     if (!hasAffirmedAge() && !ageChecked) return;
     affirmAge();
     setConfirmOpen(false);
-    await share.start();
+    if (confirmMode === 'watch') await share.watch();
+    else await share.start();
+  };
+
+  const askToConfirm = (mode: 'share' | 'watch') => {
+    setAgeChecked(false);
+    setConfirmMode(mode);
+    setConfirmOpen(true);
+  };
+
+  const onWatch = () => {
+    if (hasAffirmedAge()) void share.watch();
+    else askToConfirm('watch');
   };
 
   const confirmDialog = (
@@ -102,13 +117,20 @@ export function ScreenSharePanel({
     >
       <form className="age-gate__panel" onSubmit={confirmStart}>
         <h2 id="screen-share-confirm-title" className="age-gate__title">
-          Compartilhar a tela
+          {confirmMode === 'watch' ? 'Assistir à tela compartilhada' : 'Compartilhar a tela'}
         </h2>
-        <p className="age-gate__body">
-          Até 5 pessoas desta sala podem assistir, cada uma só depois de escolher assistir. A imagem vai direto do seu
-          navegador para elas: o CoJam não vê nem grava nada. Quem assiste vê o seu endereço de rede, e você vê o delas.
-          Compartilhe só o que você tem direito de mostrar.
-        </p>
+        {confirmMode === 'watch' ? (
+          <p className="age-gate__body">
+            Esta transmissão não é moderada: o CoJam não vê nem grava o que é compartilhado. Assistir conecta você
+            diretamente a {broadcasterName}, e vocês verão o endereço de rede um do outro.
+          </p>
+        ) : (
+          <p className="age-gate__body">
+            Até 5 pessoas desta sala podem assistir, cada uma só depois de escolher assistir. A imagem vai direto do seu
+            navegador para elas: o CoJam não vê nem grava nada. Quem assiste vê o seu endereço de rede, e você vê o
+            delas. Compartilhe só o que você tem direito de mostrar (veja os <a href="/termos">Termos de Uso</a>).
+          </p>
+        )}
         {!hasAffirmedAge() && (
           <label className="age-gate__field screen-share__check">
             <input type="checkbox" checked={ageChecked} onChange={(e) => setAgeChecked(e.target.checked)} />
@@ -117,7 +139,7 @@ export function ScreenSharePanel({
         )}
         <div className="age-gate__actions">
           <button type="submit" className="age-gate__btn" disabled={!hasAffirmedAge() && !ageChecked}>
-            Escolher o que compartilhar
+            {confirmMode === 'watch' ? 'Assistir' : 'Escolher o que compartilhar'}
           </button>
           <button type="button" className="age-gate__btn age-gate__btn--quiet" onClick={() => setConfirmOpen(false)}>
             Cancelar
@@ -268,7 +290,7 @@ export function ScreenSharePanel({
               type="button"
               className="screen-share__btn screen-share__btn--primary"
               disabled={share.busy || screen.locked || full}
-              onClick={() => void share.watch()}
+              onClick={onWatch}
             >
               Assistir
             </button>
@@ -316,10 +338,7 @@ export function ScreenSharePanel({
               type="button"
               className="screen-share__btn"
               disabled={share.busy}
-              onClick={() => {
-                setAgeChecked(false);
-                setConfirmOpen(true);
-              }}
+              onClick={() => askToConfirm('share')}
             >
               Compartilhar tela
             </button>

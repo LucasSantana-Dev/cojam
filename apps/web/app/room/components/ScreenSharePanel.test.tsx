@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import type { RoomState, ScreenShareState } from '@cojam/shared';
 import { ScreenSharePanel } from './ScreenSharePanel';
 import { useStore } from '@/lib/realtime';
+import { affirmAge } from '@/lib/ageGate';
 
 // The RPC wrappers are mocked; the panel drives the real store, so what it
 // shows follows state.screen exactly like in the app.
@@ -125,7 +126,21 @@ describe('ScreenSharePanel', () => {
     expect(screen.getByText(/está cheia/)).toBeTruthy();
   });
 
+  it('asks for the age affirmation before watching, then watches (owner decision Q1)', async () => {
+    seed({ screen: live() });
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Assistir' }));
+    expect(rpc.screenWatch).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog');
+    const go = within(dialog).getByRole('button', { name: 'Assistir' }) as HTMLButtonElement;
+    expect(go.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /anos ou mais/ }));
+    fireEvent.click(go);
+    await waitFor(() => expect(rpc.screenWatch).toHaveBeenCalledWith('ROOM00000001'));
+  });
+
   it('watching shows the notice that cannot be closed, and "Parar de assistir" unwatches', async () => {
+    affirmAge();
     seed({ screen: live() });
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Assistir' }));
@@ -140,6 +155,7 @@ describe('ScreenSharePanel', () => {
   });
 
   it('drops the video when the share disappears from the room state', async () => {
+    affirmAge();
     seed({ screen: live() });
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Assistir' }));

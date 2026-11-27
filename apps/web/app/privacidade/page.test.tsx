@@ -53,6 +53,22 @@ describe('PrivacyPage', () => {
     expect(container.textContent).not.toMatch(/apenas contagens|só contagens|somente contagens/i);
   });
 
+  it('discloses screen share: peer IP exposure, the STUN providers and the session trail (#310)', () => {
+    const { container } = render(<PrivacyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('Google e Cloudflare (servidores STUN)');
+    expect(text).toContain('Quem transmite vê o de cada espectador');
+    expect(text).toContain('Registro de sessões de compartilhamento de tela');
+    expect(text).toContain('Nunca a imagem, o som nem endereços de rede');
+    expect(text).toContain('só funciona em salas privadas');
+  });
+
+  it('keeps only the review marker that still has no answer', () => {
+    const { container } = render(<PrivacyPage />);
+    const markers = (container.textContent ?? '').match(/\[\[REVISAR[^\]]*\]\]/g) ?? [];
+    expect(markers).toEqual(['[[REVISAR: mecanismo de transferência]]']);
+  });
+
   it('is indexable with a canonical', () => {
     expect(metadata.alternates?.canonical).toBe('/privacidade');
     expect(metadata.robots).toMatchObject({ index: true });

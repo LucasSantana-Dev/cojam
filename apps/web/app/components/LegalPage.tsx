@@ -8,7 +8,7 @@ import { PalcoNav } from '@/app/components/PalcoNav';
 // Shared shell for the legal pages (#253). Static, no client JS of its own. Palco screen
 // (wave 2): the band scene with the page name on the stage screen, a table of contents
 // from 64rem, and the text on one readable plate.
-export const LEGAL_DRAFT_DATE = '2026-10-07';
+export const LEGAL_DRAFT_DATE = '2026-11-27';
 
 function textOf(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
