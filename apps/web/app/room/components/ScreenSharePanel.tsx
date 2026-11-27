@@ -8,6 +8,7 @@ import { useReportDialog } from '@/app/components/useReportDialog';
 import { Stage } from './Stage';
 import { canCaptureScreen, useScreenShare } from './useScreenShare';
 import { SCREEN_QUALITIES, uploadMbps, type ScreenQualityId } from '@/lib/screenShare';
+import { hasSharedBefore } from '@/lib/screenShareNotices';
 
 // Screen share v1 (#310, spec 5.2, 5.3, 5.6). Rendered only when
 // FEATURE_SCREENSHARE is on; the server stays authoritative on every rule
@@ -450,12 +451,19 @@ export function ScreenSharePanelView({
             delas. Compartilhe só o que você tem direito de mostrar (veja os <a href="/termos">Termos de Uso</a>).
           </p>
         )}
-        {confirmMode === 'share' && (
-          <p className="age-gate__body screen-share__tip">
-            Para levar o som, escolha uma <strong>aba do navegador</strong> e deixe ligado{' '}
-            <strong>Compartilhar áudio da aba</strong>. No Mac, janela e tela inteira vão sem som.
-          </p>
-        )}
+        {confirmMode === 'share' &&
+          (hasSharedBefore() ? (
+            <details className="age-gate__body screen-share__tip" data-testid="screen-share-tip-short">
+              <summary>Como levar o som</summary>
+              Escolha uma <strong>aba do navegador</strong> e deixe ligado <strong>Compartilhar áudio da aba</strong>.
+              No Mac, janela e tela inteira vão sem som.
+            </details>
+          ) : (
+            <p className="age-gate__body screen-share__tip">
+              Para levar o som, escolha uma <strong>aba do navegador</strong> e deixe ligado{' '}
+              <strong>Compartilhar áudio da aba</strong>. No Mac, janela e tela inteira vão sem som.
+            </p>
+          ))}
         {confirmOpen && confirmMode === 'share' && <QualityPicker share={share} />}
         {!hasAffirmedAge() && (
           <label className="age-gate__field screen-share__check">
