@@ -3493,6 +3493,16 @@ button.r4-ls__live:focus-visible { outline: 2px solid var(--color-accent); outli
 @media (max-width: 47.99rem) {
   .screen-share__toast { bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
 }
+.screen-share__label label { display: grid; gap: 0.25rem; font-size: 0.85rem; color: var(--color-text-secondary); }
+.screen-share__label input {
+  min-height: 2.25rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+.screen-share__showing { margin: 0; font-size: 0.9rem; color: var(--color-text-primary); overflow-wrap: anywhere; }
 
 /* Phones: the viewer controls stay on one row that scrolls sideways, so the
    video keeps its height (Go Live review gap 6). */
@@ -3505,3 +3515,18 @@ button.r4-ls__live:focus-visible { outline: 2px solid var(--color-accent); outli
   }
   .screen-share--watching .screen-share__actions > * { flex-shrink: 0; }
 }
+
+/* Floating window (Document Picture in Picture, Go Live gaps 11 and 12). */
+.screen-share-float-body { margin: 0; background: oklch(0.1 0.02 280); color: var(--color-text-primary); }
+.screen-share-float {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  height: 100vh;
+  padding: 0.5rem;
+  box-sizing: border-box;
+}
+.screen-share-float__video { flex: 0 0 auto; aspect-ratio: 16 / 9; background: #000; border-radius: 0.5rem; overflow: hidden; }
+.screen-share-float__video video { width: 100%; height: 100%; object-fit: contain; }
+.screen-share-float__chat { flex: 1; min-height: 0; overflow: auto; }
+.screen-share__floating { display: grid; place-items: center; min-height: 8rem; }

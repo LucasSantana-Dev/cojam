@@ -7,6 +7,7 @@ import { MINIMUM_AGE, affirmAge, hasAffirmedAge } from '@/lib/ageGate';
 import { useReportDialog } from '@/app/components/useReportDialog';
 import { Stage } from './Stage';
 import { canCaptureScreen, useScreenShare } from './useScreenShare';
+import { FloatPortal, useFloatWindow } from './ScreenShareFloat';
 import { shortcutFor, toggleFullscreen as toggleViewerFullscreen, volumeWritable } from '@/lib/screenShareView';
 import { SCREEN_QUALITIES, uploadMbps, type ScreenQualityId } from '@/lib/screenShare';
 import { onWatchRequest } from '@/lib/screenShareLive';
@@ -67,6 +68,38 @@ function QualityPicker({ share }: { share: ScreenShare }) {
         Cada pessoa assistindo usa até {uploadMbps(share.quality, 1).toLocaleString('pt-BR')} Mbps do seu upload.
       </span>
     </div>
+  );
+}
+
+// The broadcaster's optional line about what is on screen, shown on the card
+// before anyone chooses to watch (spec 5.7). A text hint, never a picture.
+function LabelField({ share }: { share: ScreenShare }) {
+  const current = share.screen?.label ?? '';
+  const [draft, setDraft] = useState(current);
+  const [saved, setSaved] = useState(current);
+  if (current !== saved) {
+    setSaved(current);
+    setDraft(current);
+  }
+  const save = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (draft.trim() === current) return;
+    await share.setLabel(draft);
+  };
+  return (
+    <form className="screen-share__label" onSubmit={save}>
+      <label>
+        <span>O que você está mostrando (opcional)</span>
+        <input
+          type="text"
+          value={draft}
+          maxLength={60}
+          placeholder="Ex.: revisão do projeto"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => void save()}
+        />
+      </label>
+    </form>
   );
 }
 
@@ -402,8 +435,26 @@ export function ScreenSharePanelView({
     }
   };
 
+  // The floating window: a full mini view with chat where the browser has
+  // Document Picture in Picture, the plain video picture in picture otherwise.
+  const float = useFloatWindow();
+  const floating = Boolean(float.win);
+  const closeFloat = float.close;
+  useEffect(() => {
+    if (!watching && !share.isBroadcaster) closeFloat();
+  }, [watching, share.isBroadcaster, closeFloat]);
+
   // Picture in picture keeps the share in a small window over other tabs.
   const togglePip = async () => {
+    if (float.supported) {
+      if (floating) {
+        float.close();
+        return;
+      }
+      const size = chat ? { width: 420, height: 640 } : { width: 480, height: 320 };
+      if (await float.open(size, `Tela de ${screen?.broadcasterName || 'Alguém'}`)) setTheater(false);
+      return;
+    }
     const el = videoRef.current;
     if (!el) return;
     try {
@@ -587,10 +638,87 @@ export function ScreenSharePanelView({
     <>
       {body()}
       {toast}
+      {float.win && floatBody(float.win)}
       {confirmDialog}
       {report.dialog}
     </>
   );
+
+  // What the floating window holds. The viewer keeps the notice that cannot
+  // be closed (spec 5.3.4), the sound, leaving, reporting and the chat; the
+  // broadcaster keeps the preview, the count and the controls over the share.
+  function floatBody(win: Window) {
+    if (watching && share.remoteStream) {
+      return (
+        <FloatPortal win={win}>
+          <div className="screen-share-float__video">
+            <StreamVideo
+              stream={share.remoteStream}
+              muted={!soundOn}
+              volume={volume}
+              label={`Tela de ${broadcasterName}`}
+              onSoundBlocked={soundBlocked}
+            />
+          </div>
+          <p className="screen-share__notice">Transmissão não moderada. O CoJam não vê nem grava o que é compartilhado.</p>
+          <div className="screen-share__actions">
+            {audioTracks > 0 && (
+              <button type="button" className="screen-share__btn" aria-pressed={soundOn} onClick={() => setSoundOn(!soundOn)}>
+                {soundOn ? 'Tirar som' : 'Tocar som'}
+              </button>
+            )}
+            <button type="button" className="screen-share__btn" onClick={float.close}>
+              Voltar para a sala
+            </button>
+            <button type="button" className="screen-share__btn" onClick={() => void share.unwatch()}>
+              Parar de assistir
+            </button>
+            <button
+              type="button"
+              className="screen-share__btn screen-share__btn--quiet"
+              onClick={() => {
+                // The report dialog lives in the room tab: come back to it.
+                float.close();
+                openReport();
+              }}
+            >
+              Denunciar transmissão
+            </button>
+          </div>
+          {chat && <div className="screen-share-float__chat">{chat}</div>}
+        </FloatPortal>
+      );
+    }
+    if (share.isBroadcaster && screen) {
+      return (
+        <FloatPortal win={win}>
+          {share.localStream && (
+            <div className="screen-share-float__video">
+              <StreamVideo stream={share.localStream} muted label="Prévia do que você compartilha" />
+            </div>
+          )}
+          <p className="screen-share__meta" data-testid="screen-share-float-count">
+            {liveFor(screen.startedAtMs, now)} · {screen.viewerCount} de {screen.maxViewers} assistindo
+          </p>
+          {share.notice && <p className="screen-share__note">{share.notice}</p>}
+          <div className="screen-share__actions">
+            <button
+              type="button"
+              className="screen-share__btn"
+              aria-pressed={screen.locked}
+              onClick={() => void share.lock(!screen.locked)}
+            >
+              {screen.locked ? 'Abrir entrada' : 'Fechar entrada'}
+            </button>
+            <button type="button" className="screen-share__btn screen-share__btn--stop" onClick={() => void share.stop()}>
+              Parar de compartilhar
+            </button>
+          </div>
+        </FloatPortal>
+      );
+    }
+    return null;
+  }
 
   function body() {
     // Watching: the video on the stage, with the notice that cannot be closed.
@@ -677,11 +805,11 @@ export function ScreenSharePanelView({
                       onClick={() => setTheater(!theater)}
                     />
                     <IconButton icon="fullscreen" label="Tela cheia" onClick={toggleFullscreen} />
-                    {share.remoteStream && canPictureInPicture() && (
+                    {share.remoteStream && (float.supported || canPictureInPicture()) && (
                       <IconButton
                         icon="pip"
-                        label={pip ? 'Voltar para a sala' : 'Janela flutuante'}
-                        pressed={pip}
+                        label={pip || floating ? 'Voltar para a sala' : 'Janela flutuante'}
+                        pressed={pip || floating}
                         onClick={() => void togglePip()}
                       />
                     )}
@@ -700,7 +828,11 @@ export function ScreenSharePanelView({
                 </div>
               }
             >
-              {share.remoteStream ? (
+              {share.remoteStream && floating ? (
+                <div className="screen-share__blank screen-share__floating" data-testid="screen-share-floating">
+                  <p className="screen-share__note">Assistindo na janela flutuante.</p>
+                </div>
+              ) : share.remoteStream ? (
                 <StreamVideo
                   stream={share.remoteStream}
                   muted={!soundOn}
@@ -748,6 +880,7 @@ export function ScreenSharePanelView({
             </div>
           )}
           <QualityPicker share={share} />
+          <LabelField share={share} />
           {share.limitation && (
             <p className="screen-share__note" role="status" data-testid="screen-share-limited">
               {share.limitation === 'bandwidth'
@@ -789,6 +922,18 @@ export function ScreenSharePanelView({
             <button type="button" className="screen-share__btn" onClick={() => void share.changeSource()}>
               Trocar o que compartilho
             </button>
+            {float.supported && (
+              <button
+                type="button"
+                className="screen-share__btn"
+                aria-pressed={floating}
+                onClick={() =>
+                  floating ? float.close() : void float.open({ width: 320, height: 300 }, 'Seu compartilhamento')
+                }
+              >
+                {floating ? 'Fechar mini controle' : 'Mini controle'}
+              </button>
+            )}
             <button
               type="button"
               className="screen-share__btn screen-share__btn--stop"
@@ -815,6 +960,11 @@ export function ScreenSharePanelView({
               {liveFor(screen.startedAtMs, now)} · {screen.viewerCount} de {screen.maxViewers} assistindo
             </span>
           </div>
+          {screen.label && (
+            <p className="screen-share__showing" data-testid="screen-share-label">
+              Mostrando: {screen.label}
+            </p>
+          )}
           <div className="screen-share__actions">
             <button
               type="button"

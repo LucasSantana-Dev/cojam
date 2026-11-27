@@ -49,6 +49,7 @@ Transport: centrifuge (server: Go `centrifugal/centrifuge`; client: `centrifuge-
 | `screen.unwatch` | `{ roomId }` | `{}` |
 | `screen.lock` | `{ roomId, locked: boolean }` | `RoomState` |
 | `screen.refuse` | `{ roomId, clientId: string }` | `{}` |
+| `screen.label` | `{ roomId, label: string }` | `RoomState` |
 | `rtc.signal` | `{ roomId, to: string, payload: SignalPayload }` | `{}` |
 | `sync.ping` | `{}` | `{ serverNowMs: number }` |
 
@@ -202,6 +203,9 @@ and relays SDP and ICE candidates.
   was refused this session. `screen.unwatch` is always allowed.
 - `screen.stop`: the broadcaster or the host. `screen.lock` and
   `screen.refuse`: the broadcaster or the host. A refusal lasts for the session.
+- `screen.label`: the broadcasting connection only. Whitespace collapsed, at
+  most 60 characters, the room name filter applies; empty clears it. Not
+  written to the trail; it ends with the share.
 - `rtc.signal` only between the broadcaster and an admitted viewer; `offer`
   only from the broadcaster, `answer` only from a viewer. Params are capped at
   16 KiB, candidate batches at 20, and unknown fields are refused. Its own

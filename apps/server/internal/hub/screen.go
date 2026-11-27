@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/centrifugal/centrifuge"
 
@@ -72,6 +73,7 @@ var screenMethods = map[string]bool{
 	"screen.unwatch": true,
 	"screen.lock":    true,
 	"screen.refuse":  true,
+	"screen.label":   true,
 	"rtc.signal":     true,
 }
 
@@ -90,6 +92,8 @@ type screenSession struct {
 	refused     map[string]struct{}
 	locked      bool
 	peakViewers int
+	// label is the broadcaster's line about what is on screen (screen.label).
+	label string
 }
 
 func (s *screenSession) projection() *queue.ScreenShareState {
@@ -100,6 +104,7 @@ func (s *screenSession) projection() *queue.ScreenShareState {
 		ViewerCount:     len(s.viewers),
 		MaxViewers:      screenMaxViewers,
 		Locked:          s.locked,
+		Label:           s.label,
 	}
 }
 
@@ -538,6 +543,38 @@ func (h *Hub) screenLock(roomID, clientID, userID string, locked bool) (json.Raw
 	})
 }
 
+// screenLabelMax caps the broadcaster's label in runes.
+const screenLabelMax = 60
+
+// screenLabel sets or clears the broadcaster's line about what is on screen
+// (spec 5.7). Only the broadcasting connection may set it. It is room-visible
+// text like the room name, so it goes through the same filter; it is not
+// written to the trail (spec 4.4: no content), and it ends with the session.
+func (h *Hub) screenLabel(roomID, clientID, label string) (json.RawMessage, error) {
+	label = strings.Join(strings.Fields(label), " ")
+	if utf8.RuneCountInString(label) > screenLabelMax {
+		return nil, userErrorf("Use até %d caracteres.", screenLabelMax)
+	}
+	if roomNameBlocked(label) {
+		return nil, userErrorf("Esse texto não é permitido. Escreva de outro jeito.")
+	}
+	return h.mutateScreen(roomID, func(room *Room, s *queue.RoomState) error {
+		cur := room.screen
+		if cur == nil {
+			return userErrorf("Ninguém está compartilhando a tela agora.")
+		}
+		if cur.broadcasterClientID != clientID {
+			return userErrorf("Só quem compartilha pode mudar esse texto.")
+		}
+		if cur.label == label {
+			return nil
+		}
+		cur.label = label
+		s.Version++
+		return nil
+	})
+}
+
 // screenRefuse removes a person from this share for the rest of the session
 // (C12): every connection of theirs loses its slot and their key cannot
 // watch again until the share ends. Kick is not a ban, and neither is this:
@@ -767,6 +804,7 @@ func (h *Hub) dispatchScreen(method string, data []byte, clientID, userID string
 		AgeAffirmed bool   `json:"ageAffirmed"`
 		Locked      bool   `json:"locked"`
 		ClientID    string `json:"clientId"`
+		Label       string `json:"label"`
 	}
 	if err := json.Unmarshal(data, &req); err != nil {
 		return nil, err
@@ -787,6 +825,8 @@ func (h *Hub) dispatchScreen(method string, data []byte, clientID, userID string
 		return h.screenLock(req.RoomID, clientID, userID, req.Locked)
 	case "screen.refuse":
 		return h.screenRefuse(req.RoomID, clientID, userID, req.ClientID)
+	case "screen.label":
+		return h.screenLabel(req.RoomID, clientID, req.Label)
 	}
 	return nil, centrifuge.ErrorMethodNotFound
 }

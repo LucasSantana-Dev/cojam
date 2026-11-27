@@ -478,6 +478,7 @@ var mutatingMethods = map[string]bool{
 	"screen.unwatch":              true,
 	"screen.lock":                 true,
 	"screen.refuse":               true,
+	"screen.label":                true,
 	"rtc.signal":                  true,
 }
 
@@ -529,6 +530,7 @@ var knownMethods = map[string]bool{
 	"screen.unwatch":              true,
 	"screen.lock":                 true,
 	"screen.refuse":               true,
+	"screen.label":                true,
 	"rtc.signal":                  true,
 }
 
@@ -2821,7 +2823,7 @@ func (h *Hub) dispatch(method string, data []byte, clientID, userID, rlKey strin
 		return h.reactionEmote(req.RoomID, clientID, req.Emote)
 
 	case "screen.start", "screen.stop", "screen.watch", "screen.unwatch",
-		"screen.lock", "screen.refuse", "rtc.signal":
+		"screen.lock", "screen.refuse", "screen.label", "rtc.signal":
 		return h.dispatchScreen(method, data, clientID, userID)
 
 	case "sync.ping":

@@ -113,6 +113,7 @@ export type ScreenShareState = {
   viewerCount: number;     // admitted viewers, 0..maxViewers
   maxViewers: number;      // 5 in v1; never hardcode it client-side
   locked: boolean;         // admission closed by the host or broadcaster
+  label?: string;          // broadcaster's line about what is on screen, up to 60 chars (spec 5.7)
 };
 
 // One ICE candidate as RTCIceCandidateInit carries it.

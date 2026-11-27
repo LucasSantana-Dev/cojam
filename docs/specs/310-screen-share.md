@@ -557,6 +557,10 @@ screen share usually offers. Added in small PRs:
 - **Viewer**: volume slider (remembered per browser), picture in picture
   where the browser supports it, live time and viewer count.
 
+- **What is on screen**: `screen.label` lets the broadcasting connection set
+  an optional line (60 characters, whitespace collapsed, room name filter)
+  that the card shows before anyone chooses to watch. It replaces the
+  thumbnail as a hint without opening a peer. Not written to the trail.
 - **Notices** (after the Go Live review): the broadcaster gets a 5 s line
   when someone starts or stops watching (a burst reads as a count); a viewer
   whose share ended because the broadcaster left the room is told so; the
@@ -569,6 +573,12 @@ screen share usually offers. Added in small PRs:
   on the iPhone; the volume slider hides where media volume is read only;
   phone hosts are told sharing works on a computer; F toggles fullscreen, M
   the sound, and a double click on the video goes fullscreen.
+
+- **Floating windows**: where Document Picture in Picture exists (Chromium),
+  "Janela flutuante" opens a small window with the video, the notice that
+  cannot be closed, sound, leaving, reporting and the chat; the broadcaster
+  gets "Mini controle" with the preview, the count, the lock and stop.
+  Elsewhere the viewer keeps the plain video picture in picture.
 
 Left out on purpose: a live thumbnail before "Assistir" (it would open a peer
 before the viewer opts in, which 5.3 and the IP disclosure forbid), and the
