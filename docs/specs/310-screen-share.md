@@ -557,6 +557,11 @@ screen share usually offers. Added in small PRs:
 - **Viewer**: volume slider (remembered per browser), picture in picture
   where the browser supports it, live time and viewer count.
 
+- **Notices** (after the Go Live review): the broadcaster gets a 5 s line
+  when someone starts or stops watching (a burst reads as a count); a viewer
+  whose share ended because the broadcaster left the room is told so; the
+  audio tip in the start dialog folds to one line after the first share.
+
 Left out on purpose: a live thumbnail before "Assistir" (it would open a peer
 before the viewer opts in, which 5.3 and the IP disclosure forbid), and the
 viewer list for everyone (needs a protocol change and a privacy call; the
