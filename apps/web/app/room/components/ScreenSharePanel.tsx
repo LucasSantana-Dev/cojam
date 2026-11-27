@@ -485,7 +485,7 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
           <div className="screen-share__head">
             <span className="screen-share__live" aria-hidden="true" />
             <strong>Você está compartilhando a tela</strong>
-            <span className="screen-share__meta">{liveFor(screen.startedAtMs, now)}</span>
+            <span className="screen-share__meta">{liveFor(screen.startedAtMs, now)} ·</span>
             <span className="screen-share__count" data-testid="screen-share-count">
               {screen.viewerCount} de {screen.maxViewers} assistindo
             </span>
