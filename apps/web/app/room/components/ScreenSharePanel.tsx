@@ -29,16 +29,23 @@ function StreamVideo({ stream, muted, label }: { stream: MediaStream; muted: boo
   return <video ref={ref} autoPlay playsInline muted={muted} aria-label={label} data-testid="screen-video" />;
 }
 
-export function ScreenSharePanel({
-  roomId,
-  canModerate,
-  isPublic,
-}: {
+type PanelProps = {
   roomId: string;
   canModerate: boolean;
   isPublic: boolean;
-}) {
-  const share = useScreenShare(roomId);
+};
+
+export type ScreenShare = ReturnType<typeof useScreenShare>;
+
+// Owns the share state itself. The room does not use this: it keeps one
+// useScreenShare for the whole visit, so switching to or from Modo palco
+// (which remounts the panel in another place) never ends a share.
+export function ScreenSharePanel(props: PanelProps) {
+  const share = useScreenShare(props.roomId);
+  return <ScreenSharePanelView {...props} share={share} />;
+}
+
+export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: PanelProps & { share: ScreenShare }) {
   const report = useReportDialog();
   const connections = useStore((s) => s.connections);
   const [confirmOpen, setConfirmOpen] = useState(false);
