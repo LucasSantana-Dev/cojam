@@ -358,6 +358,25 @@ export type ViewerState = 'connecting' | 'connected' | 'failed' | 'closed';
 // ViewerPeer is the viewer's single peer to the broadcaster. It answers the
 // broadcaster's offer, reports the received stream, and gives up after one
 // ICE restart or the connect timeout (there is no relay to fall back to).
+export type ViewerHealth = 'frozen' | 'weak' | null;
+
+export type InboundSample = { framesDecoded: number; packetsReceived: number; packetsLost: number };
+
+// viewerHealth compares two inbound video samples taken a few seconds apart
+// (spec 5.7). No decoded frame in between reads as a frozen image; under 5
+// frames per second, or more than 5% of the packets lost, as a weak
+// connection. The first sample has nothing to compare with.
+export function viewerHealth(prev: InboundSample | null, cur: InboundSample, seconds: number): ViewerHealth {
+  if (!prev || seconds <= 0) return null;
+  const frames = cur.framesDecoded - prev.framesDecoded;
+  if (frames <= 0) return 'frozen';
+  const received = cur.packetsReceived - prev.packetsReceived;
+  const lost = Math.max(0, cur.packetsLost - prev.packetsLost);
+  if (frames / seconds < 5) return 'weak';
+  if (received + lost > 0 && lost / (received + lost) > 0.05) return 'weak';
+  return null;
+}
+
 export class ViewerPeer {
   private pc: RTCPeerConnection;
   private batcher: CandidateBatcher;
@@ -400,6 +419,32 @@ export class ViewerPeer {
 
   get broadcasterId(): string {
     return this.opts.broadcasterId;
+  }
+
+  private lastSample: { at: number; sample: InboundSample } | null = null;
+
+  // health reads the inbound video stats and compares them with the last
+  // read. Call it on a timer while connected.
+  async health(nowMs = Date.now()): Promise<ViewerHealth> {
+    if (this.state !== 'connected' || typeof this.pc.getStats !== 'function') return null;
+    let sample: InboundSample | null = null;
+    try {
+      const stats = await this.pc.getStats();
+      stats.forEach((r: { type?: string; kind?: string } & Partial<InboundSample>) => {
+        if (r.type !== 'inbound-rtp' || r.kind !== 'video') return;
+        sample = {
+          framesDecoded: r.framesDecoded ?? 0,
+          packetsReceived: r.packetsReceived ?? 0,
+          packetsLost: r.packetsLost ?? 0,
+        };
+      });
+    } catch {
+      return null;
+    }
+    if (!sample) return null;
+    const prev = this.lastSample;
+    this.lastSample = { at: nowMs, sample };
+    return viewerHealth(prev?.sample ?? null, sample, prev ? (nowMs - prev.at) / 1000 : 0);
   }
 
   private setState(s: ViewerState): void {
