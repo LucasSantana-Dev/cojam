@@ -34,6 +34,12 @@ export default function PrivacyPage() {
         <strong>Nenhum áudio ou vídeo passa pelos servidores do CoJam</strong>: cada pessoa toca a
         música na própria conta, pelo SDK do próprio serviço.
       </p>
+      <p>
+        <strong>Compartilhamento de tela</strong>, quando estiver disponível: a imagem e o som vão
+        direto do navegador de quem transmite para o de quem assiste (conexão ponto a ponto). Eles
+        também não passam pelos servidores do CoJam, e o CoJam não vê nem grava o que é
+        compartilhado. O servidor só combina a conexão e registra que a sessão aconteceu (seção 3).
+      </p>
 
       <h2>3. Dados tratados, finalidade e base legal</h2>
       <table className="legal-table">
@@ -44,7 +50,7 @@ export default function PrivacyPage() {
           <tr>
             <td>Nome de exibição que você digita ao entrar, identificador de convidado (gerado e guardado no seu navegador) e token de conexão</td>
             <td>Identificar você na sala e atribuir faixas e votos</td>
-            <td>Execução do serviço solicitado (V). <code>[[REVISAR: base]]</code></td>
+            <td>Execução do serviço solicitado (V).</td>
           </tr>
           <tr>
             <td>Presença na sala (quem está conectado e desde quando), apenas em memória</td>
@@ -64,17 +70,26 @@ export default function PrivacyPage() {
           <tr>
             <td>Denúncias: identificador do denunciante (quando disponível), sala, alvo, motivo e uma cópia do conteúdo denunciado (até 500 caracteres). Quando a pessoa denunciada ainda está na sala, também o identificador dela e o nome e a mensagem que o servidor registrou, para confirmar que a denúncia aponta para quem ela descreve</td>
             <td>Moderação e segurança, inclusive proteção de crianças e adolescentes</td>
-            <td>Cumprimento de obrigação legal ou regulatória (II) e legítimo interesse (IX). <code>[[REVISAR: base]]</code></td>
+            <td>Cumprimento de obrigação legal ou regulatória (II) e legítimo interesse (IX).</td>
           </tr>
           <tr>
             <td>Registro de ações de moderação (remoção de mensagem, expulsão): sala, quem agiu, alvo, data</td>
             <td>Trilha de auditoria de moderação</td>
-            <td>Legítimo interesse (IX). <code>[[REVISAR: base]]</code></td>
+            <td>Legítimo interesse (IX).</td>
+          </tr>
+          <tr>
+            <td>
+              Registro de sessões de compartilhamento de tela: sala, quem transmitiu (identificador e
+              nome de exibição), início e fim, maior número de espectadores, a confirmação de idade e
+              o motivo do encerramento. Nunca a imagem, o som nem endereços de rede
+            </td>
+            <td>Moderação e apuração de denúncias de transmissão</td>
+            <td>Legítimo interesse (IX)</td>
           </tr>
           <tr>
             <td>Bloqueios aplicados pela moderação: identificador bloqueado, denúncia relacionada, datas</td>
             <td>Impedir que uma identidade bloqueada volte a entrar em qualquer sala</td>
-            <td>Legítimo interesse (IX). <code>[[REVISAR: base]]</code></td>
+            <td>Legítimo interesse (IX).</td>
           </tr>
           <tr>
             <td>Token de renovação do Spotify, se você conectar o Spotify</td>
@@ -84,7 +99,7 @@ export default function PrivacyPage() {
           <tr>
             <td>Confirmação de idade mínima (somente o fato de ter confirmado, sem data de nascimento)</td>
             <td>Entrada em salas encontradas no diretório público</td>
-            <td>Cumprimento de obrigação legal ou regulatória (II). <code>[[REVISAR: base]]</code></td>
+            <td>Cumprimento de obrigação legal ou regulatória (II).</td>
           </tr>
           <tr>
             <td>
@@ -94,12 +109,20 @@ export default function PrivacyPage() {
               agiu, e poucas informações genéricas (por exemplo, o serviço de música)
             </td>
             <td>Entender como o CoJam é usado e melhorar o produto</td>
-            <td>Legítimo interesse (IX). <code>[[REVISAR: base]]</code></td>
+            <td>Legítimo interesse (IX).</td>
           </tr>
           <tr>
             <td>Endereço IP e dados de conexão em registros técnicos do servidor e do provedor de rede</td>
             <td>Segurança, limite de abuso e operação</td>
             <td>Legítimo interesse (IX)</td>
+          </tr>
+          <tr>
+            <td>
+              Endereço de rede (IP) trocado entre navegadores quando você transmite ou assiste a um
+              compartilhamento de tela
+            </td>
+            <td>Estabelecer a conexão direta, que não passa pelo CoJam</td>
+            <td>Execução do serviço solicitado (V), só depois de você escolher transmitir ou assistir</td>
           </tr>
         </tbody>
       </table>
@@ -151,13 +174,14 @@ export default function PrivacyPage() {
           dias, sendo apagado quando o Spotify o invalida.
         </li>
         <li>
-          <strong>Denúncias e registros de moderação:</strong> hoje não há prazo de exclusão
-          definido no código. <code>[[PRAZO DE RETENÇÃO DE DENÚNCIAS]]</code>
+          <strong>Denúncias e registros de moderação</strong> (inclusive os de compartilhamento de
+          tela): hoje não há prazo de exclusão definido no código. Num pedido de exclusão, os
+          registros de compartilhamento de tela sobre você perdem o identificador e o nome, a não
+          ser que uma denúncia de transmissão naquela sala ainda precise deles como prova. <code>[[PRAZO DE RETENÇÃO DE DENÚNCIAS]]</code>
         </li>
         <li>
           <strong>Bloqueios:</strong> até a moderação desbloquear. Um pedido de exclusão não
-          remove um bloqueio, para que ele não sirva de caminho de volta.{' '}
-          <code>[[REVISAR: base]]</code>
+          remove um bloqueio, para que ele não sirva de caminho de volta.
         </li>
         <li>
           <strong>Eventos de uso:</strong> 13 meses. Depois disso são apagados automaticamente,
@@ -185,6 +209,23 @@ export default function PrivacyPage() {
           <tr><td>Deezer</td><td>Título, artista ou termos de busca; importação de playlists</td><td>Servidor</td></tr>
           <tr><td>MusicBrainz, ListenBrainz, Last.fm</td><td>Metadados da faixa (título, artista, ISRC) para enriquecimento e correspondência</td><td>Servidor</td></tr>
           <tr><td>Cloudflare</td><td>Todo o tráfego de acesso ao site, incluindo endereço IP, para TLS e túnel. <code>[[CONFIRMAR: uso de Cloudflare em produção]]</code></td><td>Rede</td></tr>
+          <tr>
+            <td>Quem participa de um compartilhamento de tela com você</td>
+            <td>
+              Seu endereço IP, quando você transmite ou assiste. Quem transmite vê o de cada
+              espectador, e cada espectador vê o de quem transmite. O aviso aparece antes de você
+              escolher
+            </td>
+            <td>Navegador a navegador</td>
+          </tr>
+          <tr>
+            <td>Google e Cloudflare (servidores STUN)</td>
+            <td>
+              Seu endereço IP, quando você transmite ou assiste a um compartilhamento de tela, para
+              descobrir o caminho de rede da conexão direta. Nenhuma imagem ou som chega a eles
+            </td>
+            <td>Seu navegador</td>
+          </tr>
           <tr><td>Supabase</td><td>Identificadores de conta, somente se contas forem reativadas. Hoje desativado.</td><td>Não aplicável hoje</td></tr>
         </tbody>
       </table>
@@ -251,9 +292,10 @@ export default function PrivacyPage() {
 
       <h2>9. Crianças e adolescentes (ECA Digital)</h2>
       <ul>
-        <li>Idade mínima para entrar em salas do diretório público: 16 anos, por autodeclaração. <code>[[REVISAR: idade mínima]]</code></li>
+        <li>Idade mínima para entrar em salas do diretório público: 16 anos, por autodeclaração.</li>
         <li>Salas encontradas por link de convite não passam por essa pergunta, e salas públicas têm chat ao vivo entre desconhecidos.</li>
         <li>Para denunciar uma mensagem, um participante ou a sala, use a função de denúncia na sala (disponível para convidados). Anfitriões podem apagar mensagens e expulsar membros. A moderação do CoJam pode encerrar uma sala para todos e bloquear uma identidade em todas as salas.</li>
+        <li>O compartilhamento de tela, quando disponível, só funciona em salas privadas, nunca nas do diretório. Só o anfitrião transmite, para no máximo 5 pessoas, e tanto transmitir quanto assistir pedem a confirmação de 16 anos ou mais. Ninguém recebe a imagem sem clicar em Assistir, e a transmissão pode ser denunciada durante e até 10 minutos depois.</li>
         <li>Responsáveis podem escrever para <code>[[EMAIL DE CONTATO DPO]]</code>.</li>
       </ul>
 

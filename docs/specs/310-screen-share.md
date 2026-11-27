@@ -791,6 +791,25 @@ PR 2 to PR 4.
 
 Q1, Q2 and Q5 are **owner decisions required before PR 9**.
 
+**Decided 2026-11-27.** The owner has no lawyer and chose to proceed on the
+technical recommendations of the #259 legal package (question 10: screen share
+in private rooms only, with the age affirmation before broadcasting). Decisions:
+
+- **Q1: yes.** Watching asks for the same 16+ self-declaration as sharing
+  (client side, one checkbox per browser, like the directory gate). It costs a
+  click and closes the cheapest gap.
+- **Q2: private is enough for v1**, rolled out first with
+  `SCREENSHARE_ROOM_ALLOWLIST` on named test rooms (gate 8). Residual risk
+  accepted: a private link posted publicly; `screen.lock` is the holding tool.
+- **Q5: met.** `server room --room <id> --close --apply` (#509) ends a live
+  share with the room, without a restart.
+
+Rollout gates 3 to 6 are closed on that basis: the legal review is replaced by
+those recommendations, and the privacy policy and terms carry the IP, STUN,
+trail and rights entries (2026-11-27). Gates 1, 2, 7 and 8, and the prototype
+matrix of section 8, still apply. **Risk without a legal opinion:** the
+obligations of ECA Digital and the LGPD bases are the operator's own reading.
+
 - **Q1 (owner).** Should viewing also require the age affirmation?
 - **Q2 (owner).** Is "private" enough when a link can be posted publicly? A
   cheap signal (distinct joiners per hour above a threshold) could disable

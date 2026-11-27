@@ -79,6 +79,10 @@ test('host shares, a member watches real frames, then both tear down', async ({ 
     await expect(viewer.getByText('Ana está compartilhando a tela')).toBeVisible();
     await expect(viewer.getByTestId('screen-video')).toHaveCount(0);
     await viewer.getByRole('button', { name: 'Assistir' }).click();
+    // Watching asks for the same age affirmation as sharing (owner decision Q1).
+    const confirm = viewer.getByRole('dialog');
+    await confirm.getByRole('checkbox', { name: /anos ou mais/ }).check();
+    await confirm.getByRole('button', { name: 'Assistir' }).click();
 
     await expect(viewer.getByTestId('screen-share-notice')).toHaveText(
       'Transmissão não moderada. O CoJam não vê nem grava o que é compartilhado.',
