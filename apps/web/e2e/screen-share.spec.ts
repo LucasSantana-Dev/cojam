@@ -110,7 +110,7 @@ test('host shares, a member watches real frames, then both tear down', async ({ 
       )
       .toBeGreaterThan(0);
 
-    // Large by default, and the sound arrives: "Tocar som" unmutes it.
+    // Large by default, and the sound arrives.
     await expect(viewer.getByTestId('screen-share-watching')).toHaveClass(/screen-share--theater/);
     await expect
       .poll(() =>
@@ -120,15 +120,26 @@ test('host shares, a member watches real frames, then both tear down', async ({ 
         }),
       )
       .toBe(1);
+    // Choosing "Assistir" was the click, so the watch starts with sound.
     const view = viewer.getByTestId('screen-share-watching');
-    await view.getByRole('button', { name: 'Tocar som' }).click();
+    // The large view hides its controls after 3s without the mouse; moving
+    // over the video brings them back, as a person would.
+    let wiggle = 0;
+    const showControls = () => viewer.mouse.move(200 + (wiggle++ % 2) * 7, 200);
+    const muted = () =>
+      viewer.evaluate(() => (document.querySelector('[data-testid="screen-video"]') as HTMLVideoElement).muted);
     await expect(view.getByRole('button', { name: 'Tirar som' })).toBeVisible();
+    expect(await muted()).toBe(false);
     await expect(view.getByRole('slider', { name: 'Volume da transmissão' })).toHaveValue('1');
     await expect(view.getByTestId('screen-share-live-info')).toContainText('1 assistindo');
-    expect(
-      await viewer.evaluate(() => (document.querySelector('[data-testid="screen-video"]') as HTMLVideoElement).muted),
-    ).toBe(false);
+    await showControls();
+    await view.getByRole('button', { name: 'Tirar som' }).click();
+    expect(await muted()).toBe(true);
+    await showControls();
+    await view.getByRole('button', { name: 'Tocar som' }).click();
+    expect(await muted()).toBe(false);
 
+    await showControls();
     await viewer.getByRole('button', { name: 'Parar de assistir' }).click();
     await expect(viewer.getByTestId('screen-video')).toHaveCount(0);
     await expect(host.getByTestId('screen-share-count')).toHaveText('0 de 5 assistindo');
