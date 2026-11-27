@@ -23,6 +23,7 @@ import {
   videoConstraints,
   type ScreenQuality,
   type ScreenQualityId,
+  type ViewerHealth,
   type ViewerState,
 } from '@/lib/screenShare';
 import { getRuntimeEnv } from '@/lib/runtimeEnv';
@@ -97,6 +98,8 @@ export function useScreenShare(roomId: string) {
   const [quality, setQualityState] = useState<ScreenQuality>(savedQuality);
   // Why the encoder is holding quality back (spec 6), while broadcasting.
   const [limitation, setLimitation] = useState<'bandwidth' | 'cpu' | null>(null);
+  // Whether the image a viewer gets froze or the connection is weak (spec 5.7).
+  const [health, setHealth] = useState<ViewerHealth>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<BroadcasterPeers | null>(null);
@@ -158,6 +161,7 @@ export function useScreenShare(roomId: string) {
     if (peer) setLastWatchedAt(Date.now());
     setRemoteStream(null);
     setViewerState(null);
+    setHealth(null);
     setRole((r) => (r === 'watching' ? 'idle' : r));
     if (message) setNotice(message);
   }, []);
@@ -219,6 +223,20 @@ export function useScreenShare(roomId: string) {
       endViewing();
     }
   }, [connected, screen, myClientId, dropBroadcast, dropViewer, endViewing]);
+
+  // The viewer checks the incoming image on the same cadence as the
+  // broadcaster's limit check.
+  useEffect(() => {
+    if (role !== 'watching' || viewerState !== 'connected') return;
+    const t = setInterval(() => {
+      const peer = viewerRef.current;
+      if (!peer) return;
+      void peer.health().then((h) => {
+        if (viewerRef.current === peer) setHealth(h);
+      });
+    }, LIMITATION_CHECK_MS);
+    return () => clearInterval(t);
+  }, [role, viewerState]);
 
   // Unmount (leaving the room): close everything and tell the server.
   useEffect(() => {
@@ -427,6 +445,7 @@ export function useScreenShare(roomId: string) {
     quality,
     setQuality,
     limitation,
+    health,
     isBroadcaster: Boolean(screen && screen.broadcasterId === myClientId),
     start,
     stop,
