@@ -570,6 +570,12 @@ screen share usually offers. Added in small PRs:
   phone hosts are told sharing works on a computer; F toggles fullscreen, M
   the sound, and a double click on the video goes fullscreen.
 
+- **Floating windows**: where Document Picture in Picture exists (Chromium),
+  "Janela flutuante" opens a small window with the video, the notice that
+  cannot be closed, sound, leaving, reporting and the chat; the broadcaster
+  gets "Mini controle" with the preview, the count, the lock and stop.
+  Elsewhere the viewer keeps the plain video picture in picture.
+
 Left out on purpose: a live thumbnail before "Assistir" (it would open a peer
 before the viewer opts in, which 5.3 and the IP disclosure forbid), and the
 viewer list for everyone (needs a protocol change and a privacy call; the
