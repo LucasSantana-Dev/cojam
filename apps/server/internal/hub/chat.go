@@ -219,7 +219,7 @@ func (h *Hub) chatHistoryRPC(roomID string) (json.RawMessage, error) {
 // by design (nobody is there to hear it; the room exists only after the
 // room.join RPC creates it).
 func (h *Hub) publishSystemChat(roomID, text string) {
-	if !h.chatEnabled {
+	if !h.chatEnabled.Load() {
 		return
 	}
 	h.mu.RLock()

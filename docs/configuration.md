@@ -97,6 +97,24 @@ Both retention windows default to **keep forever**. Deleting data is an owner de
 
 The purge is by age, except for rooms under legal hold. A report tied to an open case is kept by holding its room: `server room --room <id> --hold --apply` keeps that room's `reports` and `moderation_actions` rows past the window and through `server erase`, until `--release`. The window itself still has to suit ECA Digital reporting duties (#259); that length is a question for legal review.
 
+### Changing flags without a restart (admin panel)
+
+Six flags can change while the server runs: `sync`, `queueVoting`, `roomChat`, `publicRooms`, `video` and `screenShare` (with its room allowlist). The environment variables above stay the default. An override, stored in `feature_flags` (migration 0012), wins for both the server and the web client until it is set back to "Padrão". Every change goes to `feature_flag_changes` with who changed it (panel or CLI) and the note. Spec: `docs/specs/feature-flags-panel.md`.
+
+| Variable | Where | Effect |
+| --- | --- | --- |
+| `ADMIN_TOKEN` | server | Opens the panel at `/admin/flags` and its API at `/api/admin/*`. At least 32 bytes (`openssl rand -base64 32`); unset or shorter means the endpoints answer 404. A production boot refuses a token shorter than 32 bytes. |
+| `COJAM_SERVER_URL` | web | Optional. The server's internal address (for example `http://cojam-server:8080`) for `/env.js` to read the overrides. Unset falls back to `SERVER_ORIGIN`, then to the origin of `COJAM_WS_URL`. |
+
+- The server applies a panel change at once, and re-reads the table every 15 seconds (changes made with `server flag`). A failed read keeps the last state.
+- `/env.js` caches the overrides for 5 seconds. People already in a room see a web-side change when they reload.
+- Turning `screenShare` off, or taking a room off its allowlist, ends the live shares at once (reason `disabled` in the trail and in `music_jam_screen_sessions_ended_total`).
+- `screenShare` still needs `FEATURE_ROOM_AUTH`: the panel refuses to turn it on otherwise.
+- Without `DATABASE_URL` the panel only reads.
+- Flags that wire things at boot (`FEATURE_ROOM_AUTH`, `FEATURE_SUPABASE_AUTH`, `FEATURE_MATCHING` and the other server flags in the table above) stay environment only.
+
+`server flag` (same image, `DATABASE_URL`) is the command-line twin: `server flag --list`, and `server flag --name screenShare --on --rooms ABCDEF123456 --note "teste" --dry-run`, then `--apply`. `--default` and `--rooms-default` hand a value back to the environment.
+
 ### Ending a room (operator)
 
 `server room` (same image, run like `server erase`, with `DATABASE_URL`) records operator restrictions in `room_restrictions` (#259):

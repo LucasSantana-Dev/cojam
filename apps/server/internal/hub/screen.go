@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/centrifugal/centrifuge"
@@ -33,6 +34,10 @@ const screenMaxViewers = 5
 // unguessable, so the shorter legacy ids cannot host a share (C6).
 var screenRoomIDRe = regexp.MustCompile(`^[0-9A-Z]{12}$`)
 
+// ValidScreenRoomID reports whether a room id can host a screen share (the
+// current 12-char format). The flag panel validates its allowlist with it.
+func ValidScreenRoomID(id string) bool { return screenRoomIDRe.MatchString(id) }
+
 // Session end reasons: the fixed label set of
 // music_jam_screen_sessions_ended_total{reason}.
 const (
@@ -43,6 +48,9 @@ const (
 	screenEndTakeover    = "takeover"
 	screenEndShutdown    = "shutdown"
 	screenEndClosed      = "closed"
+	// screenEndDisabled: the operator turned screen share off, or took the
+	// room off the allowlist, while the server runs (SetFeatures).
+	screenEndDisabled = "disabled"
 )
 
 // screen.watch rejection reasons: the label set of
@@ -130,8 +138,11 @@ type screenEnded struct {
 
 // screenState is the hub-level screen share state.
 type screenState struct {
-	enabled   bool
-	allowlist map[string]struct{} // nil = every eligible private room
+	// enabled and allowlist change at runtime (SetFeatures). allowlist
+	// points at a map never written after it is stored; nil (or a nil
+	// pointer) = every eligible private room.
+	enabled   atomic.Bool
+	allowlist atomic.Pointer[map[string]struct{}]
 
 	// mu guards byClient, the cleanup index: clientID -> rooms where that
 	// connection broadcasts or watches. Only screen RPCs write it and only
@@ -152,17 +163,37 @@ type ScreenAudit func(action, roomID, actorUserID, subjectID string, detail map[
 // allowlist, when non-empty, limits shares to those room ids
 // (SCREENSHARE_ROOM_ALLOWLIST, the named-test-rooms rollout stage).
 func (h *Hub) WithScreenShare(enabled bool, allowlist []string) *Hub {
-	h.screen.enabled = enabled
-	h.screen.allowlist = nil
+	h.screen.enabled.Store(enabled)
+	h.screen.allowlist.Store(screenAllowSet(allowlist))
+	return h
+}
+
+// screenAllowSet builds the allowlist set, nil when no id is given.
+func screenAllowSet(allowlist []string) *map[string]struct{} {
+	var set map[string]struct{}
 	for _, id := range allowlist {
 		if id = strings.TrimSpace(id); id != "" {
-			if h.screen.allowlist == nil {
-				h.screen.allowlist = make(map[string]struct{})
+			if set == nil {
+				set = make(map[string]struct{})
 			}
-			h.screen.allowlist[id] = struct{}{}
+			set[id] = struct{}{}
 		}
 	}
-	return h
+	if set == nil {
+		return nil
+	}
+	return &set
+}
+
+// screenAllowed reports whether roomID may host a share under the current
+// allowlist.
+func (h *Hub) screenAllowed(roomID string) bool {
+	set := h.screen.allowlist.Load()
+	if set == nil {
+		return true
+	}
+	_, ok := (*set)[roomID]
+	return ok
 }
 
 // WithScreenAudit wires the durable trail for screen share sessions.
@@ -262,10 +293,8 @@ func (h *Hub) screenStart(roomID, clientID, userID string, ageAffirmed bool) (js
 	if !screenRoomIDRe.MatchString(roomID) {
 		return nil, userErrorf("O compartilhamento de tela precisa de um link de sala mais novo. Crie uma sala nova.")
 	}
-	if h.screen.allowlist != nil {
-		if _, ok := h.screen.allowlist[roomID]; !ok {
-			return nil, userErrorf("O compartilhamento de tela ainda não está disponível nesta sala.")
-		}
+	if !h.screenAllowed(roomID) {
+		return nil, userErrorf("O compartilhamento de tela ainda não está disponível nesta sala.")
 	}
 	name := h.displayName(clientID)
 	if name == "" {
@@ -274,6 +303,15 @@ func (h *Hub) screenStart(roomID, clientID, userID string, ageAffirmed bool) (js
 	var ended *screenEnded
 	started := false
 	res, err := h.mutateScreen(roomID, func(room *Room, s *queue.RoomState) error {
+		// Checked again under room.mu: SetFeatures may have turned screen
+		// share off (or dropped this room) since the checks above, and its
+		// sweep would not see a share created after it ran.
+		if !h.screen.enabled.Load() {
+			return centrifuge.ErrorMethodNotFound
+		}
+		if !h.screenAllowed(roomID) {
+			return userErrorf("O compartilhamento de tela ainda não está disponível nesta sala.")
+		}
 		cur := room.screen
 		if cur != nil && cur.broadcasterClientID == clientID {
 			return nil // already sharing from this connection: idempotent
@@ -694,8 +732,11 @@ func (h *Hub) finishScreenSession(e screenEnded, announce bool) {
 	}
 	if announce {
 		line := fmt.Sprintf("%s parou de compartilhar a tela", sess.broadcasterName)
-		if e.reason == screenEndHostStopped {
+		switch e.reason {
+		case screenEndHostStopped:
 			line = "O host encerrou o compartilhamento de tela"
+		case screenEndDisabled:
+			line = "O compartilhamento de tela foi desligado nesta sala"
 		}
 		h.publishSystemChat(e.roomID, line)
 	}
@@ -707,7 +748,7 @@ func (h *Hub) finishScreenSession(e screenEnded, announce bool) {
 
 // requireScreen gates every screen RPC on the feature flag.
 func (h *Hub) requireScreen() error {
-	if !h.screen.enabled {
+	if !h.screen.enabled.Load() {
 		return centrifuge.ErrorMethodNotFound
 	}
 	return nil

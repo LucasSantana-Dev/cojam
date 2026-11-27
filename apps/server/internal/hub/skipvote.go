@@ -46,7 +46,7 @@ func (h *Hub) presentVoterKeys(roomID string) map[string]bool {
 // vote omitted toggles; true/false set the value (idempotent, so a client that
 // lost track of its own state cannot invert it).
 func (h *Hub) voteSkipRPC(data []byte, clientID, voter string) (json.RawMessage, error) {
-	if !h.votingEnabled {
+	if !h.votingEnabled.Load() {
 		return nil, centrifuge.ErrorMethodNotFound
 	}
 	var req struct {
@@ -83,7 +83,7 @@ const skipLeaveGrace = 5 * time.Second
 // grace period has passed. It is a cheap no-op for a room that is not resident
 // or has no skip votes, and never creates a room.
 func (h *Hub) reevaluateSkipVotes(roomID string) {
-	if !h.votingEnabled {
+	if !h.votingEnabled.Load() {
 		return
 	}
 	if h.skipGrace > 0 {

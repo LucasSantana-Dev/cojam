@@ -68,7 +68,7 @@ func shouldHeartbeat(s *queue.RoomState) bool {
 // roomWantsHeartbeat looks the room up without touching it (a touch would
 // keep an otherwise idle room from eviction).
 func (h *Hub) roomWantsHeartbeat(roomID string) (*Room, bool) {
-	if !h.videoEnabled {
+	if !h.videoEnabled.Load() {
 		return nil, false
 	}
 	h.mu.RLock()
@@ -86,7 +86,7 @@ func (h *Hub) roomWantsHeartbeat(roomID string) (*Room, bool) {
 // reconcileHeartbeat starts or stops the room's ticker to match its state.
 // Idempotent; safe to call after any mutation or join.
 func (h *Hub) reconcileHeartbeat(roomID string) {
-	if !h.videoEnabled {
+	if !h.videoEnabled.Load() {
 		return
 	}
 	_, want := h.roomWantsHeartbeat(roomID)
