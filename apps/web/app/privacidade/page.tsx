@@ -175,9 +175,11 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Denúncias e registros de moderação</strong> (inclusive os de compartilhamento de
-          tela): hoje não há prazo de exclusão definido no código. Num pedido de exclusão, os
+          tela): apagados automaticamente 180 dias (6 meses) depois de registrados. A exceção são
+          as salas sob retenção legal, quando uma denúncia precisa ser preservada para uma
+          autoridade: esses registros ficam até a retenção ser liberada. Num pedido de exclusão, os
           registros de compartilhamento de tela sobre você perdem o identificador e o nome, a não
-          ser que uma denúncia de transmissão naquela sala ainda precise deles como prova. <code>[[PRAZO DE RETENÇÃO DE DENÚNCIAS]]</code>
+          ser que uma denúncia de transmissão naquela sala ainda precise deles como prova.
         </li>
         <li>
           <strong>Bloqueios:</strong> até a moderação desbloquear. Um pedido de exclusão não
