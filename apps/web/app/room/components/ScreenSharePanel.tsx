@@ -266,6 +266,13 @@ export function ScreenSharePanelView({ roomId, canModerate, isPublic, share }: P
           {share.error}
         </p>
       )}
+      {watching && share.health && (
+        <p role="status" className="screen-share__note" data-testid="screen-share-health">
+          {share.health === 'frozen'
+            ? `A imagem parou. Pode ser a conexão de ${broadcasterName} ou a sua.`
+            : 'Conexão fraca: a imagem pode travar ou perder qualidade.'}
+        </p>
+      )}
       {share.notice && !share.error && (
         <p role="status" className="screen-share__note">
           {share.notice}

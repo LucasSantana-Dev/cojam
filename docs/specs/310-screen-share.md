@@ -557,6 +557,10 @@ screen share usually offers. Added in small PRs:
 - **Viewer**: volume slider (remembered per browser), picture in picture
   where the browser supports it, live time and viewer count.
 
+- **Viewer connection notice**: every 5s the viewer compares two
+  `inbound-rtp` video samples; no decoded frame in between shows "A imagem
+  parou", under 5 fps or over 5% packets lost shows "Conexão fraca".
+
 Left out on purpose: a live thumbnail before "Assistir" (it would open a peer
 before the viewer opts in, which 5.3 and the IP disclosure forbid), and the
 viewer list for everyone (needs a protocol change and a privacy call; the
