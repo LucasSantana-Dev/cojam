@@ -25,6 +25,14 @@ describe('PrivacyPage', () => {
     expect(container.textContent).toContain('[[CONTROLADOR: nome]]');
   });
 
+  it('states the report retention the server enforces (REPORT_RETENTION_DAYS=180)', () => {
+    const { container } = render(<PrivacyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('apagados automaticamente 180 dias (6 meses) depois de registrados');
+    expect(text).toContain('retenção legal');
+    expect(text).not.toContain('[[PRAZO DE RETENÇÃO DE DENÚNCIAS]]');
+  });
+
   it('discloses the product events: what is recorded, what is not, basis, retention, objection', () => {
     const { container } = render(<PrivacyPage />);
     const text = container.textContent ?? '';
