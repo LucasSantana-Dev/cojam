@@ -3447,3 +3447,18 @@ textarea.age-gate__input { resize: vertical; }
   }
   .screen-share--watching .screen-share__actions > * { flex-shrink: 0; }
 }
+
+/* Floating window (Document Picture in Picture, Go Live gaps 11 and 12). */
+.screen-share-float-body { margin: 0; background: oklch(0.1 0.02 280); color: var(--color-text-primary); }
+.screen-share-float {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  height: 100vh;
+  padding: 0.5rem;
+  box-sizing: border-box;
+}
+.screen-share-float__video { flex: 0 0 auto; aspect-ratio: 16 / 9; background: #000; border-radius: 0.5rem; overflow: hidden; }
+.screen-share-float__video video { width: 100%; height: 100%; object-fit: contain; }
+.screen-share-float__chat { flex: 1; min-height: 0; overflow: auto; }
+.screen-share__floating { display: grid; place-items: center; min-height: 8rem; }
