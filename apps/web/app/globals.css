@@ -3435,3 +3435,15 @@ textarea.age-gate__input { resize: vertical; }
   border: 0;
 }
 .screen-share__tip { font-size: 0.85rem; }
+
+/* Phones: the viewer controls stay on one row that scrolls sideways, so the
+   video keeps its height (Go Live review gap 6). */
+@media (max-width: 30rem) {
+  .screen-share--watching .screen-share__actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .screen-share--watching .screen-share__actions > * { flex-shrink: 0; }
+}
