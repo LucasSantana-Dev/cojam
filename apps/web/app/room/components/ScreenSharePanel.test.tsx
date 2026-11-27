@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import type { RoomState, ScreenShareState } from '@cojam/shared';
-import { ScreenSharePanel } from './ScreenSharePanel';
+import { ScreenSharePanel, ScreenSharePanelView, liveFor, type ScreenShare } from './ScreenSharePanel';
 import { useStore } from '@/lib/realtime';
 import { affirmAge } from '@/lib/ageGate';
 
@@ -201,5 +201,46 @@ describe('ScreenSharePanel', () => {
     renderPanel(true);
     expect(screen.getByText('Você está compartilhando a tela')).toBeTruthy();
     expect(screen.getByTestId('screen-share-count').textContent).toBe('2 de 5 assistindo');
+  });
+
+  it('tells how long the share has been live and how many watch', () => {
+    expect(liveFor(1_000, 1_000)).toBe('Ao vivo agora');
+    expect(liveFor(5_000, 1_000)).toBe('Ao vivo agora');
+    expect(liveFor(0, 12 * 60_000)).toBe('Ao vivo há 12 min');
+    expect(liveFor(0, 60 * 60_000)).toBe('Ao vivo há 1 h');
+    expect(liveFor(0, 95 * 60_000)).toBe('Ao vivo há 1 h 35 min');
+    seed({ screen: live({ startedAtMs: Date.now() - 3 * 60_000, viewerCount: 2 }) });
+    renderPanel();
+    expect(screen.getByTestId('screen-share-card-info').textContent).toBe('Ao vivo há 3 min · 2 de 5 assistindo');
+  });
+
+  it('turns the sound on from the volume slider and remembers the level', () => {
+    seed({ screen: live() });
+    const audio = { kind: 'audio' } as MediaStreamTrack;
+    const stream = { getAudioTracks: () => [audio], getVideoTracks: () => [], getTracks: () => [audio] };
+    const share = {
+      screen: live(),
+      role: 'watching',
+      busy: false,
+      error: '',
+      notice: '',
+      localStream: null,
+      remoteStream: stream as unknown as MediaStream,
+      viewerState: 'connected',
+      viewerIds: [],
+      lastWatchedAt: null,
+      isBroadcaster: false,
+    } as unknown as ScreenShare;
+    render(<ScreenSharePanelView roomId="ROOM00000001" canModerate={false} isPublic={false} share={share} />);
+    const slider = screen.getByRole('slider', { name: 'Volume da transmissão' }) as HTMLInputElement;
+    expect(slider.value).toBe('0');
+    expect(screen.getByRole('button', { name: 'Tocar som' })).toBeTruthy();
+    fireEvent.change(slider, { target: { value: '0.4' } });
+    expect(screen.getByRole('button', { name: 'Tirar som' })).toBeTruthy();
+    expect(slider.value).toBe('0.4');
+    expect(localStorage.getItem('cojam.screenVolume')).toBe('0.4');
+    const video = screen.getByTestId('screen-video') as HTMLVideoElement;
+    expect(video.muted).toBe(false);
+    expect(video.volume).toBeCloseTo(0.4);
   });
 });

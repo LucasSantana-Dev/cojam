@@ -120,6 +120,8 @@ test('host shares, a member watches real frames, then both tear down', async ({ 
     const view = viewer.getByTestId('screen-share-watching');
     await view.getByRole('button', { name: 'Tocar som' }).click();
     await expect(view.getByRole('button', { name: 'Tirar som' })).toBeVisible();
+    await expect(view.getByRole('slider', { name: 'Volume da transmissão' })).toHaveValue('1');
+    await expect(view.getByTestId('screen-share-live-info')).toContainText('1 assistindo');
     expect(
       await viewer.evaluate(() => (document.querySelector('[data-testid="screen-video"]') as HTMLVideoElement).muted),
     ).toBe(false);
