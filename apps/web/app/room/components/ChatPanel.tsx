@@ -10,6 +10,7 @@ import { memberCharacter, defaultCharacterId } from '@/lib/characters';
 import { CharacterAvatar } from './CharacterAvatar';
 import { EmojiIcon } from '@/app/components/icons';
 import { ptSystemText } from '@/lib/chatSystemText';
+import { groupPresence } from '@/lib/chatPresence';
 import { useVisualViewportHeight } from '@/lib/useVisualViewportHeight';
 
 // A short, fixed set: a full picker is out of scope, this covers a room's reactions.
@@ -51,6 +52,8 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  // Notice runs the person opened (by the run's first message id).
+  const [openRuns, setOpenRuns] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const emojiBtnRef = useRef<HTMLButtonElement>(null);
   // Esc closes the emoji picker.
@@ -209,7 +212,28 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
         </div>
       ) : (
         <div ref={listRef} onScroll={handleScroll} className="chat-scroll" aria-live="polite">
-          {chat.map((m) => (
+          {groupPresence(chat).flatMap((item) => {
+            if (item.kind === 'run' && !openRuns.has(item.id)) {
+              // A run of join, leave and share notices shows its latest line
+              // and opens the rest on demand.
+              const last = item.msgs[item.msgs.length - 1];
+              return [
+                <div key={item.id} data-testid="chat-system-run" className="chat-sys chat-sys--run" title={chatTime(last.sentAtServerMs)}>
+                  <p className="chat-sys__text">{ptSystemText(last.text)}</p>
+                  <button
+                    type="button"
+                    className="chat-sys__more"
+                    aria-expanded={false}
+                    aria-label={`Mostrar mais ${item.msgs.length - 1} avisos de entrada e saída`}
+                    onClick={() => setOpenRuns((prev) => new Set(prev).add(item.id))}
+                  >
+                    +{item.msgs.length - 1}
+                  </button>
+                </div>,
+              ];
+            }
+            const msgs = item.kind === 'run' ? item.msgs : [item.msg];
+            return msgs.map((m) => (
             m.kind === 'system' ? (
               // Server announcements (#205): no avatar/identity, muted so track
               // changes and join/leave read as room events, not chat.
@@ -268,7 +292,8 @@ export function ChatPanel({ roomId, canControl = false }: ChatPanelProps) {
               )}
             </div>
             )
-          ))}
+            ));
+          })}
         </div>
       )}
 

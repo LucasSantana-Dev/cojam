@@ -1841,6 +1841,11 @@ textarea.age-gate__input { resize: vertical; }
   .r4-queue-col > .fq, .r4-chat-col > .chat-panel { flex: 1; min-height: 0; }
   .room[data-room="r4"] .chat-scroll { max-height: none; }
   .room[data-room="r4"] .fq-list { max-height: none; }
+  /* A screen share on top of the left column (#310): the column scrolls as a
+     whole instead of squeezing "Ouvindo agora" into a sliver with its own
+     scrollbar. */
+  .r4-stage:has(> .screen-share) { overflow-y: auto; overscroll-behavior: contain; }
+  .r4-stage:has(> .screen-share) > .r4-listeners { flex: none; }
 }
 
 /* ---- now playing ----------------------------------------------------------- */
@@ -2228,6 +2233,8 @@ textarea.age-gate__input { resize: vertical; }
 .chat-sys { display: flex; align-items: center; padding: 0 0.6rem; min-height: 1.35rem; }
 .chat-sys__text { flex: 1; min-width: 0; font-size: 0.75rem; line-height: 1.3; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-sys + .chat-msg, .chat-msg + .chat-sys { margin-top: 0.15rem; }
+.chat-sys__more { flex: none; margin-left: 0.4rem; padding: 0 0.4rem; min-height: 1.35rem; border-radius: 999px; border: 1px solid var(--color-border); background: none; color: var(--color-text-muted); font-size: 0.7rem; font-weight: 700; cursor: pointer; }
+.chat-sys__more:hover { color: var(--color-text-primary); }
 .chat-form { display: flex; align-items: center; gap: 0.2rem; margin-top: 0.25rem; padding: 0.35rem 0.4rem 0.35rem 0.9rem; border-radius: 0.9rem; background: var(--r4-panel-2); border: 1px solid var(--r4-line); }
 /* One ring, on the pill (the visible control). Scoped to the input so the emoji
    and send buttons keep their own keyboard ring instead of doubling up. 1px
@@ -2782,6 +2789,9 @@ textarea.age-gate__input { resize: vertical; }
    (which renders nothing) leaves no empty row. The shared video stays small
    enough that the stage keeps most of the height. */
 .palco__share { display: contents; }
+/* The share row can be taller than what is left under the stage: let the
+   palco column scroll instead of cutting the controls off. */
+.palco__main:has(.palco__share > .screen-share) { overflow-y: auto; overscroll-behavior: contain; }
 .palco__share > .screen-share { flex: 1 1 100%; }
 .palco__share > .screen-share--card { padding: 0.6rem 0.8rem; background: var(--r4-panel-2); border-color: var(--r4-line); }
 .palco__share .stage { width: 100%; max-width: min(100%, calc(40dvh * 16 / 9)); margin-inline: auto; }

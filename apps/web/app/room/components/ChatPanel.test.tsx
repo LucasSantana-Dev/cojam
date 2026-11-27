@@ -102,6 +102,27 @@ describe('ChatPanel', () => {
     expect(screen.getByTestId('chat-message')).toHaveTextContent('hello room');
   });
 
+  it('collapses a run of join, leave and share notices into its latest line, opened by "+N"', () => {
+    const sys = (id: string, text: string): ChatMessage => ({ ...msg(id, text, ''), kind: 'system' });
+    useStore.setState({
+      chat: [
+        sys('s1', 'luk entrou'),
+        sys('s2', 'luk saiu'),
+        sys('s3', 'luk entrou'),
+        sys('s4', 'luk começou a compartilhar a tela'),
+        msg('m1', 'oi'),
+      ],
+    });
+    render(<ChatPanel roomId="r1" />);
+    const run = screen.getByTestId('chat-system-run');
+    expect(run).toHaveTextContent('luk começou a compartilhar a tela');
+    expect(screen.queryAllByTestId('chat-system-message')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar mais 3 avisos de entrada e saída' }));
+    expect(screen.queryByTestId('chat-system-run')).toBeNull();
+    expect(screen.getAllByTestId('chat-system-message')).toHaveLength(4);
+    expect(screen.getByTestId('chat-message')).toHaveTextContent('oi');
+  });
+
   it('shows the server error inline on rejection and keeps the draft', async () => {
     rpcMocks.sendChat.mockRejectedValueOnce({ code: 400, message: 'too many requests, slow down' });
     render(<ChatPanel roomId="r1" />);
